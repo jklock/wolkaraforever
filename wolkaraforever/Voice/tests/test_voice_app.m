@@ -467,22 +467,34 @@ static void TestAudioSessionCoordinator(void) {
     // Nothing is claimed at the start, and push to talk is not active.
     CHECK((!coordinator.pushToTalkActive), @"push to talk is not active before anything asks");
 
-    // Taking the session for push to talk: the policy is Record, which is what this feature shipped
-    // with and what transcribed speech. PlayAndRecord with DefaultToSpeaker put capture behind the
-    // speakerphone's echo cancellation and every sample came back exactly 0.0, measured on the device.
+    // Taking the session for push to talk: PlayAndRecord with mixing, so the game keeps its
+    // sound while the user talks. Record alone - which this shipped with - takes the output
+    // away from the whole process, and the player heard the game go silent for the length of
+    // every hold (measured on the device, 2026-10-22).
     NSError *error = nil;
     CHECK(([coordinator beginPushToTalk:&error]), @"push to talk takes the session: %@", error.localizedDescription);
     CHECK((coordinator.pushToTalkActive), @"and the coordinator says so");
-    CHECK(([session.category isEqualToString:AVAudioSessionCategoryRecord]),
-          @"dictation records, got %@", session.category);
+    CHECK(([session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]),
+          @"dictation records while the game keeps playing, got %@", session.category);
+    CHECK(((session.categoryOptions & AVAudioSessionCategoryOptionMixWithOthers) != 0),
+          @"and mixes rather than taking the output away, got options %lu", (unsigned long)session.categoryOptions);
     CHECK(([session.mode isEqualToString:AVAudioSessionModeDefault]),
           @"dictation uses the unprocessed Default input mode, got %@", session.mode);
 
     // And the game asking for playback while it is held must not take the session away: this is the
     // fault that ended a running dictation, and the coordinator must refuse it rather than obey.
     CHECK(([coordinator requestGamePlayback:@"the guest asked"]), @"the game's request is answered");
-    CHECK(([session.category isEqualToString:AVAudioSessionCategoryRecord]),
+    CHECK(([session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]),
           @"but not by taking the session from push to talk, got %@", session.category);
+
+    // The microphone was silent under PlayAndRecord - the configuration measured silent on this
+    // device before - and the hold demotes itself rather than losing the words. The lease stays
+    // with push to talk, and the next hold asks for PlayAndRecord again.
+    CHECK(([coordinator useRecordOnlyForPushToTalk:&error]),
+          @"a silent duplex microphone demotes the hold: %@", error.localizedDescription);
+    CHECK(([session.category isEqualToString:AVAudioSessionCategoryRecord]),
+          @"which records without playing the game, got %@", session.category);
+    CHECK((coordinator.pushToTalkActive), @"and push to talk still holds the lease");
 
     // Handing it back with a game lease held restores the declared game policy - Playback - rather
     // than a guessed prior state.
@@ -579,7 +591,7 @@ static void TestTheAdapterCannotTakeTheSessionFromPushToTalk(void) {
     dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)));
     Pump(0.1);
 
-    CHECK(([session.category isEqualToString:AVAudioSessionCategoryRecord]),
+    CHECK(([session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]),
           @"the adapter cannot take the session from push to talk, got %@", session.category);
     CHECK((coordinator.pushToTalkActive), @"and push to talk still holds the lease");
 
@@ -625,8 +637,8 @@ static void TestAudioSessionPolicy(void) {
 
     [dictation begin];
     CHECK((dictation.state == AKDictationStateListening), @"the real bridge starts a session");
-    CHECK(([session.category isEqualToString:AVAudioSessionCategoryRecord]),
-          @"and records rather than playing the game, which is what transcribes speech, got %@", session.category);
+    CHECK(([session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]),
+          @"and records while the game stays audible, got %@", session.category);
 
     [dictation end];
     [speech say:@"done" final:YES];

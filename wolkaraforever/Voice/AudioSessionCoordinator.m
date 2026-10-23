@@ -151,30 +151,34 @@ static char const AKAudioCoordinatorQueueKey;
     [self onTheQueue:^{
         NSString *from = [self nameForLease:_lease];
         AVAudioSession *session = AVAudioSession.sharedInstance;
-        // Record, which is what this feature shipped with and what worked. It was changed to
-        // PlayAndRecord with DefaultToSpeaker and AllowBluetooth so that the game stayed audible while
-        // the user talked. That change is the only capture-side difference between the version that
-        // transcribed speech and the one where every sample is exactly 0.0 - the speakerphone path puts
-        // capture behind echo cancellation, and this is an input-only engine, not a call. A microphone
-        // that delivers digital silence is worth far more than game audio for the two seconds a
-        // dictation lasts, and the game's playback is restored the moment the hold ends.
+        // PlayAndRecord with mixing, so the game keeps its sound while the user talks. Record
+        // alone - which is what this shipped with - takes the output away from the process,
+        // and a player pressing the button to say something heard the whole game go quiet for
+        // the length of the hold (reported from the device, 2026-10-22).
         //
-        // Measured before this change, with everything else correct: permission granted,
-        // PlayAndRecord/Default on the built-in microphone at 48000Hz, the engine running, the tap
-        // firing with well-formed float32 buffers, and the loudest sample 0.00000 for the whole hold.
-        if (![session setCategory:AVAudioSessionCategoryRecord
+        // PlayAndRecord was tried before and measured delivering digital silence on this
+        // device, and that is why this fell back to Record. Two things are different now:
+        // MixWithOthers is set (the echo-cancelled duplex path is what zeroed the input), and
+        // the capture that follows measures its own peak, so a silent duplex start demotes
+        // itself through -useRecordOnlyForPushToTalk: instead of being discovered days later.
+        // Game audio for the length of a hold is worth the probe.
+        if (![session setCategory:AVAudioSessionCategoryPlayAndRecord
                              mode:AVAudioSessionModeDefault
-                          options:0
+                          options:AVAudioSessionCategoryOptionMixWithOthers |
+                                  AVAudioSessionCategoryOptionDefaultToSpeaker |
+                                  AVAudioSessionCategoryOptionAllowBluetooth
                             error:&failure]) {
-            [self logTransitionFrom:from to:@"push-to-talk" result:NO error:failure];
-            return;
+            WKLog("audio", @"session: push to talk could not take PlayAndRecord (%@), taking Record instead",
+                  failure.localizedDescription ?: @"no reason given");
+            failure = nil;
+            if (![session setCategory:AVAudioSessionCategoryRecord
+                                 mode:AVAudioSessionModeDefault
+                              options:0
+                                error:&failure]) {
+                [self logTransitionFrom:from to:@"push-to-talk" result:NO error:failure];
+                return;
+            }
         }
-        // No preferred input. The version that transcribed speech never set one, and setting it is the
-        // last capture-side difference left between that version and this one: it chooses a microphone
-        // port by name, where the system's own choice is what fed the working build. Measured with a
-        // preferred input set, on Record and on PlayAndRecord alike: every sample was exactly 0.0 while
-        // the route still reported the built-in microphone. If the input is silent for that reason, this
-        // is what removes it; the route is read back in the log either way, so nothing is assumed.
         if (![session setActive:YES error:&failure]) {
             [self logTransitionFrom:from to:@"push-to-talk" result:NO error:failure];
             return;
@@ -191,6 +195,34 @@ static char const AKAudioCoordinatorQueueKey;
             postNotificationName:AKAudioPushToTalkLeaseDidChangeNotification
                           object:self userInfo:@{@"active": @YES}];
     }
+    return ok;
+}
+
+// Push to talk took PlayAndRecord so the game stayed audible, and the microphone turned out to
+// deliver silence under it. This demotes the session for the rest of *this* hold: a silent
+// microphone is worse than a quiet few seconds, and the earlier measurement on this device says
+// Record is the category that hears anything. The next hold asks for PlayAndRecord again, so a
+// fixed route - or a different microphone - is not written off for good by one bad probe.
+- (BOOL)useRecordOnlyForPushToTalk:(NSError **)error {
+    __block BOOL ok = NO;
+    __block NSError *failure = nil;
+    [self onTheQueue:^{
+        if (!self->_pushToTalk) { ok = YES; return; }
+        AVAudioSession *session = AVAudioSession.sharedInstance;
+        if ([session.category isEqualToString:AVAudioSessionCategoryRecord]) { ok = YES; return; }
+        if (![session setCategory:AVAudioSessionCategoryRecord
+                             mode:AVAudioSessionModeDefault
+                          options:0
+                            error:&failure]) return;
+        // Re-activated: changing the category under an active session can leave the input
+        // running against the previous one.
+        [session setActive:NO withOptions:0 error:NULL];
+        if (![session setActive:YES error:&failure]) return;
+        ok = YES;
+        [self logTransitionFrom:@"push-to-talk" to:@"push-to-talk (record only)" result:YES error:nil];
+        WKLog("audio", @"session: the microphone was silent while the game was audible, so this hold records only");
+    }];
+    if (!ok && error) *error = failure;
     return ok;
 }
 

@@ -64,6 +64,21 @@ FOUNDATION_EXPORT NSString *AKControllerIdentity(GCController *pad);
 // Give everything back: voice switched off, a mapping removed, or a pad gone.
 - (void)restoreAllSystemGestures;
 
+// While the user is choosing a button, the gestures the system would otherwise keep are
+// released too - every mappable button on every connected pad.
+//
+// Without this, a button the system reserves (Menu, Options, Home) can never be learned: its
+// press goes to iPadOS and the page that asks the user to press something shows nothing at
+// all, which is exactly what a user reported on the device (2026-10-22) - "the other button I
+// could use does not show up in the UI when pressed". The rule that a gesture is only released
+// for an element the user has already mapped cannot be satisfied by the very press that is
+// supposed to create that mapping.
+//
+// Everything released here is remembered separately and given back by
+// -endReleasingForLearning, so a button the user did not choose is never left changed.
+- (void)beginReleasingForLearning;
+- (void)endReleasingForLearning;
+
 @end
 
 NS_ASSUME_NONNULL_END

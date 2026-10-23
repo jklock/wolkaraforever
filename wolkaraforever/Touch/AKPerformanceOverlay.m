@@ -11,6 +11,20 @@ static NSString *const ExpandedKey = @"WolkaraForeverPerformanceOverlayExpanded"
 
 typedef double (*AKMetalFPSFunc)(void);
 typedef double (*AKMetalFrameTimeFunc)(void);
+typedef void (*AKMetalEnableFunc)(void);
+typedef double (*AKMetalGPUTimeFunc)(void);
+typedef double (*AKMetalGPULoadFunc)(void);
+typedef double (*AKMetalWaitFunc)(void);
+
+// Turns the Metal adapter's per-frame recording on. It is off until something asks: the
+// presented handler costs a block and a lock on every frame, and a HUD that nobody has
+// switched on should not be charging the game's frame budget for it.
+static void EnableMetalFrameStatistics(void) {
+    static AKMetalEnableFunc func = NULL;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ func = (AKMetalEnableFunc)dlsym(RTLD_DEFAULT, "AKEnableMetalFrameStatistics"); });
+    if (func) func();
+}
 
 // The Metal adapter publishes these when a frame is presented. They are looked
 // up at runtime because the adapters are separate compatibility libraries: the
@@ -30,6 +44,33 @@ static double ReadMetalFrameTimeMs(void) {
     return func ? func() : 0.0;
 }
 
+// The GPU's own execution time for the frame that was displayed, and the share
+// of wall time it was busy over the last second. Without these a frame rate
+// cannot say whether the GPU or the CPU is the limit.
+static double ReadMetalGPUTimeMs(void) {
+    static AKMetalGPUTimeFunc func = NULL;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ func = (AKMetalGPUTimeFunc)dlsym(RTLD_DEFAULT, "AKMetalLastGPUTimeMs"); });
+    return func ? func() : 0.0;
+}
+
+static double ReadMetalGPULoad(void) {
+    static AKMetalGPULoadFunc func = NULL;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ func = (AKMetalGPULoadFunc)dlsym(RTLD_DEFAULT, "AKMetalGPULoad"); });
+    return func ? func() : 0.0;
+}
+
+// How long the client blocks asking for a drawable. Near zero while the frame
+// is long means the client still had work to do; a real wait means the display
+// or the present queue is holding the frame.
+static double ReadMetalWaitMs(void) {
+    static AKMetalWaitFunc func = NULL;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ func = (AKMetalWaitFunc)dlsym(RTLD_DEFAULT, "AKMetalLastDrawableWaitMs"); });
+    return func ? func() : 0.0;
+}
+
 @implementation AKPerformanceOverlay {
     UIStackView *_compactStack;
     UIStackView *_expandedStack;
@@ -40,6 +81,7 @@ static double ReadMetalFrameTimeMs(void) {
     UILabel *_batteryLabel;
 
     UILabel *_expandedFPSLabel;
+    UILabel *_expandedGPULabel;
     UILabel *_expandedThermalLabel;
     UILabel *_expandedMemoryLabel;
     UILabel *_expandedBatteryLabel;
@@ -136,6 +178,7 @@ static double ReadMetalFrameTimeMs(void) {
     header.text = @"PERFORMANCE & THERMALS";
 
     _expandedFPSLabel = [self detailLabel];
+    _expandedGPULabel = [self detailLabel];
     _expandedThermalLabel = [self detailLabel];
     _expandedMemoryLabel = [self detailLabel];
     _expandedBatteryLabel = [self detailLabel];
@@ -149,6 +192,7 @@ static double ReadMetalFrameTimeMs(void) {
     _expandedStack = [[UIStackView alloc] initWithArrangedSubviews:@[
         header,
         _expandedFPSLabel,
+        _expandedGPULabel,
         _expandedThermalLabel,
         _expandedMemoryLabel,
         _expandedBatteryLabel,
@@ -400,6 +444,13 @@ static double ReadMetalFrameTimeMs(void) {
 
     BOOL lowPower = NSProcessInfo.processInfo.isLowPowerModeEnabled;
 
+    // GPU busy time is what separates a GPU-bound frame from a CPU-bound one:
+    // close to the frame time means the GPU is the limit, far below means the
+    // time is being spent before the GPU is asked to draw.
+    double gpuMs = ReadMetalGPUTimeMs();
+    double gpuLoad = ReadMetalGPULoad();
+    double waitMs = ReadMetalWaitMs();
+
     _fpsLabel.text = fps > 0.0 ? [NSString stringWithFormat:@"%.1f FPS", fps] : @"-- FPS";
     _thermalDot.backgroundColor = thermalColor;
     _thermalLabel.text = thermalName;
@@ -409,6 +460,9 @@ static double ReadMetalFrameTimeMs(void) {
     _expandedFPSLabel.text = fps > 0.0
         ? [NSString stringWithFormat:@"Frame Rate: %.1f FPS (%.1f ms)", fps, frameTimeMs]
         : @"Frame Rate: Waiting for frames…";
+    _expandedGPULabel.text = gpuMs > 0.0
+        ? [NSString stringWithFormat:@"GPU: %.1f ms of %.1f ms (%.0f%% busy) · wait %.1f ms", gpuMs, frameTimeMs, gpuLoad * 100.0, waitMs]
+        : @"GPU: waiting for frames…";
     _expandedThermalLabel.text = [NSString stringWithFormat:@"Thermal State: %@ (%@)", thermalName, thermalDetail];
     _expandedMemoryLabel.text = available > 0
         ? [NSString stringWithFormat:@"RAM Footprint: %.0f MB · Headroom: %.0f MB", usedMB, freeMB]
@@ -456,8 +510,17 @@ static double ReadMetalFrameTimeMs(void) {
     }
     if (!_displayLink) {
         _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(displayLinkFired:)];
+        // Ten hertz, not the panel's own rate.
+        //
+        // This link only ever produces a *fallback* average, used when the Metal counters have
+        // nothing to say, so it was waking the main thread - the thread the guest's own run loop
+        // is pumped from - 120 times a second for a number that is read twice a second. On a
+        // device already at thermal Serious that is the wrong place to spend anything.
+        if (@available(iOS 15.0, *)) _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(4.0, 30.0, 10.0);
+        else _displayLink.preferredFramesPerSecond = 10;
         [_displayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     }
+    EnableMetalFrameStatistics();
     [self updateMetrics];
 }
 

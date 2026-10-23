@@ -40,6 +40,10 @@ extern NSString *const AKSelfTestForeverUIClean;
 /// that the authenticated search answers with artwork, author, category and a file for the
 /// game version the browser asks for. It reads nothing from the game and changes nothing.
 extern NSString *const AKSelfTestCurseForge;
+/// The recogniser alone, over Documents/dictation-probe.wav: a known sentence, run through the
+/// exact request the app uses, on device. This is the only check that proves words come back
+/// without a person speaking into the microphone.
+extern NSString *const AKSelfTestSpeechFile;
 
 // Runs one self-test and logs the verdict the matrix greps:
 //   selftest: <name> PASS <passed>/<total> checks (<what was exercised>)

@@ -98,14 +98,51 @@ crash report was written and the app was still running afterwards. The self-test
 the device matrix can run without a person speaking; it reported `PASS 2/2 checks
 (AKTouchControls answers both selectors)` in the same run.
 
+## The recogniser, tested without a person speaking
+
+`--selftest=speech-file` runs the real recogniser, on device, over
+`Documents/dictation-probe.wav` - a known sentence recorded in the same format the app records
+(48 kHz, 16-bit, mono). It exists because every earlier account of voice working rested on someone
+reading a chat box, and on 2026-10-22 a hold that metered -24.8 dBFS was answered with "No speech
+detected" with nothing to compare it against.
+
+Two things it caught, both now fixed and both worth knowing:
+
+- The request is fed **buffers read from the recorded file**, not handed over as a file URL. The
+  URL request answered "No speech detected" for audio the microphone had plainly delivered.
+- **The session that owns the task must outlive the call that starts it.** A probe whose recogniser
+  session was a local variable fed all 135,725 frames of the sentence, was sent `endAudio`, and then
+  called back never - no result, no error, forty seconds of nothing - because the task died with the
+  session. The app is safe by construction (`AKDictation` retains its speech session), but anything
+  else that drives `AKSpeechSession` has to retain it too.
+
+The probe recording stays in the container: the self-test asserts it is there, and the device
+matrix runs that self-test.
+
 ## The audio session, as a policy rather than a promise
 
-Dictation takes the session as `Record`, and puts back the category, mode and options it
-found, leaving the session **active**. `AVAudioSession` has no public way to ask whether it
-was active beforehand, so the previous activation state cannot be observed and is not
-claimed: this is a deliberate policy for a foreground game host, not a snapshot of
-everything. An interruption - a call, Siri, anything else taking the audio - ends the
-session rather than leaving the microphone open behind a session we no longer own.
+Dictation takes the session as **PlayAndRecord with `MixWithOthers` and
+`DefaultToSpeaker`**, so the game keeps its sound for the length of the hold, and
+puts back the category, mode and options it found, leaving the session **active**.
+It shipped as plain `Record`, which takes the output away from the whole process:
+players heard the game go silent every time they pressed the talk button (reported
+from the device, 2026-10-22), and that is not a trade worth making for a hold that
+lasts two seconds.
+
+`PlayAndRecord` was measured delivering digital silence on this device once before,
+which is why the category was changed to `Record` in the first place. The two things
+that are different now: `MixWithOthers` is set, and the 150 ms warm-up capture reads
+its own peak. If the microphone hears nothing above -60 dBFS under `PlayAndRecord`,
+the hold demotes itself with `-useRecordOnlyForPushToTalk:` and records with the game
+paused - a quiet few seconds instead of losing the words - and the next hold asks for
+`PlayAndRecord` again. Both decisions are logged, so a silent microphone and a quiet
+one can be told apart in the device log.
+
+`AVAudioSession` has no public way to ask whether it was active beforehand, so the
+previous activation state cannot be observed and is not claimed: this is a deliberate
+policy for a foreground game host, not a snapshot of everything. An interruption - a
+call, Siri, anything else taking the audio - ends the session rather than leaving the
+microphone open behind a session we no longer own.
 
 ## Handy is the baseline
 

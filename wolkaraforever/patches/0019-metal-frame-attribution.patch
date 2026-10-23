@@ -1,0 +1,196 @@
+# WolkaraForever layer patch 0019 - Metal: GPU time per presented frame
+#
+# Why: the performance HUD can report a frame rate and a frame interval, and both
+# are true whether the GPU is the limit or the CPU is. Deciding which - and so
+# whether a performance lane is worth any work at all - needs the GPU's own
+# execution time for the frame that was displayed. Metal reports it after the
+# fact on the command buffer (gpuStartTime, gpuEndTime), so the adapter records
+# the interval of the buffer that presented each frame and publishes it, plus the
+# share of wall time the GPU was busy over a trailing second.
+#
+# What it does: hooks presentDrawable:/presentDrawable:atTime:/
+# presentDrawable:afterMinimumDuration: and commit to mark and then time the
+# presenting buffer. It reads no guest memory, changes no drawable flag, never
+# captures a frame, and allocates nothing per frame unless frame statistics were
+# asked for (AKEnableMetalFrameStatistics, which the HUD calls, or
+# --measure-native). With them off the hooks are one atomic load each.
+#
+# It also records how long the client blocked asking for a drawable (wait_ms):
+# with the GPU time that splits a late frame into 'the client had not asked the
+# GPU yet' and 'the display or present queue held it back'.
+#
+# The frame-timing summary is written whenever the numbers are being collected -
+# the HUD switched on by name, or --measure-native - so a session can be read
+# from the guest log afterwards instead of photographed. The line carries
+# gpu_ms, gpu_load, wait_ms and the thermal state.
+#
+# Applies to: translation/Metal/Presentation.m
+# Upstream: candidate (not submitted).
+#
+diff --git a/translation/Metal/Presentation.m b/translation/Metal/Presentation.m
+index 5254185..1b57b03 100644
+--- a/translation/Metal/Presentation.m
++++ b/translation/Metal/Presentation.m
+@@ -62,6 +62,71 @@ __attribute__((visibility("default"))) double AKMetalLastFrameTimeMs(void) {
+     return ms;
+ }
+ 
++// How much of the frame the GPU was actually busy for.
++//
++// The frame interval alone cannot say whether a slow frame is the GPU or the
++// CPU: a 16.7 ms frame is "fine" whether the GPU took 16 ms of it or 6 ms with
++// 10 ms of drawing-code time in front. Metal reports both ends of the GPU's own
++// execution on a completed command buffer (gpuStartTime, gpuEndTime), so the
++// adapter records the interval of the buffer that presented the frame and the
++// sum of those intervals over a trailing second. GPU time close to the frame
++// interval means the GPU is the limit; far below it means the CPU is.
++static double s_lastGPUTimeMs = 0.0;
++static double s_gpuBusy = 0.0;
++static double s_gpuWindowStart = 0.0;
++static double s_gpuLoad = 0.0;
++
++void AKRecordMetalFrameGPU(double gpuStart, double gpuEnd) {
++    if (!(gpuStart > 0.0) || !(gpuEnd > gpuStart)) return;
++    os_unfair_lock_lock(&s_fpsLock);
++    s_lastGPUTimeMs = (gpuEnd - gpuStart) * 1000.0;
++    if (s_gpuWindowStart <= 0.0 || gpuEnd < s_gpuWindowStart) s_gpuWindowStart = gpuEnd;
++    s_gpuBusy += gpuEnd - gpuStart;
++    double span = gpuEnd - s_gpuWindowStart;
++    if (span >= 1.0) {
++        s_gpuLoad = s_gpuBusy / span;
++        s_gpuBusy = 0.0;
++        s_gpuWindowStart = gpuEnd;
++    }
++    os_unfair_lock_unlock(&s_fpsLock);
++}
++
++__attribute__((visibility("default"))) double AKMetalLastGPUTimeMs(void) {
++    os_unfair_lock_lock(&s_fpsLock);
++    double ms = s_lastGPUTimeMs;
++    os_unfair_lock_unlock(&s_fpsLock);
++    return ms;
++}
++__attribute__((visibility("default"))) double AKMetalGPULoad(void) {
++    os_unfair_lock_lock(&s_fpsLock);
++    double load = s_gpuLoad;
++    os_unfair_lock_unlock(&s_fpsLock);
++    return load;
++}
++
++// How long the client waited for a drawable.
++//
++// This separates the two ways a frame can be late when the GPU is not the
++// limit. A drawable request that blocks means the display or the present queue
++// is holding the frame back; a request that returns at once means the client
++// still had work to do and had not asked the GPU yet. Same 20 ms frame, two
++// different owners.
++static double s_lastDrawableWaitMs = 0.0;
++
++void AKRecordMetalDrawableWait(double seconds) {
++    if (!(seconds >= 0.0)) return;
++    os_unfair_lock_lock(&s_fpsLock);
++    s_lastDrawableWaitMs = seconds * 1000.0;
++    os_unfair_lock_unlock(&s_fpsLock);
++}
++
++__attribute__((visibility("default"))) double AKMetalLastDrawableWaitMs(void) {
++    os_unfair_lock_lock(&s_fpsLock);
++    double ms = s_lastDrawableWaitMs;
++    os_unfair_lock_unlock(&s_fpsLock);
++    return ms;
++}
++
+ // Recording is off until something asks for it.
+ //
+ // The presented handler below allocates a block and takes a lock on every single frame. That
+@@ -81,6 +146,7 @@ static void (*originalCommit)(id,SEL);
+ static atomic_uint_fast64_t obtained, presented;
+ static char captureMarker, captureTarget;
+ static char timingMarker;
++static char frameMarker;
+ static BOOL captureFrames, measureFrames;
+ @interface AKFrameTiming : NSObject
+ @property double start, previous, longest;
+@@ -97,7 +163,7 @@ static BOOL captureFrames, measureFrames;
+         _longest=MAX(_longest,gap); if(gap>.05)_slow++;
+         double elapsed=time-_start;
+         if(elapsed>=5) {
+-            AKLog(@"frame timing seconds=%.2f fps=%.1f max_gap_ms=%.1f gaps_over_50ms=%lu",elapsed,_frames/elapsed,_longest*1000,(unsigned long)_slow);
++            AKLog(@"frame timing seconds=%.2f fps=%.1f max_gap_ms=%.1f gaps_over_50ms=%lu gpu_ms=%.1f gpu_load=%.2f wait_ms=%.2f thermal=%d",elapsed,_frames/elapsed,_longest*1000,(unsigned long)_slow,AKMetalLastGPUTimeMs(),AKMetalGPULoad(),AKMetalLastDrawableWaitMs(),(int)NSProcessInfo.processInfo.thermalState);
+             _start=time; _frames=0; _slow=0; _longest=0;
+         }
+     }
+@@ -108,7 +174,10 @@ extern NSArray *AKRenderStatsForCommand(id command);
+ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
+     // A framebuffer-only drawable cannot be copied for diagnostic readback.
+     if(captureFrames) ((CAMetalLayer *)layer).framebufferOnly=NO;
++    BOOL timing_wanted=atomic_load(&s_recordFrames) || measureFrames;
++    double requestedAt=timing_wanted?CACurrentMediaTime():0.0;
+     id<CAMetalDrawable> drawable=originalNextDrawable(layer,selector);
++    if(requestedAt>0.0) AKRecordMetalDrawableWait(CACurrentMediaTime()-requestedAt);
+     // Nothing wanted: hand the drawable straight back. A normal run took this path
+     // before the HUD existed and takes it again whenever the HUD is off.
+     if(!drawable || (!atomic_load(&s_recordFrames) && !captureFrames && !measureFrames)) return drawable;
+@@ -117,7 +186,11 @@ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
+         if(count==1 || count==60 || count==600 || count==1800) AKLog(@"Metal drawable %llu acquired: %lux%lu format=%lu",(unsigned long long)count,(unsigned long)drawable.texture.width,(unsigned long)drawable.texture.height,(unsigned long)drawable.texture.pixelFormat);
+         if(captureFrames && (count==60 || count==600 || count==1800)) { objc_setAssociatedObject(drawable,&captureMarker,@(count),OBJC_ASSOCIATION_RETAIN_NONATOMIC); CGRect r=((CALayer *)layer).frame; AKLog(@"drawable layer=%p super=%p frame=(%g,%g,%g,%g) hidden=%d",layer,((CALayer *)layer).superlayer,r.origin.x,r.origin.y,r.size.width,r.size.height,((CALayer *)layer).hidden); }
+         AKFrameTiming *timing=nil;
+-        if(measureFrames) {
++        if(measureFrames || atomic_load(&s_recordFrames)) {
++            // The HUD asks for these numbers by name, so when it is on they are
++            // the ones worth writing down; --measure-native is simply another way
++            // to ask. Either way the summary goes to the log, so a session can be
++            // read afterwards instead of photographed.
+             @synchronized(layer) {
+                 timing=objc_getAssociatedObject(layer,&timingMarker);
+                 if(!timing) { timing=[AKFrameTiming new]; objc_setAssociatedObject(layer,&timingMarker,timing,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+@@ -141,10 +214,20 @@ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
+ static void markCapture(id command,id<MTLDrawable> drawable) {
+     if(objc_getAssociatedObject(drawable,&captureMarker)) objc_setAssociatedObject(command,&captureTarget,drawable,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+ }
+-static void observedPresent(id command,SEL selector,id<MTLDrawable> drawable) { markCapture(command,drawable); originalPresent(command,selector,drawable); }
+-static void observedPresentAt(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) { markCapture(command,drawable); originalPresentAt(command,selector,drawable,time); }
+-static void observedPresentAfter(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) { markCapture(command,drawable); originalPresentAfter(command,selector,drawable,time); }
++// Marks the buffer that presents this frame, so commit can ask for its GPU
++// interval. Only a presenting buffer is timed: a compute or blit-only commit
++// says nothing about how long the displayed frame took.
++static void notePresented(id command) {
++    if(atomic_load(&s_recordFrames)) objc_setAssociatedObject(command,&frameMarker,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++}
++static void observedPresent(id command,SEL selector,id<MTLDrawable> drawable) { markCapture(command,drawable); notePresented(command); originalPresent(command,selector,drawable); }
++static void observedPresentAt(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) { markCapture(command,drawable); notePresented(command); originalPresentAt(command,selector,drawable,time); }
++static void observedPresentAfter(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) { markCapture(command,drawable); notePresented(command); originalPresentAfter(command,selector,drawable,time); }
+ static void observedCommit(id<MTLCommandBuffer> command,SEL selector) {
++    if(atomic_load(&s_recordFrames) && objc_getAssociatedObject(command,&frameMarker)) {
++        objc_setAssociatedObject(command,&frameMarker,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++        [command addCompletedHandler:^(id<MTLCommandBuffer> completed) { AKRecordMetalFrameGPU(completed.GPUStartTime,completed.GPUEndTime); }];
++    }
+     id<CAMetalDrawable> drawable=objc_getAssociatedObject(command,&captureTarget);
+     if(drawable) {
+         NSNumber *captureNumber=objc_getAssociatedObject(drawable,&captureMarker);
+@@ -191,15 +274,21 @@ void AKInstallMetalPresentationDiagnostics(id<MTLDevice> device) {
+     static dispatch_once_t once;
+     dispatch_once(&once,^{
+         captureFrames=sample; measureFrames=measure;
++        // --measure-native wants the same per-frame statistics the HUD asks for,
++        // so it turns the gate on itself rather than relying on a HUD nobody opened.
++        if(measure) atomic_store(&s_recordFrames,true);
+         originalNextDrawable=(void *)replace(CAMetalLayer.class,@selector(nextDrawable),(IMP)observedNextDrawable);
+-        // Timing observes presentation timestamps only. It never enables GPU
+-        // readback or changes framebuffer flags, even on authentication screens.
+-        if(!sample)return;
++        // A presented frame's GPU interval lives on the command buffer that presented it, so
++        // present and commit are hooked for every run; each returns immediately unless frame
++        // statistics were asked for. One throwaway queue and buffer name the class to swizzle
++        // and are never committed.
+         id<MTLCommandQueue> queue=[device newCommandQueue]; id<MTLCommandBuffer> command=[queue commandBuffer]; Class cls=object_getClass(command);
+-        AKInstallRenderDiagnostics(cls);
+         originalPresent=(void *)replace(cls,@selector(presentDrawable:),(IMP)observedPresent);
+         originalPresentAt=(void *)replace(cls,@selector(presentDrawable:atTime:),(IMP)observedPresentAt);
+         originalPresentAfter=(void *)replace(cls,@selector(presentDrawable:afterMinimumDuration:),(IMP)observedPresentAfter);
+         originalCommit=(void *)replace(cls,@selector(commit),(IMP)observedCommit);
++        // Reads back and rewrites the guest's draws: opt-in only.
++        if(!sample)return;
++        AKInstallRenderDiagnostics(cls);
+     });
+ }

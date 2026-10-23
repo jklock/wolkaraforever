@@ -49,6 +49,15 @@ double AKVoiceLoudestSample(void);
 /// this exists so the check can be a threshold that digital silence cannot satisfy.
 double AKVoiceLoudestDecibels(void);
 
+/// Runs the real recogniser over a file that is already on disk, on-device, and reports what it heard.
+///
+/// This exists because nothing in the app could test the *recognition* half without a person
+/// speaking into the microphone: the device self-test checked the session and the mapping, and the
+/// only evidence that words came back was a human reading a chat box. A known utterance can be put
+/// in the container and run through exactly the request the app uses, which tells a recogniser that
+/// cannot hear apart from a microphone that cannot.
+void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullable text, NSError *_Nullable error));
+
 #pragma mark - The two seams
 
 @protocol AKDictationSpeech <NSObject>

@@ -27,6 +27,7 @@ NSString *const AKSelfTestDictationTarget = @"dictation-target";
 NSString *const AKSelfTestForeverUI = @"forever-ui";
 NSString *const AKSelfTestForeverUIClean = @"forever-ui-clean";
 NSString *const AKSelfTestCurseForge = @"curseforge";
+NSString *const AKSelfTestSpeechFile = @"speech-file";
 
 #pragma mark - Recording what happened
 
@@ -716,6 +717,7 @@ static void AKSelfTestRunCurseForge(AKSelfTestRecorder *recorder) {
     __block NSError *requestError = nil;
     __block NSUInteger projects = 0;
     __block NSDictionary *first = nil;
+    __block NSArray *found = nil;
     // The search endpoint is authenticated (the categories list is not), so it is
     // the one that says whether this key is actually accepted.
     [client browseModsWithQuery:@"wow" sortField:2 sortOrder:@"desc" categoryID:nil
@@ -725,6 +727,7 @@ static void AKSelfTestRunCurseForge(AKSelfTestRecorder *recorder) {
         if ([value isKindOfClass:NSDictionary.class] && [value[@"data"] isKindOfClass:NSArray.class]) {
             NSArray *data = value[@"data"];
             projects = [data count];
+            found = [data copy];
             first = [data.firstObject isKindOfClass:NSDictionary.class] ? data.firstObject : nil;
         }
         dispatch_semaphore_signal(done);
@@ -750,8 +753,143 @@ static void AKSelfTestRunCurseForge(AKSelfTestRecorder *recorder) {
         }
     }
     [recorder check:compatible _:@"the first project has an available 1.60.1 file"];
-    recorder.detail = [NSString stringWithFormat:@"stored key sha256 %@, %lu projects",
-                       hash, (unsigned long)projects];
+
+    // The install path itself, hop by hop, across several projects.
+    //
+    // Browsing only proves the key is accepted on /mods/search; two more requests stand between a
+    // tap on Install and an archive on disk. The first run of this (2026-10-22) found that the
+    // file list answers and /download-url then refuses with a 403 that used to be reported as
+    // "the key was rejected" - so the walk covers enough projects to say whether that refusal is
+    // one project or the whole endpoint, and it uses the file's own `downloadUrl` when the API
+    // supplies one, because that field is the documented way to download without asking again.
+    NSUInteger attempted = 0, refused = 0;
+    NSMutableArray<NSString *> *candidateURLs = [NSMutableArray array];
+    NSNumber *installedMod = nil;
+    for (NSDictionary *entry in found) {
+        if (attempted >= 6 || candidateURLs.count >= 3) break;
+        if (![entry isKindOfClass:NSDictionary.class]) continue;
+        NSNumber *modID = [entry[@"id"] isKindOfClass:NSNumber.class] ? entry[@"id"] : nil;
+        if (!modID) continue;
+        __block NSDictionary *listed = nil;
+        __block NSError *listError = nil;
+        dispatch_semaphore_t hop = dispatch_semaphore_create(0);
+        [client latestFileForModID:modID gameVersion:@"1.60.1"
+                        completion:^(NSDictionary *file, NSError *failure) {
+            listed = file; listError = failure; dispatch_semaphore_signal(hop);
+        }];
+        dispatch_semaphore_wait(hop, dispatch_time(DISPATCH_TIME_NOW, 25 * NSEC_PER_SEC));
+        if (!listed[@"id"]) continue;
+        attempted++;
+        WKLog("selftest", @"install hop 1/2 GET /mods/%@/files -> file %@%@", modID, listed[@"id"],
+              listError ? [@" - " stringByAppendingString:listError.localizedDescription] : @"");
+        // The file record carries the URL when the author allows API distribution; asking the
+        // download-url endpoint for it then is a request that can only fail.
+        NSString *carried = [listed[@"downloadUrl"] isKindOfClass:NSString.class] ? listed[@"downloadUrl"] : nil;
+        if (carried.length) {
+            WKLog("selftest", @"install hop 2/2 %@ carries its own download URL", modID);
+            [candidateURLs addObject:carried];
+            if (!installedMod) installedMod = modID;
+            continue;
+        }
+        __block NSString *url = nil;
+        __block NSError *urlError = nil;
+        hop = dispatch_semaphore_create(0);
+        [client downloadURLForModID:modID fileID:listed[@"id"]
+                         completion:^(NSString *value, NSError *failure) {
+            url = value; urlError = failure; dispatch_semaphore_signal(hop);
+        }];
+        dispatch_semaphore_wait(hop, dispatch_time(DISPATCH_TIME_NOW, 25 * NSEC_PER_SEC));
+        WKLog("selftest", @"install hop 2/2 GET /mods/%@/files/%@/download-url -> %@%@", modID,
+              listed[@"id"], url ?: @"no URL",
+              urlError ? [@" - " stringByAppendingString:urlError.localizedDescription] : @"");
+        if (url.length) { [candidateURLs addObject:url]; if (!installedMod) installedMod = modID; }
+        else refused++;
+    }
+    WKLog("selftest", @"install path: %lu project(s) asked, %lu refused, %@",
+          (unsigned long)attempted, (unsigned long)refused,
+          installedMod ? [NSString stringWithFormat:@"project %@ downloadable", installedMod] : @"nothing downloadable");
+    [recorder check:installedMod != nil _:@"a project from the search can be downloaded"];
+
+    // The CDN, asked three ways: exactly as the app asks (credential and Range), without the
+    // credential, and as a plain GET. The first run of this got a 404 for a URL the API had just
+    // handed over, which says nothing about why - and "the CDN refuses the archive" is not a
+    // finding, it is the absence of one. Each shape is logged, so the answer names its cause.
+    __block NSInteger cdnStatus = 0;
+    __block NSString *cdnShape = @"not asked";
+    for (NSString *candidate in candidateURLs) {
+        for (NSNumber *shape in @[@0, @1, @2]) {
+            NSError *assetError = nil;
+            NSMutableURLRequest *request = nil;
+            // Shape 0 is the app's own download request, byte for byte. The first version of this
+            // probe asked with a Range header and got a 404 three times over, which read as "the
+            // CDN refuses the archive" until the shapes were separated: Range alone was enough to
+            // make CloudFront answer 404 for 25 MB of perfectly good file.
+            if (shape.integerValue == 0 || shape.integerValue == 2) {
+                request = [[client assetRequestForURL:candidate error:&assetError] mutableCopy];
+                if (!request) { WKLog("selftest", @"CDN: the URL is not on an approved host: %@", candidate); break; }
+                if (shape.integerValue == 2) [request setValue:@"bytes=0-511" forHTTPHeaderField:@"Range"];
+            } else {
+                request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:candidate]];
+            }
+            __block NSInteger status = 0;
+            __block NSUInteger bytes = 0;
+            dispatch_semaphore_t hop = dispatch_semaphore_create(0);
+            NSURLSessionDataTask *probe = [[NSURLSession sharedSession] dataTaskWithRequest:request
+                completionHandler:^(NSData *data, NSURLResponse *response, NSError *failure) {
+                    status = [response isKindOfClass:NSHTTPURLResponse.class] ? [(NSHTTPURLResponse *)response statusCode] : 0;
+                    bytes = data.length;
+                    if (failure) WKLog("selftest", @"CDN transport error: %@", failure.localizedDescription);
+                    dispatch_semaphore_signal(hop);
+                }];
+            [probe resume];
+            dispatch_semaphore_wait(hop, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
+            NSString *name = shape.integerValue == 0 ? @"as the app asks (key, no Range)"
+                           : shape.integerValue == 1 ? @"no credential, plain GET" : @"key + Range";
+            WKLog("selftest", @"install hop 3/3 GET %@ %@ -> HTTP %ld, %lu bytes",
+                  [NSURL URLWithString:candidate].host, name, (long)status, (unsigned long)bytes);
+            if (status == 200 || status == 206) { cdnStatus = status; cdnShape = name; }
+        }
+        if (cdnStatus) break;
+    }
+    [recorder check:cdnStatus == 200 || cdnStatus == 206 _:@"the CDN serves an archive for one of them"];
+
+    recorder.detail = [NSString stringWithFormat:@"stored key sha256 %@, %lu projects, %lu of %lu downloadable, CDN %@",
+                       hash, (unsigned long)projects, (unsigned long)(attempted - refused),
+                       (unsigned long)attempted,
+                       cdnStatus ? [NSString stringWithFormat:@"HTTP %ld (%@)", (long)cdnStatus, cdnShape] : @"served nothing"];
+}
+
+// The recogniser, over a known recording.
+//
+// Voice has never had a check that the *recognition* half produces words: the device self-tests
+// covered the session, the mapping and the delivery target, and the only evidence that anything was
+// transcribed was a person reading a chat box. On 2026-10-22 a live hold metered -24.8 dBFS and the
+// recogniser answered "No speech detected" 0.3s later, and there was nothing to compare it against.
+// This runs the same request the app makes over Documents/dictation-probe.wav and asserts the words
+// in it come back.
+static void AKSelfTestRunSpeechFile(AKSelfTestRecorder *recorder) {
+    NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/dictation-probe.wav"];
+    BOOL present = [[NSFileManager defaultManager] fileExistsAtPath:path];
+    [recorder check:present _:@"a probe recording is in Documents/dictation-probe.wav"];
+    if (!present) { recorder.detail = @"no probe recording"; return; }
+    __block NSString *heard = nil;
+    __block NSError *problem = nil;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    AKRecogniseDictationFile([NSURL fileURLWithPath:path], ^(NSString *text, NSError *error) {
+        heard = text; problem = error; dispatch_semaphore_signal(done);
+    });
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 40 * NSEC_PER_SEC)) != 0) {
+        WKLog("selftest", @"speech-file: no answer within 40s");
+        [recorder check:NO _:@"the recogniser answers within 40 seconds"];
+        recorder.detail = @"no answer";
+        return;
+    }
+    WKLog("selftest", @"speech-file: heard \"%@\"%@@", heard ?: @"",
+          problem ? [NSString stringWithFormat:@" - %@", problem.localizedDescription] : @"");
+    [recorder check:problem == nil _:@"the recogniser did not refuse the recording"];
+    [recorder check:[heard.lowercaseString containsString:@"fox"]
+                 _:@"it heard the known sentence in the recording"];
+    recorder.detail = [NSString stringWithFormat:@"heard %lu characters", (unsigned long)heard.length];
 }
 
 void AKRunSelfTest(NSString *name) {
@@ -786,6 +924,14 @@ void AKRunSelfTest(NSString *name) {
         // Off the main queue too: it waits for the guest to start, which happens on the main queue.
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             AKSelfTestRunDictationTarget(recorder);
+            AKSelfTestLogVerdict(recorder, name);
+        });
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestSpeechFile]) {
+        // Off the main queue: it waits on the recogniser.
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            AKSelfTestRunSpeechFile(recorder);
             AKSelfTestLogVerdict(recorder, name);
         });
         return;
