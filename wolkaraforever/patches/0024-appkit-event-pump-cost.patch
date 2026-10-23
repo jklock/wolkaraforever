@@ -1,0 +1,93 @@
+# WolkaraForever layer patch 0024 - AppKit: stop charging the guest for an idle pump
+#
+# Why: with the client in world and the GPU only 35% busy (7.9 ms of a 22.5 ms
+# frame) and no drawable wait (0.04 ms), the frame is the client's own CPU work -
+# about 14.6 ms of it. Every millisecond the layer takes out of that is a
+# millisecond the game does not have, and this one was pure waste:
+#
+#   if (left <= 0) CFRunLoopRunInMode(kCFRunLoopDefaultMode, .001, false);
+#
+# A zero-duration poll from the client (the normal shape of a game loop: ask for
+# events, none, carry on) ran the run loop for up to a millisecond, every time. A
+# client that drains its queue in a loop pays it several times per frame, so the
+# layer could cost the game two or three milliseconds a frame for nothing at all.
+#
+# Now a full UIKit turn is allowed at most once every 4 ms and every other poll
+# returns immediately after the queue scan. Deferred gesture and key work still
+# gets a turn - it was the reason for the sleep in the first place - and the guest
+# stops paying for the other three quarters. The pump also counts itself, so a
+# device run can say what the poll frequency and the cost actually were.
+#
+# Also restores the host view's contentScaleFactor, which is where the guest actually
+# reads its backing scale from: NSScreen's answer alone changes nothing, and without
+# this the drawable stayed 2732x2048 even with patch 0023 applied.
+#
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: candidate (not submitted).
+#
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index 168bb71..9c3ef9a 100644
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -4,6 +4,9 @@
+ #import "TextInput.h"
+ #import "TouchControls.h"
+ #import "TouchGamepadLayout.h"
++
++// The guest screen's pixels per point, defined in Screens.m.
++CGFloat AKGuestBackingScale(void);
+ #import "AKPerformanceOverlay.h"
+ #import <GameController/GameController.h>
+ #import <objc/message.h>
+@@ -717,7 +720,14 @@ static BOOL AKIsRight(UIEvent *ev) { return (ev.buttonMask & UIEventButtonMaskSe
+ @interface AKHostViewController : UIViewController
+ @end
+ @implementation AKHostViewController
+-- (void)loadView { self.view = [[AKHostView alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.view.backgroundColor = UIColor.blackColor; }
++- (void)loadView {
++    self.view = [[AKHostView alloc] initWithFrame:UIScreen.mainScreen.bounds];
++    self.view.backgroundColor = UIColor.blackColor;
++    // What the guest actually derives its surface from. NSScreen's answer alone
++    // changes nothing: the drawable follows this view. One pixel per point, so the
++    // guest draws 1366x1024 and UIKit stretches it to the 2732x2048 panel.
++    self.view.contentScaleFactor = AKGuestBackingScale();
++}
+ - (BOOL)prefersStatusBarHidden { return YES; }
+ // Ask UIKit to require a deliberate repeat of edge gestures while gaming.
+ // This is an immersive preference, not a device-wide kiosk lock.
+@@ -1109,10 +1119,31 @@ static void logLayer(CALayer *layer,unsigned depth) {
+         }
+         NSTimeInterval left = date ? date.timeIntervalSinceNow : 0;
+         if (pumped && left <= 0) return nil;
+-        // A zero-duration poll can starve UIKit's deferred gesture/key work
+-        // when the desktop loop polls continuously. Allow a short complete
+-        // UIKit turn for nonblocking polls; blocking polls still wake on input.
+-        if(left<=0) CFRunLoopRunInMode(kCFRunLoopDefaultMode,.001,false);
++        // A zero-duration poll can starve UIKit's deferred gesture/key work when
++        // the desktop loop polls continuously, so a short UIKit turn is allowed -
++        // but it used to be *every* poll, and each one cost the guest up to a
++        // millisecond of its frame doing nothing. A client that drains its event
++        // queue pays that several times per frame, which is CPU time this layer
++        // charged the game for no work at all.
++        //
++        // Now a full turn is allowed at most once every 4 ms, and every other
++        // non-blocking poll returns immediately after the queue scan above. The
++        // deferred UIKit work still gets its turn - a quarter of the frames still
++        // give it one - and the guest stops paying for the rest.
++        static NSTimeInterval lastDeepPump;
++        static unsigned long pumpPolls, pumpTurns; static double pumpMs;
++        pumpPolls++;
++        if(left<=0) {
++            NSTimeInterval now2=NSProcessInfo.processInfo.systemUptime;
++            if(now2-lastDeepPump>=0.004) {
++                lastDeepPump=now2;
++                CFRunLoopRunInMode(kCFRunLoopDefaultMode,.001,false);
++                pumpTurns++; pumpMs+=(NSProcessInfo.processInfo.systemUptime-now2)*1000.0;
++            }
++            if(pumpPolls%2000==0)
++                AKLog(@"pump polls=%lu turns=%lu in_runloop_ms=%.0f (%.2f ms per poll)",
++                      pumpPolls,pumpTurns,pumpMs,pumpMs/(double)pumpPolls);
++        }
+         else CFRunLoopRunInMode(kCFRunLoopDefaultMode,MIN(left,.25),true);
+     }
+ }
