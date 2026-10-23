@@ -25,7 +25,10 @@ Conventions used throughout:
 | Document | Covers |
 | --- | --- |
 | [AppKit.md](AppKit.md) | `translation/AppKit/` — application, event loop, windows, views, screens, input, images, nibs |
-| [Metal.md](Metal.md) | `translation/Metal/` — device, presentation, shader libraries, BC textures, storage, tracing |
+| [AppKitExtras.md](AppKitExtras.md) | `AppKit.h`, `NibArchive.m`, `TouchControls.m`, `TouchTrackpad.c` |
+| [Support.md](Support.md) | `AKSupport/` and the rest: logging, stubs, alerts, menus, monitors, drawing |
+| [Metal.md](Metal.md) | `translation/Metal/` — device, presentation, shader libraries, storage, tracing |
+| [Textures.md](Textures.md) | `translation/Metal/` — BC texture substitution, block decoding, render diagnostics |
 | [Audio.md](Audio.md) | `translation/AudioToolbox/`, `translation/AudioUnit/`, `translation/CoreAudio/` |
 | [Core.md](Core.md) | `translation/CoreGraphics/`, `translation/CoreServices/`, `translation/Carbon/`, `translation/IOKit/` |
 | [Security.md](Security.md) | `translation/Security/` — keychain, legacy CDSA crypto, session |
