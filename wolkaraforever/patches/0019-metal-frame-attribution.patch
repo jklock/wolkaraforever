@@ -28,7 +28,7 @@
 # Upstream: candidate (not submitted).
 #
 diff --git a/translation/Metal/Presentation.m b/translation/Metal/Presentation.m
-index 5254185..1b57b03 100644
+index 5254185..55a702e 100644
 --- a/translation/Metal/Presentation.m
 +++ b/translation/Metal/Presentation.m
 @@ -62,6 +62,71 @@ __attribute__((visibility("default"))) double AKMetalLastFrameTimeMs(void) {
@@ -103,15 +103,16 @@ index 5254185..1b57b03 100644
  // Recording is off until something asks for it.
  //
  // The presented handler below allocates a block and takes a lock on every single frame. That
-@@ -81,6 +146,7 @@ static void (*originalCommit)(id,SEL);
+@@ -81,6 +146,8 @@ static void (*originalCommit)(id,SEL);
  static atomic_uint_fast64_t obtained, presented;
  static char captureMarker, captureTarget;
  static char timingMarker;
 +static char frameMarker;
++static char poolLogged;
  static BOOL captureFrames, measureFrames;
  @interface AKFrameTiming : NSObject
  @property double start, previous, longest;
-@@ -97,7 +163,7 @@ static BOOL captureFrames, measureFrames;
+@@ -97,7 +164,7 @@ static BOOL captureFrames, measureFrames;
          _longest=MAX(_longest,gap); if(gap>.05)_slow++;
          double elapsed=time-_start;
          if(elapsed>=5) {
@@ -120,10 +121,19 @@ index 5254185..1b57b03 100644
              _start=time; _frames=0; _slow=0; _longest=0;
          }
      }
-@@ -108,7 +174,10 @@ extern NSArray *AKRenderStatsForCommand(id command);
+@@ -108,7 +175,19 @@ extern NSArray *AKRenderStatsForCommand(id command);
  static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
      // A framebuffer-only drawable cannot be copied for diagnostic readback.
      if(captureFrames) ((CAMetalLayer *)layer).framebufferOnly=NO;
++    // How many drawables the layer hands out decides how far the client may run
++    // ahead: with one, every frame waits for the previous one to be presented,
++    // which looks like a frame that is too slow while the GPU sits idle. Record
++    // it once per layer so a run can say which is gating.
++    if(!objc_getAssociatedObject(layer,&poolLogged)) {
++        objc_setAssociatedObject(layer,&poolLogged,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++        CAMetalLayer *metal=(CAMetalLayer *)layer;
++        AKLog(@"Metal drawable pool: maximumDrawableCount=%lu allowsNextDrawableTimeout=%d",(unsigned long)metal.maximumDrawableCount,metal.allowsNextDrawableTimeout);
++    }
 +    BOOL timing_wanted=atomic_load(&s_recordFrames) || measureFrames;
 +    double requestedAt=timing_wanted?CACurrentMediaTime():0.0;
      id<CAMetalDrawable> drawable=originalNextDrawable(layer,selector);
@@ -131,7 +141,7 @@ index 5254185..1b57b03 100644
      // Nothing wanted: hand the drawable straight back. A normal run took this path
      // before the HUD existed and takes it again whenever the HUD is off.
      if(!drawable || (!atomic_load(&s_recordFrames) && !captureFrames && !measureFrames)) return drawable;
-@@ -117,7 +186,11 @@ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
+@@ -117,7 +196,11 @@ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
          if(count==1 || count==60 || count==600 || count==1800) AKLog(@"Metal drawable %llu acquired: %lux%lu format=%lu",(unsigned long long)count,(unsigned long)drawable.texture.width,(unsigned long)drawable.texture.height,(unsigned long)drawable.texture.pixelFormat);
          if(captureFrames && (count==60 || count==600 || count==1800)) { objc_setAssociatedObject(drawable,&captureMarker,@(count),OBJC_ASSOCIATION_RETAIN_NONATOMIC); CGRect r=((CALayer *)layer).frame; AKLog(@"drawable layer=%p super=%p frame=(%g,%g,%g,%g) hidden=%d",layer,((CALayer *)layer).superlayer,r.origin.x,r.origin.y,r.size.width,r.size.height,((CALayer *)layer).hidden); }
          AKFrameTiming *timing=nil;
@@ -144,7 +154,7 @@ index 5254185..1b57b03 100644
              @synchronized(layer) {
                  timing=objc_getAssociatedObject(layer,&timingMarker);
                  if(!timing) { timing=[AKFrameTiming new]; objc_setAssociatedObject(layer,&timingMarker,timing,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
-@@ -141,10 +214,20 @@ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
+@@ -141,10 +224,20 @@ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
  static void markCapture(id command,id<MTLDrawable> drawable) {
      if(objc_getAssociatedObject(drawable,&captureMarker)) objc_setAssociatedObject(command,&captureTarget,drawable,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
  }
@@ -168,7 +178,7 @@ index 5254185..1b57b03 100644
      id<CAMetalDrawable> drawable=objc_getAssociatedObject(command,&captureTarget);
      if(drawable) {
          NSNumber *captureNumber=objc_getAssociatedObject(drawable,&captureMarker);
-@@ -191,15 +274,21 @@ void AKInstallMetalPresentationDiagnostics(id<MTLDevice> device) {
+@@ -191,15 +284,21 @@ void AKInstallMetalPresentationDiagnostics(id<MTLDevice> device) {
      static dispatch_once_t once;
      dispatch_once(&once,^{
          captureFrames=sample; measureFrames=measure;
