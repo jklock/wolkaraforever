@@ -13,7 +13,9 @@
 # sharpness in proportion to the scale and buys GPU time in proportion to the
 # pixels removed (0.75 is 56% of the pixels, 0.5 is 25%).
 #
-# On by default at 0.75, because a throttled iPad is the state this exists for;
+# On by default at exactly half - 1366x1024 drawn, doubled to the panel, an integer
+# upscale and a quarter of the pixels - because a throttled iPad is the state this
+# exists for;
 # WolkaraForeverDrawableScale in the app's defaults or TOLKARA_DRAWABLE_SCALE
 # override it, and 1.0 turns it off. Re-applied per frame because the client may
 # resize the layer at any time, and the comparison is two multiplies.
@@ -25,10 +27,10 @@
 # Upstream: candidate (not submitted).
 #
 diff --git a/translation/Metal/Presentation.m b/translation/Metal/Presentation.m
-index 55a702e..2bc19d6 100644
+index 55a702e..6942b6a 100644
 --- a/translation/Metal/Presentation.m
 +++ b/translation/Metal/Presentation.m
-@@ -172,9 +172,58 @@ static BOOL captureFrames, measureFrames;
+@@ -172,9 +172,61 @@ static BOOL captureFrames, measureFrames;
  @end
  extern void AKInstallRenderDiagnostics(Class cls);
  extern NSArray *AKRenderStatsForCommand(id command);
@@ -45,16 +47,19 @@ index 55a702e..2bc19d6 100644
 +// to the pixels removed, which on a throttled M1 iPad is the largest single
 +// block of the frame the layer controls.
 +//
-+// Off by default (scale 1.0). Set by WolkaraForeverDrawableScale in the app's
-+// defaults, or TOLKARA_DRAWABLE_SCALE for a test. 0.5 is a quarter of the
-+// pixels; 0.75 is a little over half.
++// On by default at 0.5, which is a quarter of the pixels. Overridden by
++// WolkaraForeverDrawableScale in the app's defaults, or TOLKARA_DRAWABLE_SCALE
++// for a test; 1.0 turns it off and gives the guest the panel's native surface.
 +static double drawableScale(void) {
 +    static double scale = -1.0;
 +    if (scale >= 0.0) return scale;
-+    // On by default: a throttled iPad cannot afford 5.6 MP every frame, and this
-+    // is the only knob that changes what the guest actually draws. 0.75 keeps
-+    // text legible and removes 44% of the pixels; a value of 1.0 turns it off.
-+    scale = 0.75;
++    // On by default at exactly half, which is the one scale with a clean
++    // relationship to the panel: 1366x1024 drawn, doubled to 2732x2048. Every
++    // pixel the guest writes covers exactly four panel pixels, so the upscale is
++    // an integer one and the image is as sharp as a half-resolution image can be
++    // - a fractional scale such as 0.75 resamples at 1.33x and looks softer than
++    // its extra pixels are worth. It also removes three quarters of the pixels.
++    scale = 0.5;
 +    const char *environment = getenv("TOLKARA_DRAWABLE_SCALE");
 +    if (environment && *environment) scale = atof(environment);
 +    else {
