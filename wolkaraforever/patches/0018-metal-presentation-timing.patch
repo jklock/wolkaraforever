@@ -8,28 +8,36 @@
 # What it does: records the presented time of each drawable in a 60-entry ring
 # under a short unfair lock and publishes AKMetalCurrentFPS and
 # AKMetalLastFrameTimeMs for the HUD to look up by name. It is observational
-# only - no readback, no drawable flag change, no guest memory. The old early
-# return meant the hooks existed only under --sample-native/--measure-native;
-# the HUD is off by default through its own preference instead, so the hooks are
-# installed once and cost a lock per presented frame.
+# only - no readback, no drawable flag change, no guest memory.
+#
+# It does nothing until it is asked to. The first version of this patch deleted
+# the early return and added a presented handler to every drawable of every run,
+# HUD or no HUD: a block allocation, a registration and a lock per frame, and a
+# drawable retained until its callback ran. The swizzle is still installed once
+# (the HUD can be switched on at any time and nextDrawable is only hookable
+# before the first frame), but observedNextDrawable returns the drawable
+# untouched unless AKEnableMetalFrameStatistics has been called or a readback
+# flag is set.
 #
 # Applies to: translation/Metal/Presentation.m
 # Upstream: candidate (not submitted).
 #
---- a/translation/Metal/Presentation.m	2026-10-21 16:25:07
-+++ b/translation/Metal/Presentation.m	2026-10-21 16:25:07
+diff --git a/translation/Metal/Presentation.m b/translation/Metal/Presentation.m
+index cc51ecd..5254185 100644
+--- a/translation/Metal/Presentation.m
++++ b/translation/Metal/Presentation.m
 @@ -1,4 +1,5 @@
  #import <QuartzCore/CAMetalLayer.h>
 +#import <QuartzCore/QuartzCore.h>
  #import <Metal/Metal.h>
  #import <CoreGraphics/CoreGraphics.h>
  #import <ImageIO/ImageIO.h>
-@@ -6,7 +7,61 @@
+@@ -6,6 +7,69 @@
  #import "AKSupport.h"
  #include <stdatomic.h>
  #include <dlfcn.h>
 +#include <os/lock.h>
- 
++
 +// Presentation-time frame statistics, for the optional performance HUD.
 +//
 +// This is measurement, not rendering: it only records the timestamps Metal
@@ -83,10 +91,30 @@
 +    return ms;
 +}
 +
++// Recording is off until something asks for it.
++//
++// The presented handler below allocates a block and takes a lock on every single frame. That
++// is a fair price for the HUD and no price at all for a player who has it switched off, so the
++// swizzle is installed always but the work inside it is gated by this flag - the same shape as
++// the readback opt-in below, and for the same reason.
++static atomic_bool s_recordFrames = false;
++__attribute__((visibility("default"))) void AKEnableMetalFrameStatistics(void) { atomic_store(&s_recordFrames, true); }
+ 
  // Development-only presentation evidence. All normal execution stays native.
  // The sample flag also saves one GPU readback after rendering, before present.
- static id<CAMetalDrawable> (*originalNextDrawable)(id,SEL);
-@@ -59,11 +114,13 @@
+@@ -45,7 +109,10 @@ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
+     // A framebuffer-only drawable cannot be copied for diagnostic readback.
+     if(captureFrames) ((CAMetalLayer *)layer).framebufferOnly=NO;
+     id<CAMetalDrawable> drawable=originalNextDrawable(layer,selector);
+-    if(drawable) {
++    // Nothing wanted: hand the drawable straight back. A normal run took this path
++    // before the HUD existed and takes it again whenever the HUD is off.
++    if(!drawable || (!atomic_load(&s_recordFrames) && !captureFrames && !measureFrames)) return drawable;
++    {
+         uint64_t count=atomic_fetch_add(&obtained,1)+1;
+         if(count==1 || count==60 || count==600 || count==1800) AKLog(@"Metal drawable %llu acquired: %lux%lu format=%lu",(unsigned long long)count,(unsigned long)drawable.texture.width,(unsigned long)drawable.texture.height,(unsigned long)drawable.texture.pixelFormat);
+         if(captureFrames && (count==60 || count==600 || count==1800)) { objc_setAssociatedObject(drawable,&captureMarker,@(count),OBJC_ASSOCIATION_RETAIN_NONATOMIC); CGRect r=((CALayer *)layer).frame; AKLog(@"drawable layer=%p super=%p frame=(%g,%g,%g,%g) hidden=%d",layer,((CALayer *)layer).superlayer,r.origin.x,r.origin.y,r.size.width,r.size.height,((CALayer *)layer).hidden); }
+@@ -59,11 +126,13 @@ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
  #if !TARGET_OS_SIMULATOR
          // Presentation timestamps are diagnostics; the simulator SDK lacks them.
          [drawable addPresentedHandler:^(id<MTLDrawable> frame) {
@@ -100,14 +128,15 @@
          (void)timing;
  #endif
      }
-@@ -115,7 +172,9 @@
+@@ -115,7 +184,10 @@ static IMP replace(Class cls,SEL selector,IMP implementation) {
  void AKInstallMetalPresentationDiagnostics(id<MTLDevice> device) {
      BOOL sample=[NSProcessInfo.processInfo.arguments containsObject:@"--sample-native"];
      BOOL measure=[NSProcessInfo.processInfo.arguments containsObject:@"--measure-native"];
 -    if(!sample && !measure) return;
-+    // The timing hooks are always installed now: the performance HUD asks for
-+    // them by name, and its default-off preference is what keeps the HUD from
-+    // appearing. Readback stays strictly opt-in through --sample-native.
++    // The swizzle is installed always because the performance HUD can be switched on at any
++    // moment and there is no second chance to hook nextDrawable; what costs anything is gated
++    // inside --observedNextDrawable, on the flag the HUD sets by name, and on the opt-in flags
++    // below. Readback stays strictly opt-in through --sample-native.
      static dispatch_once_t once;
      dispatch_once(&once,^{
          captureFrames=sample; measureFrames=measure;

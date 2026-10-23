@@ -427,6 +427,32 @@ static void TestAddons(void) {
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f gameVersion:@"1.60.1" compact:YES];
     assert(((UILabel *)Find(cell,@"wow.addons.value.downloads")).hidden==NO);
     assert(((UILabel *)Find(cell,@"wow.addons.value.category")).hidden==YES);
+    // The row at the width of the page it is drawn in on the device.
+    //
+    // The columns are fixed widths, and whether they are narrowed was decided by the horizontal
+    // size class - which stays *regular* for a form sheet on an iPad however narrow the sheet
+    // is. A portrait sheet is about 540 points wide and the seven columns ask for 586 before the
+    // project's name gets any room, so the row ran off the end of the list. The row is measured
+    // here at that width and nothing may stick out.
+    // The decision the page itself makes, not one handed to it: the columns are fixed widths,
+    // and whether they narrow used to be decided by the horizontal size class - which stays
+    // *regular* for a form sheet on an iPad however narrow the sheet is. A portrait sheet is
+    // about 540 points wide while the seven columns ask for 586 before the project's name gets
+    // any room, so the row ran off the end of the list.
+    assert(TKAddonRowsAreCompact(540.0));
+    assert(!TKAddonRowsAreCompact(936.0));
+    [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f gameVersion:@"1.60.1"
+                       compact:TKAddonRowsAreCompact(540.0)];
+    [cell setFrame:CGRectMake(0, 0, 540, 64)];
+    [cell setNeedsLayout];
+    [cell layoutIfNeeded];
+    for (UIView *sub in cell.contentView.subviews) {
+        CGRect inCell=[sub convertRect:sub.bounds toView:cell];
+        NSLog(@"ADDONS_ROW width=%.0f sub=%@ frame=%@", CGRectGetWidth(cell.bounds),
+              NSStringFromClass(sub.class), NSStringFromCGRect(inCell));
+        assert(CGRectGetMaxX(inCell) <= CGRectGetWidth(cell.bounds) + 0.5);
+        assert(CGRectGetMinX(inCell) >= -0.5);
+    }
     // The launcher opens the manager over itself as a popup now, so the path to
     // reproduce is a presentation. Loading the manager's view during it must not
     // raise, and its search field must be hit-testable and able to take first
@@ -517,6 +543,33 @@ static void TestAddons(void) {
     // Drawn and closed only once it is actually up: dismissing a sheet that is still
     // arriving is a race, and the race is the test's fault, not the app's.
     [self.window layoutIfNeeded];
+    // The page's gutters, measured rather than assumed. The header is a table-header view and
+    // the rows are inset-grouped cells, so they are laid out by two different rules; the page
+    // read as ragged on the device because the header's own TKAddonPageMargin is not the inset
+    // the cells get. These numbers are what the check below compares.
+    TKWoWAddonManagerViewController *page=(id)frame.topViewController;
+    UITableView *table=page.tableView;
+    [table layoutIfNeeded];
+    CGRect row=[table rectForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+    UIView *header=table.tableHeaderView;
+    UIView *panel=header.subviews.firstObject;
+    CGFloat panelLeft=CGRectGetMinX(panel.frame);
+    CGFloat panelRight=CGRectGetWidth(table.bounds)-CGRectGetMaxX(panel.frame);
+    CGFloat rowLeft=CGRectGetMinX(row);
+    CGFloat rowRight=CGRectGetWidth(table.bounds)-CGRectGetMaxX(row);
+    NSLog(@"ADDONS_GUTTERS table=%@ margins=%@ row=%@@%@ panel=%@@%@",
+          NSStringFromCGRect(table.bounds), NSStringFromUIEdgeInsets(table.layoutMargins),
+          @(rowLeft), @(rowRight), @(panelLeft), @(panelRight));
+    // The page has to be inside its own table and inset the same on both sides.
+    //
+    // The header is a table-header view and the rows are inset-grouped cells, laid out by two
+    // different rules, and the header's frames used to be computed from the table's width
+    // before the sheet had its final size: the edition panel hung fourteen points past the
+    // right edge of the table and the page read as ragged beside cells inset by sixteen. These
+    // are the two numbers that said so.
+    assert(panelLeft >= rowLeft - 0.5);
+    assert(panelRight >= rowRight - 0.5);
+    assert(fabs(panelLeft - panelRight) < 0.5);
     [self capture:@"addons-popup.png"];
     [(TKWoWAddonManagerViewController *)frame.topViewController done];
     [self performSelector:@selector(checkVoiceSettingsPage) withObject:nil afterDelay:0.8];

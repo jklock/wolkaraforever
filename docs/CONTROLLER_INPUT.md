@@ -3,6 +3,11 @@
 Status: plan and diagnostic build. Branch `controller`, cut from `main` after the
 layer work was collapsed into it.
 
+> The profile model, the element names, what iPadOS reserves for itself, what a
+> system remap can and cannot do here, and the options for a controller button that
+> the game also sees: [`CONTROLLER_PROFILES.md`](CONTROLLER_PROFILES.md).
+
+
 ## Why this exists
 
 Two buttons on the pad do nothing in this app: **Share** and the **extra top

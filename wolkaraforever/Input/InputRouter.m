@@ -190,6 +190,9 @@ static NSTimeInterval const AKLearningTimeoutDefault = 20.0;
     NSUInteger generation = _learningGeneration;
     NSTimeInterval timeout = _learningTimeout > 0 ? _learningTimeout : AKLearningTimeoutDefault;
     AKIRLog(@"input: learning — press the button you want to use");
+    // A button iPadOS keeps for itself never reaches this router, so the page that asks for a
+    // press would show nothing at all. The gestures are lent back the moment the choosing ends.
+    [AKControllerInspector.shared beginReleasingForLearning];
     __weak AKInputRouter *weakSelf = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
@@ -209,6 +212,7 @@ static NSTimeInterval const AKLearningTimeoutDefault = 20.0;
     _learningDevice = nil;
     // Bumped so the outstanding deadline cannot fire against a later arming.
     _learningGeneration++;
+    [AKControllerInspector.shared endReleasingForLearning];
     AKIRLog(@"input: learning cancelled; nothing was saved");
 }
 
@@ -243,6 +247,9 @@ static NSTimeInterval const AKLearningTimeoutDefault = 20.0;
         _learningDevice = event.device;
         // The deadline that was armed for this mapping has nothing left to do.
         _learningGeneration++;
+        // The mapped element keeps its release - applyMappings decides that - and everything
+        // else that was lent out goes back to the system.
+        [AKControllerInspector.shared endReleasingForLearning];
         AKIRLog(@"input: learned %@ on %@", element, event.device);
         if (self.onLearned) self.onLearned(learned, event.device);
         return;

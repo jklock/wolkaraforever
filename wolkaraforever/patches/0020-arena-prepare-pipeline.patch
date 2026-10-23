@@ -1,0 +1,81 @@
+# WolkaraForever layer patch 0020 - arena preparation: pipeline the preflight
+#
+# Why: preparing the developer-service arena is the longest wait before a game
+# appears - 67.3 s for World of Warcraft's 99.5 MB image on Dadpad, every cold
+# launch. The service read the whole arena back as zero four reads per round trip.
+#
+# What was measured (2026-10-23, Dadpad, developer service, on the device):
+# sampling the provider's own progress file once a second
+# (Documents/local-authorization-progress.txt, in the extension container) showed
+# the preflight advancing at a steady 1.5-1.6 MB/s through the whole image: 99.5 MB
+# in 62-66 s of the 67 s, leaving the 6,075 page writes and their read-backs as the
+# remainder (arithmetic from the measured rate, not a separate measurement). Eight times the reads in flight did not change that rate (62.5 s total
+# against 67.3 s), which rules out the RSP batch depth as the limit and puts it in
+# the transport: authorization/Transport/TunnelTCP.swift keeps one segment in
+# flight by design ("conservative one-segment flight limits control traffic"), so
+# the stream moves about one MSS per round trip - 68,000 segments for this image at
+# ~0.9 ms each. A real fix is a send window in that transport, which is a design
+# change with its own tests, not a tuning knob.
+#
+# What this patch is for, then: it does not buy the bulk of the wait, and does not
+# claim to. It gives the preflight eight times fewer RSP round trips (four reads per batch to
+# thirty-two), which
+# is what makes a future transport window useful - the RSP layer's own window would
+# cap a pipelined tunnel long before the link did - and it makes the
+# independent-peer test run in 16 s instead of minutes. Same total bytes read, same
+# rule that every byte of every arena reads back as zero before the first write.
+#
+# Applies to: authorization/Debugger/DebugArenaSession.swift
+#             tests/test_debug_arena_peer.py (asserts the new window; the peer
+#             still proves every byte is asked for once, in order, and that no
+#             write happens before the whole preflight passes)
+# Upstream: candidate (not submitted).
+#
+diff --git a/authorization/Debugger/DebugArenaSession.swift b/authorization/Debugger/DebugArenaSession.swift
+index 13f1136..2b3dc51 100644
+--- a/authorization/Debugger/DebugArenaSession.swift
++++ b/authorization/Debugger/DebugArenaSession.swift
+@@ -16,7 +16,14 @@ final class DebugArenaSession {
+     struct Receipt { let pid: UInt32; let challenge: Data; let regions: [DebugArenaRequest.Region] }
+     enum Event { case send(Data), finished(Result<Receipt,Failure>) }
+     static let page: UInt64 = 16384
+-    static let readsPerBatch = 4, pagesPerBatch = 128
++    // Reads in flight per round trip. The window is what the tunnel can keep busy:
++    // one read reply is at most packetSize characters of hex, so four of them left the
++    // route idle for most of each round trip. Measured on the iPad (2026-10-23) the
++    // preflight advanced at 1.5-1.6 MB/s while reading a whole image, which is the
++    // 65 KB window divided by a ~42 ms round trip - latency, not bandwidth. Thirty-two
++    // replies in flight fill the same round trip eight times fuller, and the total
++    // bytes read are unchanged: every byte of every arena is still read back as zero.
++    static let readsPerBatch = 32, pagesPerBatch = 128
+     // What each command of a preflight or preparation batch must answer.
+     private enum Reply { case ok, zeros(Int) }
+     private(set) var phase: Phase = .idle
+@@ -61,7 +68,7 @@ final class DebugArenaSession {
+         do {
+             try time(now)
+             if now >= commandDeadline || now >= totalDeadline { return finish(.timedOut,detached:false) }
+-            guard bytes.count <= 65536 else { throw Reason.protocolFailure }
++            guard bytes.count <= outstanding*(packetSize+8) else { throw Reason.protocolFailure }
+             for byte in bytes {
+                 guard answerable > 0 else { throw Reason.protocolFailure }
+                 guard let event = try wire.feed(byte) else { continue }
+diff --git a/tests/test_debug_arena_peer.py b/tests/test_debug_arena_peer.py
+index bb21543..7d0e64f 100644
+--- a/tests/test_debug_arena_peer.py
++++ b/tests/test_debug_arena_peer.py
+@@ -146,7 +146,13 @@ def exchange(mode='success',packet_size='1000',fragment=False):
+             assert result.get('success') is True and result['pid']==1234 and result['regions']==2
+             pages=[base+n*PAGE for base,size in REGIONS.items() for n in range(size//PAGE)]
+             assert state['detach'] and writes==pages and readback==pages
+-            assert batches[-2:]==[256,6] and all(n<=4 for n in batches[:-2]),batches
++            assert batches[-2:]==[256,6],batches
++            # Preflight is pipelined rather than one round trip per read: at least 8
++            # reads in flight, never more than the session's declared depth. The peer
++            # above has already checked that every byte was asked for exactly once, in
++            # order, and that no write happened before the whole preflight passed.
++            preflight=batches[:-2]
++            assert preflight and 8<=max(preflight)<=32,preflight
+         else:
+             assert 'failure' in result and not result.get('success')
+             if mode in ('wrong_pid','wrong_uid','wrong_arch','duplicate_pid','wrong_challenge','unsafe_last','file_backed','nonzero_last','short_read'):

@@ -11,12 +11,55 @@
 static NSString *const BaseURL=@"https://api.curseforge.com/v1";
 static NSError *CFError(NSString *message) { return [NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:message}]; }
 
+// What CurseForge said, in CurseForge's words. Every 403 used to be reported as "this key
+// was rejected", which is true only for the API's own credential check: the edge answers
+// with a short plain-text reason ("Forbidden: API Key missing or invalid"), and the
+// download endpoint refuses per file and per project with the same status. A user who read
+// the old sentence had no way to tell "my key is wrong" from "this author does not allow
+// downloads through the API", and the two need different things from them.
+static NSString *CFSentText(NSData *data) {
+    if (!data.length || data.length > 8192) return @"";
+    id value = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+    NSString *said = nil;
+    if ([value isKindOfClass:NSDictionary.class]) {
+        for (NSString *key in @[@"error", @"message", @"errorMessage"]) {
+            if ([value[key] isKindOfClass:NSString.class] && [value[key] length]) { said = value[key]; break; }
+        }
+    }
+    if (!said.length) said = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    said = [said stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    said = [said stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\""]];
+    if (said.length > 200) said = [[said substringToIndex:200] stringByAppendingString:@"…"];
+    return said ?: @"";
+}
+static NSError *CFHTTPError(NSInteger status, NSData *data) {
+    NSString *said = CFSentText(data);
+    BOOL namesTheKey = [said rangeOfString:@"api key" options:NSCaseInsensitiveSearch].location != NSNotFound;
+    if (status == 403 && namesTheKey && ![said.lowercaseString containsString:@"download"]) {
+        return CFError(@"CurseForge rejected this Core API key. Create an approved Core API key in the developer console.");
+    }
+    NSString *reason;
+    switch (status) {
+        case 400: reason = @"CurseForge refused the request as malformed."; break;
+        case 401: reason = @"CurseForge did not accept this Core API key."; break;
+        case 403: reason = @"CurseForge refused this request. If the key works for searching, this project or file does not allow downloads through the API: install it from its project page instead."; break;
+        case 404: reason = @"CurseForge has no such project or file."; break;
+        case 429: reason = @"CurseForge is rate limiting this key. Wait a minute, then try again."; break;
+        default:
+            reason = status >= 500 ? @"CurseForge is having trouble right now. Try again shortly."
+                                   : [NSString stringWithFormat:@"CurseForge API returned HTTP %ld.", (long)status];
+            break;
+    }
+    if (said.length && ![said.lowercaseString hasSuffix:@"forbidden"]) reason = [reason stringByAppendingFormat:@" (%@)", said];
+    return CFError(reason);
+}
+
 @implementation TKCurseForgeClient { NSString *_key; NSURLSession *_session; }
 - (instancetype)initWithAPIKey:(NSString *)key { if((self=[super init])){_key=key.copy;_session=[NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration];}return self; }
 - (void)get:(NSString *)path completion:(TKCurseForgeCompletion)completion {
     NSURL *url=[NSURL URLWithString:[BaseURL stringByAppendingString:path]]; if(!url){completion(nil,CFError(@"Invalid CurseForge API URL."));return;}
     NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];[request setValue:@"application/json" forHTTPHeaderField:@"Accept"];[request setValue:_key forHTTPHeaderField:@"x-api-key"];
-    NSURLSessionDataTask *task=[_session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *failure){NSHTTPURLResponse *http=(id)response;if(failure){completion(nil,failure);return;}if(http.statusCode==403){TKAddonLog(@"GET %@ rejected: HTTP 403",path);completion(nil,CFError(@"CurseForge rejected this Core API key. Create an approved Core API key in the developer console."));return;}if(http.statusCode<200||http.statusCode>=300){TKAddonLog(@"GET %@ failed: HTTP %ld",path,(long)http.statusCode);completion(nil,CFError([NSString stringWithFormat:@"CurseForge API returned HTTP %ld.",(long)http.statusCode]));return;}id value=[NSJSONSerialization JSONObjectWithData:data options:0 error:&failure];if(![value isKindOfClass:NSDictionary.class]||failure){completion(nil,CFError(@"CurseForge returned invalid JSON."));return;}id payload=value[@"data"];if(!payload || payload == NSNull.null){completion(nil,CFError(@"CurseForge returned no data."));return;}completion(payload,nil);}];
+    NSURLSessionDataTask *task=[_session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *failure){NSHTTPURLResponse *http=(id)response;if(failure){completion(nil,failure);return;}if(http.statusCode<200||http.statusCode>=300){NSError *refusal=CFHTTPError(http.statusCode,data);TKAddonLog(@"GET %@ -> HTTP %ld: %@",path,(long)http.statusCode,refusal.localizedDescription);completion(nil,refusal);return;}id value=[NSJSONSerialization JSONObjectWithData:data options:0 error:&failure];if(![value isKindOfClass:NSDictionary.class]||failure){completion(nil,CFError(@"CurseForge returned invalid JSON."));return;}id payload=value[@"data"];if(!payload || payload == NSNull.null){completion(nil,CFError(@"CurseForge returned no data."));return;}completion(payload,nil);}];
     [task resume];
 }
 - (void)categoriesForGameID:(NSInteger)gameID completion:(TKCurseForgeCompletion)completion { [self get:[NSString stringWithFormat:@"/categories?gameId=%ld",(long)gameID] completion:completion]; }
@@ -32,7 +75,7 @@ static NSError *CFError(NSString *message) { return [NSError errorWithDomain:@"W
     if(classID)[items addObject:[NSURLQueryItem queryItemWithName:@"classId" value:classID.stringValue]];
     c.queryItems=items;
     NSURL *url=[NSURL URLWithString:[BaseURL stringByAppendingFormat:@"/mods/search?%@",c.percentEncodedQuery]]; NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];[request setValue:@"application/json" forHTTPHeaderField:@"Accept"];[request setValue:_key forHTTPHeaderField:@"x-api-key"];
-    [[_session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *failure){NSHTTPURLResponse *http=(id)response;if(failure){TKAddonLog(@"mods/search failed: %@",failure.localizedDescription);completion(nil,failure);return;}if(http.statusCode==403){TKAddonLog(@"mods/search rejected: HTTP 403");completion(nil,CFError(@"CurseForge rejected this Core API key."));return;}id value=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:NULL]:nil;if(http.statusCode<200||http.statusCode>=300||![value isKindOfClass:NSDictionary.class]){completion(nil,CFError(http.statusCode?[NSString stringWithFormat:@"CurseForge API returned HTTP %ld.",(long)http.statusCode]:@"CurseForge returned invalid JSON."));return;}if(![value[@"data"] isKindOfClass:NSArray.class]){completion(nil,CFError(@"CurseForge returned no mod list."));return;}completion(value,nil);} ] resume];
+    [[_session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *failure){NSHTTPURLResponse *http=(id)response;if(failure){TKAddonLog(@"mods/search failed: %@",failure.localizedDescription);completion(nil,failure);return;}if(http.statusCode<200||http.statusCode>=300){NSError *refusal=CFHTTPError(http.statusCode,data);TKAddonLog(@"mods/search -> HTTP %ld: %@",(long)http.statusCode,refusal.localizedDescription);completion(nil,refusal);return;}id value=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:NULL]:nil;if(![value isKindOfClass:NSDictionary.class]){completion(nil,CFError(@"CurseForge returned invalid JSON."));return;}if(![value[@"data"] isKindOfClass:NSArray.class]){completion(nil,CFError(@"CurseForge returned no mod list."));return;}completion(value,nil);} ] resume];
 }
 - (void)latestFileForModID:(NSNumber *)modID gameVersion:(NSString *)gameVersion completion:(TKCurseForgeCompletion)completion { [self get:[NSString stringWithFormat:@"/mods/%@/files?pageSize=50",modID] completion:^(id value,NSError *error){if(error){completion(nil,error);return;}if (![value isKindOfClass:NSArray.class]) { completion(nil,CFError(@"CurseForge returned an invalid file list.")); return; } NSArray *files=value;NSArray *matches=[files filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id item,NSDictionary *bindings){(void)bindings;return [item isKindOfClass:NSDictionary.class] && [item[@"gameVersions"] isKindOfClass:NSArray.class] && [item[@"isAvailable"] isKindOfClass:NSNumber.class] && [item[@"fileDate"] isKindOfClass:NSString.class] && [item[@"gameVersions"] containsObject:gameVersion] && [item[@"isAvailable"] boolValue];}]];NSDictionary *latest=[matches sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a,NSDictionary *b){return [b[@"fileDate"] compare:a[@"fileDate"]];}].firstObject;completion(latest,latest?nil:CFError([NSString stringWithFormat:@"This project has no file tagged %@.",gameVersion]));}]; }
 - (void)downloadURLForModID:(NSNumber *)modID fileID:(NSNumber *)fileID completion:(TKCurseForgeCompletion)completion { [self get:[NSString stringWithFormat:@"/mods/%@/files/%@/download-url",modID,fileID] completion:^(id value,NSError *error){if(error){completion(nil,error);return;}completion([value isKindOfClass:NSString.class]?value:nil,[value isKindOfClass:NSString.class]?nil:CFError(@"CurseForge returned an invalid download URL."));}]; }

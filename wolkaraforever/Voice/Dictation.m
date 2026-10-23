@@ -49,6 +49,10 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
 // Owns the audio engine, the request and the task, because those three are one thing:
 // the engine's tap is what feeds the request, and the request is what the task reads.
 @interface AKSpeechSession : NSObject <AKDictationSpeech>
+// Beyond the protocol: run the recognition half over a file that is already on disk. The
+// self-test uses these so words can be proved to come back without a person speaking.
+- (void)recogniseFile:(NSURL *)file;
+- (void)recogniseFile:(NSURL *)file handler:(void (^)(NSString *text, BOOL isFinal, NSError *error))handler;
 @end
 
 @implementation AKSpeechSession {
@@ -57,7 +61,7 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
     BOOL _onDevice;
     NSArray<NSString *> *_words;
     SFSpeechRecognizer *_recognizer;
-    SFSpeechURLRecognitionRequest *_request;
+    SFSpeechRecognitionRequest *_request;
     SFSpeechRecognitionTask *_task;
     void (^_handler)(NSString *, BOOL, NSError *);
     BOOL _finished;
@@ -129,7 +133,7 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
     };
     NSError *error = nil;
 
-    // Warm the capture before the real one starts.
+    // Warm the capture before the real one starts, and find out whether it can hear.
     //
     // The one time dictation produced words, the microphone was still open from the press before, so the
     // capture began against a session that had already been running. Every attempt since has started
@@ -137,19 +141,39 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
     // held zero audio bytes while this code reported "recorded 1.53s". So the microphone is opened and
     // closed once, for a fraction of a second, and only then is the capture the user is speaking into
     // started. That reproduces the only state this app has ever worked in.
+    //
+    // This probe also answers the question the audio session cannot: whether the microphone hears
+    // anything while the session is PlayAndRecord. That category keeps the game audible, and it is the
+    // one configuration measured delivering digital silence here, so the answer decides the category for
+    // the rest of the hold rather than being assumed either way.
     NSURL *warmup = [NSURL fileURLWithPath:
                      [NSTemporaryDirectory() stringByAppendingPathComponent:@"wolkaraforever-warmup.wav"]];
     [[NSFileManager defaultManager] removeItemAtURL:warmup error:NULL];
     AVAudioRecorder *warmer = [[AVAudioRecorder alloc] initWithURL:warmup settings:settings error:NULL];
+    BOOL heardSomething = NO;
     if ([warmer record]) {
+        warmer.meteringEnabled = YES;
         [NSThread sleepForTimeInterval:0.15];
+        [warmer updateMeters];
+        float warmPeak = [warmer peakPowerForChannel:0];
         [warmer stop];
-        WKLog("voice", @"dictation: warmed the capture for 150ms before starting the real one");
+        heardSomething = warmPeak > -60.0f;
+        WKLog("voice", @"dictation: warmed the capture for 150ms, peak %.1f dBFS under %@",
+              warmPeak, AVAudioSession.sharedInstance.category);
     } else {
         WKLog("voice", @"dictation: the warm-up capture would not start");
     }
     warmer = nil;
     [[NSFileManager defaultManager] removeItemAtURL:warmup error:NULL];
+    if (!heardSomething && [AVAudioSession.sharedInstance.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]) {
+        NSError *demoteError = nil;
+        if ([[AKAudioSessionCoordinator shared] useRecordOnlyForPushToTalk:&demoteError]) {
+            WKLog("voice", @"dictation: recording with the game's audio paused for this hold, because the microphone was silent while it played");
+        } else {
+            WKLog("voice", @"dictation: could not drop to Record (%@); carrying on with PlayAndRecord",
+                  demoteError.localizedDescription ?: @"no reason given");
+        }
+    }
 
     _recorder = [[AVAudioRecorder alloc] initWithURL:_recording settings:settings error:&error];
     if (!_recorder) {
@@ -209,8 +233,23 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
     _recorder = nil;
     AKLoudestDecibels = (double)decibels;
     AKLoudestSoFar = (decibels <= -160.0f) ? 0.0 : pow(10.0, (double)decibels / 20.0);
-    WKLog("voice", @"dictation: recorded %.2fs, peak %.1f dBFS (%.5f linear), session %@, other audio playing %d, app %@",
-          seconds, decibels, AKLoudestSoFar, AVAudioSession.sharedInstance.category,
+    // The file, as well as the microphone.
+    //
+    // These are different facts and only one of them was being measured: the meter reads what
+    // the *input* delivered, so a recorder that writes a header and no frames still meters
+    // real level - and then the recogniser is handed an empty file and answers "No speech
+    // detected", which reads exactly like a microphone that could not hear. One dictation on
+    // the device (2026-10-22) metered -24.8 dBFS and was refused by the recogniser 0.3s later;
+    // the byte count and the frame count are what tell those two apart.
+    NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:_recording.path error:NULL];
+    unsigned long long bytes = [attributes[NSFileSize] unsignedLongLongValue];
+    NSError *readError = nil;
+    AVAudioFile *written = [[AVAudioFile alloc] initForReading:_recording error:&readError];
+    WKLog("voice", @"dictation: recorded %.2fs, peak %.1f dBFS (%.5f linear), %llu bytes on disk, "
+                    @"%lld frames readable%@, session %@, other audio playing %d, app %@",
+          seconds, decibels, AKLoudestSoFar, bytes, written ? written.length : 0LL,
+          written ? @"" : [NSString stringWithFormat:@" (unreadable: %@)", readError.localizedDescription ?: @"no reason"],
+          AVAudioSession.sharedInstance.category,
           (int)AVAudioSession.sharedInstance.isOtherAudioPlaying,
           UIApplication.sharedApplication.applicationState == UIApplicationStateActive ? @"active"
               : (UIApplication.sharedApplication.applicationState == UIApplicationStateInactive ? @"inactive" : @"background"));
@@ -218,11 +257,57 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
 
 - (void)recogniseRecording {
     if (!_recording) return;
-    _request = [[SFSpeechURLRecognitionRequest alloc] initWithURL:_recording];
-    // The product promises this; the caller has already refused to start when the recogniser cannot.
-    _request.requiresOnDeviceRecognition = _onDevice;
-    _request.shouldReportPartialResults = NO;
-    if (_words.count) _request.contextualStrings = _words;
+    [self recogniseFile:_recording];
+}
+
+/// The recognition half on its own, for one file. Also the entry point the device self-test uses.
+- (void)recogniseFile:(NSURL *)file handler:(void (^)(NSString *text, BOOL isFinal, NSError *error))handler {
+    _handler = [handler copy];
+    _finished = NO;
+    _onDevice = YES;
+    [self recogniseFile:file];
+}
+
+- (void)recogniseFile:(NSURL *)file {
+    if (!file) return;
+    // The file is fed to the recogniser as buffers, not handed over as a URL.
+    //
+    // Both are documented; only one of them has ever produced words on this device. The URL
+    // request answers "No speech detected" about a third of a second after a 1.86s hold that
+    // metered -24.8 dBFS - too fast to have listened to anything - while the streaming request
+    // is the one the build that transcribed 21 characters into the game used. Feeding the file
+    // we just wrote through the streaming request keeps that path and keeps the recording, so
+    // the same audio can be re-run instead of re-spoken.
+    SFSpeechAudioBufferRecognitionRequest *streaming = [[SFSpeechAudioBufferRecognitionRequest alloc] init];
+    NSError *openError = nil;
+    AVAudioFile *captured = [[AVAudioFile alloc] initForReading:file error:&openError];
+    if (!captured || captured.length == 0) {
+        // Nothing readable to stream: the URL request is still the honest last word, and it
+        // will say what it thinks of the file. Whatever it answers, the log already carries
+        // the byte and frame counts above.
+        WKLog("voice", @"dictation: the recording is not readable as audio (%@), asking the recogniser about the file instead",
+              openError.localizedDescription ?: @"no frames");
+        SFSpeechURLRecognitionRequest *whole = [[SFSpeechURLRecognitionRequest alloc] initWithURL:file];
+        whole.requiresOnDeviceRecognition = _onDevice;
+        // Partials are asked for even though nothing is delivered from them - see the note on the
+        // streaming request below. With them switched off, the on-device recogniser is measurably
+        // capable of never calling back at all.
+        whole.shouldReportPartialResults = YES;
+        if (_words.count) whole.contextualStrings = _words;
+        _request = whole;
+    } else {
+        streaming.requiresOnDeviceRecognition = _onDevice;
+        // Partials on, delivery still final-only.
+        //
+        // This is what the device said on 2026-10-22: with partial results switched off, the
+        // on-device recogniser took all 135,725 frames of a known sentence, was sent endAudio,
+        // and then called back *never* - no result and no error, for forty seconds. The app's
+        // delivery rule is unchanged and stays where it belongs: `speechReported:` ignores every
+        // non-final result, so a partial is a progress signal and nothing else.
+        streaming.shouldReportPartialResults = YES;
+        if (_words.count) streaming.contextualStrings = _words;
+        _request = streaming;
+    }
 
     __weak AKSpeechSession *weakSelf = self;
     _task = [_recognizer recognitionTaskWithRequest:_request
@@ -235,9 +320,78 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
         if (result.isFinal || error) session->_finished = YES;
         if (session->_handler) session->_handler(text, result.isFinal, error);
     }];
+
+    if (_request != streaming) return;
+    // Fed off the main queue: a long hold is a longer read, and this runs while the game is
+    // drawing. A fresh buffer per chunk because the request is documented to copy the audio it
+    // is given, and a buffer that is only copied *sometimes* is the kind of assumption that
+    // ends up as an intermittent half-sentence.
+    NSURL *fileURL = file;
+    AVAudioFrameCount chunk = 4096;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        SFSpeechAudioBufferRecognitionRequest *request = streaming;
+        NSError *readError = nil;
+        AVAudioFile *file = [[AVAudioFile alloc] initForReading:fileURL error:&readError];
+        if (!file) {
+            WKLog("voice", @"dictation: the recording could not be opened for streaming: %@",
+                  readError.localizedDescription ?: @"no reason");
+            [request endAudio];
+            return;
+        }
+        AVAudioFormat *format = file.processingFormat;
+        AVAudioFramePosition total = file.length, fed = 0;
+        while (fed < total) {
+            AVAudioPCMBuffer *buffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:chunk];
+            if (!buffer) break;
+            if (![file readIntoBuffer:buffer frameCount:chunk error:&readError]) break;
+            if (buffer.frameLength == 0) break;
+            [request appendAudioPCMBuffer:buffer];
+            fed += (AVAudioFramePosition)buffer.frameLength;
+        }
+        [request endAudio];
+        WKLog("voice", @"dictation: fed %lld of %lld frames (%.0fHz %luch%@) to the recogniser%@",
+              fed, total, format.sampleRate, (unsigned long)format.channelCount,
+              readError ? @"" : @"",
+              readError ? [NSString stringWithFormat:@", read stopped: %@", readError.localizedDescription] : @"");
+    });
 }
 
 @end
+
+/// The recognition half, for a file somebody else recorded. See the declaration in Dictation.h for
+/// why the app needs a way to test this without a person speaking.
+void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullable text, NSError *_Nullable error)) {
+    if (!completion) return;
+    AKSpeechSession *session = [AKSpeechSession new];
+    if (!session.isAvailable) {
+        completion(nil, [NSError errorWithDomain:@"wolkaraforever.dictation" code:2 userInfo:@{
+            NSLocalizedDescriptionKey: @"Speech recognition is not available right now."}]);
+        return;
+    }
+    if (!session.supportsOnDeviceRecognition) {
+        completion(nil, [NSError errorWithDomain:@"wolkaraforever.dictation" code:3 userInfo:@{
+            NSLocalizedDescriptionKey: @"This iPad cannot recognise speech on device."}]);
+        return;
+    }
+    // Held until it answers. The recogniser task dies with the session that owns it, so a probe
+    // whose session is a local - as the first version of this was - sends every frame, gets
+    // endAudio, and is then deallocated before the recogniser can call back: no result, no error,
+    // and forty seconds of a self-test waiting for a callback that can no longer arrive.
+    static NSMutableArray<AKSpeechSession *> *probes;
+    static NSLock *probesLock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ probes = [NSMutableArray array]; probesLock = [NSLock new]; });
+    [probesLock lock]; [probes addObject:session]; [probesLock unlock];
+    __block BOOL reported = NO;
+    [session recogniseFile:file handler:^(NSString *text, BOOL isFinal, NSError *error) {
+        // A partial result is not an answer, and an error is; whichever comes first ends this.
+        if (!isFinal && !error) return;
+        if (reported) return;
+        reported = YES;
+        [probesLock lock]; [probes removeObjectIdenticalTo:session]; [probesLock unlock];
+        completion(error ? nil : text, error);
+    }];
+}
 
 #pragma mark - The real audio session
 

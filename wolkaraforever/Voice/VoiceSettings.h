@@ -89,6 +89,7 @@ typedef NS_ENUM(NSInteger, AKVoiceMode) {
 // so it is told which keys to swallow before the guest sees them.
 - (NSSet<NSNumber *> *)ownedKeyUsages;
 
+
 // Fired when anything above changes, so the launcher can redraw and the input router
 // can re-decide which system gestures are ours to hold.
 extern NSNotificationName const AKVoiceSettingsDidChangeNotification;

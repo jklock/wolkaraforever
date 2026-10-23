@@ -1,0 +1,77 @@
+# WolkaraForever layer patch 0021 - AppKit: count run loops entered in common modes
+#
+# Why: with the client in play at 49.8 fps and the GPU only 39% busy (see
+# docs/PERFORMANCE_LANES.md), the frame is being spent on the CPU side, and one
+# thing that can burn CPU without doing any work is a run loop entered with the
+# common-modes set: CoreFoundation refuses it and returns at once, so a caller
+# that loops on the return spins the main thread. That is exactly what the device
+# logged the moment the performance HUD was switched on:
+#
+#   invalid mode 'kCFRunLoopCommonModes' provided to CFRunLoopRunSpecific
+#
+# and CoreFoundation prints that once per process, so the log cannot say whether
+# it happened once or once a frame. This patch answers that question with a count
+# and changes nothing else: the mode is passed through untouched, because
+# rewriting it would change what the guest's wait means. The count is logged at
+# 1 and every 1000 entries, so one session settles it.
+#
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: candidate (not submitted).
+#
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index 225efa2..168bb71 100644
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -8,6 +8,7 @@
+ #import <GameController/GameController.h>
+ #import <objc/message.h>
+ #import <objc/runtime.h>
++#include <stdatomic.h>
+ 
+ NSApplication *NSApp;
+ 
+@@ -734,6 +735,36 @@ static BOOL AKIsRight(UIEvent *ev) { return (ev.buttonMask & UIEventButtonMaskSe
+ // hidden here are shown again, once no guest window is visible. Not yet
+ // validated on a device.
+ static NSHashTable<UIWindow *> *guestUIWindows, *coveredWindows;
++
++// Counts run loops entered with the common-modes set.
++//
++// CoreFoundation logs "invalid mode 'kCFRunLoopCommonModes' provided to
++// CFRunLoopRunSpecific" and returns at once, and it prints that once per
++// process, so the log cannot say whether it happened once or once a frame. A
++// caller that loops on the immediate return would spin the main thread and burn
++// a frame's worth of CPU doing nothing, which is exactly the kind of cost a
++// frame-rate investigation needs to rule in or out. This only counts; the mode
++// is passed through unchanged, because changing it would change what the guest's
++// wait means.
++static BOOL (*originalRunMode)(id,SEL,NSString *,NSDate *);
++static _Atomic unsigned long runLoopCommonEntries;
++static BOOL observedRunMode(id loop,SEL selector,NSString *mode,NSDate *limit) {
++    if (mode == NSRunLoopCommonModes || [mode isEqualToString:NSRunLoopCommonModes]) {
++        unsigned long count = atomic_fetch_add(&runLoopCommonEntries,1)+1;
++        if (count == 1 || count % 1000 == 0)
++            AKLog(@"runloop: entered in NSRunLoopCommonModes %lu time(s); CoreFoundation refuses that mode, so the call returns immediately",count);
++    }
++    return originalRunMode(loop,selector,mode,limit);
++}
++void AKWatchRunLoopModes(void) {
++    static dispatch_once_t once;
++    dispatch_once(&once,^{
++        Method method=class_getInstanceMethod(NSRunLoop.class,@selector(runMode:beforeDate:));
++        if(!method) return;
++        originalRunMode=(void *)method_getImplementation(method);
++        class_replaceMethod(NSRunLoop.class,@selector(runMode:beforeDate:),(IMP)observedRunMode,method_getTypeEncoding(method));
++    });
++}
+ static BOOL coversLauncher(void) {
+     static BOOL enabled; static dispatch_once_t once;
+     dispatch_once(&once, ^{
+@@ -1052,6 +1083,7 @@ static void logLayer(CALayer *layer,unsigned depth) {
+     [(e.window ?: self.keyWindow) sendEvent:e];
+ }
+ - (NSEvent *)nextEventMatchingMask:(NSUInteger)mask untilDate:(NSDate *)date inMode:(NSString *)mode dequeue:(BOOL)dq {
++    AKWatchRunLoopModes();
+     static NSTimeInterval nextDiagnostic; static unsigned diagnostics;
+     NSTimeInterval now=NSProcessInfo.processInfo.systemUptime;
+     if(diagnostics<3 && now>=nextDiagnostic && [NSProcessInfo.processInfo.arguments containsObject:@"--sample-native"]) {

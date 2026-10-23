@@ -57,8 +57,13 @@ extern NSNotificationName const AKAudioPushToTalkLeaseDidChangeNotification;
 - (BOOL)requestGamePlayback:(NSString *)why;
 /// The game runtime is gone; the lease is dropped.
 - (void)releaseGamePlayback;
-/// Dictation asks to record. YES only when the session is recording afterwards.
+/// Dictation asks to record. YES only when the session is recording afterwards. The category is
+/// PlayAndRecord with mixing, so the game keeps its sound while the user talks.
 - (BOOL)beginPushToTalk:(NSError **)error;
+/// The microphone delivered silence under PlayAndRecord, which is the one configuration measured
+/// silent on this device. Demotes this hold to Record alone - the game's audio pauses instead of
+/// the words being lost - and the next hold asks for PlayAndRecord again.
+- (BOOL)useRecordOnlyForPushToTalk:(NSError **)error;
 /// Dictation is done. The session goes back to the declared policy: the game's playback if a game
 /// lease is held, otherwise released with NotifyOthersOnDeactivation so that other apps resume.
 - (BOOL)endPushToTalk:(NSError **)error;

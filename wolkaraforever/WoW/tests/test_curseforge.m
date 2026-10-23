@@ -44,6 +44,19 @@ int main(void) {
             [client categoriesForGameID:1 completion:completion];
             CHECK(error && !result, "HTTP failure reported");
         }
+        // A 403 is not one thing. The edge refuses a bad credential with a plain-text reason, and
+        // the download endpoint refuses a *file* with the same status. Reporting both as "this key
+        // was rejected" is what made a working key look broken on the device (2026-10-22) while the
+        // real answer was that the project does not allow downloads through the API.
+        session.status=403; session.body=@"Forbidden: API Key missing or invalid";
+        [client categoriesForGameID:1 completion:completion];
+        CHECK([error.localizedDescription containsString:@"rejected this Core API key"], "a refused credential names the key");
+        session.status=403; session.body=@"{\"error\":\"This file is not available for third-party download\"}";
+        [client downloadURLForModID:@1 fileID:@2 completion:completion];
+        CHECK([error.localizedDescription containsString:@"does not allow downloads"], "a refused file does not blame the key");
+        session.status=429; session.body=@"";
+        [client categoriesForGameID:1 completion:completion];
+        CHECK([error.localizedDescription containsString:@"rate limiting"], "a rate limit says so");
         session.status=200; session.body=@"{\"data\":[]}";
         [client categoriesForGameID:1 completion:completion];
         CHECK([result isKindOfClass:NSArray.class] && !error, "valid categories");

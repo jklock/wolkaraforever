@@ -59,6 +59,16 @@ static NSArray<NSNumber *> *TKAddonColumnOrder(void) {
     return @[@(TKAddonColumnDownloads), @(TKAddonColumnTop), @(TKAddonColumnLatest),
              @(TKAddonColumnCategory), @(TKAddonColumnVersion), @(TKAddonColumnAuthor)];
 }
+// The narrowest page that still holds the full column set: the six fixed columns, the gaps
+// between them, the artwork, the gap after it, and room for a project's name before it is
+// worth drawing at all.
+BOOL TKAddonRowsAreCompact(CGFloat width) {
+    CGFloat columns = 0.0;
+    NSArray<NSNumber *> *order = TKAddonColumnOrder();
+    for (NSNumber *number in order) columns += TKAddonColumnWidth((TKAddonColumn)number.unsignedIntegerValue);
+    CGFloat required = columns + 10.0 * order.count + 46.0 + 10.0 + 180.0;
+    return width < required;
+}
 // The site shows `371.4M`; bytes would say `354.2 MB` and read as storage.
 static NSString *TKAddonDownloadsText(NSNumber *value) {
     double n=value.doubleValue;
@@ -438,17 +448,23 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 }
 - (UIView *)header {
     UIColor *gold=WKGold();
-    CGFloat width=MAX(CGRectGetWidth(self.tableView.bounds),320);
-    UIView *header=[[UIView alloc] initWithFrame:CGRectMake(0,0,width,212)];
+    // Laid out with constraints against this view's own layout margins, which inherit the
+    // table's because of preservesSuperviewLayoutMargins. The frames this replaces were
+    // computed from the table's width when the header was created - before the sheet had its
+    // final size - and then stretched by an autoresizing mask, so the edition panel hung
+    // fourteen points past the right edge of the table and the whole page read as ragged next
+    // to cells inset by sixteen. Measured in the fixture on 2026-10-22.
+    UIView *header=[[UIView alloc] initWithFrame:CGRectMake(0,0,MAX(CGRectGetWidth(self.tableView.bounds),320),212)];
     header.autoresizingMask=UIViewAutoresizingFlexibleWidth;
-    CGFloat body=width-2*TKAddonPageMargin;
-    UIView *editionPanel=[[UIView alloc] initWithFrame:CGRectMake(TKAddonPageMargin,14,body,42)];
+    header.preservesSuperviewLayoutMargins=YES;
+    UILayoutGuide *gutters=header.layoutMarginsGuide;
+    UIView *editionPanel=[[UIView alloc] init];
+    editionPanel.translatesAutoresizingMaskIntoConstraints=NO;
     editionPanel.backgroundColor=WKPanel(); editionPanel.layer.cornerRadius=14; editionPanel.layer.masksToBounds=YES;
-    editionPanel.autoresizingMask=UIViewAutoresizingFlexibleWidth;
     UILabel *edition=[UILabel new]; edition.text=[NSString stringWithFormat:@"Edition: %@  ▾",_edition];
     edition.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; edition.textColor=gold;
     edition.backgroundColor=UIColor.clearColor;
-    edition.frame=CGRectMake(14,0,body-28,42); edition.autoresizingMask=UIViewAutoresizingFlexibleWidth;
+    edition.translatesAutoresizingMaskIntoConstraints=NO;
     [editionPanel addSubview:edition];
     [header addSubview:editionPanel];
     _mode=[[UISegmentedControl alloc] initWithItems:@[[NSString stringWithFormat:@"Installed (%lu)",(unsigned long)_addons.count],@"Browse CurseForge"]];
@@ -456,12 +472,13 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     [_mode setTitleTextAttributes:@{NSForegroundColorAttributeName:UIColor.blackColor} forState:UIControlStateSelected];
     [_mode setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor colorWithWhite:0.72 alpha:1]} forState:UIControlStateNormal];
     [_mode addTarget:self action:@selector(changeMode:) forControlEvents:UIControlEventValueChanged];
-    _mode.frame=CGRectMake(TKAddonPageMargin,72,body,36); _mode.autoresizingMask=UIViewAutoresizingFlexibleWidth;
+    _mode.translatesAutoresizingMaskIntoConstraints=NO;
     [header addSubview:_mode];
-    _search=[UISearchBar new]; _search.placeholder=@"Search World of Warcraft add-ons"; _search.frame=CGRectMake(TKAddonPageMargin,116,body,44); _search.autoresizingMask=UIViewAutoresizingFlexibleWidth; _search.searchBarStyle=UISearchBarStyleMinimal; _search.delegate=self; [header addSubview:_search];
+    _search=[UISearchBar new]; _search.placeholder=@"Search World of Warcraft add-ons"; _search.searchBarStyle=UISearchBarStyleMinimal; _search.delegate=self;
+    _search.translatesAutoresizingMaskIntoConstraints=NO;
+    [header addSubview:_search];
 
-    // The list toolbar, where the site puts its count, sort, filters and column
-    // picker. Auto Layout inside the header's frame keeps the buttons right.
+    // The list toolbar, where the site puts its count, sort, filters and column picker.
     _countLabel=[UILabel new];
     _countLabel.font=[UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
     _countLabel.textColor=[UIColor colorWithWhite:0.62 alpha:1];
@@ -474,10 +491,27 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     toolbar.axis=UILayoutConstraintAxisHorizontal; toolbar.spacing=10; toolbar.alignment=UIStackViewAlignmentCenter;
     toolbar.translatesAutoresizingMaskIntoConstraints=NO;
     [header addSubview:toolbar];
+    // 14 + 42 + 16 + 36 + 8 + 44 + 8 + 34 + 10 = 212, the height the fixture measures. Kept as
+    // constraints rather than offsets so a wider page widens the panels instead of moving them.
     [NSLayoutConstraint activateConstraints:@[
-        [toolbar.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:TKAddonPageMargin],
-        [toolbar.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-TKAddonPageMargin],
-        [toolbar.topAnchor constraintEqualToAnchor:header.topAnchor constant:168],
+        [editionPanel.leadingAnchor constraintEqualToAnchor:gutters.leadingAnchor constant:TKAddonPageMargin],
+        [editionPanel.trailingAnchor constraintEqualToAnchor:gutters.trailingAnchor constant:-TKAddonPageMargin],
+        [editionPanel.topAnchor constraintEqualToAnchor:header.topAnchor constant:14],
+        [editionPanel.heightAnchor constraintEqualToConstant:42],
+        [edition.leadingAnchor constraintEqualToAnchor:editionPanel.leadingAnchor constant:14],
+        [edition.trailingAnchor constraintEqualToAnchor:editionPanel.trailingAnchor constant:-14],
+        [edition.centerYAnchor constraintEqualToAnchor:editionPanel.centerYAnchor],
+        [_mode.leadingAnchor constraintEqualToAnchor:gutters.leadingAnchor constant:TKAddonPageMargin],
+        [_mode.trailingAnchor constraintEqualToAnchor:gutters.trailingAnchor constant:-TKAddonPageMargin],
+        [_mode.topAnchor constraintEqualToAnchor:editionPanel.bottomAnchor constant:16],
+        [_mode.heightAnchor constraintEqualToConstant:36],
+        [_search.leadingAnchor constraintEqualToAnchor:gutters.leadingAnchor constant:TKAddonPageMargin],
+        [_search.trailingAnchor constraintEqualToAnchor:gutters.trailingAnchor constant:-TKAddonPageMargin],
+        [_search.topAnchor constraintEqualToAnchor:_mode.bottomAnchor constant:8],
+        [_search.heightAnchor constraintEqualToConstant:44],
+        [toolbar.leadingAnchor constraintEqualToAnchor:gutters.leadingAnchor constant:TKAddonPageMargin],
+        [toolbar.trailingAnchor constraintEqualToAnchor:gutters.trailingAnchor constant:-TKAddonPageMargin],
+        [toolbar.topAnchor constraintEqualToAnchor:_search.bottomAnchor constant:8],
         [toolbar.heightAnchor constraintEqualToConstant:34],
         [_sortButton.widthAnchor constraintEqualToConstant:118],
         [_filterButton.widthAnchor constraintEqualToConstant:92],
@@ -690,7 +724,15 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
     if (authors.count) [details addObject:[@"By " stringByAppendingString:[authors componentsJoinedByString:@", "]]];
     if ([entry[@"downloadCount"] isKindOfClass:NSNumber.class]) [details addObject:[NSString stringWithFormat:@"%@ downloads on CurseForge",entry[@"downloadCount"]]];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:name message:[details componentsJoinedByString:@"\n"] preferredStyle:UIAlertControllerStyleActionSheet];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Install latest compatible file" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action;[self installMod:entry];}]];
+    // Whether the author lets CurseForge hand the file out through the API at all. The search
+    // result says so, so the page can say so instead of letting the user tap Install and collect
+    // a 403 that reads like a broken key - which is what happened on the device on 2026-10-22.
+    BOOL distribution = ![entry[@"allowModDistribution"] isKindOfClass:NSNumber.class] || [entry[@"allowModDistribution"] boolValue];
+    if (distribution) {
+        [sheet addAction:[UIAlertAction actionWithTitle:@"Install latest compatible file" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action;[self installMod:entry];}]];
+    } else {
+        [sheet setValue:[NSString stringWithFormat:@"%@\n\nThis project does not allow downloads through the CurseForge API. Open its project page to install it by hand, or import the ZIP.", [details componentsJoinedByString:@"\n"]] forKey:@"message"];
+    }
     NSString *website=nil;
     if ([entry[@"links"] isKindOfClass:NSDictionary.class] && [entry[@"links"][@"websiteUrl"] isKindOfClass:NSString.class]) website=entry[@"links"][@"websiteUrl"];
     if (!website.length && [entry[@"slug"] isKindOfClass:NSString.class]) website=[@"https://www.curseforge.com/wow/addons/" stringByAppendingString:entry[@"slug"]];
@@ -724,28 +766,37 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
         if (error) { [self providerFailed:error]; return; }
         NSNumber *fileID=[file[@"id"] isKindOfClass:NSNumber.class]?file[@"id"]:nil;
         if (!fileID) { [self providerFailed:[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:@"CurseForge returned an incomplete file record."}]]; return; }
+        // The file record carries the URL when the author allows API distribution. Asking the
+        // download-url endpoint for a file that already came with a URL is a request that can only
+        // fail - and on 2026-10-22 it did, with a 403 that the app used to report as a rejected key.
+        NSString *carried=[file[@"downloadUrl"] isKindOfClass:NSString.class]?file[@"downloadUrl"]:nil;
+        if (carried.length) { [self downloadArchiveAt:carried forClient:client name:name]; return; }
         [client downloadURLForModID:modID fileID:fileID completion:^(NSString *url,NSError *downloadError){
             if (downloadError) { [self providerFailed:downloadError]; return; }
-            NSError *requestError=nil;
-            NSURLRequest *request=[client assetRequestForURL:url error:&requestError];
-            if (!request) { [self providerFailed:requestError]; return; }
-            NSURLSessionDownloadTask *task=[[NSURLSession sharedSession] downloadTaskWithRequest:request completionHandler:^(NSURL *location,NSURLResponse *response,NSError *failure){
-                (void)response;
-                if (failure||!location) { [self providerFailed:failure?:[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:@"CurseForge did not return an archive."}]]; return; }
-                NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:@".zip"]];
-                NSError *moveError=nil; [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:path] error:&moveError];
-                NSError *importError=nil;
-                BOOL imported=!moveError && [self.store importZIPAtURL:[NSURL fileURLWithPath:path] error:&importError];
-                [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
-                dispatch_async(dispatch_get_main_queue(),^{
-                    if (!imported) { NSError *cause=moveError?:importError; [self showError:@"Could not install add-on" message:cause.localizedDescription?:@"The downloaded archive could not be imported."]; return; }
-                    self.browseStatus=[NSString stringWithFormat:@"Installed %@. Forever compatibility was verified from its TOC.",name];
-                    [self reloadAddons];
-                });
-            }];
-            [task resume];
+            [self downloadArchiveAt:url forClient:client name:name];
         }];
     }];
+}
+
+- (void)downloadArchiveAt:(NSString *)url forClient:(TKCurseForgeClient *)client name:(NSString *)name {
+    NSError *requestError=nil;
+    NSURLRequest *request=[client assetRequestForURL:url error:&requestError];
+    if (!request) { [self providerFailed:requestError]; return; }
+    NSURLSessionDownloadTask *task=[[NSURLSession sharedSession] downloadTaskWithRequest:request completionHandler:^(NSURL *location,NSURLResponse *response,NSError *failure){
+        (void)response;
+        if (failure||!location) { [self providerFailed:failure?:[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:@"CurseForge did not return an archive."}]]; return; }
+        NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:@".zip"]];
+        NSError *moveError=nil; [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:path] error:&moveError];
+        NSError *importError=nil;
+        BOOL imported=!moveError && [self.store importZIPAtURL:[NSURL fileURLWithPath:path] error:&importError];
+        [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
+        dispatch_async(dispatch_get_main_queue(),^{
+            if (!imported) { NSError *cause=moveError?:importError; [self showError:@"Could not install add-on" message:cause.localizedDescription?:@"The downloaded archive could not be imported."]; return; }
+            self.browseStatus=[NSString stringWithFormat:@"Installed %@. Forever compatibility was verified from its TOC.",name];
+            [self reloadAddons];
+        });
+    }];
+    [task resume];
 }
 - (void)reloadAddons {
     [NSFileManager.defaultManager createDirectoryAtPath:_addOnsDirectory withIntermediateDirectories:YES attributes:nil error:NULL];
@@ -779,7 +830,7 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
     (void)tableView;
     if (_mode.selectedSegmentIndex==1 && section==1 && _results.count) {
         TKAddonColumnsHeaderView *header=[[TKAddonColumnsHeaderView alloc] initWithFrame:CGRectMake(0,0,tableView.bounds.size.width,22)];
-        [header configureWithColumns:_columns compact:self.traitCollection.horizontalSizeClass==UIUserInterfaceSizeClassCompact];
+        [header configureWithColumns:_columns compact:TKAddonRowsAreCompact(self.tableView.bounds.size.width)];
         return header;
     }
     return nil;
@@ -817,7 +868,7 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
             NSString *rank=[entry[@"gamePopularityRank"] isKindOfClass:NSNumber.class]?
                 [NSString stringWithFormat:@"%@",entry[@"gamePopularityRank"]]:nil;
             [project configureWithProject:entry file:file rank:rank columns:_columns gameVersion:_gameVersion
-                                   compact:self.traitCollection.horizontalSizeClass==UIUserInterfaceSizeClassCompact];
+                                   compact:TKAddonRowsAreCompact(self.tableView.bounds.size.width)];
             return project;
         }
     } else if (indexPath.section==0) {

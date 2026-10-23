@@ -3,10 +3,55 @@
 Applications that people have actually run with Tolkara. Add a row through a
 pull request; say what you tested, on what hardware, with which execution mode
 (Developer service, Local signing or External JIT), and what did not work.
-
 | Application | Version | Device / OS | Execution mode | Works | Known problems | Profile |
 | --- | --- | --- | --- | --- | --- | --- |
 | World of Warcraft Forever (Classic beta, macOS arm64 client) | 1.60.1 | iPad Pro M5, iPadOS 27 | Local signing | Login and gameplay (2026-09-27), with no debugger, helper or tunnel and no memory preparation. At startup the client's own unpacked code matched the signed page container byte for byte, and all 13,280 initializers ran into the original `main`. | Developer service is not the tested route on this iPad. Same capture limitation as the other client. | [`wow-forever`](profiles/wow-forever) |
+
+## Measured performance, and what it did not show (2026-10-23)
+
+On Dadpad (iPad Pro 12.9-inch, 5th generation, M1, iPadOS 27) with Developer
+service, against the installed Forever client 1.60.1, launched with
+`--local-game-startup --measure-native`. The evaluation and its evidence are in
+[PERFORMANCE_LANES.md](docs/PERFORMANCE_LANES.md).
+
+- **Frame pacing at the login screen**: 55 consecutive 5 s windows, 59.9-60.2 fps,
+  longest gap 20.8 or 25.0 ms, and **no gap over 50 ms in any window**. Nothing in
+  either tree sets a frame cap; the 25 ms gap (one frame one refresh late) occurs in
+  most windows and is not yet attributed.
+- **GPU attribution** (layer patch 0019): over 31 windows the GPU was busy for
+  **7.3-25.9 ms of a 16.7 ms frame** and for **53% of wall time at rest**, rising to
+  94% and then past the frame budget once (a 25.9 ms frame at 59.2 fps) as the
+  client finished loading the screen. At rest the frame is not waiting on the GPU.
+  The frame-timing log line carries `gpu_ms=` and `gpu_load=`; the HUD's expanded
+  view reads the same two values into a `GPU:` row (the number is measured; the row
+  itself was not read on screen, because expanding the HUD needs a tap).
+- **Launch latency** (layer patches 0019-0020): developer-service memory preparation
+  took **67.3 s** for the 99.5 MB image, measured as the preflight read-back running
+  at 1.5-1.6 MB/s (sampled from the provider's own progress file once a second).
+  Thirty-two reads in flight instead of four brought it to **62.5 s**, not the 8x the
+  window suggests: the limit is the tunnel's deliberate one-segment-in-flight TCP,
+  not the protocol above it.
+- **`--selftest=forever-ui` PASS 17/17** and **`--selftest=forever-ui-clean` PASS
+  2/2** on the installed build, with the new HUD row present; the overlay preference
+  was returned to off afterwards.
+- **In play**, the same build, in a questing zone at the user's settings, the HUD
+  read **49.8 FPS (20.0 ms), GPU 7.8 ms of 20.0 ms (39% busy), thermal Nominal,
+  Low Power Mode off, RAM 3826 MB with 12.5 GB headroom**. The GPU is doing the same
+  8-10 ms it did at 60 fps on the login screen, so the in-world frame is **not
+  GPU-bound and not thermal at that moment**: the client is producing 20 ms frames on
+  the CPU side. See [PERFORMANCE_LANES.md](docs/PERFORMANCE_LANES.md).
+- **Shader warm-up, measured in the same session**: 114 Metal libraries loaded
+  during play, **96 of them inside one 20 s window at world entry** (dated against
+  the audio engine's fixed-rate log counters). A burst, not the steady frame cost.
+- **Open defect found while reviewing the logs**: CoreFoundation logged
+  `invalid mode 'kCFRunLoopCommonModes' provided to CFRunLoopRunSpecific` at the
+  moment the HUD was switched on. CoreFoundation prints that once per process, so
+  how often the run loop is entered that way is not yet known, and a caller that
+  loops on the immediate return would spin the main thread.
+
+**Not measured**: a long in-world run (thermal drift), the per-library compile cost,
+and the frequency of that run-loop error. The in-world frame rate above is a single
+reading, not a benchmark.
 
 ## Voice dictation into the game (2026-10-21)
 

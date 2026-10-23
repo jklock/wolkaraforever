@@ -33,6 +33,7 @@ New here? Read the repository [README](../README.md), then
 | Document | What it covers |
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The loader, the translation layer and the three execution modes. |
+| [PERFORMANCE_LANES.md](PERFORMANCE_LANES.md) | Every place the layer could cost performance, each lane measured or marked unmeasured: GPU vs CPU attribution, frame pacing, launch latency, shaders, textures. |
 | [BUILDING.md](BUILDING.md) | Advanced engine build and execution modes; development runs on the iPad. |
 | [MAINTAINING.md](MAINTAINING.md) | How the layers fit; how to update Tolkara, the app and the game safely. |
 | [TESTING.md](TESTING.md) | The suites, the device matrix, the self-tests and how evidence is recorded. |

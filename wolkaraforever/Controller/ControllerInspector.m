@@ -86,6 +86,8 @@ static void AKCIReportAxis(AKControllerInspector *inspector, NSString *device, N
     // Element ids whose system gesture this app has released, per device identity, so
     // the exact gesture can be handed back rather than guessed at.
     NSMutableDictionary<NSString *, NSMutableSet<NSString *> *> *_releasedGestures;
+    // The same, but a loan that ends when the user stops choosing a button.
+    NSMutableDictionary<NSString *, NSMutableSet<NSString *> *> *_learningRelease;
     UILabel *_panel;
     BOOL _began;
     NSString *_currentDevice;
@@ -259,6 +261,46 @@ static void AKCIReportAxis(AKControllerInspector *inspector, NSString *device, N
     NSUInteger count = _releasedGestures.count;
     [_releasedGestures removeAllObjects];
     if (count) AKCILog(@"inspector: every released system gesture has been given back");
+}
+
+#pragma mark - Learning: releasing enough to hear the press
+
+// Every button of every connected pad whose press the system would keep, by name, per device.
+// Kept apart from _releasedGestures on purpose: that one is the user's decisions and survives
+// learning, this one is a loan that ends when the choosing does.
+- (void)beginReleasingForLearning {
+    if (_learningRelease) return;
+    _learningRelease = [NSMutableDictionary dictionary];
+    for (GCController *pad in GCController.controllers) {
+        NSString *identity = AKControllerIdentity(pad);
+        for (NSString *name in pad.physicalInputProfile.buttons) {
+            GCControllerButtonInput *button = pad.physicalInputProfile.buttons[name];
+            if (button.preferredSystemGestureState == GCSystemGestureStateDisabled) continue;
+            button.preferredSystemGestureState = GCSystemGestureStateDisabled;
+            if (!_learningRelease[identity]) _learningRelease[identity] = [NSMutableSet set];
+            [_learningRelease[identity] addObject:AKInputElementForControllerButton(name)];
+            AKCILog(@"inspector: released the system gesture on %@ for %@ while the user chooses a button",
+                    AKInputElementForControllerButton(name), identity);
+        }
+    }
+}
+
+- (void)endReleasingForLearning {
+    if (!_learningRelease) return;
+    for (GCController *pad in GCController.controllers) {
+        NSString *identity = AKControllerIdentity(pad);
+        for (NSString *element in [_learningRelease[identity] allObjects]) {
+            // A button the user went on to map keeps its release; the settings own that one
+            // and would otherwise have its decision undone here.
+            if ([_releasedGestures[identity] containsObject:element]) continue;
+            GCControllerButtonInput *button = [self buttonForElement:element device:identity inPad:pad];
+            if (button.preferredSystemGestureState == GCSystemGestureStateDisabled)
+                button.preferredSystemGestureState = GCSystemGestureStateEnabled;
+        }
+    }
+    NSUInteger count = _learningRelease.count;
+    _learningRelease = nil;
+    if (count) AKCILog(@"inspector: the gestures lent out for choosing a button are back with the system");
 }
 
 #pragma mark - Inventories: what does this pad actually have?

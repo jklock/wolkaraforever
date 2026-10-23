@@ -42,7 +42,14 @@ router. Disabling ownership restores forwarding. Controller buttons cannot be
 matched to guest key usages by the current implementation.
 
 The inspector changes a controller's system gesture only for an enabled, explicit
-mapping of that element. It restores gestures on unmapping, disabling and disconnect.
+mapping of that element, **and while the user is choosing that mapping**. Without
+the second case a reserved button can never be learned at all: its press goes to
+iPadOS, so the page that asks the user to press something shows nothing - which is
+what a user reported on 2026-10-22 ("the other button I could use does not show up
+in the UI when pressed"). Every button of every connected pad is lent out when
+learning begins and given back when it ends (learned, cancelled, timed out, app
+backgrounded, pad disconnected); a button that was subsequently mapped keeps its
+release, and everything else is restored.
 A controller button hidden entirely by iPadOS cannot be mapped through a screenshot.
 
 ## Verification
