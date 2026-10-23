@@ -122,6 +122,57 @@ would land on 33.3 ms with a three-deep drawable queue, and 20.0 ms is the clien
 producing frames at its own rate. So the in-world frame is the client's own CPU work
 plus whatever that work waits for.
 
+### The same session, throttled
+
+Twenty minutes later the same session read:
+
+```
+Frame Rate: 32.6 FPS (29.2 ms)
+GPU: 10.9 ms of 29.2 ms (36% busy)
+Thermal State: Serious (Throttling active)
+RAM Footprint: 4542 MB · Headroom: 11842 MB
+```
+
+That is the collapse the user feels, and the three numbers together name it:
+
+| | at rest | throttled | ratio |
+| --- | --- | --- | --- |
+| Frame | 20.0 ms | 29.2 ms | 1.46x slower |
+| GPU busy | 7.8 ms | 10.9 ms | 1.40x slower |
+| GPU share | 39% | 36% | - |
+
+Both the CPU side and the GPU lost about the same proportion, which is what a
+*SoC-wide* clock reduction looks like, not a workload that suddenly got heavier. And
+the GPU is still only a third of the frame, so the client remained CPU-bound
+throughout: **the throttle is the cause of the collapse, and lowering the GPU's work
+alone would not restore 60 fps unless it first lowers the power draw enough for the
+clocks to come back.**
+
+`ProcessInfo.ThermalStateSerious` is Apple's "the thermal state is high"; `critical`
+is documented as "significantly impacting the performance of the system and the
+device needs to cool down". Neither is something an app can opt out of, and no iPad
+has a fan. The only lever software has is to draw less power, sooner, so the device
+never reaches the state — and to recover, to wait for it to cool.
+
+What makes the sustained draw here bigger than it needs to be, in the order the
+measurements support:
+
+1. **The client renders at native 2732x2048** (5.6 MP): `[ak] window content size ->
+   1366x1024 @2x`, and no `renderScale` assignment exists in `Config.wtf`, so the
+   internal scale is the default 1.0. The GPU's 8-11 ms is a continuous power draw.
+2. **No frame cap.** `Config.wtf` carries `useMaxFPS "1"` but no frame-rate
+   assignment, so nothing stops the client rendering as fast as it can outside the
+   scene limit — menus, loading and the login screen included.
+3. **The iPad was charging during the throttled sample** (`Battery: 100%
+   (Charging)`). Charging is a second heat source inside the same chassis; a session
+   that throttles while plugged in may not throttle on battery.
+4. **Brightness** was not measured. The backlight is the largest single power draw on
+   an iPad display and therefore a first-order thermal input at 5.6 MP.
+
+Items 1 and 2 are the client's own settings and can be applied by this app; 3 and 4
+are the user's to control while playing. See "Lane 10" below for what was changed and
+what it measured.
+
 Two candidates for that time, both ours to check and one already measured:
 
 - **Shader warm-up (measured).** 114 Metal libraries loaded during the session, 96

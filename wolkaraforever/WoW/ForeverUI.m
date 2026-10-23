@@ -69,6 +69,8 @@ NSSet<NSString *> *TKForeverUIGraphicsCVars(void) {
             @"graphicsProjectedTextures", @"graphicsEnvironmentDetail", @"graphicsTripleBuffering",
             @"graphicsMSAA", @"graphicsResampleQuality", @"graphicsGammaAdjustment",
             @"graphicsContrast", @"graphicsBrightness", @"graphicsRaidFramerate",
+            // Render scale and the frame cap this app writes for a sustained rate
+            @"renderScale", @"vsync",
         ]];
     });
     return set;
@@ -197,8 +199,97 @@ static BOOL TKWriteConfig(NSString *path, NSString *text, NSError **error) {
     return YES;
 }
 
-+ (BOOL)gamepadEnabledInWorkingDirectory:(NSString *)directory {
-    NSError *error = nil;
++ (BOOL)setCVars:(NSDictionary<NSString *, NSString *> *)values
+inWorkingDirectory:(NSString *)directory
+           error:(NSError **)error {
+    if (values.count == 0) return YES;
+    NSString *wtf = [self wtfDirectoryInWorkingDirectory:directory create:YES error:error];
+    if (!wtf) return NO;
+    NSString *path = [wtf stringByAppendingPathComponent:@"Config.wtf"];
+    if (!TKInside(directory, path)) {
+        if (error) *error = TKError(@"The game's configuration is outside its working folder.");
+        return NO;
+    }
+    // A name that is not a bare CVar name would write a line the client cannot
+    // read, which fails silently. Refuse it here instead.
+    NSCharacterSet *space = NSCharacterSet.whitespaceAndNewlineCharacterSet;
+    for (NSString *name in values) {
+        if (name.length == 0 || [name rangeOfCharacterFromSet:space].location != NSNotFound ||
+            [name rangeOfString:@"\""].location != NSNotFound) {
+            if (error) *error = TKError(@"A setting name is not a bare name.");
+            return NO;
+        }
+        NSString *value = values[name];
+        if ([value rangeOfCharacterFromSet:space].location != NSNotFound ||
+            [value rangeOfString:@"\""].location != NSNotFound) {
+            if (error) *error = TKError(@"A setting value contains a space or a quote.");
+            return NO;
+        }
+    }
+
+    NSString *text = nil;
+    if ([NSFileManager.defaultManager fileExistsAtPath:path]) {
+        text = TKReadConfig(path, error);
+        if (!text) return NO;
+    } else {
+        text = @"";
+    }
+
+    NSMutableArray<NSString *> *kept = [NSMutableArray new];
+    for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
+        NSString *name = TKCVarName(line);
+        BOOL replace = NO;
+        if (name) for (NSString *wanted in values) if (TKNameIs(name, wanted)) { replace = YES; break; }
+        if (!replace) [kept addObject:line];
+    }
+    NSString *normalised = [kept componentsJoinedByString:@"\n"];
+    if (normalised.length && ![normalised hasSuffix:@"\n"]) normalised = [normalised stringByAppendingString:@"\n"];
+    for (NSString *name in [values.allKeys sortedArrayUsingSelector:@selector(compare:)])
+        normalised = [normalised stringByAppendingString:
+            [NSString stringWithFormat:@"SET %@ \"%@\"\n", name, values[name]]];
+
+    if (!TKWriteConfig(path, normalised, error)) return NO;
+
+    // Re-read rather than trust the write: one assignment per name, right value.
+    NSError *rereadError = nil;
+    NSString *written = TKReadConfig(path, &rereadError);
+    if (!written) {
+        if (error) *error = rereadError;
+        return NO;
+    }
+    for (NSString *wanted in values) {
+        NSUInteger assignments = 0;
+        BOOL stored = NO;
+        for (NSString *line in [written componentsSeparatedByString:@"\n"]) {
+            if (!TKNameIs(TKCVarName(line), wanted)) continue;
+            assignments++;
+            stored = [TKCVarValue(line) isEqualToString:values[wanted]];
+        }
+        if (assignments != 1 || !stored) {
+            if (error) *error = TKError(@"A setting could not be stored.");
+            return NO;
+        }
+    }
+    return YES;
+}
+
++ (NSDictionary<NSString *, NSString *> *)performancePreset {
+    // The client's own CVars. 0.75 is a starting point measured on this device;
+    // the number that holds a frame under 16.7 ms is what the device test is for,
+    // and changing it is changing this constant.
+    return @{
+        @"renderScale": @"0.75",        // internal render resolution, native is 1.0
+        @"gxForegroundFPS": @"60",      // never render faster than the panel presents
+        @"gxBackgroundFPS": @"30",      // and not at full rate when it is not visible
+        @"vsync": @"1",
+    };
+}
+
++ (BOOL)applyPerformancePresetInWorkingDirectory:(NSString *)directory error:(NSError **)error {
+    return [self setCVars:self.performancePreset inWorkingDirectory:directory error:error];
+}
+
++ (BOOL)gamepadEnabledInWorkingDirectory:(NSString *)directory {    NSError *error = nil;
     NSString *wtf = [self wtfDirectoryInWorkingDirectory:directory create:NO error:&error];
     if (!wtf) return NO;
     NSString *path = [wtf stringByAppendingPathComponent:@"Config.wtf"];

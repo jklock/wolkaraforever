@@ -24,6 +24,28 @@ FOUNDATION_EXPORT NSString *const TKForeverUIEdition;
 // `"1"` or `"0"`, everything else byte-identical.
 + (BOOL)setGamepad:(BOOL)enabled inWorkingDirectory:(NSString *)directory error:(NSError **)error;
 
+// Writes exactly one `SET <name> "<value>"` for each entry, removes every other
+// assignment of those names, and leaves every other line byte-identical. Reads
+// the file back and fails unless exactly one assignment per name is present with
+// the value asked for. Names are matched case-insensitively, as WoW does. A name
+// that is empty, contains whitespace or a quote is refused rather than guessed
+// at, because a broken line would silently do nothing.
++ (BOOL)setCVars:(NSDictionary<NSString *, NSString *> *)values
+inWorkingDirectory:(NSString *)directory
+           error:(NSError **)error;
+
+// The client settings this app applies so a frame fits the display's budget.
+//
+// Measured on Dadpad (M1 iPad Pro 12.9, iPadOS 27, 2026-10-23): the client
+// renders at native 2732x2048 with no render scale of its own and no frame cap,
+// spends 8-9 ms of GPU time per in-world frame and then misses the 16.7 ms
+// display budget, settling near 45 fps; twenty minutes later it is thermally
+// throttling ("Serious") at 32.6 fps with both CPU and GPU clocks down. These
+// are the client's own CVars, so the client keeps its own quality settings and
+// nothing here is a binary patch.
++ (NSDictionary<NSString *, NSString *> *)performancePreset;
++ (BOOL)applyPerformancePresetInWorkingDirectory:(NSString *)directory error:(NSError **)error;
+
 // YES when Config.wtf exists and carries exactly one GamePadEnable assignment,
 // with value 1. A missing or unreadable config reads as NO.
 + (BOOL)gamepadEnabledInWorkingDirectory:(NSString *)directory;
