@@ -100,36 +100,36 @@ diagnostics off, and the build you are playing is `-O0` with synchronous logging
 
 # Addendum: the arithmetic says the frame is serialised, not slow
 
-Re-reading the measured numbers as a pipeline rather than as a budget changes the target.
+**Correction (same day).** The reasoning in this section is not sound, and it is left here
+struck through in effect rather than deleted, because the mistake is instructive.
 
-```
-frame   22.5 ms   (44.4 fps)
-GPU      9.1 ms   of that frame, 35 % busy
-wait     0.04 ms  for the next drawable
-```
+I wrote that a 22.5 ms frame with a 9.1 ms GPU implies "client CPU = 13.5 ms", and therefore
+that the frame must be CPU + GPU serialised, and therefore that overlapping them would reach
+74 fps. **The subtraction is only valid if the two are serialised — which is the thing it was
+supposed to prove.** If they already overlap, the frame time *is* the CPU time (22.5 ms, the
+bottleneck) and the GPU's 9.1 ms runs underneath it. Both readings are consistent with every
+number we have. So there is no evidence yet that the pipeline is serialised, and no basis for
+the 74 fps figure.
 
-If CPU submission and GPU execution overlapped the way a double- or triple-buffered renderer is
-supposed to, the frame would be **max(CPU, GPU) ≈ 13.5 ms**, which is *inside* the 16.7 ms
-budget — 74 fps, before any optimisation at all. The measured 22.5 ms is **CPU + GPU**, which is
-what a serialised pipeline looks like: the client submits, waits for the frame to finish, and
-only then begins the next frame's CPU work.
+Apple's documentation also removes one of the three candidate causes: `CAMetalLayer`
+`maximumDrawableCount` is **3 by default** ("You can set this value to 2 or 3 only… The default
+value is 3", <https://developer.apple.com/documentation/quartzcore/cametallayer/maximumdrawablecount>),
+so unless the client sets 2 the pool already allows three frames in flight.
 
-**That is the only arithmetic in this entire investigation that reaches 60 without the client
-doing less work.** Fourteen milliseconds of client CPU and nine of GPU, overlapped, is 60 fps on
-a throttled M1. So the first question is no longer "how do we make it faster" but **"why is the
-client not overlapping submission with the GPU, and is the layer the reason?"**
+**What would settle it, and it is one measurement.** Timestamp the frame on the thread that
+runs the client: `nextDrawable` return → last `commit`. That window is the CPU submission time.
+Then compare it with the presented-frame interval:
 
-Three layer-side causes are possible and each is checkable:
+- window ≈ interval → the CPU is the bottleneck and the GPU is already overlapping; no layer
+  change reaches 60, because the client's own CPU needs 22.5 ms.
+- window ≈ interval − 9 ms → the submission is waiting on the GPU; then **something is
+  serialising**, and the candidates are a client `waitUntilCompleted` (Apple: "Blocks the
+  current thread until the GPU finishes executing the command buffer and all of its completion
+  handlers"), `maximumDrawableCount = 2`, or `presentsWithTransaction`.
 
-1. **Drawable count.** iPadOS allows `maximumDrawableCount` of 2 or 3. At 2, a client can only
-   have one frame in flight and the pipeline must serialise. The layer creates the layer's
-   configuration in `AppKit.m` (`setContentLayer`/`makeBackingLayer` path) and can set 3.
-2. **A completion wait on the frame thread.** If the guest calls `waitUntilCompleted` (or
-   `waitUntilScheduled`) inside its frame, the layer can see every such call — it currently
-   passes through unobserved. Instrumenting it costs nothing and tells us immediately whether
-   the serialisation is the client's design or the layer's buffering.
-3. **`presentsWithTransaction`.** Default NO; if set, presentation couples to the transaction
-   commit and removes a buffer from the pipeline.
+That measurement is the first item in the change list, because every other decision depends on
+its result.
+
 
 ## iPadOS research, and what could not be verified
 
