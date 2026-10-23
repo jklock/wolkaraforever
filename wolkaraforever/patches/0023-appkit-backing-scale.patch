@@ -1,0 +1,79 @@
+# WolkaraForever layer patch 0023 - AppKit: tell the guest a smaller backing scale
+#
+# Why: a macOS client asks NSScreen for its backing scale and derives every pixel
+# size from it - window backing store, drawable size, glyph sizes. On this iPad the
+# answer was UIScreen.nativeScale (2.0) over a 1366x1024 point screen, so the guest
+# drew 2732x2048 every frame: 5.6 megapixels, which a fanless M1 cannot sustain,
+# and which is what pushes the SoC into thermal throttling (measured: 32.6 fps at
+# "Serious" with both CPU and GPU clocks down ~40%).
+#
+# Answering 1.0 instead keeps every one of those calculations in the same units:
+# the guest still lays out 1366x1024 points, each point is one pixel, its own hit
+# testing and pointer maths agree with what it draws, and CoreAnimation stretches
+# the 1366x1024 result to the panel with an exact 2x. That is the documented
+# relationship, not a forgery: CAMetalLayer.drawableSize is "bounds size multiplied
+# by its contentsScale factor", and this changes the factor the guest is told.
+#
+# A previous attempt shrank only drawableSize and left the scale at 2.0. The client
+# drew at half size while its own coordinate contract said otherwise, and it became
+# impossible to log in because clicks landed in the wrong place. This patch is the
+# same saving with the contract intact.
+#
+# On by default. The launcher's own interface is unaffected: it is UIKit and never asks
+# NSScreen, and a screenshot with the scale on and off is identical. Only the guest's
+# view of the screen changes.
+#
+# Applies to: translation/AppKit/Screens.m only. The host view's own contentScaleFactor
+# is deliberately NOT touched: that controller is the launcher's too, and halving it
+# shrank the launcher itself.
+# Upstream: platform-specific by nature (UIScreen has no macOS equivalent).
+#
+diff --git a/translation/AppKit/Screens.m b/translation/AppKit/Screens.m
+index cbda893..69dd499 100644
+--- a/translation/AppKit/Screens.m
++++ b/translation/AppKit/Screens.m
+@@ -1,4 +1,35 @@
+ #import "AppKit.h"
++#include <stdlib.h>
++// How many pixels the guest is told it has per point.
++//
++// A macOS client asks the screen for its backing scale and computes every pixel
++// size from it - window backing store, drawable size, glyph sizes. On the iPad the
++// panel is 2732x2048 at a 2.0 scale, so a guest that is told 2.0 draws 5.6 million
++// pixels every frame, which is what a fanless M1 cannot sustain.
++//
++// Telling it 1.0 instead keeps every one of those calculations in the same units -
++// the guest still lays out 1366x1024 points, but each point is one pixel - so its
++// own coordinates, hit testing and pointer maths agree with what it draws, and
++// CoreAnimation stretches the 1366x1024 result to the panel with an exact 2x. This
++// is the documented way round: drawableSize is defined as bounds x contentsScale,
++// and the scale is the layer's, not something to be forged underneath it.
++//
++// 1.0 (half) by default; WolkaraForeverBackingScale or TOLKARA_BACKING_SCALE can
++// set 2.0 to give the guest the panel's native scale back.
++CGFloat AKGuestBackingScale(void) {
++    static CGFloat scale = -1.0;
++    if (scale >= 0.0) return scale;
++    scale = 1.0;
++    const char *environment = getenv("TOLKARA_BACKING_SCALE");
++    if (environment && *environment) scale = atof(environment);
++    else {
++        id stored = [NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverBackingScale"];
++        if ([stored respondsToSelector:@selector(doubleValue)]) scale = [stored doubleValue];
++    }
++    if (!(scale >= 1.0 && scale <= 3.0)) scale = 1.0;
++    return scale;
++}
++
+ @implementation NSScreen
+ + (NSScreen *)mainScreen { static NSScreen *s; static dispatch_once_t once; dispatch_once(&once, ^{s=[self new];}); return s; }
+ + (NSArray *)screens { return @[self.mainScreen]; }
+@@ -8,7 +39,7 @@
+ - (NSRect)convertRectFromBacking:(NSRect)r { CGFloat f=self.backingScaleFactor; return CGRectMake(r.origin.x/f,r.origin.y/f,r.size.width/f,r.size.height/f); }
+ - (NSRect)convertRectToBacking:(NSRect)r { CGFloat f=self.backingScaleFactor; return CGRectMake(r.origin.x*f,r.origin.y*f,r.size.width*f,r.size.height*f); }
+ - (NSRect)visibleFrame { return self.frame; }
+-- (CGFloat)backingScaleFactor { return UIScreen.mainScreen.nativeScale; }
++- (CGFloat)backingScaleFactor { return AKGuestBackingScale(); }
+ - (NSDictionary *)deviceDescription { return @{@"NSScreenNumber":@1,@"NSDeviceSize":[NSValue valueWithCGSize:self.frame.size],@"NSDeviceResolution":[NSValue valueWithCGSize:CGSizeMake(72,72)],@"NSDeviceBitsPerSample":@8,@"NSDeviceColorSpaceName":@"NSCalibratedRGBColorSpace"}; }
+ - (NSInteger)maximumFramesPerSecond { return UIScreen.mainScreen.maximumFramesPerSecond; }
+ // No extended dynamic range is offered to the guest (1.0: standard range only).
