@@ -1,0 +1,82 @@
+# WolkaraForever layer patch 0022 - Metal: a surface size the layer chooses
+#
+# Why: the guest gets a drawable at the panel's native size - 1366x1024 points
+# at 2x is 2732x2048, 5.6 megapixels, every frame - and no client setting can
+# change that. WoW's own renderScale shrinks its 3D pass and leaves the clear,
+# the UI, the composition and the present at full size. On a throttled M1 iPad,
+# after 20 minutes in world, the GPU was measured at 10.9 ms of a 29.2 ms frame
+# with both CPU and GPU clocks down; the pixels are a large, continuous part of
+# that power draw and therefore of the heat that causes the throttling.
+#
+# The layer owns drawableSize, so this is the lever only the layer has: hand the
+# guest a smaller surface and let CoreAnimation scale it to the panel. It costs
+# sharpness in proportion to the scale and buys GPU time in proportion to the
+# pixels removed (0.75 is 56% of the pixels, 0.5 is 25%).
+#
+# Off unless asked for: WolkaraForeverDrawableScale in the app's defaults, or
+# TOLKARA_DRAWABLE_SCALE for a test. Re-applied per frame because the client may
+# resize the layer at any time, and the comparison is two multiplies.
+#
+# Applies to: translation/Metal/Presentation.m
+# Upstream: candidate (not submitted).
+#
+diff --git a/translation/Metal/Presentation.m b/translation/Metal/Presentation.m
+index 55a702e..0f071db 100644
+--- a/translation/Metal/Presentation.m
++++ b/translation/Metal/Presentation.m
+@@ -172,9 +172,55 @@ static BOOL captureFrames, measureFrames;
+ @end
+ extern void AKInstallRenderDiagnostics(Class cls);
+ extern NSArray *AKRenderStatsForCommand(id command);
++// The surface the guest draws on, which only this layer can change.
++//
++// The guest asks for a window and gets a drawable at the panel's native size:
++// 1366x1024 points at 2x is 2732x2048, five and a half million pixels, every
++// frame. A macOS client that asks for that window on a Mac gets the same, and
++// renders the same number of pixels; here the panel is the iPad's. The client's
++// own settings cannot change it - WoW's renderScale shrinks its 3D pass and
++// leaves the UI, the clear, the composition and the present at full size - so
++// this is the layer's own lever: hand it a smaller surface, let CoreAnimation
++// scale it up to the panel. It costs sharpness and buys GPU time in proportion
++// to the pixels removed, which on a throttled M1 iPad is the largest single
++// block of the frame the layer controls.
++//
++// Off by default (scale 1.0). Set by WolkaraForeverDrawableScale in the app's
++// defaults, or TOLKARA_DRAWABLE_SCALE for a test. 0.5 is a quarter of the
++// pixels; 0.75 is a little over half.
++static double drawableScale(void) {
++    static double scale = -1.0;
++    if (scale >= 0.0) return scale;
++    scale = 1.0;
++    const char *environment = getenv("TOLKARA_DRAWABLE_SCALE");
++    if (environment && *environment) scale = atof(environment);
++    else {
++        id stored = [NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverDrawableScale"];
++        if ([stored respondsToSelector:@selector(doubleValue)]) scale = [stored doubleValue];
++    }
++    if (!(scale >= 0.25 && scale <= 1.0)) scale = 1.0;
++    return scale;
++}
++static void applyDrawableScale(CAMetalLayer *layer) {
++    double scale = drawableScale();
++    if (scale >= 0.999) return;
++    CGSize bounds = layer.bounds.size;
++    CGFloat backing = layer.contentsScale > 0.0 ? layer.contentsScale : 2.0;
++    CGSize wanted = CGSizeMake(floor(bounds.width * backing * scale), floor(bounds.height * backing * scale));
++    if (wanted.width < 2.0 || wanted.height < 2.0) return;
++    if (CGSizeEqualToSize(layer.drawableSize, wanted)) return;
++    CGSize before = layer.drawableSize;
++    layer.drawableSize = wanted;
++    static BOOL logged;
++    if (!logged) { logged = YES;
++        AKLog(@"Metal drawable scale %.2f: %gx%g instead of %gx%g", scale, wanted.width, wanted.height, before.width, before.height);
++    }
++}
+ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
+     // A framebuffer-only drawable cannot be copied for diagnostic readback.
+     if(captureFrames) ((CAMetalLayer *)layer).framebufferOnly=NO;
++    // The layer's own surface size; a no-op unless a scale was asked for.
++    applyDrawableScale((CAMetalLayer *)layer);
+     // How many drawables the layer hands out decides how far the client may run
+     // ahead: with one, every frame waits for the previous one to be presented,
+     // which looks like a frame that is too slow while the GPU sits idle. Record

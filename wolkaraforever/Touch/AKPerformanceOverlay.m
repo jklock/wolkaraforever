@@ -481,6 +481,23 @@ static double ReadMetalWaitMs(void) {
             _displayLinkFPS = _displayLinkFPS > 0.0 ? (_displayLinkFPS * 0.9 + current * 0.1) : current;
         }
     }
+    // The panel's own period, which is not this link's rate: targetTimestamp is
+    // the refresh this callback is being called for, so the difference between
+    // it and timestamp is the current refresh period. Under thermal pressure
+    // iPadOS can lower the panel's rate, and then a 60 fps frame rate is not
+    // available to the guest at all - no client setting can buy what the display
+    // is not delivering. Logged twice a second so a device run answers it.
+    CFTimeInterval period = link.targetTimestamp - link.timestamp;
+    if (period > 0.0) {
+        static NSTimeInterval nextReport;
+        NSTimeInterval now = link.timestamp;
+        if (now >= nextReport) {
+            nextReport = now + 5.0;
+            fprintf(stderr, "[ak] display period=%.2f ms (%.0f Hz) thermal=%d lowPower=%d\n",
+                    period * 1000.0, 1.0 / period, (int)NSProcessInfo.processInfo.thermalState,
+                    (int)NSProcessInfo.processInfo.isLowPowerModeEnabled);
+        }
+    }
     _lastDisplayLinkTimestamp = link.timestamp;
 }
 
