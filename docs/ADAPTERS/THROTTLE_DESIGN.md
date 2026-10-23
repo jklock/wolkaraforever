@@ -95,3 +95,61 @@ is not achievable by changing the layer, and the answer is a product decision ab
 (more aggressive settings, or a lower target). What this design guarantees is that the layer
 is not the reason — and today we cannot say that, because we have never measured it with the
 diagnostics off, and the build you are playing is `-O0` with synchronous logging.
+
+---
+
+# Addendum: the arithmetic says the frame is serialised, not slow
+
+Re-reading the measured numbers as a pipeline rather than as a budget changes the target.
+
+```
+frame   22.5 ms   (44.4 fps)
+GPU      9.1 ms   of that frame, 35 % busy
+wait     0.04 ms  for the next drawable
+```
+
+If CPU submission and GPU execution overlapped the way a double- or triple-buffered renderer is
+supposed to, the frame would be **max(CPU, GPU) ≈ 13.5 ms**, which is *inside* the 16.7 ms
+budget — 74 fps, before any optimisation at all. The measured 22.5 ms is **CPU + GPU**, which is
+what a serialised pipeline looks like: the client submits, waits for the frame to finish, and
+only then begins the next frame's CPU work.
+
+**That is the only arithmetic in this entire investigation that reaches 60 without the client
+doing less work.** Fourteen milliseconds of client CPU and nine of GPU, overlapped, is 60 fps on
+a throttled M1. So the first question is no longer "how do we make it faster" but **"why is the
+client not overlapping submission with the GPU, and is the layer the reason?"**
+
+Three layer-side causes are possible and each is checkable:
+
+1. **Drawable count.** iPadOS allows `maximumDrawableCount` of 2 or 3. At 2, a client can only
+   have one frame in flight and the pipeline must serialise. The layer creates the layer's
+   configuration in `AppKit.m` (`setContentLayer`/`makeBackingLayer` path) and can set 3.
+2. **A completion wait on the frame thread.** If the guest calls `waitUntilCompleted` (or
+   `waitUntilScheduled`) inside its frame, the layer can see every such call — it currently
+   passes through unobserved. Instrumenting it costs nothing and tells us immediately whether
+   the serialisation is the client's design or the layer's buffering.
+3. **`presentsWithTransaction`.** Default NO; if set, presentation couples to the transaction
+   commit and removes a buffer from the pipeline.
+
+## iPadOS research, and what could not be verified
+
+The Metal documentation that is live contains the mechanism most relevant to a CPU-bound
+renderer, `MTLResidencySet` (iPadOS 18+): per-resource residency calls such as
+`useResource(_:usage:)` "require CPU overhead for each resource or heap, which scale up with
+each one you add" and "apply to a single command encoder, which means you need to call the
+methods again for the same resources for each command encoder", whereas residency sets
+"require minimal CPU overhead by aggregating allocations" and "can attach to a command buffer
+with a single call, which makes residency set's allocations available to all of that command
+buffer's encoders" (<https://developer.apple.com/documentation/metal/mtlresidencyset>).
+
+**That is a layer-side CPU reduction on the client's own submission path**: interpose the
+per-resource residency calls, accumulate them per command buffer, attach one residency set at
+commit. It is safe only for resources the client marked untracked (residency sets do no hazard
+tracking and are not thread-safe); tracked resources keep their hazard handling and are left
+alone.
+
+**What I could not verify:** Apple's iPadOS 26 and 27 pages returned 404 to this session, so no
+claim here rests on a specific iPadOS 27 behaviour. Everything cited above is from documentation
+that served successfully. Anything about iPadOS 27 specifically is unverified and is marked as
+such rather than asserted.
+
