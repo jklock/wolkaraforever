@@ -104,7 +104,7 @@ The link is reported: with a cable attached CoreDevice uses USB; otherwise the c
 runs over the paired network, which works but is much slower for tens of gigabytes.
 
 `--source` accepts the game on any folder or volume (it is the folder containing
-`_classic_beta_`). The tested install is about 63 GB, so allow roughly 70 GB free on the
+`_forever_`). The tested install is about 63 GB, so allow roughly 70 GB free on the
 iPad. `preflight.sh --source <folder>` checks it, and reports iPad free space when the
 iPad is connected by USB; a network-only iPad exposes its capacity but not free space, so
 then check Settings > General > iPad Storage.
@@ -160,7 +160,7 @@ cd build/platform && profiles/wow-forever/sync_addons.sh --source "/Volumes/Stor
 | `several iPads are available` | More than one connected device is visible. | Re-run with `--device "Name"` or `--device <UDID>`. |
 | `local.env already has a different DEVICE` | `--write` refuses to switch devices silently. | Use the intended device, or pass `--force`. |
 | `DEVICE is not set` from `push_game` | `local.env` has no `DEVICE`. | `wolkaraforever/tools/device_variables.sh --write`. |
-| `original Classic beta executable not found` | `--source` is not a WoW Forever (Classic beta) install. | Point `--source` at the folder containing `_classic_beta_/World of Warcraft Beta.app`. |
+| `original Forever executable not found` | `--source` is not a World of Warcraft Forever install. | Point `--source` at the folder containing `_forever_/World of Warcraft.app`. |
 | `install_prerequisites` says full Xcode is missing | Only Command Line Tools are selected. | Install Xcode from the App Store, open it once, then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`. |
 | `git-subtree is not available` | `git` is Apple's, without subtree. | `brew install git` and put Homebrew's bin first in `PATH`. |
 

@@ -1,6 +1,6 @@
-# World of Warcraft Forever (Classic beta)
+# World of Warcraft Forever
 
-The macOS arm64 Classic beta client (1.60.1) from `_classic_beta_`. See
+The macOS arm64 client (1.60.1) from `_forever_`. See
 [COMPATIBILITY.md](../../COMPATIBILITY.md) for what works.
 
 On an iPad Pro M5 / iPadOS 27, build 70170 was tested with Developer
@@ -19,7 +19,7 @@ account. Nothing from the game is included here.
 In `local.env`:
 
 ```
-GUEST_EXE="/Applications/World of Warcraft/_classic_beta_/World of Warcraft Beta.app/Contents/MacOS/World of Warcraft"
+GUEST_EXE="/Applications/World of Warcraft/_forever_/World of Warcraft.app/Contents/MacOS/World of Warcraft"
 ```
 
 Build, install and set up your execution mode as described in
@@ -54,7 +54,7 @@ other add-ons:
 profiles/wow-forever/sync_addons.sh --source "/Volumes/Storage/World of Warcraft"
 ```
 
-The source must contain `_classic_beta_/Interface/AddOns`. The script uses the
+The source must contain `_forever_/Interface/AddOns`. The script uses the
 configured `DEVICE` and `TOLKARA_BUNDLE_ID` from `local.env`; pass `--device`
 to select a different paired device. It is a one-way file copy, not an add-on
 catalog or update manager.

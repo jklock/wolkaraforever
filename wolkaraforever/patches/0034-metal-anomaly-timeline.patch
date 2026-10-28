@@ -1,0 +1,104 @@
+# WolkaraForever layer patch 0034 - Metal: attribute anomalous present gaps
+#
+# Why: aggregate FPS, GPU time, and drawable wait do not identify which stage
+# lost time on an individual hitch.  During --measure-native only, keep one
+# timestamp record per drawable and emit it only when the actual present gap
+# exceeds 20 ms.  Normal rendering and HUD-only statistics are unchanged.
+#
+# Applies to: translation/Metal/Presentation.m after 0026.
+# Upstream: candidate.
+#
+diff --git a/translation/Metal/Presentation.m b/translation/Metal/Presentation.m
+--- a/translation/Metal/Presentation.m
++++ b/translation/Metal/Presentation.m
+@@ -151,18 +151,41 @@ static char poolLogged;
+ static BOOL captureFrames, measureFrames;
++static char traceMarker;
++@interface AKFrameTrace : NSObject
++@property double acquiredAt, committedAt, scheduledAt, completedAt;
++@property double gpuStartAt, gpuEndAt;
++@end
++@implementation AKFrameTrace
++@end
++
+ @interface AKFrameTiming : NSObject
+ @property double start, previous, longest;
+ @property NSUInteger frames, slow;
+ @property double gapTotal, gapSquared;
+ @property NSUInteger gapsUnder12ms, gaps12To15ms, gaps15To19ms, gaps19To25ms, gaps25To34ms, gaps34To50ms;
+ @property double cpuSubmissionTotal, cpuSubmissionMax;
+ @property NSUInteger cpuSubmissionSamples, completedWaits, scheduledWaits;
+ @property double completedWaitTotal, completedWaitMax, scheduledWaitTotal, scheduledWaitMax;
+ - (void)presentedAt:(double)time;
++- (void)presentedAt:(double)time trace:(AKFrameTrace *)trace;
+ - (void)recordSubmission:(double)seconds;
+ - (void)recordCompletedWait:(double)seconds;
+ - (void)recordScheduledWait:(double)seconds;
+ @end
+ @implementation AKFrameTiming
++- (void)presentedAt:(double)time trace:(AKFrameTrace *)trace {
++    if (time <= 0.0) return;
++    @synchronized(self) {
++        double gap = _previous > 0.0 ? time - _previous : 0.0;
++        [self presentedAt:time];
++        if (gap <= .020 || !trace) return;
++        @synchronized(trace) {
++            // MTLCommandBuffer and CACurrentMediaTime share the host clock; the
++            // drawable's presentedTime does not. Do not subtract those clock
++            // domains and manufacture a false multi-year delay.
++            AKLog(@"frame anomaly gap_ms=%.2f acquire_to_commit_ms=%.2f commit_to_scheduled_ms=%.2f scheduled_to_completed_ms=%.2f gpu_ms=%.2f", gap * 1000.0, (trace.committedAt - trace.acquiredAt) * 1000.0, (trace.scheduledAt - trace.committedAt) * 1000.0, (trace.completedAt - trace.scheduledAt) * 1000.0, (trace.gpuEndAt - trace.gpuStartAt) * 1000.0);
++        }
++    }
++}
+ - (void)recordSubmission:(double)seconds {
+     @synchronized(self) {
+         _cpuSubmissionTotal += seconds;
+@@ -230,13 +250,16 @@ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
+             if(measureFrames) {
+                 objc_setAssociatedObject(drawable,&timingMarker,timing,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                 objc_setAssociatedObject(drawable,&submissionMarker,@(CACurrentMediaTime()),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++                AKFrameTrace *trace=[AKFrameTrace new]; trace.acquiredAt=CACurrentMediaTime();
++                objc_setAssociatedObject(drawable,&traceMarker,trace,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+             }
+         }
+ #if !TARGET_OS_SIMULATOR
+         // Presentation timestamps are diagnostics; the simulator SDK lacks them.
+         [drawable addPresentedHandler:^(id<MTLDrawable> frame) {
+             AKRecordMetalFramePresented(frame.presentedTime);
+-            [timing presentedAt:frame.presentedTime];
++            AKFrameTrace *trace=measureFrames ? objc_getAssociatedObject(frame,&traceMarker) : nil;
++            [timing presentedAt:frame.presentedTime trace:trace];
+             uint64_t count=atomic_fetch_add(&presented,1)+1;
+             if(count==1 || count==60 || count==600 || count==1800) AKLog(@"Metal frame %llu presented at %.6f",(unsigned long long)count,frame.presentedTime);
+         }];
+@@ -264,5 +287,8 @@ static void markCapture(id command,id<MTLDrawable> drawable) {
+             objc_setAssociatedObject(command,&submissionMarker,submitted,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+         }
+     }
++    if(measureFrames) {
++        objc_setAssociatedObject(command,&traceMarker,objc_getAssociatedObject(drawable,&traceMarker),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++    }
+     if(objc_getAssociatedObject(drawable,&captureMarker)) objc_setAssociatedObject(command,&captureTarget,drawable,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+ }
+@@ -287,6 +314,21 @@ static void observedWaitUntilScheduled(id command,SEL selector) {
+ }
+ static void observedCommit(id<MTLCommandBuffer> command,SEL selector) {
+     if(measureFrames) {
++        AKFrameTrace *trace=objc_getAssociatedObject(command,&traceMarker);
++        if(trace) {
++            @synchronized(trace) { trace.committedAt=CACurrentMediaTime(); }
++            [command addScheduledHandler:^(id<MTLCommandBuffer> scheduled) {
++                (void)scheduled;
++                @synchronized(trace) { trace.scheduledAt=CACurrentMediaTime(); }
++            }];
++            [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
++                @synchronized(trace) {
++                    trace.completedAt=CACurrentMediaTime();
++                    trace.gpuStartAt=completed.GPUStartTime;
++                    trace.gpuEndAt=completed.GPUEndTime;
++                }
++            }];
++        }
+         AKFrameTiming *timing=objc_getAssociatedObject(command,&timingMarker);
+         NSNumber *submitted=objc_getAssociatedObject(command,&submissionMarker);
+         if(timing && submitted) [timing recordSubmission:CACurrentMediaTime()-submitted.doubleValue];

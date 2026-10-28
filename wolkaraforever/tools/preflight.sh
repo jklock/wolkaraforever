@@ -156,7 +156,7 @@ except Exception:
 fi
 
 # 4. The Mac game folder, and free space on the Mac.
-exe="$source/_classic_beta_/World of Warcraft Beta.app/Contents/MacOS/World of Warcraft"
+exe="$source/_forever_/World of Warcraft.app/Contents/MacOS/World of Warcraft"
 if [ -f "$exe" ]; then
     ok "game source: $source"
     [ "$want_size" = 1 ] && { say "  ...     measuring $source (this can take a while)"; du -sh "$source" | sed 's/^/  OK      /'; }

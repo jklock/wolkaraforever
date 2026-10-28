@@ -1,0 +1,48 @@
+# WolkaraForever layer patch 0029 - CoreGraphics: report the guest's selected mode
+#
+# Why: the backing-scale setting is a contract, not just a CAMetalLayer knob.
+# CoreGraphics still advertised the panel's 2732x2048 native pixels even when
+# the guest surface is configured for 1366x1024. A game that consults display
+# modes can therefore allocate or select resources for the wrong surface.
+#
+# Report pixel dimensions derived from the same environment/default setting as
+# the AppKit guest scale. UIKit still owns and drives the physical 2732x2048
+# panel; only the macOS guest's virtual display mode changes.
+#
+# Applies to: translation/CoreGraphics/Displays.m
+# Upstream: candidate.
+#
+diff --git a/translation/CoreGraphics/Displays.m b/translation/CoreGraphics/Displays.m
+index f373183..a9c1299 100644
+--- a/translation/CoreGraphics/Displays.m
++++ b/translation/CoreGraphics/Displays.m
+@@ -2,6 +2,21 @@
+ #include <stdint.h>
+ #import "AKSupport.h"
+ #import <Metal/Metal.h>
++#include <stdlib.h>
++
++static CGFloat guestBackingScale(void) {
++    static CGFloat scale = -1.0;
++    if (scale >= 0.0) return scale;
++    scale = 1.0;
++    const char *environment = getenv("TOLKARA_BACKING_SCALE");
++    if (environment && *environment) scale = atof(environment);
++    else {
++        id stored = [NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverBackingScale"];
++        if ([stored respondsToSelector:@selector(doubleValue)]) scale = [stored doubleValue];
++    }
++    return scale >= 1.0 && scale <= 3.0 ? scale : 1.0;
++}
++
+ bool CGCursorIsVisible(void) { return !AKCursorIsHidden(); }
+ CGError CGAssociateMouseAndMouseCursorPosition(boolean_t connected) { AKMouseSetCaptured(!connected); return kCGErrorSuccess; }
+ CGError CGWarpMouseCursorPosition(CGPoint point) {
+@@ -13,6 +28,6 @@ typedef uint32_t CGDirectDisplayID;
+ typedef CFDictionaryRef CGDisplayModeRef;
+ typedef void (*DisplayCallback)(CGDirectDisplayID, uint32_t, void *);
+-static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; return @{@"width":@(s.bounds.size.width),@"height":@(s.bounds.size.height),@"pixelWidth":@(s.bounds.size.width*s.nativeScale),@"pixelHeight":@(s.bounds.size.height*s.nativeScale),@"refresh":@(s.maximumFramesPerSecond)}; }
++static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; CGFloat scale=guestBackingScale(); return @{@"width":@(s.bounds.size.width),@"height":@(s.bounds.size.height),@"pixelWidth":@(s.bounds.size.width*scale),@"pixelHeight":@(s.bounds.size.height*scale),@"refresh":@(s.maximumFramesPerSecond)}; }
+ CGDirectDisplayID CGMainDisplayID(void) { return 1; }
+ CGError CGGetActiveDisplayList(uint32_t capacity,CGDirectDisplayID *displays,uint32_t *count) {
+     if (!count || (capacity && !displays)) return kCGErrorIllegalArgument;

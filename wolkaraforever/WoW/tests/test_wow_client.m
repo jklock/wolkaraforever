@@ -45,13 +45,13 @@ int main(void) {
         BE(encoding,1,2); BE(encoding,1,2); BE(encoding,1,4); BE(encoding,0,4); BE(encoding,0,1); BE(encoding,0,4);
         [encoding appendData:[NSMutableData dataWithLength:32]];
         BE(encoding,1,1); BE(encoding,original.length,5); [encoding appendData:Hash(original)]; [encoding appendData:Hash(raw)]; encoding.length=22+32+1024;
-        NSString *config=[NSString stringWithFormat:@"build-uid = wow_classic_beta\n%@%@",Reference(@"install",install,client),Reference(@"encoding",encoding,client)];
+        NSString *config=[NSString stringWithFormat:@"build-uid = wowf\n%@%@",Reference(@"install",install,client),Reference(@"encoding",encoding,client)];
         NSString *build=TKWoWMD5(Text(config)), *cdn=TKWoWMD5(Text(@"cdn")); client.responses[build]=Text(config);
         NSString *versions=[NSString stringWithFormat:@"Region|BuildConfig|CDNConfig|VersionsName\neu|%@|%@|synthetic-1\n",build,cdn];
         client.responses[@"versions"]=Text(versions);
         client.responses[@"cdns"]=Text(@"Name|Path|Servers\neu|tpr/wow|https://level3.ssl.blizzard.com/?fallback=1\n");
         NSError *error=nil;
-        NSDictionary *plan=[client planForProduct:@"wow_classic_beta" region:@"eu" locale:@"enUS" error:&error];
+        NSDictionary *plan=[client planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error];
         assert(plan && !error && [plan[@"files"] count]==1 && ![plan[@"complete"] boolValue]);
         NSDictionary *file=plan[@"files"][0];
         NSString *directory=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
@@ -70,18 +70,18 @@ int main(void) {
         assert([[NSData dataWithContentsOfFile:path] isEqual:original]);
         // Corrupt configuration, duplicate region and transport failures stop the plan.
         client.responses[@"versions"]=Text(versions); client.responses[build]=Text(@"corrupt");
-        assert(![client planForProduct:@"wow_classic_beta" region:@"eu" locale:@"enUS" error:&error]);
+        assert(![client planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error]);
         assert([error.localizedDescription containsString:@"checksum"]);
         client.responses[build]=Text(config);
         client.responses[@"versions"]=Text([versions stringByAppendingString:[[versions componentsSeparatedByString:@"\n"][1] stringByAppendingString:@"\n"]]);
-        assert(![client versionForProduct:@"wow_classic_beta" region:@"eu" error:&error]);
+        assert(![client versionForProduct:@"wowf" region:@"eu" error:&error]);
         assert([error.localizedDescription containsString:@"Ambiguous"]);
         [client.responses removeObjectForKey:@"versions"];
-        assert(![client planForProduct:@"wow_classic_beta" region:@"eu" locale:@"enUS" error:&error]);
+        assert(![client planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error]);
         assert([error.localizedDescription containsString:@"transport"]);
         client.responses[@"versions"]=Text(versions);
         client.responses[@"cdns"]=Text(@"Name|Path|Servers\neu|tpr/wow|http://level3.blizzard.com/\n");
-        assert(![client planForProduct:@"wow_classic_beta" region:@"eu" locale:@"enUS" error:&error]);
+        assert(![client planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error]);
         assert([error.localizedDescription containsString:@"HTTPS"]);
         assert([NSFileManager.defaultManager removeItemAtPath:directory error:&error]);
     }

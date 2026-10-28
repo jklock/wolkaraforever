@@ -1,4 +1,9 @@
-# Design: a solid 60 on a permanently throttled iPad
+# Historical design hypothesis: a solid 60 on a permanently throttled iPad
+
+> **Not an approved implementation plan.** The 43 fps, GPU-time, and thermal
+> premises below lack a retained raw in-world capture. The retained 60 fps log
+> is the login screen. [CASE_FILE.md](CASE_FILE.md) is authoritative: measure
+> actual gameplay before changing QoS, refresh reporting, or rendering behavior.
 
 The premise is stated as a constraint, not a hope: **assume `ProcessInfo.thermalState ==
 .serious` for the entire session, with performance cores clocked down and default-QoS work
@@ -152,4 +157,3 @@ alone.
 claim here rests on a specific iPadOS 27 behaviour. Everything cited above is from documentation
 that served successfully. Anything about iPadOS 27 specifically is unverified and is marked as
 such rather than asserted.
-

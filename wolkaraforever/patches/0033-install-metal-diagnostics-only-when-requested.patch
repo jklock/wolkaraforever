@@ -1,0 +1,23 @@
+# WolkaraForever layer patch 0033 - Metal: keep production presentation native
+#
+# Frame diagnostics are useful only for --measure-native, --sample-native, or a
+# HUD selected before Forever starts. Do not interpose presentation in ordinary
+# play; background pacing remains installed separately.
+#
+# Applies after: 0026-metal-frame-diagnosis.patch
+diff --git a/translation/Metal/Presentation.m b/translation/Metal/Presentation.m
+--- a/translation/Metal/Presentation.m
++++ b/translation/Metal/Presentation.m
+@@ -340,7 +340,8 @@ void AKInstallMetalPresentationDiagnostics(id<MTLDevice> device) {
+     BOOL sample=[NSProcessInfo.processInfo.arguments containsObject:@"--sample-native"];
+     BOOL measure=[NSProcessInfo.processInfo.arguments containsObject:@"--measure-native"];
+-    // The swizzle is installed always because the performance HUD can be switched on at any
+-    // moment and there is no second chance to hook nextDrawable; what costs anything is gated
+-    // inside --observedNextDrawable, on the flag the HUD sets by name, and on the opt-in flags
+-    // below. Readback stays strictly opt-in through --sample-native.
++    id layout=[NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverTouchLayoutV1"];
++    BOOL hud=[layout isKindOfClass:NSDictionary.class] && [layout[@"performanceOverlayEnabled"] boolValue];
++    // The launcher writes this preference before start. Avoid all presentation
++    // hooks in ordinary play; the independent background-pacing hook remains.
++    if(!sample && !measure && !hud) return;
+     static dispatch_once_t once;

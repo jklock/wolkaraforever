@@ -74,7 +74,7 @@ if [ -n "$link" ]; then
 fi
 
 printf '%s\n' "push_game: checking the device before copying"
-if [ -f "$source/_classic_beta_/World of Warcraft Beta.app/Contents/MacOS/World of Warcraft" ]; then
+if [ -f "$source/_forever_/World of Warcraft.app/Contents/MacOS/World of Warcraft" ]; then
     printf '%s\n' "push_game: source is $(du -sh "$source" 2>/dev/null | awk '{print $1}') at $source"
 fi
 preflight_args=(--source "$source" --require-app)

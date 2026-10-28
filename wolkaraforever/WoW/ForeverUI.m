@@ -1,7 +1,10 @@
 #import "ForeverUI.h"
 
 NSErrorDomain const TKForeverUIErrorDomain = @"WolkaraForever.ForeverUI";
-NSString *const TKForeverUIEdition = @"wow_classic_beta";
+// The released Forever product. It was `wow_classic_beta` while the game was in
+// beta; the rows, backups and Config.wtf rules are the same edition, and Battle.net
+// now publishes it as `wowf` in `_forever_` (see Manifest.m).
+NSString *const TKForeverUIEdition = @"wowf";
 
 // A Config.wtf is a few kilobytes. Anything near this is not a config file, and
 // reading it whole would be the wrong answer to a damaged one anyway.

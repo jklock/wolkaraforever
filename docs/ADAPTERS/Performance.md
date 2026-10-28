@@ -1,4 +1,10 @@
-# Performance: what the adapters cost, and what is proven
+# Performance: historical hypotheses, not an implementation authority
+
+> **Superseded for performance decisions by [CASE_FILE.md](CASE_FILE.md).**
+> The numerical in-world samples in this document do not have a retained raw
+> gameplay log in this checkout. The retained 60 fps log is the login screen.
+> Treat the analysis below as hypotheses only; do not implement its proposed
+> changes without the in-world measurement protocol in the case file.
 
 This document assembles the per-frame findings from every adapter document. It states what
 is **measured**, what is **known from the source**, and what is still **unmeasured** — the
@@ -18,10 +24,12 @@ Every place in `platform/translation/` that can execute once per presented frame
 | software cursor positioning | `AppKit/AppKit.m` (`positionCursor`) | always | pointer events only |
 | BC texture substitution | `Metal/BCTextures.m` | installed always (`Devices.m:200`), gates internally at `:559`/`578–581` | nothing on a device that samples BC (every M-series iPad) |
 | GPU identity overrides | `Metal/Devices.m:203–229` | always | once per device creation |
-| audio render callback wrapper | `AudioToolbox/Output.m:30–42` | installed per RemoteIO unit | **on the audio thread, 46.9 times a second**, not the frame thread; 3 relaxed atomics + a byte scan that exits immediately in practice |
+| audio render callback wrapper | `AudioToolbox/Output.m:30–42` | `--trace-audio-render` only | The wrapper does atomics and scans output buffers on the audio thread, so ordinary gameplay installs the guest callback unchanged. |
 
 That is the whole list. **There is no per-frame code in AppKit input handling, in
-CoreGraphics, in IOKit, in Security or in GameController.**
+CoreGraphics, in IOKit, in Security or in GameController.** Normal gameplay also
+does not retain the audio render probe, per-decrypt legacy-crypto logging, or the
+passive display-rate link; those are explicit diagnostics.
 
 ## 2. What the measurements say
 

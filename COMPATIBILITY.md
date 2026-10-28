@@ -6,6 +6,42 @@ pull request; say what you tested, on what hardware, with which execution mode
 | Application | Version | Device / OS | Execution mode | Works | Known problems | Profile |
 | --- | --- | --- | --- | --- | --- | --- |
 | World of Warcraft Forever (Classic beta, macOS arm64 client) | 1.60.1 | iPad Pro M5, iPadOS 27 | Local signing | Login and gameplay (2026-09-27), with no debugger, helper or tunnel and no memory preparation. At startup the client's own unpacked code matched the signed page container byte for byte, and all 13,280 initializers ran into the original `main`. | Developer service is not the tested route on this iPad. Same capture limitation as the other client. | [`wow-forever`](profiles/wow-forever) |
+| World of Warcraft Forever (release, macOS arm64 client) | 1.60.1.70634 | iPad Pro 12.9-inch 5th generation (M1, `Dadpad`), iPadOS 27.0.1 | Developer service | Reaches the login screen on 2026-10-27 from a store pushed off the Mac (see below): all 13,305 initializers ran into the original `main`, the launcher's own check reports `Ready to play` against the published build, and the launch produced no assertion file and no crash report. The beta's settings and add-ons were carried across, with `portal` set to `US`. | The store was verified by the launcher (metadata and executable) and by the client's own boot, not block by block; Local signing for this build was not exercised. | [`wow-forever`](profiles/wow-forever) |
+
+## The beta became the release (2026-10-27)
+
+The client this layer started with was the Classic Beta — product `wow_classic_beta`,
+folder `_classic_beta_`. The release is a different product: `wowf` in `_forever_`, with
+its own entry in `.build.info`. A copy into the app only adds and overwrites, so moving
+between them is a delete followed by a push, and the delete needs the device.
+
+Measured on `Dadpad`, over the paired network:
+
+- **What was there**: `Documents/World of Warcraft` held 3,227 files, **73.17 GB**,
+  being the beta's edition folder and `Data/wow_classic_beta`, plus one file in the
+  updater's snapshot beside it.
+- **Removed** with `wolkaraforever/tools/remove_game.sh --all` in **33 s**: paths are
+  removed deepest first through the app's own file-sharing service, because AFC's
+  remove is not recursive. A fresh listing afterwards reported both paths gone.
+- **Pushed** with `wolkaraforever/tools/push_game.sh --source "/Volumes/Storage/World of
+  Warcraft"`: 64 GB at about **45 MB/s**, 15.94 GB of the shared store in the first six
+  minutes.
+- **Afterwards**: `Data/data` 99 files, 67.39 GB; `Data/indices` 1,505 files, 0.32 GB;
+  `Data/wowf` 30 files; `_forever_` 54 files. `.build.info` is byte-identical to the
+  Mac's (689 bytes, SHA-256 `661c170b…`), naming `wowf` `1.60.1.70634`.
+- **The launcher's own check**, run on the device: `Ready to play`, `1.60.1.70634`.
+  That check verifies the metadata and the executable's hash against the published
+  build; it does not read every data block.
+- **The client's own boot**: the login screen reads `Version 1.60.1 (70634) (Release
+  arm64)` at 60 fps, with no file in `_forever_/Errors` and no new crash report.
+- **User data carried across**: the beta's `WTF` (99 files) and `Interface` (736
+  files, two add-ons) were copied into `_forever_` after the push. The one setting that
+  could not travel unchanged is `portal`: the beta wrote `test`, the release writes the
+  region, so it was set to `US` — the value the release client itself had written on the
+  Mac. The account name on the login screen came from that restored `WTF`.
+
+The beta's own copy of these files is out of the app and is not committed; it lives in
+ignored build output, `build/device-backup/2026-10-27-beta/`.
 
 ## Measured performance, and what it did not show (2026-10-23)
 
@@ -52,6 +88,123 @@ service, against the installed Forever client 1.60.1, launched with
 **Not measured**: a long in-world run (thermal drift), the per-library compile cost,
 and the frequency of that run-loop error. The in-world frame rate above is a single
 reading, not a benchmark.
+
+## Login screen and cinematics at 60 fps under thermal pressure (2026-10-27)
+
+Dadpad (iPad Pro 12.9-inch, 5th generation, M1, iPadOS 27), Developer service,
+candidate with 34 layer patches including `0035-hud-frame-path-without-diagnostic-logging`,
+launched normally with `wolkaraforever/tools/launch.sh --local-game-startup` - **no
+`--measure-native`**, so none of the detailed frame-timing path was in use, and
+`0034-metal-anomaly-timeline` was not in the build. The client was not logged into.
+
+**What this section does not show, stated first because the numbers read stronger than
+they are.** The login screen and a cinematic are the only two scenes reachable without a
+login, and both are much lighter than the world. Nothing here measures the world, and
+nothing here can show that `0035` helps: that patch removes the HUD's per-drawable
+`AKFrameTiming` object, synchronised aggregate and 5 s log write from the frame path, and
+on the login screen the frame has about 16 ms of unused budget (GPU 53% busy, CPU idle in
+submission), so removing per-frame work cannot move a number that is already pinned to
+vsync. Its benefit is only observable in a CPU-bound frame - which is the in-world case
+below, measured on 2026-10-23 **before** this patch existed, at 49.8 fps. The candidate's
+headline change is therefore **unproven for the case it targets**. The cinematic is weaker
+still: it runs at GPU 1.5 ms of 16.7 ms (9% busy), a video-decode path, so holding 60 fps
+there says nothing about game load.
+
+The load gap is visible in our own two measurements: in the world the GPU was busy for
+7.8 ms of a **20.0 ms** frame (39%), while the login screen has it busy for 8.9 ms of a
+**16.7 ms** frame (53%). The world spends longer per frame while asking the GPU for less,
+so the extra time is on the CPU - which is exactly the axis the login screen cannot load.
+
+- **Login screen, thermal Nominal (Cool)**: four samples 4 s apart read `60.2`, `60.0`,
+  `60.0`, `60.0` FPS, latest gap 16.7 ms, GPU 8.1-10.8 ms of 16.7 ms (53-54% busy),
+  drawable wait 0.0 ms, Low Power Mode off.
+- **Cinematic, thermal Serious (Throttling active)**: ten samples over roughly two
+  minutes read `60.0`, `60.5`, `60.0`, `60.0`, `60.0`, `60.0`, `60.0`, `60.5`, `60.0`,
+  `60.0` FPS, gap 8.3-16.7 ms, **GPU 1.5 ms of 16.7 ms (9% busy)**. This is a video path
+  with the GPU nearly idle, so the result is that video playback holds 60 fps at Serious
+  thermal - not a load test, and not evidence about a heavy scene.
+- **Back at the login screen, still thermal Serious**: six further samples read `60.0`,
+  `60.0`, `60.0`, `60.0`, `60.2` FPS with the GPU back to 5.7-11.0 ms (53% busy). This
+  shows the login screen alone holds 60 at Serious thermal. It does **not** explain the
+  49.8 fps in-world figure and is not offered as an explanation for it: the world is
+  CPU-bound, the login screen is not, so thermal behaviour in one says nothing definitive
+  about the other.
+- **No new error file and no new crash report** across the whole run: newest error file
+  `2026-10-15_20.46.04_Error_4394.txt`, newest crash report `Tolkara-2026-10-22-203503.ips`,
+  both predating the run. Audio `errors=0 silence_flags=0` throughout.
+- **Independent check from the runtime's own log**: frame 600 -> frame 1800 presented in
+  20.003 s = `60.0 fps` (average gap 16.67 ms), matching the HUD.
+
+- **CPU attribution** (instrumented run of the *same installed binary*, launched with
+  `--local-game-startup --measure-native`; no rebuild): 25 consecutive 5 s windows at
+  the login screen, **thermal Serious throughout**, read `59.90-60.10 fps` (mean
+  `60.01`), `gap_avg_ms` `16.65-16.70`, `max_gap_ms` `20.8-25.0`, `gpu_ms` `5.9-11.3`
+  with `gpu_load` `0.52-0.54`, and `wait_ms` (drawable wait) `0.01`. The CPU submitted a
+  frame in **`cpu_submit_avg_ms` `0.04-0.05`** and at worst **`cpu_submit_max_ms` `0.28`**,
+  sampled once per frame (300 samples in every 5 s window), and **`wait_completed` and
+  `wait_scheduled` were `0` in all 25 windows** - the main thread never blocked on the
+  GPU. So at the login screen the frame is limited by vsync: the GPU has ~7.8 ms of the
+  16.7 ms frame unused and the CPU is idle in the submission window. **The CPU is not the
+  holdup here**, which is the opposite of the in-world case below (20.0 ms frames while
+  the GPU stayed at 7.8 ms). `cpu_submit` measures acquire->commit only, not total guest
+  CPU time, so it bounds the submission slice rather than accounting for every
+  instruction.
+- The instrumented run was then replaced with an ordinary `--local-game-startup` launch,
+  so the device was left on a normal run with the HUD showing `60.0 FPS`.
+
+**Limitations.** In a normal run the HUD is the only frame-rate instrument: `0035`
+removed the per-frame timing writes, so the log records present timestamps for frames
+1, 60, 600 and 1800 only and says nothing about the cinematic window. Samples are HUD
+readings from screenshots, taken passively with
+`wolkaraforever/tools/pilot.sh view` and `xcrun devicectl device capture screenshot`;
+no input was sent to the game. One 20.8 ms gap appeared in a post-cinematic sample - the
+known one-frame-one-refresh-late case, still unattributed - and no gap over 50 ms was
+seen. **CPU was measured at the login screen only**: a cinematic needs a tap the
+operator has to make, so there is no CPU figure for the cinematic window.
+
+**Tool defect found and fixed in the same run.** `pilot.sh state` reported
+`guest log says: none` while the client was on its login screen with a live game, because
+`session_live` required a `startup_return=PASS` line and the runtime writes that only
+when the guest *returns* (`platform/runtime/NativeGuest.m`). The guard was therefore
+inverted: a game somebody was in read as "no session" (so `install` would have stopped it),
+and a launcher visit within the hour after a session ended read as "live". It now looks for
+a guest-start marker with no return after it, which also distinguishes the launcher alone
+from a game in progress. The test fixture had encoded the same mistake, which is why the
+suite passed over it. While fixing it, a second hole appeared: `copy from` failed twice with
+`socket was closed unexpectedly` and left an empty log, and an empty log reads exactly like
+"no session" - so the guard now refuses when the app is up and its log cannot be read,
+rather than guessing, and `--force` does not override that either.
+
+## Performance under thermal load, on the release build (2026-10-27)
+
+First measurements against the released client (1.60.1.70634, `wowf`), on Dadpad with
+Developer service, at the login screen — the only scene reachable without an account.
+Full method, limits and the ordered plan are in
+[PERFORMANCE_THERMAL.md](docs/PERFORMANCE_THERMAL.md); the tool that produces every row
+is `wolkaraforever/tools/perf_sweep.py`.
+
+| configuration | fps | GPU per frame | GPU busy | thermal |
+|---|---|---|---|---|
+| native (renderScale 1.0) | 60.02 | 9.3 ms | 53% | serious |
+| client `renderScale 0.75` | 60.02 | 7.8-7.9 ms | 46% | nominal |
+| client `renderScale 0.5` | 60.02 | 5.1 ms | 30% | nominal |
+| the app's own "Performance" profile (backing scale 0.75) | 60.02 | **9.9 ms** | 57% | nominal |
+| client `DynamicRenderScale` + `targetFPS 60` | 60.00 | 9.0 ms | 53% | nominal |
+| `renderScale 2.0` (4× the pixels, GPU-bound) | **23.6** | 75-81 ms | — | — |
+
+What those rows establish: the client's own `renderScale` is the lever that moves GPU
+time and, within minutes, the thermal state (serious → nominal); the app's shipped
+"Performance" profile does **not** reduce the scene's GPU work; the client's dynamic
+scaler did nothing on this scene and paced worst; and 2× supersampling is not survivable,
+let alone playable. The in-world frame was **not** measured today.
+
+The in-world 16-20 ms drawable wait identifies a presentation-path problem but does not
+by itself prove a 40/48 Hz panel rate: it can also be a drawable-queue or guest-pacing
+delay. The app requests `CAFrameRateRangeMake(30, 60, 60)` — Apple's documented route to
+30/60 priority for games — and logs the rate of its diagnostic display link
+(`wolkaraforever/Bridge/DisplayRate.m`). On the login screen that link targets **16.68 ms
+(60 Hz)** while Metal still records 20.8/25.0 ms outliers. This is not in-world proof;
+the next valid evidence is an in-world Metal present trace.
 
 ## Voice dictation into the game (2026-10-21)
 

@@ -65,7 +65,8 @@ static BOOL Managed(NSDictionary *item) { return [item[@"folders"] isKindOfClass
     for (NSString *name in folders) {
         NSString *toc=TOC([extract stringByAppendingPathComponent:name]);
         NSString *interface=Value(toc,@"Interface:");
-        if (![_product isEqual:@"wow_classic_beta"]) return Fail(error,@"This edition is browse-only until its compatibility mapping is added.");
+        // Forever's released product id; `wow_classic_beta` while it was a beta.
+        if (![_product isEqual:@"wowf"]) return Fail(error,@"This edition is browse-only until its compatibility mapping is added.");
         if (!interface.length) return Fail(error,[NSString stringWithFormat:@"%@ has no Interface version in its TOC.",name]);
         BOOL supported=NO;
         for (NSString *value in [interface componentsSeparatedByString:@","]) {
