@@ -3,9 +3,7 @@ build/
 guest/
 *.app
 *.dylib
-launcher/App.entitlements
 *.framework/
-!launcher/**/*.framework/
 SURFACE.raw/
 *.ipa
 *.crash

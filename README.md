@@ -25,6 +25,29 @@ the WoW app and input on top.
 The upstream history, MIT license and [third-party notices](NOTICE.md) are retained.
 This project is not affiliated with or endorsed by Blizzard Entertainment.
 
+## Credits
+
+WolkaraForever continues **[Wolkara](https://github.com/fJavierLasso/wolkara)** by
+[Javier Lasso](https://github.com/fJavierLasso). Wolkara is where the WoW launcher, the
+on-device downloader and updater, and the mobile input layer first came to
+[Tolkara](https://github.com/tolkara/tolkara) by Vasilii Kharitonov and the Tolkara
+contributors. Without those two projects there would be no WolkaraForever: the engine is
+Tolkara's, and the WoW side exists because Wolkara built it first. Wolkara's commits are part
+of this history - reorganised so that the engine sits unedited under `platform/` and
+everything that followed lives in `wolkaraforever/` - and the licence and notices are
+retained. Thank you.
+
+### Two upstreams
+
+This repository has two separate upstream relationships. They are not interchangeable.
+
+| Remote | Repository | What it is | How it is used |
+| --- | --- | --- | --- |
+| `upstream` | [tolkara/tolkara](https://github.com/tolkara/tolkara) | The engine: Mach-O loading, macOS API translation, developer-service authorization. | Vendored into `platform/` and kept byte-identical to `upstream/main`. `wolkaraforever/tools/check_layers.sh` fails if it drifts, and `platform/` is never edited by hand. |
+| `fJavierLasso` | [fJavierLasso/wolkara](https://github.com/fJavierLasso/wolkara) | The original Wolkara: the WoW launcher, updater and input this fork continues. | Its `main` is an ancestor of this history; new work is read from it and ported as layer changes. `wolkaraforever/tools/check_origin.sh` lists what it has that this fork does not. Its tree predates the `platform/` split, so its commits do not apply cleanly: port the behaviour, not the diff. |
+
+See [Maintaining](docs/MAINTAINING.md#two-upstreams) for how each one is updated.
+
 ## What you need
 
 - An Apple silicon Mac with Xcode (and its requested platform components), XcodeGen
@@ -49,7 +72,7 @@ Prefer a fully checkpointed walkthrough? See
 1. **Clone and configure.**
 
    ```bash
-   git clone https://github.com/fJavierLasso/wolkaraforever.git
+   git clone https://github.com/jklock/wolkaraforever.git
    cd wolkaraforever
    cp local.env.example local.env
    ```
@@ -72,7 +95,7 @@ Prefer a fully checkpointed walkthrough? See
    Run. Afterwards enroll once with `cd build/platform && tools/enroll.sh` and approve
    the pairing prompt. The app installed on the device is called **WolkaraForever**.
 
-3. **Install an edition and play.** Choose **Forever - Beta**, your region and language,
+3. **Install an edition and play.** Choose **World of Warcraft Forever**, your region and language,
    then **Install**. Keep the app in the foreground while it downloads; it checks for
    updates on open and before launch. After **Ready to play**, press **Play**, allow the
    local tunnel if iPadOS asks, and let memory preparation finish. Log in with your own
@@ -117,7 +140,11 @@ WolkaraForever uses **Developer service** in its integrated build. See
 
 ## Features
 
-- A single home screen for the WoW client: edition, region and language.
+For the behavior, safety boundary, implementation area, and proof behind each feature, read [What WolkaraForever adds](docs/FEATURES.md).
+
+- A single home screen for the WoW client: edition, region and English or Spanish
+  language. Changing the language for an installed Forever client also
+  updates its text and audio locale; it does not change the login region.
 - On-device installation and automatic update checks; a required update finishes
   before Play becomes available. Downloads resume, are checksum-verified, and
   verified unchanged game data is reused rather than fetched again. Updates keep
@@ -274,7 +301,8 @@ The project provides no anti-cheat, license or integrity-check workarounds.
 
 ## Legal
 
-WolkaraForever and the upstream Tolkara code are released under the [MIT License](LICENSE).
+WolkaraForever, the original [Wolkara](https://github.com/fJavierLasso/wolkara) and the
+upstream Tolkara code are released under the [MIT License](LICENSE).
 No game files or Apple operating-system components are included. Third-party
 adaptations and reference material are credited in [NOTICE.md](NOTICE.md).
 
@@ -287,5 +315,6 @@ owners and are used only to describe compatibility.
 You are responsible for having the right to use any application you run with
 WolkaraForever, and for complying with its licence.
 
-WolkaraForever: [source and issues](https://github.com/fJavierLasso/wolkaraforever).
+WolkaraForever: [source and issues](https://github.com/jklock/wolkaraforever).
+Continues the original [Wolkara](https://github.com/fJavierLasso/wolkara) by Javier Lasso.
 Upstream engine: [Tolkara](https://github.com/tolkara/tolkara) · [tolkara.org](https://tolkara.org).

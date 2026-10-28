@@ -12,6 +12,16 @@ Objective-C runtime and most low-level frameworks, so far less needs translating
 than between Windows and Linux. The work is in the parts that differ: process
 loading, executable memory, the desktop UI frameworks and the shader format.
 
+## WolkaraForever: the product layer
+
+The engine diagram below is intentionally not the whole product. WolkaraForever overlays
+its branded shell, WoW launcher/updater, add-on and UI-file management, touch controls,
+controller inspection, input routing, voice dictation, and performance HUD into the
+prepared build. Those modules do not change the executable-memory policy or inspect game
+memory: they use the app container, UIKit, supported game files, and the engine's public
+hooks. See [FEATURES.md](FEATURES.md) for each feature's behavior, safety boundary, and
+test; see [MAINTAINING.md](MAINTAINING.md) for how patches and overlays reach the build.
+
 ```
   original macOS executable (data, unchanged)
                  │ loaded by                 executable memory, one of:

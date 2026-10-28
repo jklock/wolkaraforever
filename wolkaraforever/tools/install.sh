@@ -237,6 +237,6 @@ cat <<NEXT
    pilot it         wolkaraforever/tools/pilot.sh cycle
                     state, stop, install, launch, wait for a verdict, screenshot
    watch the guest  wolkaraforever/tools/device_log.sh      # Documents/native-guest.log
-   judge a launch   a NEW file in Documents/World of Warcraft/_classic_beta_/Errors/
+   judge a launch   a NEW file in Documents/World of Warcraft/_forever_/Errors/
                     means the client asserted; no new file means it did not
 NEXT

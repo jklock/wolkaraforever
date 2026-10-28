@@ -1,0 +1,42 @@
+# WolkaraForever layer patch 0031 - CoreGraphics: cache the virtual mode
+#
+# The guest queries the single display mode repeatedly. Its value only changes
+# when UIKit reports a screen-mode transition, so cache the immutable dictionary
+# and invalidate it before forwarding that transition to the guest.
+#
+# Applies after: 0029-report-selected-guest-mode.patch
+diff --git a/translation/CoreGraphics/Displays.m b/translation/CoreGraphics/Displays.m
+--- a/translation/CoreGraphics/Displays.m
++++ b/translation/CoreGraphics/Displays.m
+@@ -7,11 +7,11 @@ static CGFloat guestBackingScale(void) {
+     static CGFloat scale = -1.0;
+     if (scale >= 0.0) return scale;
+     scale = 1.0;
+     const char *environment = getenv("TOLKARA_BACKING_SCALE");
+     if (environment && *environment) scale = atof(environment);
+     else {
+         id stored = [NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverBackingScale"];
+         if ([stored respondsToSelector:@selector(doubleValue)]) scale = [stored doubleValue];
+     }
+-    return scale >= 1.0 && scale <= 3.0 ? scale : 1.0;
++    return scale >= 0.5 && scale <= 3.0 ? scale : 1.0;
+ }
+@@ -27,4 +27,10 @@ typedef uint32_t CGDirectDisplayID;
+ typedef CFDictionaryRef CGDisplayModeRef;
+ typedef void (*DisplayCallback)(CGDirectDisplayID, uint32_t, void *);
+-static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; CGFloat scale=guestBackingScale(); return @{@"width":@(s.bounds.size.width),@"height":@(s.bounds.size.height),@"pixelWidth":@(s.bounds.size.width*scale),@"pixelHeight":@(s.bounds.size.height*scale),@"refresh":@(s.maximumFramesPerSecond)}; }
++static NSDictionary *displayMode;
++static NSDictionary *mode(void) {
++    @synchronized(UIScreen.class) {
++        if (!displayMode) { UIScreen *s=UIScreen.mainScreen; CGFloat scale=guestBackingScale(); displayMode=@{@"width":@(s.bounds.size.width),@"height":@(s.bounds.size.height),@"pixelWidth":@(s.bounds.size.width*scale),@"pixelHeight":@(s.bounds.size.height*scale),@"refresh":@(s.maximumFramesPerSecond)}; }
++        return displayMode;
++    }
++}
+ CGDirectDisplayID CGMainDisplayID(void) { return 1; }
+@@ -76,5 +83,5 @@ CGError CGDisplayRegisterReconfigurationCallback(DisplayCallback callback,void *
+     if(!callback) return kCGErrorIllegalArgument;
+     @synchronized(UIScreen.class) {
+         if(!observers) observers=[NSMutableDictionary new]; NSString *key=callbackKey(callback,context);
+-        if(!observers[key]) observers[key]=[NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:UIScreen.mainScreen queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; callback(1,1<<4,context); }];
++        if(!observers[key]) observers[key]=[NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:UIScreen.mainScreen queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; @synchronized(UIScreen.class) { displayMode=nil; } callback(1,1<<4,context); }];
+     }

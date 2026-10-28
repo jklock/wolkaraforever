@@ -1,0 +1,154 @@
+# WolkaraForever layer patch 0026 - Metal: identify the frame limiter
+#
+# Why: presentation rate and GPU execution time do not identify CPU submission
+# stalls or client-side command-buffer waits. During --measure-native only,
+# record the CPU interval from nextDrawable return to the presenting command
+# buffer's commit, plus waitUntilCompleted and waitUntilScheduled counts. This
+# makes the CPU-bound versus serialised-pipeline question falsifiable without
+# sampling guest memory or altering rendering.
+#
+# Applies to: translation/Metal/Presentation.m
+# Upstream: candidate.
+#
+diff --git a/translation/Metal/Presentation.m b/translation/Metal/Presentation.m
+index 74237f4..f8da3ac 100644
+--- a/translation/Metal/Presentation.m
++++ b/translation/Metal/Presentation.m
+@@ -143,6 +143,8 @@
+ static void (*originalPresentAt)(id,SEL,id<MTLDrawable>,CFTimeInterval);
+ static void (*originalPresentAfter)(id,SEL,id<MTLDrawable>,CFTimeInterval);
+ static void (*originalCommit)(id,SEL);
++static void (*originalWaitUntilCompleted)(id,SEL);
++static void (*originalWaitUntilScheduled)(id,SEL);
+ static atomic_uint_fast64_t obtained, presented;
+ static char captureMarker, captureTarget;
+ static char timingMarker;
+@@ -152,9 +154,26 @@
+ @interface AKFrameTiming : NSObject
+ @property double start, previous, longest;
+ @property NSUInteger frames, slow;
++@property double gapTotal, gapSquared;
++@property NSUInteger gapsUnder12ms, gaps12To15ms, gaps15To19ms, gaps19To25ms, gaps25To34ms, gaps34To50ms;
++@property double cpuSubmissionTotal, cpuSubmissionMax;
++@property NSUInteger cpuSubmissionSamples, completedWaits, scheduledWaits;
++@property double completedWaitTotal, completedWaitMax, scheduledWaitTotal, scheduledWaitMax;
+ - (void)presentedAt:(double)time;
++- (void)recordSubmission:(double)seconds;
++- (void)recordCompletedWait:(double)seconds;
++- (void)recordScheduledWait:(double)seconds;
+ @end
+ @implementation AKFrameTiming
++- (void)recordSubmission:(double)seconds {
++    @synchronized(self) {
++        _cpuSubmissionTotal += seconds;
++        _cpuSubmissionMax = MAX(_cpuSubmissionMax, seconds);
++        _cpuSubmissionSamples++;
++    }
++}
++- (void)recordCompletedWait:(double)seconds { @synchronized(self) { _completedWaits++; _completedWaitTotal += seconds; _completedWaitMax = MAX(_completedWaitMax, seconds); } }
++- (void)recordScheduledWait:(double)seconds { @synchronized(self) { _scheduledWaits++; _scheduledWaitTotal += seconds; _scheduledWaitMax = MAX(_scheduledWaitMax, seconds); } }
+ - (void)presentedAt:(double)time {
+     if(time<=0)return;
+     @synchronized(self) {
+@@ -164,7 +181,21 @@
+         _longest=MAX(_longest,gap); if(gap>.05)_slow++;
++        _gapTotal += gap; _gapSquared += gap * gap;
++        // A 60 Hz frame is 16.67 ms. Keep the distribution so the latest
++        // interval is not misrepresented as the rolling FPS measurement.
++        if (gap < .012) _gapsUnder12ms++;
++        else if (gap < .015) _gaps12To15ms++;
++        else if (gap < .019) _gaps15To19ms++;
++        else if (gap < .025) _gaps19To25ms++;
++        else if (gap < .034) _gaps25To34ms++;
++        else if (gap < .050) _gaps34To50ms++;
+         double elapsed=time-_start;
+         if(elapsed>=5) {
+-            AKLog(@"frame timing seconds=%.2f fps=%.1f max_gap_ms=%.1f gaps_over_50ms=%lu gpu_ms=%.1f gpu_load=%.2f wait_ms=%.2f thermal=%d",elapsed,_frames/elapsed,_longest*1000,(unsigned long)_slow,AKMetalLastGPUTimeMs(),AKMetalGPULoad(),AKMetalLastDrawableWaitMs(),(int)NSProcessInfo.processInfo.thermalState);
++            double cpuAverage = _cpuSubmissionSamples ? _cpuSubmissionTotal * 1000.0 / _cpuSubmissionSamples : 0.0;
++            double gapAverage = _frames ? _gapTotal * 1000.0 / _frames : 0.0;
++            AKLog(@"frame timing seconds=%.2f fps=%.1f gap_avg_ms=%.2f max_gap_ms=%.1f gap_bins_lt12=%lu_12to15=%lu_15to19=%lu_19to25=%lu_25to34=%lu_34to50=%lu_ge50=%lu gpu_ms=%.1f gpu_load=%.2f wait_ms=%.2f cpu_submit_avg_ms=%.2f cpu_submit_max_ms=%.2f cpu_submit_n=%lu wait_completed=%lu wait_completed_avg_ms=%.2f wait_completed_max_ms=%.2f wait_scheduled=%lu wait_scheduled_avg_ms=%.2f wait_scheduled_max_ms=%.2f thermal=%d",elapsed,_frames/elapsed,gapAverage,_longest*1000,(unsigned long)_gapsUnder12ms,(unsigned long)_gaps12To15ms,(unsigned long)_gaps15To19ms,(unsigned long)_gaps19To25ms,(unsigned long)_gaps25To34ms,(unsigned long)_gaps34To50ms,(unsigned long)_slow,AKMetalLastGPUTimeMs(),AKMetalGPULoad(),AKMetalLastDrawableWaitMs(),cpuAverage,_cpuSubmissionMax*1000.0,(unsigned long)_cpuSubmissionSamples,(unsigned long)_completedWaits,_completedWaits ? _completedWaitTotal * 1000.0 / _completedWaits : 0.0,_completedWaitMax * 1000.0,(unsigned long)_scheduledWaits,_scheduledWaits ? _scheduledWaitTotal * 1000.0 / _scheduledWaits : 0.0,_scheduledWaitMax * 1000.0,(int)NSProcessInfo.processInfo.thermalState);
++            _cpuSubmissionTotal=0; _cpuSubmissionMax=0; _cpuSubmissionSamples=0;
++            _completedWaits=0; _scheduledWaits=0; _completedWaitTotal=0; _completedWaitMax=0; _scheduledWaitTotal=0; _scheduledWaitMax=0;
++            _gapTotal=0; _gapSquared=0; _gapsUnder12ms=0; _gaps12To15ms=0; _gaps15To19ms=0; _gaps19To25ms=0; _gaps25To34ms=0; _gaps34To50ms=0;
+             _start=time; _frames=0; _slow=0; _longest=0;
+         }
+     }
+@@ -172,6 +191,7 @@
+ @end
+ extern void AKInstallRenderDiagnostics(Class cls);
+ extern NSArray *AKRenderStatsForCommand(id command);
++static char submissionMarker;
+ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
+     // A framebuffer-only drawable cannot be copied for diagnostic readback.
+     if(captureFrames) ((CAMetalLayer *)layer).framebufferOnly=NO;
+@@ -182,7 +202,7 @@
+     if(!objc_getAssociatedObject(layer,&poolLogged)) {
+         objc_setAssociatedObject(layer,&poolLogged,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+         CAMetalLayer *metal=(CAMetalLayer *)layer;
+-        AKLog(@"Metal drawable pool: maximumDrawableCount=%lu allowsNextDrawableTimeout=%d",(unsigned long)metal.maximumDrawableCount,metal.allowsNextDrawableTimeout);
++        AKLog(@"Metal drawable pool: maximumDrawableCount=%lu allowsNextDrawableTimeout=%d presentsWithTransaction=%d",(unsigned long)metal.maximumDrawableCount,metal.allowsNextDrawableTimeout,metal.presentsWithTransaction);
+     }
+     BOOL timing_wanted=atomic_load(&s_recordFrames) || measureFrames;
+     double requestedAt=timing_wanted?CACurrentMediaTime():0.0;
+@@ -205,6 +225,10 @@
+                 timing=objc_getAssociatedObject(layer,&timingMarker);
+                 if(!timing) { timing=[AKFrameTiming new]; objc_setAssociatedObject(layer,&timingMarker,timing,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+             }
++            if(measureFrames) {
++                objc_setAssociatedObject(drawable,&timingMarker,timing,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++                objc_setAssociatedObject(drawable,&submissionMarker,@(CACurrentMediaTime()),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++            }
+         }
+ #if !TARGET_OS_SIMULATOR
+         // Presentation timestamps are diagnostics; the simulator SDK lacks them.
+@@ -222,6 +246,14 @@
+     return drawable;
+ }
+ static void markCapture(id command,id<MTLDrawable> drawable) {
++    if(measureFrames) {
++        AKFrameTiming *timing=objc_getAssociatedObject(drawable,&timingMarker);
++        NSNumber *submitted=objc_getAssociatedObject(drawable,&submissionMarker);
++        if(timing && submitted) {
++            objc_setAssociatedObject(command,&timingMarker,timing,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++            objc_setAssociatedObject(command,&submissionMarker,submitted,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++        }
++    }
+     if(objc_getAssociatedObject(drawable,&captureMarker)) objc_setAssociatedObject(command,&captureTarget,drawable,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+ }
+ // Marks the buffer that presents this frame, so commit can ask for its GPU
+@@ -233,7 +265,24 @@
+ static void observedPresent(id command,SEL selector,id<MTLDrawable> drawable) { markCapture(command,drawable); notePresented(command); originalPresent(command,selector,drawable); }
+ static void observedPresentAt(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) { markCapture(command,drawable); notePresented(command); originalPresentAt(command,selector,drawable,time); }
+ static void observedPresentAfter(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) { markCapture(command,drawable); notePresented(command); originalPresentAfter(command,selector,drawable,time); }
++static void observedWaitUntilCompleted(id command,SEL selector) {
++    AKFrameTiming *timing=measureFrames ? objc_getAssociatedObject(command,&timingMarker) : nil;
++    double start=timing ? CACurrentMediaTime() : 0.0;
++    originalWaitUntilCompleted(command,selector);
++    if(timing) [timing recordCompletedWait:CACurrentMediaTime()-start];
++}
++static void observedWaitUntilScheduled(id command,SEL selector) {
++    AKFrameTiming *timing=measureFrames ? objc_getAssociatedObject(command,&timingMarker) : nil;
++    double start=timing ? CACurrentMediaTime() : 0.0;
++    originalWaitUntilScheduled(command,selector);
++    if(timing) [timing recordScheduledWait:CACurrentMediaTime()-start];
++}
+ static void observedCommit(id<MTLCommandBuffer> command,SEL selector) {
++    if(measureFrames) {
++        AKFrameTiming *timing=objc_getAssociatedObject(command,&timingMarker);
++        NSNumber *submitted=objc_getAssociatedObject(command,&submissionMarker);
++        if(timing && submitted) [timing recordSubmission:CACurrentMediaTime()-submitted.doubleValue];
++    }
+     if(atomic_load(&s_recordFrames) && objc_getAssociatedObject(command,&frameMarker)) {
+         objc_setAssociatedObject(command,&frameMarker,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+         [command addCompletedHandler:^(id<MTLCommandBuffer> completed) { AKRecordMetalFrameGPU(completed.GPUStartTime,completed.GPUEndTime); }];
+@@ -297,6 +346,10 @@
+         originalPresentAt=(void *)replace(cls,@selector(presentDrawable:atTime:),(IMP)observedPresentAt);
+         originalPresentAfter=(void *)replace(cls,@selector(presentDrawable:afterMinimumDuration:),(IMP)observedPresentAfter);
+         originalCommit=(void *)replace(cls,@selector(commit),(IMP)observedCommit);
++        if(measure) {
++            originalWaitUntilCompleted=(void *)replace(cls,@selector(waitUntilCompleted),(IMP)observedWaitUntilCompleted);
++            originalWaitUntilScheduled=(void *)replace(cls,@selector(waitUntilScheduled),(IMP)observedWaitUntilScheduled);
++        }
+         // Reads back and rewrites the guest's draws: opt-in only.
+         if(!sample)return;
+         AKInstallRenderDiagnostics(cls);

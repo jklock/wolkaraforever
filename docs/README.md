@@ -1,5 +1,7 @@
 # WolkaraForever documentation
 
+Start with the page that matches the job. The pages below are current contracts; dated validation files and design investigations are evidence, not instructions to follow blindly.
+
 This folder holds the fork's own documentation. The vendored upstream engine keeps
 its own, unchanged, under `platform/docs/`; anything in this folder describes
 WolkaraForever - the WoW launcher, the mobile input layer and the layer split - or the
@@ -14,6 +16,7 @@ New here? Read the repository [README](../README.md), then
 
 | Document | What it covers |
 | --- | --- |
+| [FEATURES.md](FEATURES.md) | Current product feature map: behavior, reason, safety boundary, source area, and proof path. |
 | [README](../README.md) | The single front page: requirements, build, enroll, install, play, update, troubleshoot. |
 | [FROM_ZERO.md](FROM_ZERO.md) | The complete, checkpointed walkthrough from a bare Mac to playing, with troubleshooting. |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | The condensed route: clone, `local.env`, Xcode run, one-time enroll, install an edition. |
@@ -32,6 +35,8 @@ New here? Read the repository [README](../README.md), then
 
 | Document | What it covers |
 | --- | --- |
+| [TESTING.md](TESTING.md) | Exact commands, proof levels, and what still requires device or human evidence. |
+| [TOOLING.md](TOOLING.md) | Supported commands, inputs, side effects, and safe device workflow. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The loader, the translation layer and the three execution modes. |
 | [PERFORMANCE_LANES.md](PERFORMANCE_LANES.md) | Every place the layer could cost performance, each lane measured or marked unmeasured: GPU vs CPU attribution, frame pacing, launch latency, shaders, textures. |
 | [BUILDING.md](BUILDING.md) | Advanced engine build and execution modes; development runs on the iPad. |

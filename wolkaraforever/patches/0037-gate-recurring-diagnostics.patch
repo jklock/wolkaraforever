@@ -1,0 +1,63 @@
+# WolkaraForever layer patch 0037 - keep recurring diagnostics out of play
+#
+# Why: production runs must not spend CPU or I/O on instrumentation.  The audio
+# render probe wraps every audio callback and scans its buffers; legacy crypto
+# wrote one synchronous stderr line per decrypt.  Neither changes game behavior,
+# and both remain available only when explicitly requested.
+#
+# Applies to: translation/AudioToolbox/Output.m
+#             translation/Security/LegacyCrypto.c
+# Upstream: candidate.
+
+diff --git a/translation/AudioToolbox/Output.m b/translation/AudioToolbox/Output.m
+--- a/translation/AudioToolbox/Output.m
++++ b/translation/AudioToolbox/Output.m
+@@ -3,6 +3,13 @@
+ #import "AKSupport.h"
+ #include <dlfcn.h>
+ #include <stdatomic.h>
++// The probe wraps every audio callback and scans its output.  Audio playback
++// itself is required for background survival; this measurement is not.
++static BOOL renderProbeEnabled(void) {
++    static BOOL enabled; static dispatch_once_t once;
++    dispatch_once(&once, ^{ enabled=[NSProcessInfo.processInfo.arguments containsObject:@"--trace-audio-render"]; });
++    return enabled;
++}
+ @interface AKAudioRenderProbe : NSObject {
+ @public
+     AURenderCallbackStruct original;
+@@ -83,7 +90,7 @@ OSStatus AudioUnitSetProperty(AudioUnit unit,AudioUnitPropertyID property,Audio
+         UInt32 requested=0,current=0;
+         if(!data || size!=sizeof requested)s=kAudioUnitErr_InvalidPropertyValue;
+         else { memcpy(&requested,data,sizeof requested);s=defaultOutput(&current);if(!s && requested!=current)s=kAudioUnitErr_InvalidPropertyValue; }
+-    } else if(property==kAudioUnitProperty_SetRenderCallback && scope==kAudioUnitScope_Input && element==0 && data && size==sizeof(AURenderCallbackStruct) && remoteOutput(unit)) {
++    } else if(property==kAudioUnitProperty_SetRenderCallback && scope==kAudioUnitScope_Input && element==0 && data && size==sizeof(AURenderCallbackStruct) && remoteOutput(unit) && renderProbeEnabled()) {
+         prepareProbes();AKAudioRenderProbe *probe=[AKAudioRenderProbe new];memcpy(&probe->original,data,size);
+         if(probe->original.inputProc) {
+             AURenderCallbackStruct observed={observeRender,(__bridge void *)probe};
+
+diff --git a/translation/Security/LegacyCrypto.c b/translation/Security/LegacyCrypto.c
+--- a/translation/Security/LegacyCrypto.c
++++ b/translation/Security/LegacyCrypto.c
+@@ -22,6 +22,13 @@ typedef struct Context {
+ } Context;
+ static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;
+ static Module *modules; static Context *contexts; static uintptr_t serial=1;
++static pthread_once_t trace_once=PTHREAD_ONCE_INIT;
++static bool trace_decrypts;
++static void configure_trace(void) {
++    const char *value=getenv("TOLKARA_TRACE_LEGACY_CRYPTO");
++    trace_decrypts=value && *value;
++}
++static bool trace_decrypt(void) { pthread_once(&trace_once,configure_trace); return trace_decrypts; }
+ static Module *module(AKCSSMHandle id) { for(Module *p=modules;p;p=p->next) if(p->id==id)return p; return NULL; }
+ static Context *context(AKCSSMHandle id) { for(Context *p=contexts;p;p=p->next) if(p->id==id)return p; return NULL; }
+ static bool valid_guid(const AKCSSMGuid *g) { return g && !memcmp(g,&gGuidAppleCSP,sizeof *g); }
+@@ -125,5 +132,5 @@ static AKCSSMReturn crypt_data(AKCSSMHandle id,const AKCSSMData *input,uint32_t
+         else {memcpy(output->Data,scratch,n);output->Length=n;*actual=n;}
+     }
+     wipe(scratch,capacity);free(scratch);pthread_mutex_unlock(&lock);
+-    if(operation==kCCDecrypt)fprintf(stderr,"[legacy-crypto] decrypt status=%d\n",status);
++    if(operation==kCCDecrypt && trace_decrypt())fprintf(stderr,"[legacy-crypto] decrypt status=%d\n",status);
+     return status;
+ }

@@ -27,7 +27,7 @@ Or run `wolkaraforever/tools/install_prerequisites.sh` to check and install the 
 ## 1. Clone and configure
 
 ```bash
-git clone https://github.com/fJavierLasso/wolkaraforever.git
+git clone https://github.com/jklock/wolkaraforever.git
 cd wolkaraforever
 brew install xcodegen
 cp local.env.example local.env
@@ -105,12 +105,12 @@ wolkaraforever/tools/push_game.sh --source "/Applications/World of Warcraft"
 wolkaraforever/tools/push_game.sh --source "/Volumes/Storage/World of Warcraft"
 ```
 
-`--source` is the folder containing `_classic_beta_`, on any volume.
+`--source` is the folder containing `_forever_`, on any volume.
 See [DEVICE_WORKFLOW.md](DEVICE_WORKFLOW.md).
 
 ## 4. Install an edition and play
 
-Choose **Forever · Beta** for the edition with recorded gameplay, then your
+Choose **Forever** for the edition with recorded gameplay, then your
 region/language and **Install**. Keep WolkaraForever in the foreground while downloading.
 It checks for updates when opened and before launch, and installs required
 updates before enabling Play. If interrupted, reopen and retry to resume.

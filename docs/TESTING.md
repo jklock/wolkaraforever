@@ -27,6 +27,25 @@ This is the regression suite. In order:
 Compiler warnings are errors (`-Wall -Wextra -Werror`), and the native suites run under
 ASan and UBSan where configured. A failing layer suite fails the run.
 
+## Choose the smallest command that can prove the change
+
+Run the narrowest row first. A broader row is useful only after the focused behavior
+passes; it does not turn simulator evidence into a device result.
+
+| Changed area | First command | Then, if the change crosses a boundary | What the result means |
+| --- | --- | --- | --- |
+| `WoW/ForeverUI.*` or archive code | `test_forever_ui.sh` | `test_wow_launcher_ui.sh` for a visible row | Config and archive rules / launcher presentation in a simulator. |
+| Updater, manifest, CASC, or install state | `test_wow_launcher.sh` | `test_wow_launcher_ui.sh` | Synthetic CDN, staging, repair, and launcher state; no real CDN account or game run. |
+| Add-on archive or manager | `test_addon_archive.sh` or `test_curseforge.sh` | `test_wow_launcher.sh` | ZIP/provider contract and managed-files lifecycle. |
+| Voice or mapped input | `test_voice.sh` | `test_wow_launcher_ui.sh`; device self-test if appropriate | Routing, permissions handling, and session lifecycle; not proof that a person was heard. |
+| Toolbar, trackpad, or touch gamepad | `test_touch_controls_ui.sh --self-test` or `test_touch_gamepad_ui.sh --self-test` | `test_translation_sim.sh` | UIKit event/layout behavior in a simulator. |
+| Patch, overlay, runtime, or adapter code | `check_layers.sh` plus the affected suite | `test_emulation.sh`; `test_translation_sim.sh` for UIKit adapters | Prepared-tree assembly and host regression coverage. |
+| Device script | matching `wolkaraforever/tools/tests/test_*.sh` | `preflight.sh`, then the requested safe device operation | Script logic first; a real-device result only after the real operation. |
+
+All commands in this table are `wolkaraforever/tools/<command>` from the repository
+root. The full names are intentional: they distinguish product-layer tools from
+Tolkara's tools inside `platform/` or `build/platform/`.
+
 ## What is covered
 
 | Suite | What it proves |
@@ -43,6 +62,16 @@ ASan and UBSan where configured. A failing layer suite fails the run.
 | CurseForge (`test_curseforge.sh`) | The CurseForge client against its expected request/response shapes. |
 | Icon assets (`test_icon_assets.sh`) | The generated app icon: 1024 square, opaque, non-empty, and a catalog that names exactly the files present. |
 | Local-service retry (`test_local_service_retry.sh`) | The retry engine and packet-service probe. |
+
+### Tests of the tools themselves
+
+`wolkaraforever/tools/tests/` tests the guardrails around device work without changing a
+device: `test_after_install.sh`, `test_device_variables.sh`,
+`test_install_prerequisites.sh`, `test_pilot.sh`, `test_preflight.sh`,
+`test_push_game.sh`, `test_running_app.sh`, `test_validate.sh`, and
+`test_xcrun_device_timeout.sh`. `make_addon_archives.py` produces intentionally valid
+and invalid add-on archives used by the production extraction tests. Run a tool test
+when changing its script; do not substitute it for an install, copy, or launch result.
 
 The UI fixtures build and open *our* input fixtures, never an imported application.
 

@@ -191,7 +191,7 @@ static void TestAddons(void) {
     // The version AddonManager.m builds the store with. It is a constant inside that file,
     // so the fixture names it here rather than reaching into it.
     TKAddonStore *store = [[TKAddonStore alloc] initWithAddOnsDirectory:addons
-                                                                product:@"wow_classic_beta"
+                                                                product:@"wowf"
                                                             gameVersion:@"1.60.1"];
     [store reload];
     assert(store.records.count == 1);
@@ -348,9 +348,9 @@ static void TestAddons(void) {
     WKLog("test", @"fixture starting");
     method_setImplementation(class_getInstanceMethod(TKWoWClient.class,@selector(planForProduct:region:locale:error:)),(IMP)Plan);
     method_setImplementation(class_getInstanceMethod(TKWoWUpdater.class,@selector(updatePlan:root:progress:error:)),(IMP)Update);
-    [NSUserDefaults.standardUserDefaults setObject:@"wow_classic_beta" forKey:@"WoWProduct"];
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWRepairRequested.wow_classic_beta"];
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWInstallRequested.wow_classic_beta"];
+    [NSUserDefaults.standardUserDefaults setObject:@"wowf" forKey:@"WoWProduct"];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWRepairRequested.wowf"];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWInstallRequested.wowf"];
     // Device language must not change this fork's English launcher UI.
     [NSUserDefaults.standardUserDefaults setObject:@[@"es-ES"] forKey:@"AppleLanguages"];
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
@@ -391,7 +391,7 @@ static void TestAddons(void) {
     assert(Find(self.controller.view,@"wow.logo") || Find(self.controller.view,@"wow.title"));
     // The manager must construct its table header before a device user can
     // reach any add-on action; this caught a live iPad constraint crash.
-    TKWoWAddonManagerViewController *manager=[[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:NSTemporaryDirectory() edition:@"Forever · Beta"];
+    TKWoWAddonManagerViewController *manager=[[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:NSTemporaryDirectory() edition:@"Forever"];
     [manager loadViewIfNeeded];
     [manager.view layoutIfNeeded];
     assert(manager.tableView.tableHeaderView.bounds.size.height==212);
@@ -463,7 +463,7 @@ static void TestAddons(void) {
     UINavigationController *probeNavigation=[[UINavigationController alloc] initWithRootViewController:probeHost];
     probe.rootViewController=probeNavigation;
     [probe makeKeyAndVisible];
-    TKWoWAddonManagerViewController *pushed=[[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:NSTemporaryDirectory() edition:@"Forever · Beta"];
+    TKWoWAddonManagerViewController *pushed=[[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:NSTemporaryDirectory() edition:@"Forever"];
     UINavigationController *probeFrame=[[UINavigationController alloc] initWithRootViewController:pushed];
     probeFrame.modalPresentationStyle=UIModalPresentationPageSheet;
     [probeHost presentViewController:probeFrame animated:NO completion:nil];
@@ -632,13 +632,13 @@ static void TestAddons(void) {
 }
 - (void)checkRepairPaused {
     assert(atomic_load(&repairs)==1);
-    assert([NSUserDefaults.standardUserDefaults boolForKey:@"WoWRepairRequested.wow_classic_beta"]);
+    assert([NSUserDefaults.standardUserDefaults boolForKey:@"WoWRepairRequested.wowf"]);
     [self.controller refresh];
     [self performSelector:@selector(checkRepairComplete) withObject:nil afterDelay:0.3];
 }
 - (void)checkRepairComplete {
     assert(atomic_load(&repairs)==2 && [self primary].enabled && self.launches==0);
-    assert(![NSUserDefaults.standardUserDefaults boolForKey:@"WoWRepairRequested.wow_classic_beta"]);
+    assert(![NSUserDefaults.standardUserDefaults boolForKey:@"WoWRepairRequested.wowf"]);
     atomic_store(&failure,true); [self.controller refresh];
     [self performSelector:@selector(checkOffline) withObject:nil afterDelay:0.3];
 }
@@ -789,7 +789,8 @@ static void TestAddons(void) {
         @"wow.box.addons": @[@"wow.heading.addons", @"wow.addons.manage", @"wow.addons.macEver",
                              @"wow.addons.directory"],
         @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.voice.test"],
-        @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.backup",
+        @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.renderProfile",
+                                  @"wow.performance.backup",
                                   @"wow.performance.reset", @"wow.performance.restore",
                                   @"wow.performance.settingsFolder", @"wow.performance.gamepad",
                                   @"wow.performance.overlay"],

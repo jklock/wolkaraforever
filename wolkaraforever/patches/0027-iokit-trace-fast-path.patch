@@ -1,0 +1,146 @@
+# WolkaraForever layer patch 0027 - IOKit: no trace work when tracing is disabled
+#
+# Why: IOKit trace messages eagerly construct strings, summaries, and class
+# names even when --trace-iokit is absent. Keep the actual registry and GPU
+# identity behavior intact, but construct diagnostic data only when tracing is
+# enabled. This is a bounded reduction in shim work; its gameplay impact must
+# be measured because call frequency is not yet known.
+#
+# Applies to: translation/IOKit/Registry.m
+# Upstream: candidate.
+#
+diff --git a/translation/IOKit/Registry.m b/translation/IOKit/Registry.m
+index 9d08a4a..bc1c038 100644
+--- a/translation/IOKit/Registry.m
++++ b/translation/IOKit/Registry.m
+@@ -157,16 +157,19 @@ kern_return_t IOServiceGetMatchingServices(mach_port_t port, CFDictionaryRef ma
+         static io_object_t (*next)(io_iterator_t); static dispatch_once_t once;
+         dispatch_once(&once, ^{ next = (io_object_t (*)(io_iterator_t))realFunction("IOIteratorNext", (void *)IOIteratorNext); });
+         NSString *description = tracing ? matchingSummary(matching) : nil;
+-        NSMutableOrderedSet *classes = [NSMutableOrderedSet new];
++        NSMutableOrderedSet *classes = tracing ? [NSMutableOrderedSet new] : nil;
+         unsigned count = 0; io_iterator_t copy = 0;
+         CFRetain(matching);
+         kern_return_t listed = real(port, matching, &copy);
+         if (listed == KERN_SUCCESS && copy && next) {
+-            for (io_object_t object; (object = next(copy)); IOObjectRelease(object)) { count++; [classes addObject:className(object)]; }
++            for (io_object_t object; (object = next(copy)); IOObjectRelease(object)) {
++                count++;
++                if (tracing) [classes addObject:className(object)];
++            }
+             IOObjectRelease(copy);
+         }
+-        trace([NSString stringWithFormat:@"IOServiceGetMatchingServices %@ -> 0x%x count=%u %@", description, listed, count,
+-               [classes.array componentsJoinedByString:@","]]);
++        if (tracing) trace([NSString stringWithFormat:@"IOServiceGetMatchingServices %@ -> 0x%x count=%u %@", description, listed, count,
++                            [classes.array componentsJoinedByString:@","]]);
+         if (accelerator && !count && useStandIn(port)) {
+             CFRelease(matching);   // the reference the application handed over
+             return real(port, IOServiceMatching(className(standIn).UTF8String), existing);
+@@ -181,7 +184,7 @@ io_service_t IOServiceGetMatchingService(mach_port_t port, CFDictionaryRef match
+     BOOL accelerator = macIdentity && acceleratorMatch(matching);
+     if (accelerator && matching) CFRetain(matching);
+     io_service_t service = real ? real(port, matching) : 0;
+-    trace([NSString stringWithFormat:@"IOServiceGetMatchingService %@ -> %@", description, className(service)]);
++    if (tracing) trace([NSString stringWithFormat:@"IOServiceGetMatchingService %@ -> %@", description, className(service)]);
+     if (accelerator && matching) {
+         CFRelease(matching);
+         if (!service && useStandIn(port)) service = real(port, IOServiceMatching(className(standIn).UTF8String));
+@@ -192,7 +195,7 @@ io_object_t IOIteratorNext(io_iterator_t iterator) {
+     REAL(IOIteratorNext);
+     configure();
+     io_object_t object = real ? real(iterator) : 0;
+-    if (object) trace([NSString stringWithFormat:@"IOIteratorNext -> %@", className(object)]);
++    if (tracing && object) trace([NSString stringWithFormat:@"IOIteratorNext -> %@", className(object)]);
+     return object;
+ }
+ CFTypeRef IORegistryEntryCreateCFProperty(io_registry_entry_t entry, CFStringRef key, CFAllocatorRef allocator, IOOptionBits options) {
+@@ -202,12 +205,12 @@ CFTypeRef IORegistryEntryCreateCFProperty(io_registry_entry_t entry, CFStringRef
+     if (isStandIn(entry)) {
+         if (value) CFRelease(value);
+         value = standInProperty(key);
+-        trace([NSString stringWithFormat:@"CreateCFProperty (GPU stand-in) %@ -> %@", keyName(key), summary(key, value)]);
++        if (tracing) trace([NSString stringWithFormat:@"CreateCFProperty (GPU stand-in) %@ -> %@", keyName(key), summary(key, value)]);
+         return value;
+     }
+     CFTypeRef mac = macGPUProperty(entry, key, value);
+-    trace([NSString stringWithFormat:@"CreateCFProperty %@ %@ -> %@%@", className(entry), keyName(key), summary(key, value),
+-           mac ? [@" (Mac: " stringByAppendingFormat:@"%@)", summary(key, mac)] : @""]);
++    if (tracing) trace([NSString stringWithFormat:@"CreateCFProperty %@ %@ -> %@%@", className(entry), keyName(key), summary(key, value),
++                        mac ? [@" (Mac: " stringByAppendingFormat:@"%@)", summary(key, mac)] : @""]);
+     if (mac) { if (value) CFRelease(value); return mac; }
+     return value;
+ }
+@@ -218,12 +221,12 @@ CFTypeRef IORegistryEntrySearchCFProperty(io_registry_entry_t entry, const io_na
+     if (isStandIn(entry)) {
+         if (value) CFRelease(value);
+         value = standInProperty(key);
+-        trace([NSString stringWithFormat:@"SearchCFProperty (GPU stand-in) %s %@ options=0x%x -> %@", plane ? plane : "(null)", keyName(key), options, summary(key, value)]);
++        if (tracing) trace([NSString stringWithFormat:@"SearchCFProperty (GPU stand-in) %s %@ options=0x%x -> %@", plane ? plane : "(null)", keyName(key), options, summary(key, value)]);
+         return value;
+     }
+     CFTypeRef mac = macGPUProperty(entry, key, value);
+-    trace([NSString stringWithFormat:@"SearchCFProperty %@ %s %@ options=0x%x -> %@%@", className(entry), plane ? plane : "(null)",
+-           keyName(key), options, summary(key, value), mac ? [@" (Mac: " stringByAppendingFormat:@"%@)", summary(key, mac)] : @""]);
++    if (tracing) trace([NSString stringWithFormat:@"SearchCFProperty %@ %s %@ options=0x%x -> %@%@", className(entry), plane ? plane : "(null)",
++                        keyName(key), options, summary(key, value), mac ? [@" (Mac: " stringByAppendingFormat:@"%@)", summary(key, mac)] : @""]);
+     if (mac) { if (value) CFRelease(value); return mac; }
+     return value;
+ }
+@@ -232,7 +235,7 @@ kern_return_t IORegistryEntryCreateCFProperties(io_registry_entry_t entry, CFMut
+     configure();
+     if (isStandIn(entry) && properties) {
+         *properties = (CFMutableDictionaryRef)CFBridgingRetain([standInEntry mutableCopy]);
+-        trace([NSString stringWithFormat:@"CreateCFProperties (GPU stand-in) -> keys=%lu", (unsigned long)standInEntry.count]);
++        if (tracing) trace([NSString stringWithFormat:@"CreateCFProperties (GPU stand-in) -> keys=%lu", (unsigned long)standInEntry.count]);
+         return KERN_SUCCESS;
+     }
+     kern_return_t result = real ? real(entry, properties, allocator, options) : KERN_FAILURE;
+@@ -257,15 +260,15 @@ kern_return_t IORegistryEntryGetParentEntry(io_registry_entry_t entry, const io_
+     REAL(IORegistryEntryGetParentEntry);
+     configure();
+     kern_return_t result = real ? real(entry, plane, parent) : KERN_FAILURE;
+-    trace([NSString stringWithFormat:@"GetParentEntry %@%@ %s -> 0x%x %@", className(entry), isStandIn(entry) ? @" (GPU stand-in)" : @"", plane ? plane : "(null)", result,
+-           result == KERN_SUCCESS && parent ? className(*parent) : @""]);
++    if (tracing) trace([NSString stringWithFormat:@"GetParentEntry %@%@ %s -> 0x%x %@", className(entry), isStandIn(entry) ? @" (GPU stand-in)" : @"", plane ? plane : "(null)", result,
++                        result == KERN_SUCCESS && parent ? className(*parent) : @""]);
+     return result;
+ }
+ kern_return_t IORegistryEntryGetParentIterator(io_registry_entry_t entry, const io_name_t plane, io_iterator_t *iterator) {
+     REAL(IORegistryEntryGetParentIterator);
+     configure();
+     kern_return_t result = real ? real(entry, plane, iterator) : KERN_FAILURE;
+-    trace([NSString stringWithFormat:@"GetParentIterator %@%@ %s -> 0x%x", className(entry), isStandIn(entry) ? @" (GPU stand-in)" : @"", plane ? plane : "(null)", result]);
++    if (tracing) trace([NSString stringWithFormat:@"GetParentIterator %@%@ %s -> 0x%x", className(entry), isStandIn(entry) ? @" (GPU stand-in)" : @"", plane ? plane : "(null)", result]);
+     return result;
+ }
+ kern_return_t IORegistryEntryGetChildIterator(io_registry_entry_t entry, const io_name_t plane, io_iterator_t *iterator) {
+@@ -278,11 +281,11 @@ kern_return_t IORegistryEntryGetChildIterator(io_registry_entry_t entry, const i
+         kern_return_t (*match)(mach_port_t, CFDictionaryRef, io_iterator_t *) = (kern_return_t (*)(mach_port_t, CFDictionaryRef, io_iterator_t *))
+             realFunction("IOServiceGetMatchingServices", (void *)IOServiceGetMatchingServices);
+         kern_return_t result = match ? match(kIOMainPortDefault, IOServiceMatching("IOAccelerator"), iterator) : KERN_FAILURE;
+-        trace([NSString stringWithFormat:@"GetChildIterator (GPU stand-in) %s -> 0x%x, no children", plane ? plane : "(null)", result]);
++        if (tracing) trace([NSString stringWithFormat:@"GetChildIterator (GPU stand-in) %s -> 0x%x, no children", plane ? plane : "(null)", result]);
+         return result;
+     }
+     kern_return_t result = real ? real(entry, plane, iterator) : KERN_FAILURE;
+-    trace([NSString stringWithFormat:@"GetChildIterator %@%@ %s -> 0x%x", className(entry), isStandIn(entry) ? @" (GPU stand-in)" : @"", plane ? plane : "(null)", result]);
++    if (tracing) trace([NSString stringWithFormat:@"GetChildIterator %@%@ %s -> 0x%x", className(entry), isStandIn(entry) ? @" (GPU stand-in)" : @"", plane ? plane : "(null)", result]);
+     return result;
+ }
+ kern_return_t IORegistryEntryGetRegistryEntryID(io_registry_entry_t entry, uint64_t *identifier) {
+@@ -290,11 +293,11 @@ kern_return_t IORegistryEntryGetRegistryEntryID(io_registry_entry_t entry, uint6
+     configure();
+     if (isStandIn(entry) && identifier) {
+         *identifier = metalRegistryID;   // the stand-in is the Metal device's GPU
+-        trace(@"GetRegistryEntryID (GPU stand-in) -> the Metal device's");
++        if (tracing) trace(@"GetRegistryEntryID (GPU stand-in) -> the Metal device's");
+         return KERN_SUCCESS;
+     }
+     kern_return_t result = real ? real(entry, identifier) : KERN_FAILURE;
+-    trace([NSString stringWithFormat:@"GetRegistryEntryID %@ -> 0x%x%@", className(entry), result,
+-           result == KERN_SUCCESS && identifier && AKGPUIsMetalDevice(*identifier) ? @" (the Metal device)" : @""]);
++    if (tracing) trace([NSString stringWithFormat:@"GetRegistryEntryID %@ -> 0x%x%@", className(entry), result,
++                        result == KERN_SUCCESS && identifier && AKGPUIsMetalDevice(*identifier) ? @" (the Metal device)" : @""]);
+     return result;
+ }

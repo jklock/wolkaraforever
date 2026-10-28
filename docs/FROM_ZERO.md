@@ -79,7 +79,7 @@ If `brew` is missing, install Homebrew from <https://brew.sh> first.
 ## Step 3 - Get the code
 
 ```bash
-git clone https://github.com/fJavierLasso/wolkaraforever.git
+git clone https://github.com/jklock/wolkaraforever.git
 cd wolkaraforever
 ```
 
@@ -188,7 +188,7 @@ If it does, setup is done; the rest is downloading and playing.
 
 ## Step 7 - Install an edition and play
 
-1. On the home screen choose **Forever - Beta** (the edition with recorded gameplay), then your
+1. On the home screen choose **World of Warcraft Forever** (the edition with recorded gameplay), then your
    region and language.
 2. Tap **Install**. Keep the app in the foreground while it downloads; backgrounding cancels
    the current transfer, though verified objects are kept and reused next time.
@@ -215,7 +215,7 @@ wolkaraforever/tools/push_game.sh --source "/Applications/World of Warcraft"
 wolkaraforever/tools/push_game.sh --source "/Volumes/Storage/World of Warcraft"
 ```
 
-`--source` is the folder containing `_classic_beta_`, on any volume. This skips the
+`--source` is the folder containing `_forever_`, on any volume. This skips the
 on-device download; the app still verifies what it has. See
 [DEVICE_WORKFLOW.md](DEVICE_WORKFLOW.md) for options and troubleshooting.
 

@@ -130,7 +130,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UILabel *_stateLabel, *_detailLabel, *_versionLabel, *_startupLabel, *_compatibilityLabel;
     UIButton *_editionButton, *_preferencesButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_voiceTestButton, *_permissionsButton, *_primaryButton,
-        *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton;
+        *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
+        *_renderProfileButton;
     TKWoWSwitchRow *_gamepadRow, *_overlayRow;
     NSString *_backupsDirectory;
     UIView *_markView;
@@ -301,6 +302,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         target:self action:@selector(gamepadChanged:)];
     _overlayRow=[[TKWoWSwitchRow alloc] initWithTitle:@"Performance Overlay" identifier:@"wow.performance.overlay"
         target:self action:@selector(overlayChanged:)];
+    _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
     [_settingsFolderButton setTitle:@"Open Settings Folder" forState:UIControlStateNormal];
 
@@ -314,7 +316,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIView *voiceBox=[self sectionBoxWithTitle:@"Voice & Input Manager" identifier:@"wow.box.voice"
         rows:@[_permissionsButton,_voiceButton,_voiceTestButton]];
     UIView *performanceBox=[self sectionBoxWithTitle:@"Performance & UI Manager" identifier:@"wow.box.performance"
-        rows:@[_backupButton,_resetButton,_restoreButton,_settingsFolderButton,_gamepadRow,_overlayRow]];
+        rows:@[_renderProfileButton,_backupButton,_resetButton,_restoreButton,_settingsFolderButton,_gamepadRow,_overlayRow]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _activity.color=Gold(); _activity.hidesWhenStopped=YES;
@@ -575,7 +577,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_editionButton title:[_product[@"name"] stringByAppendingString:@"  ▾"] filled:NO];
     _editionButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _editionButton.backgroundColor=[UIColor colorWithWhite:1 alpha:0.055]; _editionButton.layer.cornerRadius=10;
-    [self configureButton:_preferencesButton title:[NSString stringWithFormat:@"%@  ·  %@  ▾",_region.uppercaseString,[_locale isEqual:@"esES"]?@"Spanish":@"English"] filled:NO];
+    NSString *language=[_locale isEqual:@"esES"]?@"Spanish":@"English";
+    [self configureButton:_preferencesButton title:[NSString stringWithFormat:@"%@  ·  %@  ▾",_region.uppercaseString,language] filled:NO];
     _preferencesButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     [self configureButton:_addonsButton title:_installation.app?@"Install Addons (Curse & Direct)":@"Install Addons (Curse & Direct) (install game first)" filled:NO];
     _addonsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
@@ -624,6 +627,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _gamepadRow.toggle.on=_gamepadEnabled;
     _overlayRow.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _overlayRow.toggle.on=_overlayEnabled;
+    NSNumber *scale=[NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverBackingScale"];
+    CGFloat renderScale=scale ? scale.doubleValue : 1.0;
+    NSString *profile=renderScale<=0.75 ? @"Performance (1024 × 768)" : renderScale>=2.0 ? @"Quality (2732 × 2048)" : @"Balanced (1366 × 1024)";
+    [self configureButton:_renderProfileButton title:[@"Render profile: " stringByAppendingString:profile] filled:NO];
+    _renderProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _renderProfileButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _compatibilityLabel.text=([_product[@"id"] isEqual:@"wow"] || [_product[@"id"] isEqual:@"wow_beta"] || [_product[@"id"] isEqual:@"wow_classic"])?
         @"Compatibility with this edition is not yet verified.":
         @"";
@@ -766,14 +775,27 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSArray *values=region?@[@"eu",@"us",@"kr",@"tw"]:@[@"enUS",@"esES"];
     NSDictionary *names=@{@"eu":@"Europe",@"us":@"Americas",@"kr":@"Korea",@"tw":@"Taiwan",@"enUS":@"English",@"esES":@"Spanish"};
     for (NSString *value in values) [sheet addAction:[UIAlertAction actionWithTitle:names[value] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        (void)action; if (region) self->_region=value; else self->_locale=value;
+        (void)action;
+        if (region) self->_region=value;
+        else {
+            NSString *directory=[self foreverWorkingDirectory];
+            if (directory) {
+                NSError *error=nil;
+                if (![TKForeverUI setLocale:value inWorkingDirectory:directory error:&error]) {
+                    WKLog("ui", @"language: unable to update Forever locale: %@", error.localizedDescription?:@"unknown reason");
+                    [self presentMessage:@"Language not changed" message:error.localizedDescription?:@"Forever's language could not be updated."];
+                    return;
+                }
+            }
+            self->_locale=value;
+        }
         [NSUserDefaults.standardUserDefaults setObject:value forKey:region?@"WoWRegion":@"WoWLocale"]; [self refresh];
     }]];
     [self presentSheet:sheet anchor:_preferencesButton];
 }
 - (void)preferences {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Download preferences"
-        message:@"These settings do not change your game's login region." preferredStyle:UIAlertControllerStyleActionSheet];
+        message:@"These settings do not change your game's login region. Changing Language also updates Forever's text and audio language." preferredStyle:UIAlertControllerStyleActionSheet];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Region" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:YES]; }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Language" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:NO]; }]];
     [self presentSheet:sheet anchor:_preferencesButton];
@@ -1065,6 +1087,51 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     WKLog("ui", @"performance overlay: %@", enabled?@"enabled":@"disabled");
     [self render];
 }
+// This is selected before starting Forever. The guest backing scale is fixed
+// when its display bridge loads, so changing it never tears down a live game.
+- (void)chooseRenderProfile {
+    if (_busy || _starting || _running || _sessionUsed) return;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Render profile"
+        message:@"Applies the next time Forever starts. Performance reduces both the guest surface and Forever's internal render scale; it saves a full UI backup before changing those graphics settings." preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak TKWoWViewController *weakSelf=self;
+    void (^choose)(CGFloat,NSString *)=^(CGFloat scale,NSString *name) {
+        TKWoWViewController *self=weakSelf; if (!self) return;
+        [NSUserDefaults.standardUserDefaults setObject:@(scale) forKey:@"WolkaraForeverBackingScale"];
+        WKLog("ui", @"render profile: %@", name);
+        NSString *directory=[self foreverWorkingDirectory];
+        if (!directory) { [self render]; return; }
+        // The old implementation exposed a performance preset but never called
+        // it. Keep the virtual-display choice and the game's own render scale in
+        // one explicit, reversible profile change. Every profile retains a 60 Hz
+        // foreground cap and a low background cap; only Performance uses 0.75.
+        NSDictionary *settings=scale<=0.75?TKForeverUI.performancePreset:@{
+            @"renderScale": @"1.0", @"gxForegroundFPS": @"60",
+            @"gxBackgroundFPS": @"30", @"vsync": @"1",
+        };
+        self->_uiOperation=YES; [self render];
+        dispatch_async(TKForeverUIQueue(), ^{
+            NSError *error=nil;
+            NSString *backup=[TKForeverUI createUIBackupInWorkingDirectory:directory edition:TKForeverUIEdition error:&error];
+            BOOL applied=backup && [TKForeverUI setCVars:settings inWorkingDirectory:directory error:&error];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                TKWoWViewController *self=weakSelf; if (!self) return;
+                self->_uiOperation=NO; [self render];
+                if (applied) {
+                    WKLog("ui", @"render profile settings: %@", name);
+                    [self presentMessage:@"Render profile ready" message:[NSString stringWithFormat:@"%@ takes effect when Forever next starts. Backup: %@.",name,backup]];
+                } else {
+                    WKLog("ui", @"render profile settings not changed: %@", error.localizedDescription?:@"unknown reason");
+                    [self presentMessage:@"Render profile not applied" message:[NSString stringWithFormat:@"The display profile was selected, but Forever's graphics settings were left unchanged because a backup or write failed. %@",error.localizedDescription?:@""]];
+                }
+            });
+        });
+    };
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Performance — 1024 × 768" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(.75,@"performance"); }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Balanced — 1366 × 1024" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(1.0,@"balanced"); }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Quality — 2732 × 2048" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(2.0,@"quality"); }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentSheet:sheet anchor:_renderProfileButton];
+}
 // Navigation only: the Files browser opens at Forever's WTF folder. The folder is
 // created only here, only for a ready Forever installation, and nothing else is.
 - (void)openSettingsFolder {
@@ -1116,7 +1183,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSString *directory=app?[_library workingDirectoryForApp:app error:&error]:nil;
     NSString *addons=directory?[directory stringByAppendingPathComponent:@"Interface/AddOns"]:nil;
     if (!addons) { WKLog("ui", @"addons preview: %@", error.localizedDescription ?: @"no installation"); return; }
-    NSString *edition=_product[@"name"]?:@"Forever · Beta";
+    NSString *edition=_product[@"name"]?:@"Forever";
     TKWoWAddonManagerViewController *manager=[[TKWoWAddonManagerViewController alloc]
         initWithAddOnsDirectory:addons edition:edition browse:YES];
     [self presentPage:manager];

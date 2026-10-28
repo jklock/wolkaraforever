@@ -45,21 +45,21 @@ int main(void){@autoreleasepool{
     BE(encoding,1,1);BE(encoding,original.length,5);[encoding appendData:Hash(original)];[encoding appendData:Hash(raw)];encoding.length=22+32+1024;
     NSMutableData *download=[Text(@"DL") mutableCopy];BE(download,3,1);BE(download,16,1);BE(download,0,1);BE(download,2,4);BE(download,0,2);BE(download,0,1);BE(download,0,4);
     for(NSData *entry in @[asset,present]){[download appendData:Hash(entry)];BE(download,entry.length,5);BE(download,0,1);}
-    NSString *configuration=[NSString stringWithFormat:@"build-uid = wow_classic_beta\nroot = %@\n%@%@%@",TKWoWMD5(original),Reference(@"install",install,client),Reference(@"encoding",encoding,client),Reference(@"download",download,client)];
+    NSString *configuration=[NSString stringWithFormat:@"build-uid = wowf\nroot = %@\n%@%@%@",TKWoWMD5(original),Reference(@"install",install,client),Reference(@"encoding",encoding,client),Reference(@"download",download,client)];
     NSString *build=TKWoWMD5(Text(configuration));client.responses[build]=Text(configuration);
     NSMutableData *archive=[NSMutableData dataWithLength:37];[archive appendData:raw];client.archive=archive;NSString *archiveKey=TKWoWMD5(archive);
     client.responses[[archiveKey stringByAppendingString:@".index"]]=Index(raw);
     NSData *cdnData=Text([NSString stringWithFormat:@"archives = %@\n",archiveKey]);NSString *cdn=TKWoWMD5(cdnData);client.responses[cdn]=cdnData;
     client.responses[@"versions"]=Text([NSString stringWithFormat:@"Region|BuildConfig|CDNConfig|VersionsName\neu|%@|%@|synthetic-2\n",build,cdn]);
     client.responses[@"cdns"]=Text(@"Name|Path|Servers\neu|tpr/wow|https://level3.ssl.blizzard.com\n");
-    NSError *error=nil;NSDictionary *plan=[client planForProduct:@"wow_classic_beta" region:@"eu" locale:@"enUS" error:&error];assert(plan);
+    NSError *error=nil;NSDictionary *plan=[client planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error];assert(plan);
     NSString *base=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString],*root=[base stringByAppendingPathComponent:@"World of Warcraft"];
     NSFileManager *fm=NSFileManager.defaultManager;
-    NSString *exe=[root stringByAppendingPathComponent:@"_classic_beta_/Synthetic.app/Contents/MacOS/Synthetic"];
+    NSString *exe=[root stringByAppendingPathComponent:@"_forever_/Synthetic.app/Contents/MacOS/Synthetic"];
     assert([fm createDirectoryAtPath:exe.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:&error]);assert([old writeToFile:exe atomically:YES]);
-    NSString *settings=[root stringByAppendingPathComponent:@"_classic_beta_/WTF/Config.wtf"],*addon=[root stringByAppendingPathComponent:@"_classic_beta_/Interface/AddOns/OurFixture.txt"];
+    NSString *settings=[root stringByAppendingPathComponent:@"_forever_/WTF/Config.wtf"],*addon=[root stringByAppendingPathComponent:@"_forever_/Interface/AddOns/OurFixture.txt"];
     for(NSString *path in @[settings,addon]){assert([fm createDirectoryAtPath:path.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:&error]);assert([Text(@"keep me") writeToFile:path atomically:YES]);}
-    NSData *info=Text(@"Product|Active|Build Key|CDN Key|Version\nwow_classic_beta|1|11111111111111111111111111111111|22222222222222222222222222222222|synthetic-1\n");
+    NSData *info=Text(@"Product|Active|Build Key|CDN Key|Version\nwowf|1|11111111111111111111111111111111|22222222222222222222222222222222|synthetic-1\n");
     assert([info writeToFile:[root stringByAppendingPathComponent:@".build.info"] atomically:YES]);
     TKWoWCASCStore *source=[[TKWoWCASCStore alloc] initWithDirectory:[root stringByAppendingPathComponent:@"Data/data"] error:&error];assert(source);
     assert([source addData:present key:TKWoWMD5(present) error:&error]);assert([source checkpoint:&error]);source=nil;
@@ -76,7 +76,7 @@ int main(void){@autoreleasepool{
             // The resumed job has already reused the downloaded asset's receipt.
             // Changing metadata must recheck it, not restart or lose the patch.
             NSString *segment=[base stringByAppendingPathComponent:[NSString stringWithFormat:
-                @".tolkara-updates/wow_classic_beta-%@-enUS/installation/Data/data/data.001",build]];
+                @".tolkara-updates/wowf-%@-enUS/installation/Data/data/data.001",build]];
             assert([fm setAttributes:@{NSFileModificationDate:[NSDate dateWithTimeIntervalSinceNow:10]}
                 ofItemAtPath:segment error:NULL]);changedMetadata=YES;
         }
@@ -85,7 +85,7 @@ int main(void){@autoreleasepool{
     assert(changedMetadata);
     assert([[NSData dataWithContentsOfFile:exe] isEqual:original]);assert([[NSData dataWithContentsOfFile:addon] isEqual:Text(@"keep me")]);assert([[NSData dataWithContentsOfFile:settings] isEqual:Text(@"settings edited while paused")]);
     assert(!resume.counts[TKWoWMD5(asset)] && !resume.counts[TKWoWMD5(present)]);assert([resume.counts[@"range"] unsignedIntegerValue]==1);
-    NSArray *rows=TKWoWTable([NSData dataWithContentsOfFile:[root stringByAppendingPathComponent:@".build.info"]],&error);assert(TKWoWBuildCurrent(rows,@"wow_classic_beta",plan[@"version"]));
+    NSArray *rows=TKWoWTable([NSData dataWithContentsOfFile:[root stringByAppendingPathComponent:@".build.info"]],&error);assert(TKWoWBuildCurrent(rows,@"wowf",plan[@"version"]));
     source=[[TKWoWCASCStore alloc] initWithDirectory:[root stringByAppendingPathComponent:@"Data/data"] error:&error];assert(source);assert([[source readKey:TKWoWMD5(asset) size:asset.length] isEqual:asset]);assert([[source readKey:TKWoWMD5(present) size:present.length] isEqual:present]);source=nil;
     // A new transaction clones the prior receipts and reads no unchanged CASC
     // payload, while still validating metadata and the original loose file.
@@ -108,7 +108,7 @@ int main(void){@autoreleasepool{
         withString:Reference(@"download",nextDownload,resume)];
     NSString *nextBuild=TKWoWMD5(Text(nextConfiguration));resume.responses[nextBuild]=Text(nextConfiguration);
     resume.responses[@"versions"]=Text([NSString stringWithFormat:@"Region|BuildConfig|CDNConfig|VersionsName\neu|%@|%@|synthetic-3\n",nextBuild,cdn]);
-    plan=[resume planForProduct:@"wow_classic_beta" region:@"eu" locale:@"enUS" error:&error];assert(plan);
+    plan=[resume planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error];assert(plan);
     warm.fullVerification=NO;
     result=[warm updatePlan:plan root:root progress:^(NSString *phase,uint64_t done,uint64_t total){(void)phase;(void)done;(void)total;} error:&error];
     if(!result)fprintf(stderr,"Incremental patch: %s\n",error.localizedDescription.UTF8String);assert(result);
@@ -189,8 +189,10 @@ int main(void){@autoreleasepool{
     resume.changed=NO;error=nil;
     result=[[[TKWoWUpdater alloc] initWithClient:resume] updatePlan:plan root:freshRoot progress:^(NSString *phase,uint64_t done,uint64_t total){(void)phase;(void)done;(void)total;} error:&error];
     if(!result)fprintf(stderr,"Fresh install: %s\n",error.localizedDescription.UTF8String);assert(result);
-    NSString *freshConfig=[NSString stringWithContentsOfFile:[freshRoot stringByAppendingPathComponent:@"_classic_beta_/WTF/Config.wtf"] encoding:NSUTF8StringEncoding error:&error];
-    assert([freshConfig containsString:@"SET portal \"test\""] && [freshConfig containsString:@"SET textLocale \"enUS\""]);
+    NSString *freshConfig=[NSString stringWithContentsOfFile:[freshRoot stringByAppendingPathComponent:@"_forever_/WTF/Config.wtf"] encoding:NSUTF8StringEncoding error:&error];
+    // The released product writes the selected region as the portal. The `_beta`
+    // product suffix is the old beta hook and is not what this fixture installs.
+    assert([freshConfig containsString:@"SET portal \"EU\""] && [freshConfig containsString:@"SET textLocale \"enUS\""]);
     // Reject oversized local metadata before cloning or allocating its contents.
     NSData *oversized=[NSMutableData dataWithLength:2*1024*1024+1];
     assert([oversized writeToFile:[freshRoot stringByAppendingPathComponent:@".build.info"] atomically:YES]);

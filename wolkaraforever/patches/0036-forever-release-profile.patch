@@ -1,0 +1,209 @@
+# WolkaraForever layer patch 0036 - profile: WoW Forever is released, not a beta
+#
+# Why: Battle.net now installs World of Warcraft Forever as the released game:
+# the flavor directory is `_forever_`, the bundle is `World of Warcraft.app`, and
+# the product is `wowf`. The profile and its installer still named the beta's
+# `_classic_beta_/World of Warcraft Beta.app`, so a push of the released client
+# would have looked for an executable that no longer exists.
+#
+# The installer also stops copying `Data` wholesale. `Data` holds the CASC store
+# every product in one installation shares plus a per-product index folder; a
+# beta's `wow_classic_beta` folder left behind (or on the Mac) belongs to a build
+# that is not being installed, and copying it into the app's store would mix two
+# builds' indexes. It now copies the shared store and the product's own folder,
+# which `.flavor.info` names.
+#
+# Applies to: profiles/wow-forever/{profile.json,install.py,README.md}.
+# Upstream: candidate.
+#
+diff --git a/profiles/wow-forever/README.md b/profiles/wow-forever/README.md
+index 7191afb..589e8ed 100644
+--- a/profiles/wow-forever/README.md
++++ b/profiles/wow-forever/README.md
+@@ -1,6 +1,6 @@
+-# World of Warcraft Forever (Classic beta)
++# World of Warcraft Forever
+ 
+-The macOS arm64 Classic beta client (1.60.1) from `_classic_beta_`. See
++The macOS arm64 client (1.60.1) from `_forever_`. See
+ [COMPATIBILITY.md](../../COMPATIBILITY.md) for what works.
+ 
+ It also logs in and plays on an iPhone (experimental); see
+@@ -12,7 +12,7 @@ account. Nothing from the game is included here.
+ In `local.env`:
+ 
+ ```
+-GUEST_EXE="/Applications/World of Warcraft/_classic_beta_/World of Warcraft Beta.app/Contents/MacOS/World of Warcraft"
++GUEST_EXE="/Applications/World of Warcraft/_forever_/World of Warcraft.app/Contents/MacOS/World of Warcraft"
+ ```
+ 
+ Build, install and set up your execution mode as described in
+@@ -22,15 +22,17 @@ Build, install and set up your execution mode as described in
+ python3 profiles/wow-forever/install.py
+ ```
+ 
+-The script copies the client and the `Data` folder unchanged (tens of
++The script copies the client and the `Data` store unchanged (tens of
+ gigabytes, so use a cable) and verifies the executable's hash before and after.
+-It copies only your region and language settings, not account settings, saved
+-credentials or add-ons. Pass `--source` if the game is installed elsewhere, and
+-`--skip-data` to refresh the client without copying `Data` again.
++It copies the store this product uses and this product's own index folder, so a
++beta's index folder left in the same installation is not copied. It copies only
++your region and language settings, not account settings, saved credentials or
++add-ons. Pass `--source` if the game is installed elsewhere, and `--skip-data` to
++refresh the client without copying `Data` again.
+ 
+ **Start the game once on the Mac first.** The client needs the region and
+ languages it saves the first time Battle.net starts it (`portal`, `textLocale`
+-and `audioLocale` in `_classic_beta_/WTF/Config.wtf`). A copy that never started on the
++and `audioLocale` in `_forever_/WTF/Config.wtf`). A copy that never started on the
+ Mac has none, and on the device the game then asks for a region in a window the
+ AppKit adapter cannot show yet, so it quits within a second. Before you copy:
+ in Battle.net choose the game and your region, click Play, wait for the
+diff --git a/profiles/wow-forever/install.py b/profiles/wow-forever/install.py
+index e14a2a5..c052b9b 100644
+--- a/profiles/wow-forever/install.py
++++ b/profiles/wow-forever/install.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Copy your own installed WoW Forever (Classic beta) files into the Tolkara app's Documents.
++"""Copy your own installed WoW Forever files into the Tolkara app's Documents.
+ 
+ The executable and bundle resources are copied unchanged. Of the settings, only
+ the region and languages the game saved on this Mac are copied, never account
+@@ -16,6 +16,15 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
+ import first_run
+ import localenv
+ BUNDLE_ID=localenv.bundle_id()
++# Battle.net's flavor directory for the released client, and the bundle it
++# starts. While the game was in beta these were `_classic_beta_` and
++# `World of Warcraft Beta.app`.
++EDITION=Path('_forever_')
++CONTENTS=EDITION/'World of Warcraft.app/Contents'
++EXECUTABLE=CONTENTS/'MacOS/World of Warcraft'
++# The store every product in one installation shares, plus the product's own
++# index folder, which `.flavor.info` names.
++SHARED_DATA=('data','indices','config','ecache')
+ 
+ 
+ def sha256(path):
+@@ -25,6 +34,22 @@ def sha256(path):
+     return digest.hexdigest()
+ 
+ 
++def flavor(source):
++    """The product flavor this installation is, e.g. 'wowf', or None."""
++    try: lines=[line.strip() for line in (source/EDITION/'.flavor.info').read_text().splitlines() if line.strip()]
++    except OSError: return None
++    return lines[-1] if len(lines)>1 else None
++
++
++def data_folders(source):
++    """The `Data` folders to copy: the shared store and this product's own index
++    folder. Another product's index folder (a beta left behind, say) is not
++    copied: the app's store belongs to the build that is being installed."""
++    data=source/'Data'; own=flavor(source)
++    wanted=list(SHARED_DATA)+([own] if own else [])
++    return [data/name for name in wanted if (data/name).is_dir()]
++
++
+ def main():
+     parser=argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('--device',default=localenv.load().get('DEVICE'),help='iPad UDID (default: DEVICE in local.env)')
+@@ -35,30 +60,33 @@ def main():
+     os.chdir(localenv.ROOT)
+     os.environ.setdefault('DEVELOPER_DIR','/Applications/Xcode.app/Contents/Developer')
+     source=args.source.resolve(); stage=Path('build/game-data/World of Warcraft')
+-    app=Path('_classic_beta_/World of Warcraft Beta.app/Contents')
+-    executable=app/'MacOS/World of Warcraft'
+-    if not (source/executable).is_file(): parser.error('original Classic beta executable not found')
++    if not (source/EXECUTABLE).is_file(): parser.error('original Forever executable not found')
+     if not args.skip_data and not (source/'Data').is_dir(): parser.error('game Data directory not found')
+     # Region and languages saved by the game's first start on this Mac, merged
+     # into the device's own settings (first_run.py); stops here when there are none.
+     first_run.stage(source,stage,'World of Warcraft',Path(__file__).parent,args.device,BUNDLE_ID)
+-    (stage/app/'MacOS').mkdir(parents=True,exist_ok=True)
++    (stage/EXECUTABLE).parent.mkdir(parents=True,exist_ok=True)
+     for name in ['.build.info','.flavor.info']:
+-        for parent in [Path('.'),Path('_classic_beta_')]:
++        for parent in [Path('.'),EDITION]:
+             item=source/parent/name
+             if item.is_file():
+                 (stage/parent).mkdir(parents=True,exist_ok=True); shutil.copy2(item,stage/parent/name)
+-    for name in ['Info.plist','PkgInfo']: shutil.copy2(source/app/name,stage/app/name)
+-    shutil.copytree(source/app/'Resources',stage/app/'Resources',dirs_exist_ok=True)
+-    before=sha256(source/executable)
+-    shutil.copy2(source/executable,stage/executable)
+-    if sha256(stage/executable)!=before or sha256(source/executable)!=before:
++    for name in ['Info.plist','PkgInfo']: shutil.copy2(source/CONTENTS/name,stage/CONTENTS/name)
++    # Resources and Helpers are the bundle's own: the release ships a voice proxy
++    # helper beside the client. _CodeSignature stays on the Mac; it means nothing
++    # to the runtime, which verifies the executable's hash instead.
++    for name in ['Resources','Helpers']:
++        if (source/CONTENTS/name).is_dir():
++            shutil.copytree(source/CONTENTS/name,stage/CONTENTS/name,dirs_exist_ok=True)
++    before=sha256(source/EXECUTABLE)
++    shutil.copy2(source/EXECUTABLE,stage/EXECUTABLE)
++    if sha256(stage/EXECUTABLE)!=before or sha256(source/EXECUTABLE)!=before:
+         raise RuntimeError('original executable changed while staging')
+-    # Files beside the executable, unchanged: the Classic beta keeps its ICU
+-    # data there (icudt78l.dat) and reports an error at every start without it.
+-    for item in sorted((source/executable).parent.iterdir()):
+-        if item.is_file() and item.name!=executable.name: shutil.copy2(item,stage/executable.parent/item.name)
+-    for name in ['Logs','WTF','Cache']: (stage/'_classic_beta_'/name).mkdir(exist_ok=True)
++    # Files beside the executable, unchanged: the client keeps its ICU data there
++    # (icudt78l.dat) and reports an error at every start without it.
++    for item in sorted((source/EXECUTABLE).parent.iterdir()):
++        if item.is_file() and item.name!=EXECUTABLE.name: shutil.copy2(item,stage/EXECUTABLE.parent/item.name)
++    for name in ['Logs','WTF','Cache']: (stage/EDITION/name).mkdir(exist_ok=True)
+     def transfer(path,destination):
+         subprocess.run(['xcrun','devicectl','device','copy','to','--device',args.device,
+             '--domain-type','appDataContainer','--domain-identifier',BUNDLE_ID,
+@@ -66,7 +94,9 @@ def main():
+     transfer(stage,'Documents/World of Warcraft')
+     nibs=Path('build/guest-module/Nibs')
+     if nibs.is_dir(): transfer(nibs,'Documents/GuestCompatibility/Nibs')
+-    if not args.skip_data: transfer(source/'Data','Documents/World of Warcraft/Data')
++    if not args.skip_data:
++        for folder in data_folders(source):
++            transfer(folder,'Documents/World of Warcraft/Data/'+folder.name)
+     print('Original executable SHA-256:',before)
+     print('Copied bundle resources'+(' and game Data' if not args.skip_data else '')+' into the iPad app container.')
+ 
+diff --git a/profiles/wow-forever/profile.json b/profiles/wow-forever/profile.json
+index 183ff03..a83b895 100644
+--- a/profiles/wow-forever/profile.json
++++ b/profiles/wow-forever/profile.json
+@@ -1,9 +1,9 @@
+ {
+   "id": "wow-forever",
+   "name": "World of Warcraft Forever",
+-  "workingDirectory": "World of Warcraft/_classic_beta_",
+-  "executable": "World of Warcraft Beta.app/Contents/MacOS/World of Warcraft",
+-  "tested": "Classic beta 1.60.1, macOS arm64 client, iPad Pro M5; iPhone 16 Pro Max (experimental)",
++  "workingDirectory": "World of Warcraft/_forever_",
++  "executable": "World of Warcraft.app/Contents/MacOS/World of Warcraft",
++  "tested": "Forever 1.60.1, macOS arm64 client, iPad Pro M5; iPhone 16 Pro Max (experimental)",
+   "notes": "Copy your own installed 'World of Warcraft' folder into the app's Documents. Log in inside the game. See profiles/README.md.",
+   "setup": {
+     "source": "/Applications/World of Warcraft",
+@@ -15,15 +15,15 @@
+       "path": "/Applications/Battle.net.app",
+       "steps": [
+         "Install the Battle.net app on this Mac and sign in with your Blizzard account.",
+-        "In Battle.net, install World of Warcraft Forever (the Classic beta) for Mac in its usual place, the Applications folder.",
++        "In Battle.net, install World of Warcraft Forever for Mac in its usual place, the Applications folder.",
+         "Start the game once on this Mac and log in, so that it saves your region. Then quit the game and Battle.net."
+       ]
+     },
+     "firstRun": {
+-      "settings": "_classic_beta_/WTF/Config.wtf",
++      "settings": "_forever_/WTF/Config.wtf",
+       "keys": ["portal", "textLocale", "audioLocale"],
+       "steps": [
+-        "Open **Battle.net** on this Mac and select World of Warcraft. Choose **World of Warcraft Forever** (the Classic beta) and the region your account plays in.",
++        "Open **Battle.net** on this Mac and select World of Warcraft. Choose **World of Warcraft Forever** and the region your account plays in.",
+         "For a language other than the default, set it in Battle.net's Settings, under Game Settings, before you play.",
+         "Click **Play** and wait for the character list. You don't need to enter the world.",
+         "Quit the game. It saves your region and language as it closes."

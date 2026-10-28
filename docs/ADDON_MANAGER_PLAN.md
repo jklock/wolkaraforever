@@ -162,7 +162,7 @@ edition folder, expected interface version when known, and game locale.
 For the researched Forever 1.60.1 line, publisher TOCs provide evidence for
 interface `16001`. Keep that mapping versioned and tied to the game version;
 unknown future beta versions must become unverified until checked. The shared
-`_classic_beta_` folder name alone is not a compatibility signal.
+`_forever_` folder name alone is not a compatibility signal.
 
 Apply two checks: provider/author flavor metadata and the selected package's
 relevant TOCs, including interface lists and flavor-specific TOCs. An interface
@@ -189,7 +189,7 @@ the manager does not translate guide content or rewrite add-on Lua.
 
 Resolve the target using the registered library installation and the product
 mapping in [Manifest.m](../wolkaraforever/WoW/Manifest.m). The normal Forever location is
-`Documents/World of Warcraft/_classic_beta_/Interface/AddOns`; imported game roots
+`Documents/World of Warcraft/_forever_/Interface/AddOns`; imported game roots
 must work through the same resolver.
 
 Keep a versioned `.wolkaraforever-addons.json` inside `AddOns`, recording package identity,

@@ -1,8 +1,12 @@
 # Notices
 
 WolkaraForever is a WoW-focused fork of Tolkara, by Vasilii Kharitonov and the Tolkara
-contributors. The original runtime, translation layer and history are retained.
-WolkaraForever additions are provided under the same MIT license.
+contributors, that continues the original [Wolkara](https://github.com/fJavierLasso/wolkara)
+by Javier Lasso and the Wolkara contributors. The WoW launcher, the on-device downloader and
+updater, and the mobile input layer began in Wolkara; WolkaraForever carries that work forward
+on a pinned engine. The original runtime, translation layer and history are retained, and the
+Wolkara copyright line in [LICENSE](LICENSE) is kept. WolkaraForever additions are provided
+under the same MIT license.
 
 Tolkara is released under the MIT License. It uses Apple's public SDK frameworks,
 the system zlib library and the Python standard library. The experimental WoW

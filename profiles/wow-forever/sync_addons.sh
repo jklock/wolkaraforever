@@ -14,7 +14,7 @@ usage() {
     cat <<'EOF'
 usage: profiles/wow-forever/sync_addons.sh [--source PATH] [--device UDID]
 
-Merges PATH/_classic_beta_/Interface/AddOns into WolkaraForever on the paired device.
+Merges PATH/_forever_/Interface/AddOns into WolkaraForever on the paired device.
 The default source is /Volumes/Storage/World of Warcraft. Existing files on the
 device are not removed. Close WolkaraForever before running this command.
 EOF
@@ -33,8 +33,8 @@ done
 [ -n "$BUNDLE" ] || { echo "Set TOLKARA_BUNDLE_ID in local.env." >&2; exit 2; }
 
 SOURCE_ROOT=$(cd "$SOURCE_ROOT" && pwd -P)
-SOURCE_ADDONS="$SOURCE_ROOT/_classic_beta_/Interface/AddOns"
-DESTINATION="Documents/World of Warcraft/_classic_beta_/Interface/AddOns"
+SOURCE_ADDONS="$SOURCE_ROOT/_forever_/Interface/AddOns"
+DESTINATION="Documents/World of Warcraft/_forever_/Interface/AddOns"
 
 [ -d "$SOURCE_ADDONS" ] || { echo "AddOns folder not found: $SOURCE_ADDONS" >&2; exit 2; }
 

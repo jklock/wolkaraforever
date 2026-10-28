@@ -16,8 +16,9 @@
 # drawable retained until its callback ran. The swizzle is still installed once
 # (the HUD can be switched on at any time and nextDrawable is only hookable
 # before the first frame), but observedNextDrawable returns the drawable
-# untouched unless AKEnableMetalFrameStatistics has been called or a readback
-# flag is set.
+# untouched unless the visible HUD enables it or a diagnostic flag is set. The
+# HUD disables recording when hidden, so its handlers cannot linger on the game
+# frame path for the rest of a session.
 #
 # Applies to: translation/Metal/Presentation.m
 # Upstream: candidate (not submitted).
@@ -32,7 +33,7 @@ index cc51ecd..5254185 100644
  #import <Metal/Metal.h>
  #import <CoreGraphics/CoreGraphics.h>
  #import <ImageIO/ImageIO.h>
-@@ -6,6 +7,69 @@
+@@ -6,6 +7,70 @@
  #import "AKSupport.h"
  #include <stdatomic.h>
  #include <dlfcn.h>
@@ -99,6 +100,7 @@ index cc51ecd..5254185 100644
 +// the readback opt-in below, and for the same reason.
 +static atomic_bool s_recordFrames = false;
 +__attribute__((visibility("default"))) void AKEnableMetalFrameStatistics(void) { atomic_store(&s_recordFrames, true); }
++__attribute__((visibility("default"))) void AKDisableMetalFrameStatistics(void) { atomic_store(&s_recordFrames, false); }
  
  // Development-only presentation evidence. All normal execution stays native.
  // The sample flag also saves one GPU readback after rendering, before present.

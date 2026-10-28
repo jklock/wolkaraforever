@@ -9,7 +9,7 @@ int TestRealAddonImport(const char *fixtures, const char *temporary) {
         NSFileManager *fm = NSFileManager.defaultManager;
         NSError *error = nil;
         CHECK([fm createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error], "create sandbox");
-        TKAddonStore *store = [[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wow_classic_beta" gameVersion:@"1.60.1"];
+        TKAddonStore *store = [[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wowf" gameVersion:@"1.60.1"];
         NSURL *zip = [NSURL fileURLWithPath:[[NSString stringWithUTF8String:fixtures] stringByAppendingPathComponent:@"valid.zip"]];
         CHECK([store importZIPAtURL:zip error:&error], "real Swift ZIP imports through Objective-C bridge");
         CHECK(store.records.count == 1 && store.records.firstObject.managed, "managed manifest survives reload");

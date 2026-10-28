@@ -521,7 +521,7 @@ static NSString *AKSelfTestDocuments(void) {
 // installed folder is needed here: this exercises the file operations themselves.
 static NSString *AKSelfTestForeverDirectory(void) {
     NSString *documents = AKSelfTestDocuments();
-    for (NSString *candidate in @[@"World of Warcraft/_classic_beta_", @"_classic_beta_"]) {
+    for (NSString *candidate in @[@"World of Warcraft/_forever_", @"_forever_"]) {
         NSString *path = [documents stringByAppendingPathComponent:candidate];
         BOOL directory = NO;
         if ([NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&directory] && directory)

@@ -28,7 +28,7 @@ done
 [ ${#args[@]} -eq 0 ] && args=(--local-game-startup)
 
 bundle=${TOLKARA_BUNDLE_ID:-local.tolkara.app}
-errors_dir="Documents/World of Warcraft/_classic_beta_/Errors"
+errors_dir="Documents/World of Warcraft/_forever_/Errors"
 
 # The main app binary, deliberately not its extensions: an extension lives at
 # .../Tolkara.app/PlugIns/<Name>.appex/<Name>, which is not the app.
@@ -73,7 +73,7 @@ cat <<NEXT
 
 Judging this run, once the game has had time to start (about 90-100 s):
   wolkaraforever/tools/device_log.sh            # the guest's and runtime's own log
-  and check for a NEW file in Documents/World of Warcraft/_classic_beta_/Errors/:
+  and check for a NEW file in Documents/World of Warcraft/_forever_/Errors/:
     a new file            -> the client asserted; this launch failed
     no new file           -> this launch did not assert
   One clean launch is not proof. Compare several.

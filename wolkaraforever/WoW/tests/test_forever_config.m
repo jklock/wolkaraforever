@@ -57,8 +57,7 @@ int main(void) {
              "SET cameraDistance \"1.5\"\n";
         Write(ConfigPath(root), input);
         NSError *error = nil;
-        assert([TKForeverUI resetGraphicsInWorkingDirectory:root error:&error]);
-        assert([Read(ConfigPath(root)) isEqual:expected]);
+        assert([TKForeverUI resetGraphicsInWorkingDirectory:root error:&error]);        assert([Read(ConfigPath(root)) isEqual:expected]);
 
         // Nothing else under the UI was touched.
         NSString *addon = [root stringByAppendingPathComponent:@"Interface/AddOns/A/A.toc"];
@@ -124,6 +123,68 @@ int main(void) {
         assert([TKForeverUI setGamepad:YES inWorkingDirectory:root error:&error]);
         assert([TKForeverUI gamepadEnabledInWorkingDirectory:root]);
 
+        // --- setCVars: replaces one, adds the rest, keeps every other byte
+        Write(ConfigPath(root),
+              @"SET portal \"eu\"\n"
+               "SET renderScale \"1.000000\"\n"
+               "SET cameraDistance \"1.5\"\n");
+        NSDictionary *presetCVars = @{@"renderScale": @"0.75", @"gxForegroundFPS": @"60"};
+        assert([TKForeverUI setCVars:presetCVars inWorkingDirectory:root error:&error]);
+        NSString *afterCVars = Read(ConfigPath(root));
+        assert([afterCVars isEqual:@"SET portal \"eu\"\n"
+                                "SET cameraDistance \"1.5\"\n"
+                                "SET gxForegroundFPS \"60\"\n"
+                                "SET renderScale \"0.75\"\n"]);
+        // A second application is stable: no duplicated lines.
+        assert([TKForeverUI setCVars:presetCVars inWorkingDirectory:root error:&error]);
+        assert([Read(ConfigPath(root)) isEqual:afterCVars]);
+
+        // --- language selection replaces only both locale CVars, including
+        // duplicates, and retains line endings and unrelated account settings.
+        Write(ConfigPath(root),
+              @"SET portal \"eu\"\r\n"
+               "SET textLocale \"enUS\"\r\n"
+               "SET accountName \"ACC\"\r\n"
+               "SET audioLocale \"esES\"\r\n"
+               "SET textLocale \"esES\"\r\n");
+        assert([TKForeverUI setLocale:@"enUS" inWorkingDirectory:root error:&error]);
+        assert([Read(ConfigPath(root)) isEqual:@"SET portal \"eu\"\r\n"
+                                              "SET accountName \"ACC\"\r\n"
+                                              "SET audioLocale \"enUS\"\n"
+                                              "SET textLocale \"enUS\"\n"]);
+        NSString *localeConfig = Read(ConfigPath(root));
+        assert(![localeConfig containsString:@"esES"]);
+        assert(![TKForeverUI setLocale:@"deDE" inWorkingDirectory:root error:&error]);
+        assert([Read(ConfigPath(root) ) isEqual:localeConfig]);
+
+        // --- names and values that would write an unreadable line are refused
+        NSDictionary *badName = @{@"render Scale": @"0.5"};
+        NSDictionary *badSpace = @{@"renderScale": @"0.5 0.5"};
+        NSDictionary *badQuote = @{@"renderScale": @"\"0.5\""};
+        assert(![TKForeverUI setCVars:badName inWorkingDirectory:root error:&error]);
+        assert(![TKForeverUI setCVars:badSpace inWorkingDirectory:root error:&error]);
+        assert(![TKForeverUI setCVars:badQuote inWorkingDirectory:root error:&error]);
+        assert([Read(ConfigPath(root)) isEqual:localeConfig]);   // nothing was written
+
+        // --- the performance preset writes exactly its own names
+        assert([TKForeverUI applyPerformancePresetInWorkingDirectory:root error:&error]);
+        NSString *preset = Read(ConfigPath(root));
+        for (NSString *name in TKForeverUI.performancePreset) {
+            NSUInteger found = 0;
+            for (NSString *line in [preset componentsSeparatedByString:@"\n"])
+                if ([line hasPrefix:[NSString stringWithFormat:@"SET %@ ", name]]) found++;
+            assert(found == 1);
+        }
+        assert([preset containsString:@"SET renderScale \"0.75\""]);
+        assert([preset containsString:@"SET gxForegroundFPS \"60\""]);
+
+        // --- a graphics reset removes what the preset wrote
+        assert([TKForeverUI resetGraphicsInWorkingDirectory:root error:&error]);
+        NSString *reset = Read(ConfigPath(root));
+        assert(![reset containsString:@"renderScale"]);
+        assert(![reset containsString:@"gxForegroundFPS"]);
+        assert([reset containsString:@"SET portal \"eu\""]);
+
         // --- a WTF folder outside the working directory is refused
         NSString *outside = [root stringByAppendingPathComponent:@"../outside-wtf"];
         [files createDirectoryAtPath:outside withIntermediateDirectories:YES attributes:nil error:NULL];
@@ -135,7 +196,7 @@ int main(void) {
         [files removeItemAtPath:root error:NULL];
         [files removeItemAtPath:bare error:NULL];
         [files removeItemAtPath:outside error:NULL];
-        puts("FOREVER_CONFIG_PASS: graphics allowlist, byte preservation, CRLF, missing config, gamepad normalisation and path boundary.");
+        puts("FOREVER_CONFIG_PASS: graphics allowlist, byte preservation, CRLF, missing config, gamepad normalisation, CVar set/replace/idempotence, refusal of unreadable names and values, performance preset and its reset, locale alignment of textLocale/audioLocale with duplicates and unsupported tags refused, and path boundary.");
         return 0;
     }
 }

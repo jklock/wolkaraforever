@@ -9,6 +9,7 @@
 - `tests/`: C, Objective-C, Swift and Python tests; `testguest/`: our synthetic guest fixture.
 - `wolkaraforever/tools/`: the layer's scripts - prepare, the gate, and the wrappers that run the platform's own build, install, run and test scripts against the prepared tree. The platform's own tools are `platform/tools/` and run inside that tree. `docs/`: building guide and architecture.
 - `platform/`: upstream tolkara, vendored byte-identical to `upstream/main` and never edited by hand; `wolkaraforever/`: our layer above it. Start at `docs/ARCHITECTURE.md`.
+- Two upstreams: `upstream` is [tolkara/tolkara](https://github.com/tolkara/tolkara) (the engine, vendored into `platform/`); `fJavierLasso` is [fJavierLasso/wolkara](https://github.com/fJavierLasso/wolkara) (the original Wolkara this fork continues). Port the second by feature, never by cherry-pick.
 - `build/` and `logs/` are ignored outputs. Third-party applications and assets are never committed.
 
 ## Build, Test, and Development Commands
@@ -20,6 +21,7 @@ Requires Xcode, XcodeGen and Python 3. Personal settings (team, bundle ID, devic
 wolkaraforever/tools/prepare.sh        # platform/ -> build/platform/, patched and overlaid
 wolkaraforever/tools/check_layers.sh   # the gate for the whole split
 wolkaraforever/tools/update_tolkara.sh --check   # is platform/ the most current Tolkara
+wolkaraforever/tools/check_origin.sh --strict    # does the original Wolkara have work this fork lacks
 wolkaraforever/tools/check_docs.sh     # every fork doc link and image resolves
 wolkaraforever/tools/install_prerequisites.sh --check   # Mac prerequisites (report only)
 wolkaraforever/tools/device_variables.sh --write        # DEVICE from the attached iPad (USB or network)
@@ -77,5 +79,8 @@ Three rules learned the hard way, all of them by being wrong first:
   check that has to pass afterwards, on the device.
 - Leave the device in no state other than the normal home screen, with the app running. Any
   operation against the app that leaves anything else up is a failure, whatever its verdict said.
+- Use `wolkaraforever/tools/` for every WolkaraForever game install, update, launch, stop,
+  log capture, and device check. Do not substitute raw `devicectl` game-file operations: the
+  scripts inspect active writes, preserve the game store, and record baselines before verdicts.
 
 The original executable is never modified: it is imported as hash-verified data and never patched or re-signed. Three execution modes exist and each user chooses one. **Developer service** never signs application code: the iPad's developer service prepares memory and detaches before any application code runs. **External JIT** (TolkaraDiagnostics only) never signs application code either: a JIT enabler (the user's sideloading tool, or one such as StikDebug) attaches at launch and prepares memory; the runtime asks it to detach and refuses guest entry while any debugger is attached or the arena is not executable. **Local signing** signs only a page container derived locally from the application's final code pages, with the user's own developer identity; containers and captures stay in ignored build output or on the user's device and are never committed. Otherwise sign only our runtime and helpers. Users build Tolkara themselves; docs present that first. As a secondary convenience for External JIT, a `v*` tag publishes one prebuilt app, the unsigned generic `Tolkara-unsigned.ipa` (`.github/workflows/release.yml`): only our own code, never application code, assets, signing material or anything exported from macOS (it is built with `TOLKARA_SYSTEM_ROOTS=NO`, so no system root certificates). Runtime stubs for unresolved imports only where no build-time analysis covered them: in generic builds and for carried libraries' imports; in a build for one executable, that executable's unresolved imports fail. No application-memory inspection beyond loading and verifying the image, no automation or integrity-check workarounds. Keep credentials, signing teams, device identifiers and pairing records out of commits and logs. Never attach an external debugger after guest entry. Do not uninstall the app from a user's device without coordination.

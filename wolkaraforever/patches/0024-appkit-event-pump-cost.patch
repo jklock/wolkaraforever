@@ -1,0 +1,79 @@
+# WolkaraForever layer patch 0024 - AppKit: stop charging the guest for an idle pump
+#
+# Why: the device log shows that the guest polls the AppKit queue once per
+# presented frame and that every poll spends about 1.15 ms in this call:
+#
+#   if (left <= 0) CFRunLoopRunInMode(kCFRunLoopDefaultMode, .001, false);
+#
+# A zero-duration poll from the client (the normal shape of a game loop: ask for
+# events, none, carry on) ran the run loop for up to a millisecond, every time.
+# That wait is layer work, regardless of whether the client is currently limited
+# by it.
+#
+# Now a nonblocking request runs one nonblocking UIKit turn. Deferred gesture and
+# key work can be serviced, but an idle poll cannot consume a millisecond of the
+# guest's frame. The pump still counts itself, so an on-device A/B can measure the
+# cost rather than assume it.
+#
+# Also restores the host view's contentScaleFactor, which is where the guest actually
+# reads its backing scale from: NSScreen's answer alone changes nothing, and without
+# this the drawable stayed 2732x2048 even with patch 0023 applied.
+#
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: candidate (not submitted).
+#
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index 168bb71..9c3ef9a 100644
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -4,6 +4,9 @@
+ #import "TextInput.h"
+ #import "TouchControls.h"
+ #import "TouchGamepadLayout.h"
++
++// The guest screen's pixels per point, defined in Screens.m.
++CGFloat AKGuestBackingScale(void);
+ #import "AKPerformanceOverlay.h"
+ #import <GameController/GameController.h>
+ #import <objc/message.h>
+@@ -717,7 +720,14 @@ static BOOL AKIsRight(UIEvent *ev) { return (ev.buttonMask & UIEventButtonMaskSe
+ @interface AKHostViewController : UIViewController
+ @end
+ @implementation AKHostViewController
+-- (void)loadView { self.view = [[AKHostView alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.view.backgroundColor = UIColor.blackColor; }
++- (void)loadView {
++    self.view = [[AKHostView alloc] initWithFrame:UIScreen.mainScreen.bounds];
++    self.view.backgroundColor = UIColor.blackColor;
++    // What the guest actually derives its surface from. NSScreen's answer alone
++    // changes nothing: the drawable follows this view. One pixel per point, so the
++    // guest draws 1366x1024 and UIKit stretches it to the 2732x2048 panel.
++    self.view.contentScaleFactor = AKGuestBackingScale();
++}
+ - (BOOL)prefersStatusBarHidden { return YES; }
+ // Ask UIKit to require a deliberate repeat of edge gestures while gaming.
+ // This is an immersive preference, not a device-wide kiosk lock.
+@@ -1109,10 +1119,20 @@ static void logLayer(CALayer *layer,unsigned depth) {
+         }
+         NSTimeInterval left = date ? date.timeIntervalSinceNow : 0;
+         if (pumped && left <= 0) return nil;
+-        // A zero-duration poll can starve UIKit's deferred gesture/key work
+-        // when the desktop loop polls continuously. Allow a short complete
+-        // UIKit turn for nonblocking polls; blocking polls still wake on input.
+-        if(left<=0) CFRunLoopRunInMode(kCFRunLoopDefaultMode,.001,false);
++        // Nonblocking guest polls still need to give UIKit a turn for deferred
++        // gesture and key work. The former 1 ms duration slept the guest once
++        // per frame in the observed run. A zero-duration turn services ready
++        // sources without waiting for new work.
++        static unsigned long pumpPolls, pumpTurns; static double pumpMs;
++        pumpPolls++;
++        if(left<=0) {
++            NSTimeInterval now2=NSProcessInfo.processInfo.systemUptime;
++            CFRunLoopRunInMode(kCFRunLoopDefaultMode,0,false);
++            pumpTurns++; pumpMs+=(NSProcessInfo.processInfo.systemUptime-now2)*1000.0;
++            if(pumpPolls%2000==0)
++                AKLog(@"pump polls=%lu turns=%lu in_runloop_ms=%.0f (%.2f ms per poll)",
++                      pumpPolls,pumpTurns,pumpMs,pumpMs/(double)pumpPolls);
++        }
+         else CFRunLoopRunInMode(kCFRunLoopDefaultMode,MIN(left,.25),true);
+     }
+ }

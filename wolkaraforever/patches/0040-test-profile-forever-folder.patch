@@ -1,0 +1,28 @@
+# WolkaraForever layer patch 0040 - tests: the released Forever profile is _forever_
+#
+# Why: patch 0036 moved the Wow Forever profile to the released game's flavor
+# directory, `_forever_`, instead of the beta's `_classic_beta_`. This upstream
+# test still asserted the beta's folder for the `wow-forever` profile, so the
+# platform suite reported one failure that the layer caused and nothing else
+# named - the kind of failure validate.sh is meant to flag rather than excuse.
+#
+# The assertion keeps its purpose: a profile must name the Config.wtf of the
+# folder it installs into. Only the expected folder changes, to the one 0036
+# made the profile use.
+#
+# Applies to: tests/test_profile.py.
+# Upstream: not a candidate - upstream's profile still installs the beta.
+#
+diff --git a/tests/test_profile.py b/tests/test_profile.py
+index ae34837..2ff153b 100644
+--- a/tests/test_profile.py
++++ b/tests/test_profile.py
+@@ -96,7 +96,7 @@ class ProfileTests(unittest.TestCase):
+         with self.assertRaises(ValueError): check(self.write({**good, 'setup': {'firstRun': {'keys': ['portal']}}}))
+         with self.assertRaises(ValueError): check(self.write({**good, 'setup': {'firstRun': {'settings': 'Config.wtf'}}}))
+         # Both WoW clients name their own Config.wtf.
+-        for name, folder in (('wow-classic-era', '_classic_era_'), ('wow-forever', '_classic_beta_')):
++        for name, folder in (('wow-classic-era', '_classic_era_'), ('wow-forever', '_forever_')):
+             block = check(ROOT / 'profiles' / name / 'profile.json')['setup']['firstRun']
+             self.assertEqual(block['settings'], f'{folder}/WTF/Config.wtf')
+             self.assertEqual(block['keys'], ['portal', 'textLocale', 'audioLocale'])

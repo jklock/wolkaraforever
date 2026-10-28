@@ -38,9 +38,13 @@ launch. Explicit development arguments retain the previous resolver and can
 still select another mode. Hiding the selector does not remove enrolment, JIT
 or memory requirements; see [the distribution plan](WOLKARAFOREVER_DISTRIBUTION.md).
 
-- Remembers Forever Beta, Classic, Retail or Retail Beta, region
-  and language. Forever currently maps to `wow_classic_beta`; a listed edition
-  is not a claim of runtime compatibility.
+- Remembers Forever, Classic Era, Classic, Retail or Retail Beta, region
+  and language. The picker offers English and Spanish; for an installed
+  Forever client, selecting a language keeps `textLocale` and `audioLocale` in
+  `Config.wtf` aligned without changing its login region or unrelated settings.
+  Forever is the released product `wowf`, installed in
+  `_forever_`; the beta it was before that (`wow_classic_beta`, `_classic_beta_`)
+  is no longer offered. A listed edition is not a claim of runtime compatibility.
 - Checks at opening, foregrounding and before Play. An outdated installed copy
   **starts updating automatically**. A missing edition offers Install; an
   unverifiable installation offers Repair. Interrupted explicit installations
