@@ -1,0 +1,16 @@
+# WolkaraForever layer patch 0030 - tests: assert the selected scale contract
+#
+# The guest window now follows NSScreen's configured backing scale rather than
+# always exposing the panel native scale. Keep the adapter test aligned with
+# that public contract.
+#
+diff --git a/tests/test_appkit_views.m b/tests/test_appkit_views.m
+index 84dbb2b..dac2819 100644
+--- a/tests/test_appkit_views.m
++++ b/tests/test_appkit_views.m
+@@ -139,4 +139,3 @@
+     [other ak_hostBoundsChanged:CGRectMake(0, 0, 200, 100)];
+-    assert(other.backingScaleFactor > 1 && plain.layer.contentsScale == other.backingScaleFactor);
++    assert(other.backingScaleFactor == NSScreen.mainScreen.backingScaleFactor && plain.layer.contentsScale == other.backingScaleFactor);
+-
+     // Showing a window never calls back into a subclass's makeKeyAndOrderFront:.

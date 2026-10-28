@@ -32,5 +32,6 @@ Conventions used throughout:
 | [Audio.md](Audio.md) | `translation/AudioToolbox/`, `translation/AudioUnit/`, `translation/CoreAudio/` |
 | [Core.md](Core.md) | `translation/CoreGraphics/`, `translation/CoreServices/`, `translation/Carbon/`, `translation/IOKit/` |
 | [Security.md](Security.md) | `translation/Security/` — keychain, legacy CDSA crypto, session |
-| [GameController.md](GameController.md) | `translation/GameController/` |
-| [Performance.md](Performance.md) | The per-frame path assembled from the above: what the layer costs per frame, and what is proven about it |
+| [Security.md](Security.md) | `translation/Security/` and the experimental `translation/GameController/` adapter |
+| [CASE_FILE.md](CASE_FILE.md) | Authoritative gameplay-performance evidence, safe changes, and required device proof |
+| [Performance.md](Performance.md) | Historical hypotheses about the per-frame path; not an implementation authority |

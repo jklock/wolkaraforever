@@ -93,6 +93,7 @@ wolkaraforever/Touch/tests/test_touch_gamepad_app.m tests/test_touch_gamepad_app
 #
 # Bridge: what the patched platform files and the public APIs call into
 wolkaraforever/Bridge/BackgroundPacing.m translation/Metal/BackgroundPacing.m add
+wolkaraforever/Bridge/DisplayRate.m translation/Metal/DisplayRate.m add
 wolkaraforever/Bridge/LocalServiceRetry.h authorization/App/LocalServiceRetry.h add
 wolkaraforever/Bridge/LocalServiceRetry.m authorization/App/LocalServiceRetry.m add
 wolkaraforever/Bridge/tests/test_local_service_retry.m tests/test_local_service_retry.m add

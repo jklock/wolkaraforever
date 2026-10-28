@@ -1,0 +1,43 @@
+# WolkaraForever layer patch 0038 - runtime: bypass inactive memory emulation
+#
+# Every imported memcpy/memmove/memset in a native guest resolves through
+# NativeGuest.m.  The wrapper must remain for writes to signed executable pages,
+# but ordinary allocations outside the guest arena are native in both execution
+# routes. Avoid the alias lookup and software-VM address checks on every such
+# copy/fill; retain the signed-image fast path for native guest data in-arena.
+#
+# Applies to: runtime/NativeGuest.m
+# Upstream: candidate.
+
+diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
+--- a/runtime/NativeGuest.m
++++ b/runtime/NativeGuest.m
+@@ -510,5 +510,12 @@ static void *write_view(void *destination, size_t size) {
+ }
+ static void *guest_memcpy(void *destination, const void *source, size_t size) {
++    // Outside the guest arena, native libc owns both mappings. This is the
++    // common malloc/render-data path in both Developer service and local
++    // signing modes; only an in-arena write can require compatibility work.
++    if (!gsv_enabled() && !inside(destination,size)) return memcpy(destination,source,size);
++    // The signed-image and software-VM routes are mutually exclusive. In the
++    // signed-image route only executable pages need mediation.
++    if (signed_image.active && !inside_exec(destination,size)) return memcpy(destination,source,size);
+     if (inside_exec(destination,size)) {
+         if (!final_image_write(destination,source,size)) abort();
+         return destination;
+@@ -523,5 +530,7 @@ static void *guest_memcpy(void *destination, const void *source, size_t size) {
+ }
+ static void *guest_memmove(void *destination, const void *source, size_t size) {
++    if (!gsv_enabled() && !inside(destination,size)) return memmove(destination,source,size);
++    if (signed_image.active && !inside_exec(destination,size)) return memmove(destination,source,size);
+     if (inside_exec(destination,size)) {
+         if (!final_image_write(destination,source,size)) abort();
+         return destination;
+@@ -538,5 +547,7 @@ static void *guest_memmove(void *destination, const void *source, size_t size) {
+ }
+ static void *guest_memset(void *destination, int value, size_t size) {
++    if (!gsv_enabled() && !inside(destination,size)) return memset(destination,value,size);
++    if (signed_image.active && !inside_exec(destination,size)) return memset(destination,value,size);
+     if (inside_exec(destination,size)) {
+         if (!final_image_memset(destination,value,size)) abort();
+         return destination;

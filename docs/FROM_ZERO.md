@@ -215,7 +215,7 @@ wolkaraforever/tools/push_game.sh --source "/Applications/World of Warcraft"
 wolkaraforever/tools/push_game.sh --source "/Volumes/Storage/World of Warcraft"
 ```
 
-`--source` is the folder containing `_classic_beta_`, on any volume. This skips the
+`--source` is the folder containing `_forever_`, on any volume. This skips the
 on-device download; the app still verifies what it has. See
 [DEVICE_WORKFLOW.md](DEVICE_WORKFLOW.md) for options and troubleshooting.
 

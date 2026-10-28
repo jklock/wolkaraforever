@@ -1,0 +1,22 @@
+# WolkaraForever layer patch 0035 - Metal: keep HUD diagnostics off the frame path
+#
+# Why: the performance HUD needs the lightweight presentation/GPU counters, but
+# it does not need AKFrameTiming's per-drawable object, synchronized aggregate,
+# or five-second log writes.  That work is diagnostic-only and belongs solely
+# to --measure-native.  Removing it prevents the monitor from perturbing the
+# cadence it displays.
+#
+# Applies to: translation/Metal/Presentation.m after 0026 and before 0034.
+# Upstream: candidate.
+#
+diff --git a/translation/Metal/Presentation.m b/translation/Metal/Presentation.m
+--- a/translation/Metal/Presentation.m
++++ b/translation/Metal/Presentation.m
+@@ -237,6 +237,6 @@ static id<CAMetalDrawable> observedNextDrawable(id layer, SEL selector) {
+         if(captureFrames && (count==60 || count==600 || count==1800)) { objc_setAssociatedObject(drawable,&captureMarker,@(count),OBJC_ASSOCIATION_RETAIN_NONATOMIC); CGRect r=((CALayer *)layer).frame; AKLog(@"drawable layer=%p super=%p frame=(%g,%g,%g,%g) hidden=%d",layer,((CALayer *)layer).superlayer,r.origin.x,r.origin.y,r.size.width,r.size.height,((CALayer *)layer).hidden); }
+         AKFrameTiming *timing=nil;
+-        if(measureFrames || atomic_load(&s_recordFrames)) {
++        if(measureFrames) {
+             // The HUD asks for these numbers by name, so when it is on they are
+             // the ones worth writing down; --measure-native is simply another way
+             // to ask. Either way the summary goes to the log, so a session can be

@@ -12,9 +12,12 @@ static id Fail(NSError **error, NSString *message) {
     if (error) *error=TKWoWError(message);
     return nil;
 }
+// Forever is the released game now: Battle.net installs it as product `wowf`
+// in `_forever_`. It was `wow_classic_beta` in `_classic_beta_` during the beta,
+// which is over; an install of that beta is no longer offered or updated.
 NSArray<NSDictionary *> *TKWoWProducts(void) {
     return @[
-        @{@"id":@"wow_classic_beta", @"name":@"Forever · Beta", @"folder":@"_classic_beta_"},
+        @{@"id":@"wowf", @"name":@"Forever", @"folder":@"_forever_"},
         @{@"id":@"wow_classic_era", @"name":@"Classic Era", @"folder":@"_classic_era_"},
         @{@"id":@"wow_classic", @"name":@"Classic", @"folder":@"_classic_"},
         @{@"id":@"wow", @"name":@"Retail", @"folder":@"_retail_"},

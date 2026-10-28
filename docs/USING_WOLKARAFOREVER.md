@@ -14,7 +14,7 @@ edition, client version, add-ons, and button mapping will differ.
 The home screen is where you choose the game edition and download preferences,
 manage add-ons, set up voice input, and start the game.
 
-1. Tap the edition name to choose **Forever · Beta**, **Classic Era**,
+1. Tap the edition name to choose **Forever**, **Classic Era**,
    **Classic**, **Retail**, or **Retail · Beta**. This selects the client
    WolkaraForever prepares; it does not change your game account or entitlement.
 2. Tap the region/language label (for example, **US · English**) for download

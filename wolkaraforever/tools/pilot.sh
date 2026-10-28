@@ -9,8 +9,10 @@
 # feature.
 #
 #   wolkaraforever/tools/pilot.sh state             what the device is doing right now
-#   wolkaraforever/tools/pilot.sh stop [--force]    stop it, asking first and waiting
-#   wolkaraforever/tools/pilot.sh install [--force] stop, then build and install
+#   wolkaraforever/tools/pilot.sh stop [--force|--force-live]
+#                                                   stop it; --force-live requires explicit user authorization
+#   wolkaraforever/tools/pilot.sh install [--force|--force-live]
+#                                                   stop, then build and install
 #   wolkaraforever/tools/pilot.sh launch            the launcher, so its own checks run
 #   wolkaraforever/tools/pilot.sh game              straight into the game, no checks
 #   wolkaraforever/tools/pilot.sh wait [--timeout s] block until it is up, or until it fails
@@ -50,7 +52,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 # like every other tool here. Nothing about one particular iPad belongs in a commit.
 DEVICE=${DEVICE:-}
 BUNDLE=${BUNDLE:-${TOLKARA_BUNDLE_ID:-}}
-GAME=${PILOT_GAME:-Documents/World of Warcraft/_classic_beta_}
+GAME=${PILOT_GAME:-Documents/World of Warcraft/_forever_}
 
 say()  { printf '  %s\n' "$*"; }
 step() { printf '\n== %s\n' "$*"; }
@@ -135,16 +137,17 @@ refresh_state() {
         --json-output "$CRASHES" >/dev/null 2>&1 || crashes_ok=0
 
     rm -f "$GUEST_LOG"
+    local guest_ok=1
     xcrun devicectl device copy from --device "$DEVICE" --domain-type appDataContainer \
         --domain-identifier "$BUNDLE" --source "Documents/native-guest.log" \
-        --destination "$GUEST_LOG" >/dev/null 2>&1 || true
+        --destination "$GUEST_LOG" >/dev/null 2>&1 || guest_ok=0
 
-    python3 - "$SESSION" "$STAGED" "$processes_ok" "$files_ok" "$crashes_ok" <<'PY' > "$STATE"
+    python3 - "$SESSION" "$STAGED" "$processes_ok" "$files_ok" "$crashes_ok" "$guest_ok" <<'PY' > "$STATE"
 import datetime, json, pathlib, re, sys
 
 session = sys.argv[1]
 staged_prefix = sys.argv[2]
-processes_ok, files_ok, crashes_ok = (int(value) for value in sys.argv[3:6])
+processes_ok, files_ok, crashes_ok, guest_ok = (int(value) for value in sys.argv[3:7])
 def in_session(name):
     return str(pathlib.Path(session) / name)
 now = datetime.datetime.now(datetime.timezone.utc)
@@ -198,17 +201,53 @@ error_files = sorted(((e.get("relativePath") or ""), age_of(e)) for e in files
 newest = error_files[-1][0].rsplit("/", 1)[-1] if error_files else "none"
 newest_age = error_files[-1][1] if error_files else None
 
-starts = [l for l in read(in_session("guest.log")) if "startup_return=" in l]
+guest_lines = read(in_session("guest.log"))
+# Three markers matter, and only the last two are symmetrical. "[host] execution mode=..."
+# is written when a launch starts, and a launcher-only visit has it too, so on its own it
+# cannot mean a game is running. The guest announces itself with "[host] app=..." and
+# "[native] guest bundle path=...", and "[native] result startup_return=PASS|FAIL" is written
+# only once the guest has *returned* (platform/runtime/NativeGuest.m). So: a guest marker
+# after the launch line, with no return after the marker, is a session in progress.
+#
+# This used to require the return line, which is exactly backwards for the decision it guards:
+# a live game, the one state that must never be installed over, read as "no session", while a
+# launcher visit within the hour after a session ended read as "live". Measured on 2026-10-27 -
+# the client was on its login screen with the guest running and `state` said "guest log says: none".
+launch_index = None
+for index, line in enumerate(guest_lines):
+    if "[host] execution mode=" in line:
+        launch_index = index
+guest_index = None
+if launch_index is not None:
+    for index in range(launch_index + 1, len(guest_lines)):
+        line = guest_lines[index]
+        if "[native] guest bundle path=" in line or "[host] app=" in line:
+            guest_index = index
+            break
+returned = False
+if guest_index is not None:
+    for line in guest_lines[guest_index + 1:]:
+        if "[native] result startup_return=" in line:
+            returned = True
+            break
+starts = [l for l in guest_lines if "startup_return=" in l]
 last = starts[-1].split("startup_return=", 1)[-1].strip() if starts else "none"
-# A live session: the guest started, nothing has finished it, and its log was written to
-# recently. The log outlives app restarts and holds every launch this install has done,
-# so an old PASS on its own says nothing about now - without the age it would call every
-# visit to the launcher a live game.
+# A guest marker with no return after it. The app process is the other half of the test, so a log
+# left behind by a guest that died without writing its return line cannot hold this open once the
+# app is gone. There is deliberately no age bound: a suspended app still holds the session in
+# memory, and taking that away is what this guard exists to prevent.
+running = 1 if (guest_index is not None and not returned) else 0
 log_age = None
 for entry in files:
     if (entry.get("relativePath") or "").endswith("native-guest.log"):
         log_age = age_of(entry)
-live = 1 if (app and last == "PASS" and log_age is not None and log_age < 3600) else 0
+live = 1 if (app and running) else 0
+# Fail closed. A `copy from` that fails leaves an empty file, and an empty file reads exactly
+# like "no session" - which is how a guard would wave an install through over a running game it
+# simply could not see. The copy does fail: on 2026-10-27 it reported "socket was closed
+# unexpectedly" twice while a game was live. If the app is up and the log is missing, empty, or
+# has no launch line at all, the answer is unknown, and unknown is not permission.
+unknown = 1 if (app and not running and (not guest_ok or launch_index is None)) else 0
 
 # The system crash log. `.cpu_resource` reports are periodic microstackshots, not
 # failures, and the dash in `Tolkara-<date>` is what keeps them out of this count.
@@ -240,6 +279,7 @@ print("guest_start=%s" % last)
 print("guest_starts=%d" % len(starts))
 print("guest_log_age=%s" % ("none" if log_age is None else int(log_age)))
 print("session_live=%d" % live)
+print("session_unknown=%d" % unknown)
 print("crash_newest=%s" % newest_crash)
 print("crash_newest_age=%s" % ("none" if newest_crash_age is None else int(newest_crash_age)))
 print("crash_count=%d" % len(crashes))
@@ -272,7 +312,16 @@ verdict() {
     [ "$(state_value session_live)" = "1" ] && over="   <-- a game session is live"
     say "app running:    $(state_value app_running)$over"
     say "update writing: $(state_value update_writing) file(s) in the last 2 minutes"
-    say "guest log says: $(state_value guest_start)"
+    # "guest log says: none" beside "a game session is live" reads as a contradiction, and
+    # the contradiction was the bug: `none` meant "no startup_return line", which is what a
+    # session still running looks like. Say the thing being asked about instead.
+    if [ "$(state_value session_unknown)" = "1" ]; then
+        say "guest log says: COULD NOT BE READ, so whether a game is running is unknown"
+    elif [ "$(state_value session_live)" = "1" ]; then
+        say "guest log says: running now, has not returned"
+    else
+        say "guest log says: $(state_value guest_start)"
+    fi
     say "error files:    $(state_value error_count), newest $(state_value newest_error)"
     say "crash reports:  $(state_value crash_count), newest $(state_value crash_newest), $(state_value crash_newest_age)s ago"
 }
@@ -290,16 +339,25 @@ app_pid() {
 require_safe_to_install() {
     local force=${1:-}
     refresh_state
-    # A live game session is never ours to take away, and --force does not override this. Stopping,
+    # A live game session is never ours to take away without an explicit override. Stopping,
     # installing over or relaunching a running game does not restore it afterwards - nothing can, it
     # is memory in the process that is being killed - so the device is left completely alone until
     # its user closes the game. This is the first of the review outcome's operating rules and it is
     # checked before anything else, including before the inspection guard, because the answer to
     # "may I touch this" is already no when somebody is playing.
-    if [ "$(state_value session_live)" = "1" ]; then
+    if [ "$(state_value session_live)" = "1" ] && [ "$force" != "--force-live" ]; then
         die "a game session is live on the iPad right now.
        Nothing here can put a running game back, so nothing here will touch it: close the game
-       yourself, then run this again. --force does not override this."
+       yourself, then run this again. Only --force-live, following explicit user authorization,
+       may end it."
+    fi
+    # Unknown is not permission. The app is up and its guest log could not be read - a failing copy
+    # leaves an empty file, and an empty file reads exactly like "no session". Before --force, for
+    # the same reason the live check is: a guess here is the one that costs someone their session.
+    if [ "$(state_value session_unknown)" = "1" ]; then
+        die "the app is running but its guest log could not be read, so whether a game is in
+       progress cannot be judged. Nothing here will touch it on a guess: check the connection and
+       run this again. --force does not override this either."
     fi
     [ "$force" = "--force" ] && return 0
     # Fail closed. A device that cannot be inspected might be mid-update, and the whole
@@ -372,7 +430,7 @@ stop_app() {
             return 0
         fi
     fi
-    if [ "$force" != "--force" ]; then
+    if [ "$force" != "--force" ] && [ "$force" != "--force-live" ]; then
         die "it is still running after 20s. It is not stopped and nothing was installed.
        A session can take a while to close its files; wait a moment and try again.
        Killing it mid-write is what damaged the client's store before, so this
