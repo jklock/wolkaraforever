@@ -49,8 +49,8 @@ STUB
 chmod +x "$work/bin/ideviceinfo"
 
 # A minimal game tree at the path preflight expects.
-mkdir -p "$work/game/_classic_beta_/World of Warcraft Beta.app/Contents/MacOS"
-: > "$work/game/_classic_beta_/World of Warcraft Beta.app/Contents/MacOS/World of Warcraft"
+mkdir -p "$work/game/_forever_/World of Warcraft.app/Contents/MacOS"
+: > "$work/game/_forever_/World of Warcraft.app/Contents/MacOS/World of Warcraft"
 
 pass=0; fail=0
 check() { if [ "$1" = 0 ]; then pass=$((pass+1)); printf 'PASS  %s\n' "$2"; else fail=$((fail+1)); printf 'FAIL  %s\n' "$2"; fi; }

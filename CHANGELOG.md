@@ -6,7 +6,7 @@ World of Warcraft on an iPad: the client, your UI, your add-ons and your voice, 
 
 | | |
 |---|---|
-| **Client editions** | Forever Beta, Classic Era, Classic, Retail, Retail Beta |
+| **Client editions** | Forever, Classic Era, Classic, Retail, Retail Beta |
 | **Downloads** | Europe, Americas, Korea, Taiwan · English and Spanish |
 | **Device** | iPad on iPadOS 17 or later; tested on iPad Pro M5 / iPadOS 27 |
 | **Execution modes** | Developer service · Local signing · External JIT — chosen in the app, changeable later |

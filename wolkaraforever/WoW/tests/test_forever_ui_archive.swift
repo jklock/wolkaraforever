@@ -39,7 +39,7 @@ private struct Journal: Codable {
 // Builds an archive by hand, with any entry paths and manifest the caller wants,
 // so the reader's refusals can be exercised.
 private func forge(at url: URL, entries: [(String, Data)], manifestFiles: [(String, Data)]?,
-                   edition: String = "wow_classic_beta", duplicateManifest: Bool = false) throws {
+                   edition: String = "wowf", duplicateManifest: Bool = false) throws {
     try? FileManager.default.removeItem(at: url)
     let archive = try Archive(url: url, accessMode: .create)
     for (path, data) in entries {
@@ -82,7 +82,7 @@ struct ForeverUIArchiveTests {
         let manager = FileManager.default
         let work = manager.temporaryDirectory.appendingPathComponent("forever-ui-tests-\(UUID().uuidString)")
         defer { try? manager.removeItem(at: work) }
-        let root = work.appendingPathComponent("_classic_beta_")
+        let root = work.appendingPathComponent("_forever_")
         let wtf = root.appendingPathComponent("WTF")
         let interface = root.appendingPathComponent("Interface")
 
@@ -98,7 +98,7 @@ struct ForeverUIArchiveTests {
         // --- creation: a name, a manifest, and only UI state inside
         var error: NSError?
         guard let first = TKForeverUIArchive.createBackup(inWorkingDirectory: root.path,
-                                                          edition: "wow_classic_beta", error: &error) else {
+                                                          edition: "wowf", error: &error) else {
             check(false, "create: \(String(describing: error))"); return
         }
         check(first.hasPrefix("WoW-UI-") && first.hasSuffix(".zip"), "name shape: \(first)")
@@ -115,7 +115,7 @@ struct ForeverUIArchiveTests {
 
         // --- two snapshots in one second still get distinct names
         guard let second = TKForeverUIArchive.createBackup(inWorkingDirectory: root.path,
-                                                           edition: "wow_classic_beta", error: &error) else {
+                                                           edition: "wowf", error: &error) else {
             check(false, "second create: \(String(describing: error))"); return
         }
         check(second != first, "collision-safe names: \(first) vs \(second)")
@@ -136,7 +136,7 @@ struct ForeverUIArchiveTests {
         write(interface.appendingPathComponent("AddOns/New/New.toc"), "## Title: New\n")
         write(wtf.appendingPathComponent("Backups/keep.zip"), "another snapshot")
         check(TKForeverUIArchive.restoreBackup(named: first, inWorkingDirectory: root.path,
-                                               edition: "wow_classic_beta", error: &error),
+                                               edition: "wowf", error: &error),
               "restore: \(String(describing: error))")
         check(read(wtf.appendingPathComponent("Config.wtf")) == "SET portal \"eu\"\nSET gxResolution \"1\"\n",
               "restored config")
@@ -152,41 +152,41 @@ struct ForeverUIArchiveTests {
         let before = read(wtf.appendingPathComponent("Config.wtf"))
         let bad = wtf.appendingPathComponent("Backups/WoW-UI-2000-01-01T00-00-00Z.zip")
         try forge(at: bad, entries: [("../outside.txt", Data("x".utf8))],
-                  manifestFiles: [("../outside.txt", Data("x".utf8))], edition: "wow_classic_beta")
+                  manifestFiles: [("../outside.txt", Data("x".utf8))], edition: "wowf")
         check(!TKForeverUIArchive.restoreBackup(named: bad.lastPathComponent,
                                                 inWorkingDirectory: root.path,
-                                                edition: "wow_classic_beta", error: &error),
+                                                edition: "wowf", error: &error),
               "traversal entry is refused")
         check(!manager.fileExists(atPath: work.appendingPathComponent("outside.txt").path), "nothing escaped")
         check(read(wtf.appendingPathComponent("Config.wtf")) == before, "live UI unchanged after refusal")
 
         let duplicate = wtf.appendingPathComponent("Backups/WoW-UI-2000-01-02T00-00-00Z.zip")
         try forge(at: duplicate, entries: [("WTF/a.txt", Data("a".utf8))],
-                  manifestFiles: [("WTF/a.txt", Data("a".utf8))], edition: "wow_classic_beta",
+                  manifestFiles: [("WTF/a.txt", Data("a".utf8))], edition: "wowf",
                   duplicateManifest: true)
         check(!TKForeverUIArchive.restoreBackup(named: duplicate.lastPathComponent,
                                                 inWorkingDirectory: root.path,
-                                                edition: "wow_classic_beta", error: &error),
+                                                edition: "wowf", error: &error),
               "duplicate manifest paths are refused")
 
         let badManifestPath = wtf.appendingPathComponent("Backups/WoW-UI-2000-01-06T00-00-00Z.zip")
         try forge(at: badManifestPath, entries: [("WTF/a.txt", Data("a".utf8))],
                   manifestFiles: [("WTF/a.txt", Data("a".utf8)), ("../outside.txt", Data("x".utf8))],
-                  edition: "wow_classic_beta")
+                  edition: "wowf")
         check(!TKForeverUIArchive.restoreBackup(named: badManifestPath.lastPathComponent,
                                                 inWorkingDirectory: root.path,
-                                                edition: "wow_classic_beta", error: &error),
+                                                edition: "wowf", error: &error),
               "a manifest path outside WTF and Interface is refused")
 
         // A link in Backups is not a backup, even when it points at a valid ZIP.
         let real = work.appendingPathComponent("elsewhere.zip")
         try forge(at: real, entries: [("WTF/a.txt", Data("a".utf8))],
-                  manifestFiles: [("WTF/a.txt", Data("a".utf8))], edition: "wow_classic_beta")
+                  manifestFiles: [("WTF/a.txt", Data("a".utf8))], edition: "wowf")
         let backupLink = wtf.appendingPathComponent("Backups/WoW-UI-2000-01-07T00-00-00Z.zip")
         try manager.createSymbolicLink(at: backupLink, withDestinationURL: real)
         check(!TKForeverUIArchive.restoreBackup(named: backupLink.lastPathComponent,
                                                 inWorkingDirectory: root.path,
-                                                edition: "wow_classic_beta", error: &error),
+                                                edition: "wowf", error: &error),
               "a symbolic link is not accepted as a backup")
         try manager.removeItem(at: backupLink)
 
@@ -195,23 +195,23 @@ struct ForeverUIArchiveTests {
                   manifestFiles: [("WTF/a.txt", Data("a".utf8))], edition: "wow_classic_era")
         check(!TKForeverUIArchive.restoreBackup(named: wrongEdition.lastPathComponent,
                                                 inWorkingDirectory: root.path,
-                                                edition: "wow_classic_beta", error: &error),
+                                                edition: "wowf", error: &error),
               "another edition's archive is refused")
 
         let wrongDigest = wtf.appendingPathComponent("Backups/WoW-UI-2000-01-04T00-00-00Z.zip")
         try forge(at: wrongDigest, entries: [("WTF/a.txt", Data("a".utf8))],
-                  manifestFiles: [("WTF/a.txt", Data("different".utf8))], edition: "wow_classic_beta")
+                  manifestFiles: [("WTF/a.txt", Data("different".utf8))], edition: "wowf")
         check(!TKForeverUIArchive.restoreBackup(named: wrongDigest.lastPathComponent,
                                                 inWorkingDirectory: root.path,
-                                                edition: "wow_classic_beta", error: &error),
+                                                edition: "wowf", error: &error),
               "a digest mismatch is refused")
 
         let oversized = wtf.appendingPathComponent("Backups/WoW-UI-2000-01-05T00-00-00Z.zip")
         try forge(at: oversized, entries: [("WTF/a.txt", Data("a".utf8))], manifestFiles: [],
-                  edition: "wow_classic_beta")
+                  edition: "wowf")
         check(!TKForeverUIArchive.restoreBackup(named: oversized.lastPathComponent,
                                                 inWorkingDirectory: root.path,
-                                                edition: "wow_classic_beta", error: &error),
+                                                edition: "wowf", error: &error),
               "an archive that does not match its manifest is refused")
 
         // --- the writer refuses links and special files
@@ -219,18 +219,18 @@ struct ForeverUIArchiveTests {
         let link = wtf.appendingPathComponent("Config-link.wtf")
         try manager.createSymbolicLink(at: link, withDestinationURL: target)
         check(TKForeverUIArchive.createBackup(inWorkingDirectory: root.path,
-                                              edition: "wow_classic_beta", error: &error) == nil,
+                                              edition: "wowf", error: &error) == nil,
               "a symlink stops a backup")
         try manager.removeItem(at: link)
         let fifo = wtf.appendingPathComponent("pipe")
         check(mkfifo(fifo.path, 0o600) == 0, "make a FIFO")
         check(TKForeverUIArchive.createBackup(inWorkingDirectory: root.path,
-                                              edition: "wow_classic_beta", error: &error) == nil,
+                                              edition: "wowf", error: &error) == nil,
               "a special file stops a backup")
         try manager.removeItem(at: fifo)
 
         // --- an interrupted swap is rolled back at the next launch
-        let recovery = work.appendingPathComponent("rollback/_classic_beta_")
+        let recovery = work.appendingPathComponent("rollback/_forever_")
         write(recovery.appendingPathComponent("WTF/marker"), "OLD")
         write(recovery.appendingPathComponent("Interface/marker"), "OLD")
         write(recovery.appendingPathComponent(".wolkaraforever-ui-old-WTF-1/marker"), "NEW")
@@ -250,7 +250,7 @@ struct ForeverUIArchiveTests {
               "the journal is removed")
 
         // --- a completed swap only needs its journal cleaned up
-        let complete = work.appendingPathComponent("complete/_classic_beta_")
+        let complete = work.appendingPathComponent("complete/_forever_")
         write(complete.appendingPathComponent("WTF/marker"), "RESTORED")
         let done = Journal(format: "wolkaraforever.ui.restore", version: 1,
                           staging: ".wolkaraforever-ui-restore-2",

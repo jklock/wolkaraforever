@@ -1,0 +1,27 @@
+# WolkaraForever layer patch 0032 - Metal: avoid copying shader bytes on hits
+#
+# A guest metallib is immutable. Map it to hash and check the native-library
+# cache first; make an NSData copy only on a cache miss, where container
+# inspection needs it anyway.
+diff --git a/translation/Metal/Devices.m b/translation/Metal/Devices.m
+--- a/translation/Metal/Devices.m
++++ b/translation/Metal/Devices.m
+@@ -95,8 +95,7 @@ static id<MTLLibrary> loadLibrary(id receiver,SEL selector,dispatch_data_t data,
+     size_t length=dispatch_data_get_size(data);
+     if(!length || length>64*1024*1024) return originalLibraryLoader(receiver,selector,data,error);
+-    NSMutableData *bytes=[NSMutableData dataWithLength:length];
+-    dispatch_data_apply(data,^bool(dispatch_data_t region,size_t offset,const void *buffer,size_t size) {
+-        (void)region; memcpy((char *)bytes.mutableBytes+offset,buffer,size); return true;
+-    });
+-    unsigned char digest[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(bytes.bytes,(CC_LONG)bytes.length,digest);
++    const void *mappedBytes=NULL; size_t mappedLength=0;
++    dispatch_data_t mapped=dispatch_data_create_map(data,&mappedBytes,&mappedLength);
++    if(!mapped || !mappedBytes || mappedLength!=length) return originalLibraryLoader(receiver,selector,data,error);
++    unsigned char digest[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(mappedBytes,(CC_LONG)mappedLength,digest);
+     NSMutableString *key=[NSMutableString new]; for(unsigned i=0;i<sizeof digest;i++) [key appendFormat:@"%02x",digest[i]];
+@@ -110,4 +109,5 @@ static id<MTLLibrary> loadLibrary(id receiver,SEL selector,dispatch_data_t data,
+     NSString *name=[key stringByAppendingString:@".metallib"];
+     NSString *cached=[[documents stringByAppendingPathComponent:@"TranslatedShaders"] stringByAppendingPathComponent:name];
+     BOOL localOnly=getenv("TOLKARA_LOCAL_SHADERS_ONLY")!=NULL;
++    NSData *bytes=[NSData dataWithBytes:mappedBytes length:mappedLength];
+     // The iPad first: the desktop container rewrapped around its unchanged AIR,

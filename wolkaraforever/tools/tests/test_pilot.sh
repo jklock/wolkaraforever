@@ -74,7 +74,14 @@ case "$args" in
     [ -n "$dest" ] || exit 1
     case "$source" in
     *.ips) printf '%s' "${WOLKAREFOREVER_FAKE_IPS:-}" > "$dest";;
-    *native-guest.log) printf '%s' "${WOLKAREFOREVER_FAKE_GUESTLOG:-guest log line}" > "$dest";;
+    *native-guest.log)
+        # A copy that fails is the case the guard has to fail closed on: `copy from` reports
+        # "socket was closed unexpectedly" and leaves an empty file, which reads like "no session".
+        [ "${WOLKAREFOREVER_FAKE_BLIND:-}" = guest ] && exit 1
+        # The default is an ordinary launcher log with no game in it. It used to be the words
+        # "guest log line", which after the marker-based test reads as a log nobody can interpret,
+        # and that masked which guard a refusal came from.
+        printf '%s' "${WOLKAREFOREVER_FAKE_GUESTLOG:-[host] execution mode=developer-service source=chosen}" > "$dest";;
     *wolkaraforever.log)
         # Each ordinary launch appends its home line to the real log. Preserve
         # that property in the fixture so launch proof is about a new line, not
@@ -115,7 +122,7 @@ listing_with_error() {
     cat <<JSON
 {"result":{"files":[
  {"name":"Documents","relativePath":"Documents","metadata":{"lastModDate":"2026-10-16T10:00:00.000Z"},"resources":{"isDirectory":true}},
- {"name":"Documents/World of Warcraft/_classic_beta_/Errors/2026-10-16_09.00.00_Error_1.txt","relativePath":"Documents/World of Warcraft/_classic_beta_/Errors/2026-10-16_09.00.00_Error_1.txt","metadata":{"lastModDate":"2026-10-16T09:00:00.000Z"},"resources":{"isDirectory":false}},
+ {"name":"Documents/World of Warcraft/_forever_/Errors/2026-10-16_09.00.00_Error_1.txt","relativePath":"Documents/World of Warcraft/_forever_/Errors/2026-10-16_09.00.00_Error_1.txt","metadata":{"lastModDate":"2026-10-16T09:00:00.000Z"},"resources":{"isDirectory":false}},
  {"name":"Documents/native-guest.log","relativePath":"Documents/native-guest.log","metadata":{"lastModDate":"2026-10-16T09:00:00.000Z"},"resources":{"isDirectory":false}}
 ]}}
 JSON
@@ -244,8 +251,14 @@ export WOLKAREFOREVER_FAKE_PROCESSES="  1234   /private/var/containers/Bundle/Ap
 # the proof it asks for: every command that stops, installs over or relaunches the app refuses, and
 # does nothing at all while refusing. A running game's state is memory in the process that would be
 # killed, so no command here can put it back, and none of them may try.
+#
+# The fixture is what the runtime writes while somebody is playing: the launch line, the guest
+# announcing itself ("[host] app="), and no return line, because platform/runtime/NativeGuest.m
+# writes startup_return only once the guest has *returned*. It used to be `startup_return=PASS` on
+# its own, which is a session that had already ended - the same mistake the detector made, so this
+# test passed while the guard was blind to a game somebody was actually in.
 export WOLKAREFOREVER_FAKE_LISTING="$(listing_with_a_live_session)"
-export WOLKAREFOREVER_FAKE_GUESTLOG=$'startup_return=PASS\n'
+export WOLKAREFOREVER_FAKE_GUESTLOG=$'[host] execution mode=developer-service source=--local-game-startup\n[host] app=World of Warcraft Forever sha256=00\n[ak] audio render calls=1 frames=1024 nonzero_buffers=1 errors=0 silence_flags=0\n'
 run_pilot "$work/sessions/live" state
 grep -q "a game session is live" "$work/out.txt"
 check $? "the fixture really is a live game session"
@@ -265,6 +278,13 @@ if grep -qE "launching|stopped" "$work/out.txt"; then
     check 1 "and must not have touched the app"
     echo "--- stop printed: ---"; sed 's/^/    /' "$work/out.txt"; echo "--- end ---"
 fi
+# `--force` protects against a process that will not exit; it does not authorize ending
+# a live game. A separate spelling makes the destructive intent auditable at the call site.
+run_pilot "$work/sessions/live" stop --force
+[ $? -ne 0 ]
+check $? "--force alone must still refuse while a game session is live"
+grep -q -- "--force-live" "$work/out.txt"
+check $? "the live-session refusal must name the explicit override"
 run_pilot "$work/sessions/live" cycle
 [ $? -ne 0 ]
 check $? "cycle must refuse while a game session is live"
@@ -278,6 +298,48 @@ check $? "selftest must refuse while a game session is live"
 if grep -qE "launching|stopped" "$work/out.txt"; then
     check 1 "and must not have touched the app"
     echo "--- selftest printed: ---"; sed 's/^/    /' "$work/out.txt"; echo "--- end ---"
+fi
+
+# Two ways a session is *not* live. Both were misread, and one of them in the dangerous direction.
+#
+# First, a session that has returned. The log is fresh either way, so the return line is the only
+# thing that distinguishes it from one still running. Reading this as live is the false alarm that
+# refused an install on 2026-10-27 with nothing running: the launcher was up and its guest log still
+# carried the PASS of a session that had ended 90 minutes earlier.
+export WOLKAREFOREVER_FAKE_GUESTLOG=$'[host] execution mode=developer-service source=--local-game-startup\n[host] app=World of Warcraft Forever sha256=00\n[native] result startup_return=PASS\n'
+run_pilot "$work/sessions/returned" state
+check $? "state should succeed after a session has returned"
+grep -q "a game session is live" "$work/out.txt" && check 1 "a session that has returned must not read as live"
+grep -q "guest log says: PASS" "$work/out.txt"
+check $? "and the returned session is still reported"
+
+# Second, a log left behind by a guest that died without writing its return line. The app process is
+# the other half of the test, so once it is gone the log cannot hold the guard open for ever.
+export WOLKAREFOREVER_FAKE_GUESTLOG=$'[host] execution mode=developer-service source=--local-game-startup\n[host] app=World of Warcraft Forever sha256=00\n'
+( export WOLKAREFOREVER_FAKE_PROCESSES=""; run_pilot "$work/sessions/stale" state )
+check $? "state should succeed with the app gone"
+grep -q "a game session is live" "$work/out.txt" && check 1 "a stale log with no app running must not read as live"
+
+# Third, the launcher with no game started. It has the launch line and nothing else, and it must not
+# read as a live game - refusing there would make every ordinary install impossible. This is the
+# case that keeps the stricter test honest.
+export WOLKAREFOREVER_FAKE_GUESTLOG=$'[host] execution mode=developer-service source=chosen\n'
+run_pilot "$work/sessions/launcher" state
+check $? "state should succeed on the launcher alone"
+grep -q "a game session is live" "$work/out.txt" && check 1 "the launcher alone must not read as a live game"
+grep -q "COULD NOT BE READ" "$work/out.txt" && check 1 "and a readable log is not an unknown one"
+
+# Fourth and last, the log that cannot be fetched at all while the app is up. A failed copy leaves an
+# empty file, and empty reads exactly like "no session" - so this has to refuse rather than guess.
+export WOLKAREFOREVER_FAKE_GUESTLOG=""
+( export WOLKAREFOREVER_FAKE_BLIND=guest; run_pilot "$work/sessions/blindguest" install )
+[ $? -ne 0 ]
+check $? "install must refuse when the guest log cannot be read"
+grep -q "could not be read" "$work/out.txt"
+check $? "and must say that is why"
+if grep -qE "launching|stopped" "$work/out.txt"; then
+    check 1 "and must not have touched the app"
+    echo "--- blind guest install printed: ---"; sed 's/^/    /' "$work/out.txt"; echo "--- end ---"
 fi
 unset WOLKAREFOREVER_FAKE_GUESTLOG
 export WOLKAREFOREVER_FAKE_LISTING="$(listing_without_errors)"

@@ -409,7 +409,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     if (!(self=[super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
     _startInBrowse=browse;
     _addOnsDirectory=directory.copy; _edition=edition.copy; _addons=@[]; self.title=@"ADD-ON MANAGER";
-    _store=[[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wow_classic_beta" gameVersion:TKForeverGameVersion]; _results=@[]; _sortField=1; _sortOrder=@"desc";
+    _store=[[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wowf" gameVersion:TKForeverGameVersion]; _results=@[]; _sortField=1; _sortOrder=@"desc";
     _credentials=[TKAddonCredentialStore new];
     _gameVersion=TKForeverGameVersion;
     NSNumber *savedColumns=[NSUserDefaults.standardUserDefaults objectForKey:TKAddonColumnsKey];

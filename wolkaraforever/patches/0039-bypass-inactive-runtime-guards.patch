@@ -1,0 +1,68 @@
+# WolkaraForever layer patch 0039 - runtime: bypass inactive compatibility guards
+#
+# NativeGuest interposes mapping and wait calls for three exceptional execution
+# modes: the guest arena, the opt-in software VM, and the opt-in VM budget.
+# WoW uses none of the latter two.  Outside the guest arena, calls already
+# resolve to libc after those checks.  Take that equivalent direct path, while
+# keeping trace mode, arena handling, local signing, shader-pause pumping, and
+# software-VM behavior intact.  Normal dlsym resolution is also no longer
+# synchronously written to the guest log.
+#
+# Applies after: 0038-native-memory-fast-path.patch
+# Applies to: runtime/NativeGuest.m
+# Upstream: candidate.
+
+diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
+--- a/runtime/NativeGuest.m
++++ b/runtime/NativeGuest.m
+@@ -594,6 +594,13 @@ static int guest_mprotect(void *address, size_t size, int prot) {
+     if (inside_exec(address,size)) {
+         if (inside_shadow(address,size)) return mprotect(address,size,PROT_READ|PROT_WRITE);
+         return 0;
+     }
++    // With neither emulation mode active, a non-arena mapping has no shadow,
++    // code alias, or budget state to maintain.  The old tail was this call.
++    if (!trace_memory_operations() && !gsv_enabled() && !gv_enabled(&vm_budget) && !inside(address,size)) {
++        int result=mprotect(address,size,prot);
++        if (result) LOG("[native] mprotect failed errno=%d\n",errno);
++        return result;
++    }
+     // Keep executable backing RX; imported stores/copies use its shared RW view.
+     if (inside(address,size) && (prot & PROT_EXEC)) prot &= ~PROT_WRITE;
+@@ -606,5 +613,9 @@ static int guest_munmap(void *address, size_t size) {
+         if (inside_shadow(address,size)) return mprotect(address,size,PROT_READ|PROT_WRITE);
+         return 0;
+     }
++    // gsv_forget_code_alias above is a no-op without the software VM.  Outside
++    // the arena and VM budget this is the native unmap path.
++    if (!trace_memory_operations() && !gsv_enabled() && !gv_enabled(&vm_budget) && !inside(address,size))
++        return munmap(address,size);
+     // Reserve the runtime arena so a later fixed/hinted remap preserves the RX
+     // backing established before guest execution. Inaccessible until remapped.
+@@ -642,5 +653,12 @@ static void *guest_mmap(void *address, size_t size, int prot, int flags, int fd,
+         sys_dcache_flush(alias,size); sys_icache_invalidate(address,size);
+         return address;
+     }
++    // An ordinary mapping outside the arena has no guest-side bookkeeping when
++    // both optional memory systems are disabled.
++    if (!trace_memory_operations() && !gsv_enabled() && !gv_enabled(&vm_budget)) {
++        void *result=mmap(address,size,prot,flags,fd,offset);
++        if (result==MAP_FAILED) LOG("[native] mmap -> %p errno=%d\n",result,errno);
++        return result;
++    }
+     void *result;
+     if (gsv_enabled()) result=gsv_map(address,size,prot,flags,fd,offset);
+@@ -798,4 +816,7 @@ static int guest_ulock_wait(uint32_t operation,void *address,uint64_t value,uint
+     static _Thread_local bool pumping;
+     if(pumping) return __ulock_wait(operation,address,value,timeout);
++    // Only the main guest thread pumps UIKit while a shader translation is
++    // pending.  Background waits never need that machinery in normal play.
++    if (!trace_guest && !pthread_main_np()) return __ulock_wait(operation,address,value,timeout);
+     pumping=true;
+     unsigned tid=(trace_guest && gsv_enabled())?trace_tid():0;
+@@ -883,4 +904,4 @@ static void *guest_dlsym(void *handle, const char *name) {
+     // image exports is wrapped so each call logs its arguments and result.
+     if (trace_guest && placed && value && inside(value,4)) value=gw_wrap(name,value);
+-    LOG("[native] dlsym(%s) -> %p\n",name?name:"(null)",value); return value;
++    if (trace_guest) LOG("[native] dlsym(%s) -> %p\n",name?name:"(null)",value); return value;
+ }

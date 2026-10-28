@@ -17,7 +17,8 @@ the next person will have the same hypothesis.
 
 | Lane | Verdict | What says so |
 | --- | --- | --- |
-| GPU time vs CPU time | **Measured in play: the frame is CPU-side, not GPU-side.** 49.8 fps, 20.0 ms per frame, GPU busy 7.8 ms of it (39%), thermal nominal. On the login screen, same build: 60.0 fps, 16.7 ms, GPU 8.0-10.3 ms. The GPU's time did not change; the frame grew. | on-device HUD (which reads `AKMetalCurrentFPS`/`AKMetalLastGPUTimeMs`/`AKMetalGPULoad`); `frame timing ... gpu_ms=` in the log |
+| GPU time vs CPU time | **Measured in play: neither is saturated — the client misses the display budget.** In world the GPU needs 8.5 ms of a 21-25 ms frame and the client blocks 16-20 ms waiting for a drawable; at 60 fps on the login screen it never waits (0.01 ms). | `frame timing ... gpu_ms= wait_ms=` in the guest log |
+| Thermal throttling | **Measured, and it is the biggest loss**: after ~20 minutes the same session read 32.6 fps with `Thermal State: Serious`, GPU 10.9 ms and both clocks down ~40%. Software cannot opt out; it can only draw less power sooner. | on-device HUD, 2026-10-23 |
 | Frame pacing | **Clean**: 60.0 fps for 275 s at the login screen, no gap over 50 ms, one ~25 ms gap in most 5 s windows. **Not measured in play** - with the client CPU-bound at ~50 fps there is a frame to miss every 20 ms. | same log, `max_gap_ms`, `gaps_over_50ms` |
 | Sustained play / thermal | **Not measured.** An earlier session on this iPad (2026-10-22) fell from 59.7 to 47.9 fps over ten minutes; that is a symptom with no controlled run behind it. | that session's guest log only; needs a fixed-scene run |
 | Launch latency | **Measured defect, partly fixed**: 67.3 s of developer-service memory preparation per cold launch, now 62.5 s. The rest is the tunnel's own one-segment-in-flight TCP, not the protocol above it. | provider progress file sampled once a second on the device; `[local-launch] arena result ... elapsed=` |
@@ -112,15 +113,87 @@ Thermal State: Nominal (Cool) · Low Power Mode: Off
 RAM Footprint: 3826 MB · Headroom: 12558 MB
 ```
 
-That is the answer to the lane, and it is not the GPU. The GPU still does its 7.8 ms
-— the same 8-10 ms it did at 60 fps on the login screen — while the frame is 20.0 ms
-instead of 16.7 ms. The 3.3 ms that lost 60 Hz was spent somewhere other than the
-GPU, and the thermal state says it is not heat at that moment.
+That is the answer to the lane, and it is not the GPU: the GPU still does its 7.8 ms
+— the same 8-10 ms it did at 60 fps on the login screen — while the frame grew to
+20.0 ms. Where the other 12 ms went was still open at that point, so the next build
+recorded how long the client blocks asking for a drawable (`wait_ms`). Re-measured
+in play with that instrument, in 5 s windows across the login→world transition:
 
-At 49.8 fps the client is also not waiting on the display: a frame that missed vsync
-would land on 33.3 ms with a three-deep drawable queue, and 20.0 ms is the client
-producing frames at its own rate. So the in-world frame is the client's own CPU work
-plus whatever that work waits for.
+| phase | fps | frame | GPU | wait for a drawable | thermal |
+| --- | --- | --- | --- | --- | --- |
+| login screen | 60.0 | 16.7 ms | 7.3-15.0 ms | **0.01-0.02 ms** | nominal |
+| login → world (loading) | 17.7-47.1 | gaps of 430-690 ms | 1.8-2.3 ms | 0.03-0.55 ms | nominal |
+| in world, settled | 39.5-47.1 | 21-25 ms | 8.2-8.9 ms | **16.2-20.4 ms** | nominal |
+
+Read together, those three rows settle the lane:
+
+- At the login screen the client never waits for a drawable and holds 60 exactly.
+- While the world loads it stalls for hundreds of milliseconds at a time — that is
+  the asset and shader work in Lane 5, not the loop.
+- In world it **blocks 16-20 ms for a drawable** while the GPU needs only ~8.5 ms.
+  The frame is 21-25 ms against a 16.7 ms display budget, so it misses refreshes
+  and settles near 45 fps. It is not CPU-starved and not GPU-starved: it is a few
+  milliseconds over budget, and the overrun shows up as waiting for the present
+  pipeline to give it another drawable.
+
+That reframes the fix. Cutting CPU work alone would not restore 60 unless the overrun
+goes below zero, and the most direct way to buy back 4-6 ms is to make the GPU's
+~8.5 ms smaller — which is the render scale the client is not using.
+
+One measurement caveat: these are windows with the HUD switched on, so the HUD's own
+per-frame work (a block, an associated object and a short lock per presented frame)
+is included in them. It is a diagnostic setting, off by default.
+
+### The same session, throttled
+
+Twenty minutes later the same session read:
+
+```
+Frame Rate: 32.6 FPS (29.2 ms)
+GPU: 10.9 ms of 29.2 ms (36% busy)
+Thermal State: Serious (Throttling active)
+RAM Footprint: 4542 MB · Headroom: 11842 MB
+```
+
+That is the collapse the user feels, and the three numbers together name it:
+
+| | at rest | throttled | ratio |
+| --- | --- | --- | --- |
+| Frame | 20.0 ms | 29.2 ms | 1.46x slower |
+| GPU busy | 7.8 ms | 10.9 ms | 1.40x slower |
+| GPU share | 39% | 36% | - |
+
+Both the CPU side and the GPU lost about the same proportion, which is what a
+*SoC-wide* clock reduction looks like, not a workload that suddenly got heavier. And
+the GPU is still only a third of the frame, so the client remained CPU-bound
+throughout: **the throttle is the cause of the collapse, and lowering the GPU's work
+alone would not restore 60 fps unless it first lowers the power draw enough for the
+clocks to come back.**
+
+`ProcessInfo.ThermalStateSerious` is Apple's "the thermal state is high"; `critical`
+is documented as "significantly impacting the performance of the system and the
+device needs to cool down". Neither is something an app can opt out of, and no iPad
+has a fan. The only lever software has is to draw less power, sooner, so the device
+never reaches the state — and to recover, to wait for it to cool.
+
+What makes the sustained draw here bigger than it needs to be, in the order the
+measurements support:
+
+1. **The client renders at native 2732x2048** (5.6 MP): `[ak] window content size ->
+   1366x1024 @2x`, and no `renderScale` assignment exists in `Config.wtf`, so the
+   internal scale is the default 1.0. The GPU's 8-11 ms is a continuous power draw.
+2. **No frame cap.** `Config.wtf` carries `useMaxFPS "1"` but no frame-rate
+   assignment, so nothing stops the client rendering as fast as it can outside the
+   scene limit — menus, loading and the login screen included.
+3. **The iPad was charging during the throttled sample** (`Battery: 100%
+   (Charging)`). Charging is a second heat source inside the same chassis; a session
+   that throttles while plugged in may not throttle on battery.
+4. **Brightness** was not measured. The backlight is the largest single power draw on
+   an iPad display and therefore a first-order thermal input at 5.6 MP.
+
+Items 1 and 2 are the client's own settings and can be applied by this app; 3 and 4
+are the user's to control while playing. See "Lane 10" below for what was changed and
+what it measured.
 
 Two candidates for that time, both ours to check and one already measured:
 

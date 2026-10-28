@@ -1,0 +1,28 @@
+# WolkaraForever layer patch 0028 - AppKit: apply the selected scale to the guest layer
+#
+# Why: patch 0023 selects a 1.0 guest backing scale and patch 0024 applies it
+# to the host view, but NSWindow still reports UIScreen.nativeScale (2.0) while
+# attaching the guest content layer. ak_hostBoundsChanged therefore overwrites
+# the guest layer's contentsScale with 2.0. The retained device log proves the
+# result: the default configuration still acquired a 2732x2048 drawable.
+#
+# NSWindow, NSScreen, and the host view must report the same selected backing
+# scale. With the default 1.0 setting the guest surface is 1366x1024, while
+# UIKit scales it to the 2732x2048 panel. This removes three quarters of the
+# pixels submitted by the guest without falsifying its coordinate contract.
+#
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: candidate.
+#
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index 9c3ef9a..38a6d21 100644
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -841,6 +841,6 @@ static void logLayer(CALayer *layer,unsigned depth) {
+ - (void)setFrame:(NSRect)frame display:(BOOL)display { [self setFrame:frame display:display animate:NO]; }
+ - (NSRect)frame { return _host ? (CGRect){CGPointZero, _host.bounds.size} : _contentRect; }
+-- (CGFloat)backingScaleFactor { return (_uiWindow.screen ?: UIScreen.mainScreen).nativeScale; }
++- (CGFloat)backingScaleFactor { return AKGuestBackingScale(); }
+ - (BOOL)isKeyWindow { return _uiWindow.isKeyWindow; }
+ - (BOOL)isVisible { return _uiWindow && !_uiWindow.hidden; }
+ - (NSUInteger)occlusionState { return self.isVisible && _uiWindow.windowScene.activationState!=UISceneActivationStateBackground ? 2 : 0; }

@@ -30,15 +30,36 @@ if [ -z "$bundle" ]; then
 fi
 [ -n "$device" ] || { echo "device_log: set DEVICE in local.env (see local.env.example)" >&2; exit 2; }
 
+# A single-file read must not strand an active test forever when CoreDevice stops
+# answering. This is deliberately separate from pilot.sh's 180 s whole-container
+# inspection allowance: native-guest.log is small, and an expired read is not evidence.
+DEVICE_LOG_TIMEOUT=${DEVICE_LOG_TIMEOUT:-60}
+device_copy_log() {
+    xcrun devicectl device copy from --device "$device" \
+        --domain-type appDataContainer --domain-identifier "$bundle" \
+        --source "Documents/$logname" --destination "$out/$logname" &
+    child=$!
+    elapsed=0
+    while kill -0 "$child" 2>/dev/null; do
+        if [ "$elapsed" -ge "$DEVICE_LOG_TIMEOUT" ]; then
+            kill "$child" 2>/dev/null || true
+            wait "$child" 2>/dev/null || true
+            echo "device_log: copy timed out after ${DEVICE_LOG_TIMEOUT}s; the running app was not touched" >&2
+            return 124
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    wait "$child"
+}
+
 logname=native-guest.log
 out=build/device-log
 rm -rf "$out"
 mkdir -p "$out"
 # The source is a single file, so the destination has to name a file too - devicectl
 # refuses a directory there.
-if ! xcrun devicectl device copy from --device "$device" \
-        --domain-type appDataContainer --domain-identifier "$bundle" \
-        --source "Documents/$logname" --destination "$out/$logname"; then
+if ! device_copy_log; then
     echo "device_log: could not fetch Documents/$logname from $device (app $bundle)" >&2
     echo "device_log: the copy above says why - and note the file only exists once the" >&2
     echo "            guest has been started at least once" >&2

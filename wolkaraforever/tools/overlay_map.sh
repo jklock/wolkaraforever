@@ -66,6 +66,7 @@ intent() {
         case "$f" in
             wolkaraforever/Bridge/tests/*) dst=tests/${f#wolkaraforever/Bridge/tests/};;
             wolkaraforever/Bridge/BackgroundPacing.m) dst=translation/Metal/BackgroundPacing.m;;
+            wolkaraforever/Bridge/DisplayRate.m) dst=translation/Metal/DisplayRate.m;;
             wolkaraforever/Bridge/LocalServiceRetry.*) dst=authorization/App/${f#wolkaraforever/Bridge/};;
             *) echo "# not overlaid yet (source of a pending patch): $f"; continue;;
         esac

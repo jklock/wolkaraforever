@@ -118,19 +118,19 @@ static void TestTextAndCancellation(void) {
     assert(!TKWoWConfig(Text(@"a = x\na = y"),&e)); assert(!TKWoWConfig(Text(@"a x"),&e));
     assert(TKWoWHashValid(@"0123456789abcdef0123456789abcdef")); assert(!TKWoWHashValid(@"../../secret"));
     TKWoWClient *client=[TKWoWClient new]; [client cancel];
-    assert(![client versionForProduct:@"wow_classic_beta" region:@"eu" error:&e]);
+    assert(![client versionForProduct:@"wowf" region:@"eu" error:&e]);
     assert([e.localizedDescription containsString:@"cancelled"]);
     assert(![client versionForProduct:@"../x" region:@"eu" error:&e]);
     NSDictionary *latest=@{@"BuildConfig":TKWoWMD5(Text(@"build")),@"CDNConfig":TKWoWMD5(Text(@"cdn")),@"VersionsName":@"1.2.3"};
-    NSDictionary *installed=@{@"Product":@"wow_classic_beta",@"Active":@"1",@"Build Key":latest[@"BuildConfig"],@"CDN Key":latest[@"CDNConfig"],@"Version":@"1.2.3"};
-    assert(TKWoWBuildCurrent(@[installed],@"wow_classic_beta",latest));
-    assert(!TKWoWBuildCurrent(@[],@"wow_classic_beta",latest));
-    assert(!TKWoWBuildCurrent(@[installed,installed],@"wow_classic_beta",latest));
+    NSDictionary *installed=@{@"Product":@"wowf",@"Active":@"1",@"Build Key":latest[@"BuildConfig"],@"CDN Key":latest[@"CDNConfig"],@"Version":@"1.2.3"};
+    assert(TKWoWBuildCurrent(@[installed],@"wowf",latest));
+    assert(!TKWoWBuildCurrent(@[],@"wowf",latest));
+    assert(!TKWoWBuildCurrent(@[installed,installed],@"wowf",latest));
     assert(!TKWoWBuildCurrent(@[installed],@"wow",latest));
-    assert(!TKWoWBuildCurrent(@[installed],@"wow_classic_beta",@{}));
+    assert(!TKWoWBuildCurrent(@[installed],@"wowf",@{}));
     for (NSString *key in @[@"Active",@"Build Key",@"CDN Key",@"Version"]) {
         NSMutableDictionary *wrong=[installed mutableCopy]; wrong[key]=@"old";
-        assert(!TKWoWBuildCurrent(@[wrong],@"wow_classic_beta",latest));
+        assert(!TKWoWBuildCurrent(@[wrong],@"wowf",latest));
     }
 }
 int main(void) {

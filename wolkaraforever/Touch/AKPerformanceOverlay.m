@@ -12,6 +12,7 @@ static NSString *const ExpandedKey = @"WolkaraForeverPerformanceOverlayExpanded"
 typedef double (*AKMetalFPSFunc)(void);
 typedef double (*AKMetalFrameTimeFunc)(void);
 typedef void (*AKMetalEnableFunc)(void);
+typedef void (*AKMetalDisableFunc)(void);
 typedef double (*AKMetalGPUTimeFunc)(void);
 typedef double (*AKMetalGPULoadFunc)(void);
 typedef double (*AKMetalWaitFunc)(void);
@@ -23,6 +24,16 @@ static void EnableMetalFrameStatistics(void) {
     static AKMetalEnableFunc func = NULL;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ func = (AKMetalEnableFunc)dlsym(RTLD_DEFAULT, "AKEnableMetalFrameStatistics"); });
+    if (func) func();
+}
+
+// Keep the diagnostic work scoped to the visible HUD.  Leaving this enabled
+// after hiding the overlay would retain a presented-handler allocation and a
+// lock acquisition on every game frame for the rest of the session.
+static void DisableMetalFrameStatistics(void) {
+    static AKMetalDisableFunc func = NULL;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ func = (AKMetalDisableFunc)dlsym(RTLD_DEFAULT, "AKDisableMetalFrameStatistics"); });
     if (func) func();
 }
 
@@ -88,9 +99,6 @@ static double ReadMetalWaitMs(void) {
     UILabel *_expandedPowerLabel;
 
     NSTimer *_pollTimer;
-    CADisplayLink *_displayLink;
-    CFTimeInterval _lastDisplayLinkTimestamp;
-    double _displayLinkFPS;
 
     CGPoint _panStartCenter;
     // The last position the user chose, as a fraction of the superview's safe
@@ -401,7 +409,11 @@ static double ReadMetalWaitMs(void) {
 - (void)updateMetrics {
     double metalFPS = ReadMetalFPS();
     double frameTimeMs = ReadMetalFrameTimeMs();
-    double fps = metalFPS > 0.0 ? metalFPS : _displayLinkFPS;
+    // The Metal adapter is the renderer's timing authority.  Do not create a
+    // second CADisplayLink merely to manufacture a fallback FPS value: its
+    // preferred frame-rate range is a system scheduling hint, and a HUD must
+    // not make a competing low-rate request while the game is rendering.
+    double fps = metalFPS;
     if (frameTimeMs <= 0.0 && fps > 0.0) frameTimeMs = 1000.0 / fps;
 
     NSProcessInfoThermalState thermal = NSProcessInfo.processInfo.thermalState;
@@ -457,11 +469,14 @@ static double ReadMetalWaitMs(void) {
     _batteryLabel.text = batteryCompact;
     _compactSeparator.hidden = batteryCompact.length == 0;
 
+    // FPS is a 60-frame average.  `frameTimeMs` is the newest single present
+    // gap, so displaying them as if they describe one sample made a steady
+    // 60 FPS average appear to contradict an 8.3 or 25 ms latest interval.
     _expandedFPSLabel.text = fps > 0.0
-        ? [NSString stringWithFormat:@"Frame Rate: %.1f FPS (%.1f ms)", fps, frameTimeMs]
+        ? [NSString stringWithFormat:@"Frame Rate (60-frame): %.1f FPS · latest gap %.1f ms", fps, frameTimeMs]
         : @"Frame Rate: Waiting for frames…";
     _expandedGPULabel.text = gpuMs > 0.0
-        ? [NSString stringWithFormat:@"GPU: %.1f ms of %.1f ms (%.0f%% busy) · wait %.1f ms", gpuMs, frameTimeMs, gpuLoad * 100.0, waitMs]
+        ? [NSString stringWithFormat:@"GPU (latest): %.1f ms (%.0f%% busy) · drawable wait %.1f ms", gpuMs, gpuLoad * 100.0, waitMs]
         : @"GPU: waiting for frames…";
     _expandedThermalLabel.text = [NSString stringWithFormat:@"Thermal State: %@ (%@)", thermalName, thermalDetail];
     _expandedMemoryLabel.text = available > 0
@@ -471,17 +486,6 @@ static double ReadMetalWaitMs(void) {
     _expandedPowerLabel.text = [NSString stringWithFormat:@"Low Power Mode: %@", lowPower ? @"On" : @"Off"];
 
     self.accessibilityValue = [NSString stringWithFormat:@"%.1f FPS, thermal %@, %.0f MB used", fps, thermalName, usedMB];
-}
-
-- (void)displayLinkFired:(CADisplayLink *)link {
-    if (_lastDisplayLinkTimestamp > 0.0) {
-        CFTimeInterval delta = link.timestamp - _lastDisplayLinkTimestamp;
-        if (delta > 0.001) {
-            double current = 1.0 / delta;
-            _displayLinkFPS = _displayLinkFPS > 0.0 ? (_displayLinkFPS * 0.9 + current * 0.1) : current;
-        }
-    }
-    _lastDisplayLinkTimestamp = link.timestamp;
 }
 
 - (void)thermalStateChanged:(NSNotification *)note {
@@ -508,18 +512,6 @@ static double ReadMetalWaitMs(void) {
             [weakSelf updateMetrics];
         }];
     }
-    if (!_displayLink) {
-        _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(displayLinkFired:)];
-        // Ten hertz, not the panel's own rate.
-        //
-        // This link only ever produces a *fallback* average, used when the Metal counters have
-        // nothing to say, so it was waking the main thread - the thread the guest's own run loop
-        // is pumped from - 120 times a second for a number that is read twice a second. On a
-        // device already at thermal Serious that is the wrong place to spend anything.
-        if (@available(iOS 15.0, *)) _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(4.0, 30.0, 10.0);
-        else _displayLink.preferredFramesPerSecond = 10;
-        [_displayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-    }
     EnableMetalFrameStatistics();
     [self updateMetrics];
 }
@@ -527,9 +519,7 @@ static double ReadMetalWaitMs(void) {
 - (void)stopMonitoring {
     [_pollTimer invalidate];
     _pollTimer = nil;
-    [_displayLink invalidate];
-    _displayLink = nil;
-    _lastDisplayLinkTimestamp = 0.0;
+    DisableMetalFrameStatistics();
 }
 
 - (void)didMoveToWindow {
