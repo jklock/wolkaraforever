@@ -34,6 +34,7 @@
 - (BOOL)foreverActionAllowed;
 - (NSString *)foreverWorkingDirectory;
 - (void)preferences;
+- (void)settings;
 - (void)chooseAppLanguage;
 - (void)applyAppLanguage:(WKAppLanguage)language;
 - (void)setGameLocale:(NSString *)locale;
@@ -1230,8 +1231,156 @@ static NSString *configBeforeReset;
     [self dismissPresented];
     assert([[NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverGameLanguageOfferShown"] boolValue]);
 
-    // --- and the first answer, which is the game's own language, through the same writer the
-    //     Game language row uses: WoWLocale, Config.wtf's two locales, and no portal change.
+    // --- every other page WolkaraForever shows *before a game runs*, in German
+    [self performSelector:@selector(openGermanAbout) withObject:nil afterDelay:0.3];
+}
+
+#pragma mark - The pre-game surface, in German
+
+// The scan these pages use: no visible string may be a localization key, and no visible string
+// may be the English table's copy of a key whose German differs. That second rule is what makes
+// this a check of the screen rather than of one label a test remembered to name - a page that
+// came up half-translated fails it without anyone having to write the assertion for that page.
+static NSDictionary *TableForLanguage(NSString *code) {
+    NSString *folder = [NSBundle.mainBundle pathForResource:code ofType:@"lproj"];
+    if (!folder) return @{};
+    id table = [NSDictionary dictionaryWithContentsOfFile:
+        [folder stringByAppendingPathComponent:@"Localizable.strings"]];
+    return [table isKindOfClass:NSDictionary.class] ? table : @{};
+}
+// Every string a person can read in this view: labels, buttons, field and search placeholders,
+// and the segments of a segmented control. The last two are why this is one walker rather than a
+// check written per page - a segmented control's item titles are not a label and were invisible
+// to the first version of this scan.
+static NSArray<NSString *> *VisibleTexts(UIView *view) {
+    NSMutableArray<NSString *> *texts = [NSMutableArray array];
+    NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:view];
+    while (pending.count) {
+        UIView *each = pending.lastObject; [pending removeLastObject];
+        [pending addObjectsFromArray:each.subviews];
+        if ([each isKindOfClass:UILabel.class] && ((UILabel *)each).text.length)
+            [texts addObject:((UILabel *)each).text];
+        else if ([each isKindOfClass:UIButton.class]) {
+            NSString *title = ((UIButton *)each).configuration.title ?: [(UIButton *)each titleForState:UIControlStateNormal];
+            if (title.length) [texts addObject:title];
+        } else if ([each isKindOfClass:UITextField.class] && ((UITextField *)each).placeholder.length)
+            [texts addObject:((UITextField *)each).placeholder];
+        else if ([each isKindOfClass:UISearchBar.class] && ((UISearchBar *)each).placeholder.length)
+            [texts addObject:((UISearchBar *)each).placeholder];
+        else if ([each isKindOfClass:UISegmentedControl.class]) {
+            UISegmentedControl *control = (UISegmentedControl *)each;
+            for (NSUInteger i = 0; i < control.numberOfSegments; i++) {
+                NSString *title = [control titleForSegmentAtIndex:i];
+                if (title.length) [texts addObject:title];
+            }
+        }
+    }
+    return texts;
+}
+- (void)assertGermanOnlyInView:(UIView *)view page:(NSString *)page {
+    NSDictionary *english = TableForLanguage(@"en"), *german = TableForLanguage(@"de");
+    assert(english.count > 100 && german.count > 100);   // the fixture carries the real tables
+    NSRegularExpression *key = [NSRegularExpression regularExpressionWithPattern:@"^[a-z][A-Za-z0-9]*(\\.[A-Za-z0-9_]+)+$"
+                                                                        options:0 error:NULL];
+    NSArray<NSString *> *texts = VisibleTexts(view);
+    assert(texts.count > 0);
+    for (NSString *text in texts) {
+        if ([key firstMatchInString:text options:0 range:NSMakeRange(0, text.length)]) {
+            NSLog(@"RAW KEY on %@: %@", page, text);
+            assert(!text);
+        }
+        for (NSString *k in english) {
+            if ([english[k] isEqual:text] && ![german[k] isEqual:text]) {
+                NSLog(@"ENGLISH STILL SHOWN on %@: %@ (key %@)", page, text, k);
+                assert(![english[k] isEqual:text]);
+            }
+        }
+    }
+}
+- (void)openGermanAbout {
+    [self.controller about];
+    [self performSelector:@selector(checkGermanAbout) withObject:nil afterDelay:0.6];
+}
+- (void)checkGermanAbout {
+    UIViewController *page = self.controller.navigationController.topViewController;
+    assert(page != self.controller);
+    assert([page.title isEqual:@"Über diese App"]);
+    UITextView *body = (id)page.view;
+    assert([body isKindOfClass:UITextView.class]);
+    assert([body.text containsString:@"unabhängiger World-of-Warcraft-Launcher"]);
+    assert([body.text containsString:@"WolkaraForever – Lizenz dieser App"]);
+    assert(![body.text containsString:@"missing from this build"]);
+    [self.controller.navigationController popToRootViewControllerAnimated:NO];
+    [self performSelector:@selector(openGermanAddons) withObject:nil afterDelay:0.4];
+}
+- (void)openGermanAddons {
+    [self.controller manageAddons];
+    [self performSelector:@selector(checkGermanAddons) withObject:nil afterDelay:1.0];
+}
+- (void)checkGermanAddons {
+    UINavigationController *frame = (id)self.controller.presentedViewController;
+    assert([frame isKindOfClass:UINavigationController.class]);
+    UIViewController *page = frame.topViewController;
+    assert([page.title isEqual:@"ADD-ON-VERWALTUNG"]);
+    [self.window layoutIfNeeded];
+    [self assertGermanOnlyInView:page.view page:@"ADD-ON-VERWALTUNG"];
+    [self capture:@"wow-addons-de.png"];
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    [self performSelector:@selector(openGermanVoice) withObject:nil afterDelay:0.4];
+}
+- (void)openGermanVoice {
+    [self.controller manageVoice];
+    [self performSelector:@selector(checkGermanVoice) withObject:nil afterDelay:0.8];
+}
+- (void)checkGermanVoice {
+    UINavigationController *frame = (id)self.controller.presentedViewController;
+    assert([frame isKindOfClass:UINavigationController.class]);
+    UIViewController *page = frame.topViewController;
+    assert([page isKindOfClass:AKVoiceViewController.class]);
+    assert([page.title isEqual:@"TASTEN UND BUTTONS BELEGEN"]);
+    [self.window layoutIfNeeded];
+    [self assertGermanOnlyInView:page.view page:@"voice settings"];
+    [self capture:@"wow-voice-de.png"];
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    [self performSelector:@selector(openGermanVoiceTest) withObject:nil afterDelay:0.4];
+}
+- (void)openGermanVoiceTest {
+    [self.controller testVoice];
+    [self performSelector:@selector(checkGermanVoiceTest) withObject:nil afterDelay:0.8];
+}
+- (void)checkGermanVoiceTest {
+    UINavigationController *frame = (id)self.controller.presentedViewController;
+    assert([frame isKindOfClass:UINavigationController.class]);
+    UIViewController *page = frame.topViewController;
+    assert([page isKindOfClass:AKVoiceTestViewController.class]);
+    assert([page.title isEqual:@"SPRACHE TESTEN"]);
+    [self.window layoutIfNeeded];
+    [self assertGermanOnlyInView:page.view page:@"voice test"];
+    [self capture:@"wow-voice-test-de.png"];
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    [self performSelector:@selector(openGermanSettings) withObject:nil afterDelay:0.4];
+}
+- (void)openGermanSettings {
+    [self.controller settings];
+    [self performSelector:@selector(checkGermanSettings) withObject:nil afterDelay:0.6];
+}
+- (void)checkGermanSettings {
+    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    assert([sheet isKindOfClass:UIAlertController.class]);
+    assert([sheet.title isEqual:@"Einstellungen"]);
+    assert([sheet.message containsString:@"Aktualisierungen werden automatisch installiert"]);
+    NSArray *titles = [sheet.actions valueForKey:@"title"];
+    for (NSString *expected in @[@"Add-ons verwalten", @"Spieldateien prüfen und reparieren",
+                                 @"Diagnose und Protokolle", @"Über diese App und Open-Source-Lizenzen",
+                                 @"Abbrechen"])
+        assert([titles containsObject:expected]);
+    [self dismissPresented];
+    // --- and the game's own language, which is the last thing before a game would start
+    [self performSelector:@selector(applyGermanGameLanguage) withObject:nil afterDelay:0.4];
+}
+- (void)applyGermanGameLanguage {
+    // The first answer to the offer, through the same writer the Game language row uses:
+    // WoWLocale, Config.wtf's two locales, and no portal change.
     [self.controller setGameLocale:@"deDE"];
     [self performSelector:@selector(checkGermanGameLanguage) withObject:nil afterDelay:1.2];
 }
@@ -1302,14 +1451,8 @@ static NSString *configBeforeReset;
 - (void)assertNoRawKeysInView:(UIView *)view {
     NSRegularExpression *key = [NSRegularExpression regularExpressionWithPattern:@"^[a-z][A-Za-z0-9]*(\\.[A-Za-z0-9_]+)+$"
                                                                         options:0 error:NULL];
-    NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:view];
-    while (pending.count) {
-        UIView *each = pending.lastObject; [pending removeLastObject];
-        [pending addObjectsFromArray:each.subviews];
-        NSString *text = [each isKindOfClass:UILabel.class] ? ((UILabel *)each).text
-            : [each isKindOfClass:UIButton.class] ? (((UIButton *)each).configuration.title ?: [(UIButton *)each titleForState:UIControlStateNormal])
-            : nil;
-        if (text.length && [key firstMatchInString:text options:0 range:NSMakeRange(0, text.length)]) {
+    for (NSString *text in VisibleTexts(view)) {
+        if ([key firstMatchInString:text options:0 range:NSMakeRange(0, text.length)]) {
             NSLog(@"RAW KEY VISIBLE: %@", text);
             assert(!text);
         }

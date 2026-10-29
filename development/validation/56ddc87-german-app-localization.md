@@ -1,7 +1,13 @@
 # Validation: German app localization (0f44553)
 
 > **Historical record.** Evidence for the German app-language work, recorded by hand on the
-> device as the prompt requires. It is not current guidance for later builds. See
+> device as the prompt requires.
+>
+> **Scope.** Everything WolkaraForever shows *before a game runs*: the launcher, its pages and
+> sheets, the launch status lines, and the game-language choice with its update gate. The running
+> game's own text and audio are the game's, not ours, and are not in scope here.
+>
+> It is not current guidance for later builds. See
 > [docs/README.md](../../docs/README.md) for the live documents and
 > [localization](../guides/LOCALIZATION.md) for how the feature is built.
 
@@ -25,7 +31,7 @@
 | --- | --- |
 | `wolkaraforever/tools/check_localization.py` | PASS, 470 keys in both tables |
 | `wolkaraforever/tools/test_localization.sh` | PASS, 58 checks |
-| `wolkaraforever/tools/test_wow_launcher_ui.sh` | PASS, including the German flow and the two presentation-race assertions |
+| `wolkaraforever/tools/test_wow_launcher_ui.sh` | PASS, including the German flow, the pre-game page sweep and the two presentation-race assertions |
 | `wolkaraforever/tools/test_voice.sh` | PASS, 303 checks |
 | `wolkaraforever/tools/test_touch_controls_ui.sh --self-test` | PASS |
 | `wolkaraforever/tools/test_touch_gamepad_ui.sh --self-test` | PASS |
@@ -34,7 +40,7 @@
 | `wolkaraforever/tools/test_forever_ui.sh` | PASS (Config.wtf rules and archive) |
 | `wolkaraforever/tools/test_addon_archive.sh` | PASS, 58 checks |
 | `wolkaraforever/tools/test_translation_sim.sh` | PASS |
-| `wolkaraforever/tools/check_localization.py` after the last string change | PASS, 479 keys |
+| `wolkaraforever/tools/check_localization.py` after the last string change | PASS, 479 keys, no German string left identical to its English one |
 | `wolkaraforever/tools/check_layers.sh` | OK (now also checks the string tables) |
 | `wolkaraforever/tools/check_docs.sh` | OK, 73 markdown files |
 | `wolkaraforever/tools/install.sh --replace-running` | installed and launched |
@@ -68,6 +74,26 @@
    left the imported `true` in place, and the person holding the iPad would then never be offered
    the German game language at all.
 
+## The pre-game surface, in German
+
+The fixture now opens **every page WolkaraForever shows before a game runs** with German selected
+— About, the Add-on Manager, Key / Button Configuration, Test Voice, and the Settings sheet — and
+scans each one. The scan fails on two things: a visible localization key, and a visible string
+that is the *English* copy of a key whose German differs. It reads labels, buttons, field and
+search placeholders and segmented-control items, which is what makes it a check of the page
+rather than of the labels a test remembered to name.
+
+Both rules were shown to bite before they were kept: one label put back to English in the add-on
+manager produced
+
+```
+ENGLISH STILL SHOWN on ADD-ON-VERWALTUNG: Browse CurseForge (key addons.mode.browse)
+```
+
+and the table check now refuses a German string that is simply the English one, with a short
+allowlist for the words that really are the same in both (`Name`, `Region`, `Downloads`,
+`Edition`, `Warm`, `Nominal`, `Controller`, and two proper nouns).
+
 ## What re-checking the work found
 
 Reading the German flow again, against the same build, found a real defect in it: UIKit drops a
@@ -82,6 +108,11 @@ too instead of a second copy. Both cases are now assertions in the launcher fixt
 shown to fail without the wait before it was kept.
 
 The device was left on that home screen with the app running and no game started.
+
+The product code installed there (`0f44553`) is byte-identical to the tree this record now
+describes: everything after it changes tests, the string-table check and documentation, which
+`git diff 0f44553 -- wolkaraforever/Shell wolkaraforever/WoW wolkaraforever/Touch wolkaraforever/Voice`
+shows as empty.
 
 ## What this is not
 

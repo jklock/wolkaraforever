@@ -11,6 +11,10 @@ translation:
 3. Every key the source asks for exists in both tables.  This is what makes the
    runtime fallback ("never show a raw key") a belt-and-braces measure rather than
    the thing that saves the release.
+4. No German string is simply the English one, unless it is one of the words that
+   really is the same in both (a proper noun, "Name", "Region").  A translation that
+   was never written is indistinguishable from a correct one at run time, so this is
+   the only place it can be caught.
 
 It also lists keys nothing asks for.  That is a notice, not a failure: plural forms
 (``.one``/``.other``/``.zero``) and the base key they are looked up from are used
@@ -168,13 +172,27 @@ def main():
     unused = [key for key in order["en"] if not asked(key)]
     if unused:
         notices.append(f"{len(unused)} key(s) nothing asks for: {', '.join(unused[:8])}")
-    # A German string identical to the English one is not always wrong - product names
-    # and units are the same in both - so this is a notice, for a human to skim.
+    # A German string identical to the English one is almost always a translation that was never
+    # written. These are the ones that are the same word in both, each with why - adding one is a
+    # decision, and a lazy translation is a failure.
+    identical_is_fine = {
+        "home.preferences.region": "Region is the German word",
+        "region.kr": "proper noun",
+        "region.tw": "proper noun",
+        "addons.column.name": "Name is the German word",
+        "addons.column.downloads": "Downloads is the German word",
+        "addons.edition": "Edition is what Blizzard's German client calls it",
+        "overlay.thermal.nominal": "the thermal state's name, and the same word",
+        "overlay.thermal.fair.detail": "Warm is the German word",
+        "touch.gamepad.button": "a German player says Controller too",
+    }
     same = [key for key in order["en"] if key in german and english[key] == german[key]
             and re.search(r"[A-Za-z]{4,}", english[key])
             and not re.fullmatch(r"[^a-z]*", english[key])]
-    if same:
-        notices.append(f"{len(same)} German string(s) identical to English: {', '.join(same[:8])}")
+    for key in same:
+        if key not in identical_is_fine:
+            failures.append(f"{key}: the German string is the English one, and is not on the "
+                            f"list of words that are the same in both")
 
     for line in notices:
         print(f"TODO {line}")
