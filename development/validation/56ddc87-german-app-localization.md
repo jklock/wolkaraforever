@@ -1,4 +1,4 @@
-# Validation: German app localization (0f44553)
+# Validation: German app localization (2014c7e)
 
 > **Historical record.** Evidence for the German app-language work, recorded by hand on the
 > device as the prompt requires.
@@ -11,11 +11,12 @@
 > [docs/README.md](../../docs/README.md) for the live documents and
 > [localization](../guides/LOCALIZATION.md) for how the feature is built.
 
-- Code revision: `0f44553` *fix: share the presentation wait, and translate the last two add-on
-  alerts*, on top of `a0d3510` (the presentation fix), `8eb56bb` (this record's first version) and
-  `1bf95d0` *feat: make German a complete app language*. The screenshots below are from an install
-  of `0f44553`: each follow-up changed when a page is presented or what an alert says, so the
-  launcher was re-checked on the build that carries them rather than assumed.
+- Code revision: `2014c7e` *feat: translate the startup progress view*, on top of `0f44553`
+  (the presentation fix), `a0d3510`, `8eb56bb` (this record's first version) and `1bf95d0`
+  *feat: make German a complete app language*. The screenshots below are from an install of
+  `2014c7e`: every follow-up changed something a person can see - when a page is presented, what
+  an alert says, or the startup caption - so the launcher was re-checked on the build that carries
+  them rather than assumed.
 - Recorded: 2026-10-29T10:46Z
 - Host: macOS, Xcode 27.1 (arm64)
 - Device: **Dadpad**, iPad Pro 12.9-inch (5th generation), **iPadOS 27.0.1**, landscape, over the
@@ -40,7 +41,7 @@
 | `wolkaraforever/tools/test_forever_ui.sh` | PASS (Config.wtf rules and archive) |
 | `wolkaraforever/tools/test_addon_archive.sh` | PASS, 58 checks |
 | `wolkaraforever/tools/test_translation_sim.sh` | PASS |
-| `wolkaraforever/tools/check_localization.py` after the last string change | PASS, 479 keys, no German string left identical to its English one |
+| `wolkaraforever/tools/check_localization.py` after the last string change | PASS, 486 keys, no German string left identical to its English one |
 | `wolkaraforever/tools/check_layers.sh` | OK (now also checks the string tables) |
 | `wolkaraforever/tools/check_docs.sh` | OK, 73 markdown files |
 | `wolkaraforever/tools/install.sh --replace-running` | installed and launched |
@@ -94,6 +95,14 @@ and the table check now refuses a German string that is simply the English one, 
 allowlist for the words that really are the same in both (`Name`, `Region`, `Downloads`,
 `Edition`, `Warm`, `Nominal`, `Controller`, and two proper nouns).
 
+One screen in that surface is not the layer's: the startup progress view, whose caption read
+"Elapsed" and whose VoiceOver value read "3 minutes, 4 seconds", both English, for minutes, on
+every launch. `2014c7e` replaces `launcher/App/LaunchProgressView.m` in the layer for those three
+strings only - the ring, the digits, the animation and the reduce-motion behaviour are the
+platform's file unchanged - and platform patch 0041 keeps the platform's own visual fixture
+building. Checked by launching that fixture's probe in the simulator: `Elapsed 00:03` in English,
+`Dauer 00:03` in German, same place and same layout.
+
 ## What re-checking the work found
 
 Reading the German flow again, against the same build, found a real defect in it: UIKit drops a
@@ -109,10 +118,7 @@ shown to fail without the wait before it was kept.
 
 The device was left on that home screen with the app running and no game started.
 
-The product code installed there (`0f44553`) is byte-identical to the tree this record now
-describes: everything after it changes tests, the string-table check and documentation, which
-`git diff 0f44553 -- wolkaraforever/Shell wolkaraforever/WoW wolkaraforever/Touch wolkaraforever/Voice`
-shows as empty.
+The build installed there is `2014c7e`, the commit this record names.
 
 ## What this is not
 
@@ -122,10 +128,10 @@ shows as empty.
   a relaunch. The tap path — the sheet, its three choices, the immediate redraw and the one-time
   German game-language offer — is proven by the launcher fixture in
   `wolkaraforever/WoW/tests/test_wow_launcher_app.m`, not by this record.
-- The in-game performance overlay and the on-screen keyboard were **not** exercised on the device:
-  that needs a guest running, and none was started. Their labels come from the same tables through
-  `Touch/AKHostLocalization`, and they are covered by `test_touch_controls_ui.sh --self-test` and
-  `test_touch_gamepad_ui.sh --self-test` in the simulator, not here.
+- What happens once a game runs - the client's own text and audio, and the overlay and keyboard
+  drawn over it - is out of scope: it is the game's, and no guest was started. Those views are
+  localized anyway and are covered by `test_touch_controls_ui.sh --self-test` and
+  `test_touch_gamepad_ui.sh --self-test` in the simulator.
 - The interrupted German update was not resumed. The installation remains verified for `enUS`,
   which is what the last screenshot shows.
 - Enrollment is still not possible over the network (`tools/enroll.sh` needs USB); the installed
