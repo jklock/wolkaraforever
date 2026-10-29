@@ -97,6 +97,13 @@ also describes installing/refreshing without the computer after pairing, using
 LocalDevVPN and a connected Wi-Fi network. This does not establish network
 WolkaraForever launch or solve its executable-memory preparation.
 
+For maintainer-local AltStore Classic investigation, use
+`wolkaraforever/tools/package_altstore_ipa.sh`, which emits an unsigned IPA plus a structural
+verification report, then `verify_external_jit.sh` after sideloading. The package check proves
+only the artifact we supplied; AltStore re-signing, JIT enablement, debugger detachment, memory
+availability, login, restart and recovery still require the physical-device acceptance sequence.
+No AltStore source, release upload or public compatibility claim follows from these commands.
+
 An External JIT build needs an enabler. [StikDebug](https://github.com/StikDebug/StikDebug)
 is a candidate: its own instructions require pairing/setup and describe limited
 app compatibility on newer iOS releases. We have not tested that combination.
