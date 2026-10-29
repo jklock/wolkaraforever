@@ -29,6 +29,55 @@ to a running application.
   devices or OS versions.
 - A macOS arm64 application that you own, installed on the Mac.
 
+## Storage-backed simulator devices
+
+For simulator work, the supported storage layout keeps *device data* on the
+external Storage volume without asking CoreSimulator to use an unsupported
+external directory. Install Xcode's iOS 27.0 and 27.1 simulator runtimes from
+Xcode Components, then run this once:
+
+```bash
+wolkaraforever/tools/setup_simulators.sh --apply
+```
+
+This is a destructive reset of the default simulator set. It shuts down and
+deletes existing simulators, creates `/Volumes/Storage/Simulators.sparsebundle`,
+and mounts that APFS disk image at
+`~/Library/Developer/CoreSimulator`. CoreSimulator therefore sees its required
+native local APFS mount while the image and all simulator device data live on
+Storage. The script creates and boot-checks these clean devices:
+
+- `Wolkara iPad Pro 13 M5` (iOS 27.0)
+- `Wolkara iPhone 18 Pro` (iOS 27.0)
+- `Wolkara iPhone Duo` (iOS 27.1)
+
+It also installs a per-user LaunchAgent that reattaches the image at login.
+Keep the Storage volume connected and mounted before opening Xcode; if it was
+not available at login, attach the image before starting CoreSimulator:
+
+```bash
+hdiutil attach -nobrowse -mountpoint "$HOME/Library/Developer/CoreSimulator" \
+  /Volumes/Storage/Simulators.sparsebundle
+```
+
+Confirm the live mount and devices with:
+
+```bash
+diskutil info "$HOME/Library/Developer/CoreSimulator"
+xcrun simctl list devices available
+```
+
+`diskutil` must report `Protocol: Disk Image` and `Device Location: External`.
+Do not replace this mount with a symlink or point `simctl --set` directly at the
+external USB path: CoreSimulator rejects those layouts. Do not rename or remove
+the sparse bundle while CoreSimulator is running; use `simctl` to reset devices.
+
+The sealed iOS and iPadOS simulator runtimes are Apple-managed Cryptex content
+and remain where Xcode installs them. macOS does not use a CoreSimulator runtime:
+the macOS target runs natively. Its generated project and DerivedData can still
+use the configured Storage-backed build locations. Simulator checks prove only
+simulator behavior; they do not prove physical-device, AltStore, or JIT behavior.
+
 ## 1. Enable Developer Mode on the iPad
 
 1. Connect the iPad to the Mac by cable, unlock it and tap **Trust**.
@@ -225,6 +274,34 @@ with Finder or the Files app, or set `TOLKARA_BUNDLE_ID` to the installed
 identifier before running a profile's `install.py` (step 5). This mode has
 not been run on a device yet; report what you find in
 [COMPATIBILITY.md](../../COMPATIBILITY.md).
+
+#### Local AltStore Classic lane
+
+The local IPA lane is deliberately separate from the ordinary Xcode install route. It reuses
+the existing `local.env` only to generate the project; the resulting External-JIT IPA contains
+no team profile and AltStore signs it with the Apple Account already configured in AltStore.
+
+```sh
+wolkaraforever/tools/package_altstore_ipa.sh
+```
+
+The command refuses a dirty source tree and writes a sibling verification report containing the
+IPA hash and source revision. It also forces `TOLKARA_SYSTEM_ROOTS=NO`; do not substitute the
+older `package_ipa.sh` default when preparing a distributable test artifact.
+
+Install the resulting IPA through AltStore Classic/AltServer, then enable JIT while the app is
+foregrounded. After opening the app, use the installed bundle identifier if AltStore changed it:
+
+```sh
+wolkaraforever/tools/verify_external_jit.sh --bundle-id YOUR_INSTALLED_BUNDLE_ID
+# After a JIT-enabled native-launch attempt:
+wolkaraforever/tools/verify_external_jit.sh --bundle-id YOUR_INSTALLED_BUNDLE_ID --require-runtime
+```
+
+The first command proves only that the app is installed. The second requires the runtime's own
+evidence that the debugger detached and executable memory survived; neither command proves game
+login or gameplay. This lane remains unvalidated until the physical-device sequence in
+[distribution guidance](WOLKARAFOREVER_DISTRIBUTION.md) passes.
 
 A generic build also works with the other modes where they are available:
 `NATIVE_GUEST_SHIMS=GENERIC tools/install.sh` needs no `GUEST_EXE` (with Local

@@ -1,0 +1,38 @@
+# WolkaraForever layer patch 0042 - keep Swift package products colocated
+#
+# Xcode 27 honors IDECustomDerivedDataLocation for Swift package products.
+# Setting SYMROOT only for the app target splits ZIPFoundation's resource bundle
+# from the app product, so the archive build fails at link/copy time. Use one
+# package-local DerivedData directory for the scheme and query its resolved
+# target build directory instead of assuming a build/unsigned path.
+#
+# Applies to: tools/package_ipa.sh
+
+diff --git a/tools/package_ipa.sh b/tools/package_ipa.sh
+--- a/tools/package_ipa.sh
++++ b/tools/package_ipa.sh
+@@ -21,9 +21,18 @@ tools/generate.sh
+ # Its one way to run code, chosen already.
+ # By target: schemes need a destination the SDK alone lacks.
++# Do not set SYMROOT here. The scheme and its package products share this
++# ignored DerivedData directory; a target-only SYMROOT separates ZIPFoundation's
++# resource bundle from TolkaraDiagnostics.
++IPA_DERIVED_DATA=build/ipa-derived
++TARGET_BUILD_DIR=$(xcodebuild -project Tolkara.xcodeproj -scheme TolkaraDiagnostics -configuration Release \
++    -sdk iphoneos -arch arm64 -derivedDataPath "$IPA_DERIVED_DATA" -showBuildSettings | \
++    awk -F ' = ' '$1 ~ /TARGET_BUILD_DIR$/ { print $2; exit }')
++[ -n "$TARGET_BUILD_DIR" ] || { echo "Could not resolve TARGET_BUILD_DIR"; exit 1; }
++
+-xcodebuild -project Tolkara.xcodeproj -target TolkaraDiagnostics -configuration Release \
+-    -sdk iphoneos -arch arm64 SYMROOT=build/unsigned NATIVE_GUEST_SHIMS=GENERIC TOLKARA_MODE=external-jit \
++xcodebuild -project Tolkara.xcodeproj -scheme TolkaraDiagnostics -configuration Release \
++    -sdk iphoneos -arch arm64 -derivedDataPath "$IPA_DERIVED_DATA" NATIVE_GUEST_SHIMS=GENERIC TOLKARA_MODE=external-jit \
+     TOLKARA_SYSTEM_ROOTS="${TOLKARA_SYSTEM_ROOTS:-YES}" \
+     INFOPLIST_KEY_CFBundleDisplayName=Tolkara \
+     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+     build > "$LOG" 2>&1 \
+     || { grep -E "error:" "$LOG" | head -20; echo "BUILD FAILED -> $LOG"; exit 1; }
+@@ -31,2 +40,2 @@
+-APP=build/unsigned/Release-iphoneos/TolkaraDiagnostics.app
++APP="$TARGET_BUILD_DIR/TolkaraDiagnostics.app"
+ [ -d "$APP" ] || { echo "Build did not produce $APP -> $LOG"; exit 1; }
