@@ -139,6 +139,24 @@ int main(void) {
         assert([TKForeverUI setCVars:presetCVars inWorkingDirectory:root error:&error]);
         assert([Read(ConfigPath(root)) isEqual:afterCVars]);
 
+        // --- language selection replaces only both locale CVars, including
+        // duplicates, and retains line endings and unrelated account settings.
+        Write(ConfigPath(root),
+              @"SET portal \"eu\"\r\n"
+               "SET textLocale \"enUS\"\r\n"
+               "SET accountName \"ACC\"\r\n"
+               "SET audioLocale \"esES\"\r\n"
+               "SET textLocale \"esES\"\r\n");
+        assert([TKForeverUI setLocale:@"deDE" inWorkingDirectory:root error:&error]);
+        assert([Read(ConfigPath(root)) isEqual:@"SET portal \"eu\"\r\n"
+                                              "SET accountName \"ACC\"\r\n"
+                                              "SET audioLocale \"deDE\"\n"
+                                              "SET textLocale \"deDE\"\n"]);
+        NSString *localeConfig = Read(ConfigPath(root));
+        assert(![localeConfig containsString:@"enUS"] && ![localeConfig containsString:@"esES"]);
+        assert(![TKForeverUI setLocale:@"invalid" inWorkingDirectory:root error:&error]);
+        assert([Read(ConfigPath(root) ) isEqual:localeConfig]);
+
         // --- names and values that would write an unreadable line are refused
         NSDictionary *badName = @{@"render Scale": @"0.5"};
         NSDictionary *badSpace = @{@"renderScale": @"0.5 0.5"};
@@ -146,7 +164,7 @@ int main(void) {
         assert(![TKForeverUI setCVars:badName inWorkingDirectory:root error:&error]);
         assert(![TKForeverUI setCVars:badSpace inWorkingDirectory:root error:&error]);
         assert(![TKForeverUI setCVars:badQuote inWorkingDirectory:root error:&error]);
-        assert([Read(ConfigPath(root)) isEqual:afterCVars]);   // nothing was written
+        assert([Read(ConfigPath(root)) isEqual:localeConfig]); // nothing was written
 
         // --- the performance preset writes exactly its own names
         assert([TKForeverUI applyPerformancePresetInWorkingDirectory:root error:&error]);

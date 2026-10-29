@@ -36,10 +36,13 @@ External JIT in the diagnostics/sideload target, before memory reservation.
 An old saved Local signing selection cannot accidentally block an ordinary
 launch. Explicit development arguments retain the previous resolver and can
 still select another mode. Hiding the selector does not remove enrolment, JIT
-or memory requirements; see [the distribution plan](WOLKARAFOREVER_DISTRIBUTION.md).
+or memory requirements; see [the distribution plan](../guides/WOLKARAFOREVER_DISTRIBUTION.md).
 
 - Remembers Forever, Classic Era, Classic, Retail or Retail Beta, region
-  and language. Forever is the released product `wowf`, installed in
+  and language. The picker offers English, Spanish and German; for an installed
+  Forever client, selecting a language keeps `textLocale` and `audioLocale` in
+  `Config.wtf` aligned without changing its login region or unrelated settings.
+  Forever is the released product `wowf`, installed in
   `_forever_`; the beta it was before that (`wow_classic_beta`, `_classic_beta_`)
   is no longer offered. A listed edition is not a claim of runtime compatibility.
 - Checks at opening, foregrounding and before Play. An outdated installed copy

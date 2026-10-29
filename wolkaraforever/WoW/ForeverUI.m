@@ -292,6 +292,21 @@ inWorkingDirectory:(NSString *)directory
     return [self setCVars:self.performancePreset inWorkingDirectory:directory error:error];
 }
 
++ (BOOL)setLocale:(NSString *)locale inWorkingDirectory:(NSString *)directory error:(NSError **)error {
+    static NSSet<NSString *> *supported;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        supported = [NSSet setWithArray:@[@"enUS", @"esES", @"deDE", @"frFR", @"itIT",
+                                            @"esMX", @"ptBR", @"ruRU", @"koKR", @"zhTW"]];
+    });
+    if (![supported containsObject:locale]) {
+        if (error) *error = TKError(@"The selected game language is not supported.");
+        return NO;
+    }
+    return [self setCVars:@{@"textLocale": locale, @"audioLocale": locale}
+  inWorkingDirectory:directory error:error];
+}
+
 + (BOOL)gamepadEnabledInWorkingDirectory:(NSString *)directory {    NSError *error = nil;
     NSString *wtf = [self wtfDirectoryInWorkingDirectory:directory create:NO error:&error];
     if (!wtf) return NO;

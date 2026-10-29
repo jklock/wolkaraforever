@@ -1,7 +1,7 @@
 # Tools reference
 
 Every script that builds, installs, runs, tests or pilots WolkaraForever lives in
-[`wolkaraforever/tools/`](../wolkaraforever/tools). Each one that needs a platform step
+[`wolkaraforever/tools/`](../../wolkaraforever/tools). Each one that needs a platform step
 first prepares the tree, then runs the platform's own script against it - so you rarely
 call `build/platform/tools/*` yourself.
 
@@ -12,7 +12,7 @@ call `build/platform/tools/*` yourself.
 > layer's copy.
 
 All scripts read the repository root's ignored `local.env` through
-[`env.sh`](../wolkaraforever/tools/env.sh); a value given on the command line
+[`env.sh`](../../wolkaraforever/tools/env.sh); a value given on the command line
 (`VAR=value wolkaraforever/tools/...`) wins over the file. The variables are listed at the
 end of this page.
 

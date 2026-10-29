@@ -67,7 +67,7 @@ loading, executable memory, the desktop UI frameworks and the shader format.
   library an address belongs to.
 - `GuestPaths` (case-insensitive file lookups) and `GuestVMBudget` (a budget
   for large virtual-memory reservations) back two experimental, opt-in
-  development aids; see [BUILDING.md](BUILDING.md#development-runs-on-the-ipad).
+  development aids; see [BUILDING.md](../guides/BUILDING.md#development-runs-on-the-ipad).
 - `GuestModule` and `tools/package_guest.py` import an executable as a separate,
   hash-verified module under Documents. It refuses to write into a signed bundle.
 - `GuestMemory`, `DarwinMemory` and `GuestCPU` are a software MMU and a scalar
@@ -249,4 +249,4 @@ fixups, packaging, the pairing, tunnel and debug protocols against independent
 peers, the page-container contract, the signer and a macOS end-to-end container
 load, shader containers, keyboard and text input, and crypto parity with
 macOS. Device behaviour has to be checked on a device; record what you tested
-in [COMPATIBILITY.md](../COMPATIBILITY.md).
+in [COMPATIBILITY.md](../../COMPATIBILITY.md).

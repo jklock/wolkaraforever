@@ -4,8 +4,8 @@ This is the exhaustive, checkpointed route from a Mac with nothing installed to 
 Warcraft running on your iPad through WolkaraForever. Every step says what to run,
 what you should see, and what to do if you do not.
 
-If you only want the short version, [GETTING_STARTED.md](GETTING_STARTED.md) is the condensed
-route. This page assumes you have never built the project before.
+The supported user route is [INSTALLATION.md](../../docs/INSTALLATION.md). This page assumes
+you have never built the project before.
 
 > **Time and size.** Expect 45-90 minutes of setup before the game's first download, and a
 > first download in the tens of gigabytes (the tested Forever install is about 70 GB). The
@@ -254,6 +254,6 @@ on-device download; the app still verifies what it has. See
 
 ## Where to go next
 
-- [USING_WOLKARAFOREVER.md](USING_WOLKARAFOREVER.md) - the in-app guide (add-ons, voice, controls).
+- [USING_WOLKARAFOREVER.md](../../docs/USING_WOLKARAFOREVER.md) - the in-app guide (add-ons, voice, controls).
 - [MAINTAINING.md](MAINTAINING.md) - how the layers fit and how to update the engine, the app and the game.
-- [FRESH_INSTALL_TEST.md](FRESH_INSTALL_TEST.md) - the clean-device acceptance checklist.
+- [FRESH_INSTALL_TEST.md](../testing/FRESH_INSTALL_TEST.md) - the clean-device acceptance checklist.

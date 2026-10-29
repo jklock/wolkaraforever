@@ -6,7 +6,7 @@
 > A bare `tools/<script>` below means the platform's `platform/tools/<script>`;
 > the engine's `runtime/`, `translation/` and `authorization/` live under
 > `platform/`.
-> For a how-to, read [BUILDING.md](BUILDING.md) first. This is the
+> For a how-to, read [BUILDING.md](../guides/BUILDING.md) first. This is the
 > **Developer service** execution mode; the other modes, Local signing and
 > External JIT, are described in [ARCHITECTURE.md](ARCHITECTURE.md).
 

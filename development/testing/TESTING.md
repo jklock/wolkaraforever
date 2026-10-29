@@ -65,7 +65,7 @@ This is the part of the physical-iPad matrix a Mac can drive on its own:
 
 Some checks need a person - speaking into the iPad, pressing a pad button - and are
 listed as deferred at the end of the script rather than pretended. Record device results
-in [COMPATIBILITY.md](../COMPATIBILITY.md).
+in [COMPATIBILITY.md](../../COMPATIBILITY.md).
 
 ## The app's own self-tests
 
@@ -97,7 +97,7 @@ committed. A run that names a commit it did not build is worse than no evidence;
 what this script exists to prevent.
 
 When the platform's suite fails only on failures the platform itself owns, the list in
-[`known_platform_failures.txt`](../wolkaraforever/tools/known_platform_failures.txt) names
+[`known_platform_failures.txt`](../../wolkaraforever/tools/known_platform_failures.txt) names
 them. Anything not on that list fails the run, and the known failures are still reported,
 never hidden.
 
@@ -121,11 +121,11 @@ Metal behaviour or native execution on a real device.
 - Add a unit test beside the code it covers, named `test_*.{c,m,swift,py}`.
 - Cover memory bounds, malformed input, protocol failures and adapter behaviour you touch.
 - Prefer a synthetic fixture over anything imported from an application. See the
-  ground rules in [CONTRIBUTING.md](../CONTRIBUTING.md).
+  ground rules in [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## What still needs a person
 
 A script cannot press a pad button, speak into the microphone, or judge whether the game
-plays well. Those results are recorded by date in [COMPATIBILITY.md](../COMPATIBILITY.md).
+plays well. Those results are recorded by date in [COMPATIBILITY.md](../../COMPATIBILITY.md).
 If something fails, include the exact message from Settings -> Technical details and a
 redacted log - never account, pairing or device-identifier information.

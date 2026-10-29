@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure frame pacing on the device across graphics settings, and keep the numbers.
 
-Why this exists: `docs/PERFORMANCE_LANES.md` could say what the login screen and a
+Why this exists: `development/technical/PERFORMANCE_LANES.md` could say what the login screen and a
 cinematic did at one setting, once, by hand. The question this tool answers is a
 comparison - which setting holds a frame under the display budget, and what the same
 scene costs once the SoC throttles - so the settings have to be swept and the numbers

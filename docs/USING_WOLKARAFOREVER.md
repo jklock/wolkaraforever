@@ -2,7 +2,7 @@
 
 This is the in-app guide for a WolkaraForever installation that has already
 been built, installed, and enrolled. For first-time setup, see
-[Build and run WolkaraForever](GETTING_STARTED.md).
+[Install WolkaraForever](INSTALLATION.md).
 
 The screenshots below were captured from the installed app on an iPad. Your
 edition, client version, add-ons, and button mapping will differ.
@@ -14,24 +14,20 @@ edition, client version, add-ons, and button mapping will differ.
 The home screen is where you choose the game edition and download preferences,
 manage add-ons, set up voice input, and start the game.
 
-1. Tap the edition name to choose **Forever**, **Classic Era**,
-   **Classic**, **Retail**, or **Retail · Beta**. This selects the client
-   WolkaraForever prepares; it does not change your game account or entitlement.
+1. Tap the edition name to choose the client you want to prepare. This selects
+   downloaded game data; it does not change your game account or entitlement.
 2. Tap the region/language label (for example, **US · English**) for download
    preferences. **Region** offers Europe, Americas, Korea, and Taiwan;
-   **Language** offers English and Spanish. These choices select download
-   content only; they do not change the game's login region.
+   **Language** offers English, Spanish, and German. For an installed Forever
+   client, changing language keeps the text and audio locale aligned without
+   changing the login region.
 3. Keep WolkaraForever open while it downloads or installs an update. **Play** becomes
    available only after the selected client is ready.
 
-While the game is starting, the home page says **Starting…** and the rows that would
-change something are grey; they become gold again when they are usable. Once the game's
-window is up, the page says **Running** and stays that way while you play. Quit the game
-from its own menu and WolkaraForever returns here with **Game closed**: the game can only
-be entered once in a process, so the only way to play again is to close WolkaraForever and
-open it again. The **Close WolkaraForever** button on that state does exactly that — if the
-game's window is still on screen after quitting from inside, closing the app is how you
-get back to the home screen.
+While the game is starting, the home page says **Starting…** and rows that would change
+something are unavailable. Once the game window is up, it says **Running**. Use the
+toolbar's **Leave game** control when the game itself has no useful quit path; it closes
+WolkaraForever so the next launch begins with a fresh session.
 4. Tap **Play**, wait for startup preparation to finish, then sign in to the
    game yourself.
 
@@ -78,6 +74,11 @@ Do not change an add-on while an update or game-start preparation is underway.
 The last box on the home page holds Forever's own file operations and two
 WolkaraForever switches. The file operations need an installed, ready Forever
 edition and no update, start or session in progress.
+
+The home page's **Language** picker offers English, Spanish and German. For a
+ready Forever installation, changing it also changes only `textLocale` and
+`audioLocale` in `WTF/Config.wtf`; it does not change the login region or any
+other setting.
 
 - **Backup WoW UI Configuration** writes a verified ZIP of `WTF` (without its
   `Backups` folder) and `Interface` into `WTF/Backups`, and names it.

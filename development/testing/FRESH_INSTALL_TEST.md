@@ -10,7 +10,7 @@ path; this checklist records that clean-device run, performed end to end.
 
 Use a new checkout of the published source. Do not copy `build/`, `local.env`,
 Xcode user settings, game files, caches, addons or authorization from an older
-checkout/app. Create your own configuration using [Getting started](GETTING_STARTED.md).
+checkout/app. Create your own configuration using [Install WolkaraForever](../../docs/INSTALLATION.md).
 
 Use the ordinary **WolkaraForever** app and one bundle ID. There is no separate test
 edition. Start on a device without downloaded game data; if you already use the
@@ -61,4 +61,4 @@ That catches assumptions our already-configured Mac/iPad cannot expose.
 | Another tester's signing/device | Verified |
 
 Only mark a row passed after observing it. These results are separate from the
-existing gameplay reports in [COMPATIBILITY.md](../COMPATIBILITY.md).
+existing gameplay reports in [COMPATIBILITY.md](../../COMPATIBILITY.md).

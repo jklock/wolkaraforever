@@ -1,7 +1,7 @@
 # Pre-split baseline
 
 > **Historical record.** This page describes the pre-split state and is kept as evidence.
-> It is not current guidance - see [the documentation index](README.md) for the live
+> It is not current guidance - see [the documentation index](../README.md) for the live
 > documents. A bare `tools/<script>` below is a pre-split path; the layer's scripts are
 > in `wolkaraforever/tools/`, the platform's in `platform/tools/`.
 

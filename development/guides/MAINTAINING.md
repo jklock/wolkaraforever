@@ -6,7 +6,7 @@ update each of the three things that can change: the **engine (Tolkara)**, the
 delete by hand what a script updates for you, and always keep the same bundle ID.
 
 - Setting up from nothing for the first time: [FROM_ZERO.md](FROM_ZERO.md).
-- What each suite proves: [TESTING.md](TESTING.md).
+- What each suite proves: [TESTING.md](../testing/TESTING.md).
 - What every script does: [TOOLING.md](TOOLING.md).
 
 ---
@@ -273,7 +273,7 @@ A light routine that keeps things healthy:
   and let the gate and suites decide - do not install on a failed gate.
 - **When the fork's code moves:** [Updating WolkaraForever](#updating-wolkaraforever-the-app).
 - **After installing:** reopen to home, run a session, and record the result in
-  [COMPATIBILITY.md](../COMPATIBILITY.md) with the date and device.
+  [COMPATIBILITY.md](../../COMPATIBILITY.md) with the date and device.
 - **Periodically:** `wolkaraforever/tools/test_emulation.sh` and
   `wolkaraforever/tools/device_matrix.sh`; `wolkaraforever/tools/check_docs.sh` to keep the docs
   honest.

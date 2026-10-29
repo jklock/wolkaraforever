@@ -1,12 +1,12 @@
-# Game data migration: local.wolkara.johnklock → local.wolkaraforever.johnklock
+# Game data migration: legacy bundle → renamed bundle
 
 > **Historical record.** A one-off on-device migration record; it is not current
 > guidance. See [docs/README.md](../../docs/README.md) for the live documents.
 
 - Date: 2026-10-22
 - Device: Dadpad, iPad Pro 12.9-inch (5th generation), iPadOS 27
-- Source container: `local.wolkara.johnklock` (the pre-rename bundle that held the game)
-- Destination container: `local.wolkaraforever.johnklock`
+- Source container: the pre-rename bundle that held the game
+- Destination container: the renamed bundle
 - Game tree: `Documents/World of Warcraft`, 2,894 regular files, 330 directories, 71.76 GB
 
 ## Method — on the iPad only
@@ -38,7 +38,7 @@ were used for the move and were removed again afterwards.
 | destination file count and bytes | 2,894 files, 71.76 GB (before the self-test's backup) |
 | destination home page | `Ready to play`, client 1.60.1 (70450) |
 | Forever UI self-test on the destination | PASS 18/18 |
-| old app | uninstalled; only `local.wolkaraforever.johnklock` remains |
+| old app | uninstalled; only the renamed app remains |
 | CurseForge key in the destination | stored (60 chars, core shape); authenticated search PASS, 50 projects |
 | Mac copies | none; the aborted 50 GB partial and `build/migrate` were deleted |
 
@@ -62,7 +62,7 @@ app deletion.
 Fix, without re-enrolling:
 
 - The new app is built and installed with
-  `TOLKARA_KEYCHAIN_GROUP=local.wolkara.johnklock.authorization`, the group the
+  the legacy `TOLKARA_KEYCHAIN_GROUP`, the group the
   surviving item belongs to. `local.env` now records that choice, with a
   comment, because it cannot be recreated without the USB pairing session.
 - The `TKEnrolledDeviceIdentifier` default was restored once from the device

@@ -2,7 +2,7 @@
 # Prints the pid of a process running THIS bundle's installed executable.
 #
 # A device can hold more than one Tolkara build side by side: the pre-rename
-# bundle (`local.wolkara.johnklock`) may be the one that carries the game, while
+# legacy bundle may be the one that carries the game, while
 # a newer bundle is installed and running too. Stopping or replacing by the
 # executable's name alone would target the wrong app - and refusing an install
 # because a *different* Tolkara app is up is just as wrong.

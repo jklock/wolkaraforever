@@ -34,6 +34,14 @@ FOUNDATION_EXPORT NSString *const TKForeverUIEdition;
 inWorkingDirectory:(NSString *)directory
            error:(NSError **)error;
 
+// Keeps the installed Forever client's text and audio language aligned with
+// the launcher selection. Only these two CVar assignments are replaced; every
+// other Config.wtf line keeps its bytes. Supported Blizzard locale tags are
+// required so the launcher can never write an unusable setting.
++ (BOOL)setLocale:(NSString *)locale
+inWorkingDirectory:(NSString *)directory
+           error:(NSError **)error;
+
 // The client settings this app applies so a frame fits the display's budget.
 //
 // Measured on Dadpad (M1 iPad Pro 12.9, iPadOS 27, 2026-10-23): the client

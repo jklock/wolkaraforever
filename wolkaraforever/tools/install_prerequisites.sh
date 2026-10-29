@@ -78,7 +78,7 @@ say ""
 # 1. macOS and architecture. The engine and device builds are arm64.
 if [ "$(uname -s)" != "Darwin" ]; then
     bad "macOS (this is $(uname -s)); the build targets macOS"
-    say "See docs/BUILDING.md for what is supported."
+    say "See development/guides/BUILDING.md for what is supported."
     exit 1
 fi
 ok "macOS $(sw_vers -productVersion)"
