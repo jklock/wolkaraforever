@@ -22,7 +22,8 @@ xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-a
     -Wall -Wextra -Werror -Wno-deprecated-declarations \
     -Ilauncher/App -Ilauncher/Voice -Ilauncher/Input -Ilauncher/Controller -Ilauncher/WoW -Itests \
     launcher/WoW/*.m launcher/App/LaunchProgressView.m launcher/App/WolkaraForeverTheme.m \
-    launcher/App/WolkaraForeverLog.m launcher/Voice/*.m launcher/Input/*.m \
+    launcher/App/WolkaraForeverLog.m launcher/App/WKLocalization.m launcher/App/WolkaraForeverConfig.m \
+    launcher/Voice/*.m launcher/Input/*.m \
     launcher/Controller/ControllerInspector.m tests/test_wow_launcher_app.m \
     -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics \
     -framework Security -framework UniformTypeIdentifiers -framework GameController \
@@ -53,6 +54,13 @@ PLIST
 # This mirrors the app's packaging. That the *real* target carries all four is checked
 # against the installed app on the iPad, in wolkaraforever/tools/device_matrix.sh, because a
 # fixture that supplies the files can only ever prove how the page composes them.
+# The app's own language tables, in the same place the app target puts them: the fixture has to
+# be able to answer "which language" the same way the app does, or the German run below would be
+# testing a bundle nobody builds.
+for LANGUAGE in en de; do
+    mkdir -p "$APP/$LANGUAGE.lproj"
+    cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$APP/$LANGUAGE.lproj/"
+done
 cp "$ROOT/LICENSE" "$APP/WolkaraForever-LICENSE"
 cp "$ROOT/NOTICE.md" "$APP/WolkaraForever-NOTICE.md"
 cp "$ROOT/platform/LICENSE" "$APP/LICENSE"

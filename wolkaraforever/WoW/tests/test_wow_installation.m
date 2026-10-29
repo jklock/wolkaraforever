@@ -11,6 +11,15 @@ int main(void) {
         assert([@"synthetic settings" writeToFile:settings atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
         TKWoWInstallation *result=TKWoWInspectInstallation(library,product,plan);
         assert(result.state==TKWoWInstallationReady && result.app==(id)apps[0]);
+        NSMutableDictionary *german=[plan mutableCopy]; german[@"locale"]=@"deDE";
+        result=TKWoWInspectInstallation(library,product,german);
+        assert(result.state==TKWoWInstallationOutdated && result.localeNeedsUpdate);
+        NSString *metadata=[fixture.root stringByAppendingPathComponent:@".build.info"];
+        NSString *contents=[NSString stringWithContentsOfFile:metadata encoding:NSUTF8StringEncoding error:NULL];
+        assert([[contents stringByReplacingOccurrencesOfString:@"enUS" withString:@"deDE"] writeToFile:metadata atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
+        result=TKWoWInspectInstallation(library,product,german);
+        assert(result.state==TKWoWInstallationReady && !result.localeNeedsUpdate);
+        [fixture writeMetadata:0 duplicate:NO];
         assert(TKWoWInspectInstallation(library,product,[fixture planForProduct:product[@"id"] revision:1]).state==TKWoWInstallationOutdated);
         [fixture writeMetadata:0 duplicate:YES];
         assert(TKWoWInspectInstallation(library,product,plan).state==TKWoWInstallationNeedsRepair);
@@ -29,7 +38,7 @@ int main(void) {
         assert(TKWoWInspectInstallation(library,product,plan).state==TKWoWInstallationNeedsRepair);
         assert([[NSString stringWithContentsOfFile:settings encoding:NSUTF8StringEncoding error:NULL] isEqual:@"synthetic settings"]);
         assert([[NSData dataWithContentsOfFile:fixture.executable] isEqual:fixture.bytes]);
-        puts("WoW installation PASS: missing, current, outdated, ambiguous/missing metadata, changed bytes, path bounds; no writes.");
+        puts("WoW installation PASS: missing, current, locale mismatch, outdated, ambiguous/missing metadata, changed bytes, path bounds; no writes.");
     }
     return 0;
 }

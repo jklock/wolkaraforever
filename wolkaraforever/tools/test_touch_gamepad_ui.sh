@@ -16,10 +16,17 @@ print(devices[0]["udid"] if devices else "")' "$SIM")
 xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/touch-gamepad-fixture/TouchGamepad.app
 mkdir -p "$APP"
+# The app's own language tables, as the app ships them: the gamepad's settings panel is
+# WolkaraForever's interface even though it is compiled into a compatibility library.
+for LANGUAGE in en de; do
+    mkdir -p "$APP/$LANGUAGE.lproj"
+    cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$APP/$LANGUAGE.lproj/"
+done
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations \
-    translation/AppKit/TouchGamepad.m translation/AppKit/TouchGamepadLayout.m translation/AppKit/TouchHaptics.m tests/test_touch_gamepad_app.m \
+    translation/AppKit/TouchGamepad.m translation/AppKit/TouchGamepadLayout.m translation/AppKit/TouchHaptics.m \
+    translation/AppKit/AKHostLocalization.m tests/test_touch_gamepad_app.m \
     -framework Foundation -framework UIKit -framework GameController -framework CoreGraphics -framework QuartzCore -o "$APP/TouchGamepadFixture"
 cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

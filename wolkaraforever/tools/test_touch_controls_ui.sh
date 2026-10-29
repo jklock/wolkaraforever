@@ -16,6 +16,14 @@ print(devices[0]["udid"] if devices else "")' "$SIM")
 xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/touch-controls-fixture/TouchControls.app
 mkdir -p "$APP"
+# The app's own language tables, in the layout the app has them. The keyboard and the overlay are
+# WolkaraForever's own interface even though they are compiled into a compatibility library, so
+# their fixture gets the same resources the app ships; without them every label would fall back to
+# the service's last resort and this fixture would be testing that instead.
+for LANGUAGE in en de; do
+    mkdir -p "$APP/$LANGUAGE.lproj"
+    cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$APP/$LANGUAGE.lproj/"
+done
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations \

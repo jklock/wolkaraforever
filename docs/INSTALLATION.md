@@ -80,6 +80,11 @@ Select **Tolkara** and **LocalAuthorizationTunnel**, choose your team under
    memory preparation completes; it can take several minutes.
 5. Sign in with your own account.
 
+WolkaraForever has two language settings and they are independent: **Game language** changes the
+text and audio the client downloads, and **App language** changes the launcher's own labels
+(English, German, or System Default). Both live in the Game Edition card on the home screen, and
+neither requires reinstalling the app. See [App language](USING_WOLKARAFOREVER.md#app-language).
+
 Continue with [Using WolkaraForever](USING_WOLKARAFOREVER.md).
 
 ## Troubleshooting

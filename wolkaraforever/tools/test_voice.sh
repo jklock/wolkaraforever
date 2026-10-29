@@ -27,6 +27,13 @@ xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 
 APP=build/voice-tests/VoiceTests.app
 mkdir -p "$APP"
+# The app's own language tables, in the layout the app has them: the settings and test pages are
+# drawn through the same service as the rest of the app, and a fixture without the tables would be
+# testing the service's last resort instead of its copy.
+for LANGUAGE in en de; do
+    mkdir -p "$APP/$LANGUAGE.lproj"
+    cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$APP/$LANGUAGE.lproj/"
+done
 # The sources under test, and only those: the view controllers are exercised by the
 # launcher fixture instead, and pulling them in would drag WolkaraForeverTheme along for
 # nothing.
@@ -38,6 +45,7 @@ xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-a
     launcher/Voice/VoiceViewController.m launcher/Voice/VoiceTestViewController.m \
     launcher/App/WolkaraForeverTheme.m \
     launcher/Controller/ControllerInspector.m launcher/App/WolkaraForeverLog.m \
+    launcher/App/WKLocalization.m \
     launcher/App/WolkaraForeverConfig.m tests/test_voice_app.m \
     -framework Foundation -framework UIKit -framework QuartzCore -framework GameController \
     -framework AVFAudio -framework Speech -framework CoreGraphics -lz \

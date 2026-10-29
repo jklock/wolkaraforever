@@ -5,6 +5,7 @@
 #import "../Voice/VoiceTestViewController.h"
 #import "../App/WolkaraForeverLog.h"
 #import "../App/WolkaraForeverTheme.h"
+#import "../App/WKLocalization.h"
 #import "Installation.h"
 #import "ForeverUI.h"
 #import "Updater.h"
@@ -16,6 +17,19 @@ static UIColor *Gold(void) { return [UIColor colorWithRed:0.88 green:0.73 blue:0
 // reads as one thing instead of a mix of dimmed and full-strength text.
 static UIColor *RowGrey(void) { return [UIColor colorWithWhite:0.55 alpha:1]; }
 static UIColor *Muted(void) { return [UIColor colorWithRed:0.66 green:0.72 blue:0.78 alpha:1]; }
+// The game's download languages, named in the app's own language: a German-speaking user
+// choosing what World of Warcraft downloads needs to read the choice, and the row above it
+// is the same row in the same language.
+static NSString *TKWoWLocaleName(NSString *locale) {
+    static NSArray<NSString *> *known; static dispatch_once_t once;
+    dispatch_once(&once, ^{ known = @[@"enUS", @"esES", @"deDE"]; });
+    return WKLocalized([@"locale." stringByAppendingString:[known containsObject:locale] ? locale : @"enUS"]);
+}
+static NSString *TKWoWRegionName(NSString *region) {
+    static NSArray<NSString *> *known; static dispatch_once_t once;
+    dispatch_once(&once, ^{ known = @[@"eu", @"us", @"kr", @"tw"]; });
+    return WKLocalized([@"region." stringByAppendingString:[known containsObject:region] ? region : @"eu"]);
+}
 static UILabel *Label(CGFloat size, UIFontWeight weight, UIColor *color) {
     UILabel *label=[UILabel new]; label.numberOfLines=0; label.textColor=color;
     label.font=[[UIFontMetrics metricsForTextStyle:UIFontTextStyleBody] scaledFontForFont:[UIFont systemFontOfSize:size weight:weight]];
@@ -52,6 +66,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 @property(nonatomic, getter=isEnabled) BOOL enabled;
 - (instancetype)initWithTitle:(NSString *)title identifier:(NSString *)identifier
                        target:(id)target action:(SEL)action;
+// The words are fixed and the control says the state, so a language change rewrites both
+// the label and the switch's own accessibility label with it.
+- (void)applyTitle:(NSString *)title;
 @end
 @implementation TKWoWSwitchRow
 - (instancetype)initWithTitle:(NSString *)title identifier:(NSString *)identifier
@@ -96,6 +113,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // an on/off row reads like the buttons above and below it.
     _titleLabel.textColor=enabled?Gold():RowGrey();
 }
+- (void)applyTitle:(NSString *)title {
+    _titleLabel.text=title;
+    _toggle.accessibilityLabel=title;
+}
 @end
 
 @interface TKWoWViewController () <UIDocumentPickerDelegate>
@@ -128,10 +149,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSLayoutConstraint *_markWidth;
     UIStackView *_gridRow1, *_gridRow2;
     UILabel *_stateLabel, *_detailLabel, *_versionLabel, *_startupLabel, *_compatibilityLabel;
-    UIButton *_editionButton, *_preferencesButton, *_addonsButton, *_addonsDirectoryButton,
+    UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_voiceTestButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
         *_renderProfileButton;
+    // The section headings, by their box's identifier, so a language change can rewrite
+    // them where they were made instead of rebuilding the page.
+    NSMutableDictionary<NSString *, UILabel *> *_headings;
     TKWoWSwitchRow *_gamepadRow, *_overlayRow;
     NSString *_backupsDirectory;
     UIView *_markView;
@@ -166,8 +190,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 // One section, in its own box: the heading and its rows share a panel with the
 // page's own border and fill, so the eye can find a group without a long column
-// of loose rows.
-- (UIView *)sectionBoxWithTitle:(NSString *)title identifier:(NSString *)identifier rows:(NSArray<UIView *> *)rows {
+// of loose rows. The heading's words come from -localize, which is also what a
+// language change runs, so the heading follows the app language like every other
+// label on the page.
+- (UIView *)sectionBoxWithIdentifier:(NSString *)identifier rows:(NSArray<UIView *> *)rows {
     UIView *box=[UIView new];
     box.accessibilityIdentifier=identifier;
     box.translatesAutoresizingMaskIntoConstraints=NO;
@@ -175,9 +201,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     box.layer.cornerRadius=14;
     box.layer.borderWidth=1;
     box.layer.borderColor=[Gold() colorWithAlphaComponent:0.18].CGColor;
-    UILabel *heading=[self heading:title];
+    UILabel *heading=[self heading:@""];
     heading.accessibilityIdentifier=[identifier stringByReplacingOccurrencesOfString:@"wow.box."
                                                                           withString:@"wow.heading."];
+    if (!_headings) _headings=[NSMutableDictionary new];
+    _headings[identifier]=heading;
     UIStackView *stack=Stack([@[heading] arrayByAddingObjectsFromArray:rows],8);
     stack.translatesAutoresizingMaskIntoConstraints=NO;
     // A box in the taller row is stretched to match its neighbour; without a
@@ -258,12 +286,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self.view.layer insertSublayer:_background atIndex:0];
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"]
         style:UIBarButtonItemStylePlain target:self action:@selector(settings)];
-    self.navigationItem.rightBarButtonItem.accessibilityLabel=@"Settings";
     self.navigationItem.rightBarButtonItem.accessibilityIdentifier=@"wow.settings";
-    self.navigationItem.backButtonTitle=@"Back";
     _refreshItem=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.clockwise"]
         style:UIBarButtonItemStylePlain target:self action:@selector(refresh)];
-    _refreshItem.accessibilityLabel=@"Check for updates";
     _refreshItem.accessibilityIdentifier=@"wow.refresh";
     self.navigationItem.leftBarButtonItem=_refreshItem;
 
@@ -273,49 +298,44 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _markView=[self markView];
     _editionButton=[self button:@"wow.edition" action:@selector(chooseEdition)];
     _preferencesButton=[self button:@"wow.preferences" action:@selector(preferences)];
+    // The app's own language, beside the game's. Separate rows on purpose: one changes
+    // WolkaraForever's labels, the other changes what World of Warcraft downloads, and a
+    // single row for both would be the exact confusion this page has to avoid.
+    _languageButton=[self button:@"wow.language" action:@selector(chooseAppLanguage)];
     _addonsButton=[self button:@"wow.addons.manage" action:@selector(manageAddons)];
-    [_addonsButton setTitle:@"Install Addons (Curse & Direct)" forState:UIControlStateNormal];
     // Mac-Ever is a Forever-compatible add-on that is downloaded from CurseForge
     // by the person using Safari, then installed with the row above. No scrape,
     // no embedded download URL, and opening the page is not an installation.
     _macEverButton=[self button:@"wow.addons.macEver" action:@selector(downloadMacEver)];
-    [_macEverButton setTitle:@"Download Mac-Ever" forState:UIControlStateNormal];
     _addonsDirectoryButton=[self button:@"wow.addons.directory" action:@selector(openAddonDirectory)];
-    [_addonsDirectoryButton setTitle:@"Open Add-on Directory" forState:UIControlStateNormal];
     // Straight to this app's own page in Settings, which is where the Microphone and Speech Recognition
     // switches live. Available before the game is installed, because it is a setting and not a game
     // action - and it is the only place those switches can be changed.
     _permissionsButton=[self button:@"wow.permissions" action:@selector(openPermissions)];
-    [_permissionsButton setTitle:@"Toggle Permissions (Mic & Speech)" forState:UIControlStateNormal];
     _voiceButton=[self button:@"wow.voice" action:@selector(manageVoice)];
-    [_voiceButton setTitle:@"Key / Button Configuration" forState:UIControlStateNormal];
     _voiceTestButton=[self button:@"wow.voice.test" action:@selector(testVoice)];
-    [_voiceTestButton setTitle:@"Test Voice & Dictation" forState:UIControlStateNormal];
     _compatibilityLabel=Label(17,UIFontWeightRegular,Muted());
     _backupButton=[self button:@"wow.performance.backup" action:@selector(backupUI)];
-    [_backupButton setTitle:@"Backup WoW UI Configuration" forState:UIControlStateNormal];
     _resetButton=[self button:@"wow.performance.reset" action:@selector(resetGraphics)];
-    [_resetButton setTitle:@"Reset to Default Graphical Settings" forState:UIControlStateNormal];
     _restoreButton=[self button:@"wow.performance.restore" action:@selector(restoreUI)];
-    [_restoreButton setTitle:@"Restore WoW UI Configuration" forState:UIControlStateNormal];
-    _gamepadRow=[[TKWoWSwitchRow alloc] initWithTitle:@"Gamepad UI" identifier:@"wow.performance.gamepad"
+    _gamepadRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.gamepad"
         target:self action:@selector(gamepadChanged:)];
-    _overlayRow=[[TKWoWSwitchRow alloc] initWithTitle:@"Performance Overlay" identifier:@"wow.performance.overlay"
+    _overlayRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.overlay"
         target:self action:@selector(overlayChanged:)];
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
-    [_settingsFolderButton setTitle:@"Open Settings Folder" forState:UIControlStateNormal];
 
     // The four sections, as boxes. Their order is the order they are read in.
     // The compatibility note belongs to the edition it is about, so it lives in
-    // that box rather than loose on the page.
-    UIView *editionBox=[self sectionBoxWithTitle:@"Game Edition" identifier:@"wow.box.edition"
-        rows:@[_editionButton,_preferencesButton,_compatibilityLabel]];
-    UIView *addonsBox=[self sectionBoxWithTitle:@"Add-On Manager" identifier:@"wow.box.addons"
+    // that box rather than loose on the page. Every word in them comes from
+    // -localize, below, which is also what a language change runs.
+    UIView *editionBox=[self sectionBoxWithIdentifier:@"wow.box.edition"
+        rows:@[_editionButton,_preferencesButton,_languageButton,_compatibilityLabel]];
+    UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
         rows:@[_addonsButton,_macEverButton,_addonsDirectoryButton]];
-    UIView *voiceBox=[self sectionBoxWithTitle:@"Voice & Input Manager" identifier:@"wow.box.voice"
+    UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
         rows:@[_permissionsButton,_voiceButton,_voiceTestButton]];
-    UIView *performanceBox=[self sectionBoxWithTitle:@"Performance & UI Manager" identifier:@"wow.box.performance"
+    UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
         rows:@[_renderProfileButton,_backupButton,_resetButton,_restoreButton,_settingsFolderButton,_gamepadRow,_overlayRow]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
@@ -334,7 +354,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _launchProgress=[TKLaunchProgressView new];
     _launchProgress.accessibilityIdentifier=@"wow.elapsed";
     _diagnosticsButton=[self button:@"wow.diagnostics" action:@selector(diagnostics)];
-    [_diagnosticsButton setTitle:@"Diagnostics and logs" forState:UIControlStateNormal];
     _diagnosticsButton.tintColor=Gold(); _diagnosticsButton.hidden=YES;
     UIStackView *status=Stack(@[stateRow,_detailLabel,_progressBar,_launchProgress,_versionLabel,_diagnosticsButton],10);
     status.layoutMargins=UIEdgeInsetsMake(20,20,20,20); status.layoutMarginsRelativeArrangement=YES;
@@ -344,7 +363,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _primaryButton=[self button:@"wow.primary" action:@selector(primaryAction)];
     [_primaryButton.heightAnchor constraintGreaterThanOrEqualToConstant:52].active=YES;
     _updatesLabel=Label(17,UIFontWeightRegular,Muted()); _updatesLabel.accessibilityIdentifier=@"wow.updates";
-    _updatesLabel.text=@"Updates automatically. Keep this app open while downloading.";
     _startupLabel=Label(17,UIFontWeightRegular,Muted()); _startupLabel.accessibilityIdentifier=@"wow.startup";
     UIStackView *right=Stack(@[status,_primaryButton,_updatesLabel,_startupLabel],12);
     // The top of the page: the mark on the left, what the launcher is doing and
@@ -379,6 +397,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         name:UIApplicationDidBecomeActiveNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(background:)
         name:UIApplicationWillResignActiveNotification object:nil];
+    // The app language can change from this page's own row, so the page rewrites its words
+    // where they are instead of being rebuilt: the game-file check it has already done and
+    // the installation it is showing stay exactly as they were.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appLanguageChanged:)
+        name:WKLocalizationDidChangeNotification object:nil];
+    [self localize];
     [self render];
 }
 - (void)viewWillAppear:(BOOL)animated {
@@ -572,32 +596,119 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     configuration.baseForegroundColor=enabled?[UIColor colorWithRed:0.08 green:0.065 blue:0.035 alpha:1]:[UIColor colorWithWhite:0.62 alpha:1];
     _primaryButton.configuration=configuration;
 }
+// Every fixed word on the page, in the app's language, in one place. Called once when the
+// page is built and again whenever the language changes: labels set in -viewDidLoad alone
+// were the shape of bug that leaves half a page in the old language, and a language the
+// user chose has to apply without a relaunch.
+//
+// The rows whose words change with the installation itself (the Game language row, the
+// Play button, the status line) are not here: -render owns those, and every path that
+// changes the language runs it.
+- (void)localize {
+    WKLocalization *localization=WKLocalization.shared;
+    WKLog("language", @"home: drawing the page in %@ (%@)", localization.languageCode, localization.settingDisplayName);
+    self.navigationItem.rightBarButtonItem.accessibilityLabel=WKLocalized(@"home.settings");
+    self.navigationItem.backButtonTitle=WKLocalized(@"common.back");
+    _refreshItem.accessibilityLabel=WKLocalized(@"home.refresh");
+    _headings[@"wow.box.edition"].text=WKLocalized(@"home.box.edition").uppercaseString;
+    _headings[@"wow.box.addons"].text=WKLocalized(@"home.box.addons").uppercaseString;
+    _headings[@"wow.box.voice"].text=WKLocalized(@"home.box.voice").uppercaseString;
+    _headings[@"wow.box.performance"].text=WKLocalized(@"home.box.performance").uppercaseString;
+    [_gamepadRow applyTitle:WKLocalized(@"home.performance.gamepad")];
+    [_overlayRow applyTitle:WKLocalized(@"home.performance.overlay")];
+    [_diagnosticsButton setTitle:WKLocalized(@"home.diagnostics") forState:UIControlStateNormal];
+    _updatesLabel.text=WKLocalized(@"home.updates.note");
+    // A VoiceOver reader is told the language of the words it is about to read, so a German
+    // page is read with German pronunciation instead of an English voice over German text.
+    self.view.accessibilityLanguage=localization.languageCode;
+}
+- (void)appLanguageChanged:(NSNotification *)note {
+    (void)note;
+    [self localize];
+    [self render];
+}
+// The app's own language. The choice is English, German, or follow the iPad; the row above
+// it is the *game's* language and is a different setting entirely, which the sheet says.
+- (void)chooseAppLanguage {
+    WKLocalization *localization=WKLocalization.shared;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"lang.title")
+        message:WKLocalized(@"lang.message") preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSNumber *each in WKLocalization.choices) {
+        WKAppLanguage language=each.integerValue;
+        // The two languages are named in themselves - a language is the one word a person
+        // is most likely to recognise - and only the "follow the iPad" choice is translated.
+        NSString *title=language==WKAppLanguageSystem
+            ? [NSString stringWithFormat:@"%@ (%@)", WKLocalized(@"lang.system"), localization.resolvedLanguageName]
+            : (language==WKAppLanguageGerman?@"Deutsch":@"English");
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            (void)action;
+            [self applyAppLanguage:language];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_languageButton];
+}
+- (void)applyAppLanguage:(WKAppLanguage)language {
+    WKLocalization *localization=WKLocalization.shared;
+    if (localization.language==language) return;
+    WKLog("language", @"the user chose %@", [WKLocalization storedValueForLanguage:language]);
+    localization.language=language;      // persists, and posts; -appLanguageChanged: redraws
+    // This runs inside the sheet's own action handler, so the sheet is dismissing as it does.
+    // -presentSheet: waits for that; the log line says so when the wait is what happened.
+    [self offerGermanGameLanguage];
+}
+// The first time the app is put into German, offer to put the *game* into German too -
+// rather than doing it silently, because the two settings cost different things: this one
+// is a redraw, that one is a multi-gigabyte download. Once offered, never offered again;
+// the Game language row is always there for a later change of mind.
+- (void)offerGermanGameLanguage {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    if (WKLocalization.shared.resolvedLanguage!=WKAppLanguageGerman) return;
+    if ([_locale isEqual:@"deDE"]) return;
+    if ([defaults boolForKey:@"WolkaraForeverGameLanguageOfferShown"]) return;
+    [defaults setBool:YES forKey:@"WolkaraForeverGameLanguageOfferShown"];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"lang.confirm.title")
+        message:WKLocalized(@"lang.confirm.message") preferredStyle:UIAlertControllerStyleActionSheet];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"lang.confirm.yes") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        (void)action;
+        [self setGameLocale:@"deDE"];
+        [self presentMessage:WKLocalized(@"lang.gameChanged.title") message:WKLocalized(@"lang.confirm.changed")];
+    }]];
+    // Declining is an answer, not a cancellation: the app language stays German, and only
+    // the download is left alone.
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"lang.confirm.no") style:UIAlertActionStyleCancel handler:nil]];
+    [self presentSheet:sheet anchor:_languageButton];
+}
 - (void)render {
     if (!self.isViewLoaded) return;
     [self configureButton:_editionButton title:[_product[@"name"] stringByAppendingString:@"  ▾"] filled:NO];
     _editionButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _editionButton.backgroundColor=[UIColor colorWithWhite:1 alpha:0.055]; _editionButton.layer.cornerRadius=10;
-    [self configureButton:_preferencesButton title:[NSString stringWithFormat:@"%@  ·  %@  ▾",_region.uppercaseString,[_locale isEqual:@"esES"]?@"Spanish":@"English"] filled:NO];
+    [self configureButton:_preferencesButton title:[NSString stringWithFormat:@"%@  ·  %@  ▾",_region.uppercaseString,TKWoWLocaleName(_locale)] filled:NO];
     _preferencesButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    [self configureButton:_addonsButton title:_installation.app?@"Install Addons (Curse & Direct)":@"Install Addons (Curse & Direct) (install game first)" filled:NO];
+    // The app's own language. It reads in the same shape as the row above so the two are
+    // seen as the two settings they are, and it says which language is in use rather than
+    // which of the three choices was made - the sheet says that.
+    [self configureButton:_languageButton title:WKLocalizedFormat(@"lang.row",WKLocalization.shared.settingDisplayName) filled:NO];
+    _languageButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    [self configureButton:_addonsButton title:_installation.app?WKLocalized(@"home.addons.install"):WKLocalized(@"home.addons.install.needsgame") filled:NO];
     _addonsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _addonsButton.enabled=_installation.app && !_busy && !_starting && !_running && !_sessionUsed;
-    [self configureButton:_macEverButton title:@"Download Mac-Ever" filled:NO];
+    [self configureButton:_macEverButton title:WKLocalized(@"home.addons.macever") filled:NO];
     _macEverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     // Navigation only: the page is opened for the user to download the ZIP.
     // Starting and an ended session grey it with everything else.
     _macEverButton.enabled=!_starting && !_running && !_sessionUsed;
-    [self configureButton:_addonsDirectoryButton title:_installation.app?@"Open Add-on Directory":@"Open Add-on Directory (install game first)" filled:NO];
+    [self configureButton:_addonsDirectoryButton title:_installation.app?WKLocalized(@"home.addons.directory"):WKLocalized(@"home.addons.directory.needsgame") filled:NO];
     _addonsDirectoryButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _addonsDirectoryButton.enabled=_addonsButton.enabled;
-    [self configureButton:_voiceButton title:@"Key / Button Configuration" filled:NO];
+    [self configureButton:_voiceButton title:WKLocalized(@"home.voice.keys") filled:NO];
     _voiceButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     // Available before the game is installed: it is a setting, not a game action.
     _voiceButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
-    [self configureButton:_voiceTestButton title:@"Test Voice & Dictation" filled:NO];
+    [self configureButton:_voiceTestButton title:WKLocalized(@"home.voice.test") filled:NO];
     _voiceTestButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _voiceTestButton.enabled=_voiceButton.enabled;
-    [self configureButton:_permissionsButton title:@"Toggle Permissions (Mic & Speech)" filled:NO];
+    [self configureButton:_permissionsButton title:WKLocalized(@"home.permissions") filled:NO];
     _permissionsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     // Navigation to Settings is available whenever the page is usable; a
     // starting or ended session greys it with the rest so no gold text is left.
@@ -616,10 +727,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         button.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
         button.enabled=foreverReady;
     }
-    [self configureButton:_backupButton title:@"Backup WoW UI Configuration" filled:NO];
-    [self configureButton:_resetButton title:@"Reset to Default Graphical Settings" filled:NO];
-    [self configureButton:_restoreButton title:@"Restore WoW UI Configuration" filled:NO];
-    [self configureButton:_settingsFolderButton title:@"Open Settings Folder" filled:NO];
+    [self configureButton:_backupButton title:WKLocalized(@"home.performance.backup") filled:NO];
+    [self configureButton:_resetButton title:WKLocalized(@"home.performance.reset") filled:NO];
+    [self configureButton:_restoreButton title:WKLocalized(@"home.performance.restore") filled:NO];
+    [self configureButton:_settingsFolderButton title:WKLocalized(@"home.performance.settingsFolder") filled:NO];
     // Switches, not changing commands: the label is fixed and the control shows
     // the state.
     _gamepadRow.enabled=foreverReady;
@@ -628,16 +739,18 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _overlayRow.toggle.on=_overlayEnabled;
     NSNumber *scale=[NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverBackingScale"];
     CGFloat renderScale=scale ? scale.doubleValue : 1.0;
-    NSString *profile=renderScale<=0.75 ? @"Performance (1024 × 768)" : renderScale>=2.0 ? @"Quality (2732 × 2048)" : @"Balanced (1366 × 1024)";
-    [self configureButton:_renderProfileButton title:[@"Render profile: " stringByAppendingString:profile] filled:NO];
+    NSString *profile=renderScale<=0.75 ? WKLocalized(@"home.render.performance")
+        : renderScale>=2.0 ? WKLocalized(@"home.render.quality") : WKLocalized(@"home.render.balanced");
+    [self configureButton:_renderProfileButton title:WKLocalizedFormat(@"home.performance.renderProfile",profile) filled:NO];
     _renderProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _renderProfileButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _compatibilityLabel.text=([_product[@"id"] isEqual:@"wow"] || [_product[@"id"] isEqual:@"wow_beta"] || [_product[@"id"] isEqual:@"wow_classic"])?
-        @"Compatibility with this edition is not yet verified.":
+        WKLocalized(@"home.compatibility.unverified"):
         @"";
     _compatibilityLabel.hidden=!_compatibilityLabel.text.length;
     _editionButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _preferencesButton.enabled=_editionButton.enabled;
+    _languageButton.enabled=_editionButton.enabled;
     self.navigationItem.rightBarButtonItem.enabled=!_updating && !_starting && !_running;
     _primaryButton.hidden=_starting || _running;
     _updatesLabel.hidden=_starting || _running;
@@ -647,71 +760,84 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSString *title=nil, *detail=nil, *action=nil;
     BOOL enabled=NO;
     if (_running) {
-        title=@"Running";
-        detail=@"The game is open. Quit from its own menu to return here.";
-        action=@"Running";
+        title=WKLocalized(@"home.status.running");
+        detail=WKLocalized(@"home.status.running.detail");
+        action=WKLocalized(@"home.status.running");
     } else if (_starting) {
-        title=@"Starting…";
-        detail=_detailLabel.text.length?_detailLabel.text:@"Preparing to launch. Keep this app open.";
-        action=@"Starting…";
+        title=WKLocalized(@"home.status.starting");
+        detail=_detailLabel.text.length?_detailLabel.text:WKLocalized(@"home.status.starting.detail");
+        action=WKLocalized(@"home.status.starting");
     } else if (_startupFailure) {
-        title=@"Could not start";
+        title=WKLocalized(@"home.status.failed");
         if (_sessionUsed) {
-            detail=@"WolkaraForever could not start the game in this session. Close WolkaraForever and reopen it to try again. Details are available in Diagnostics and logs.";
-            action=@"Close WolkaraForever"; enabled=YES;
+            detail=WKLocalized(@"home.status.failed.session");
+            action=WKLocalized(@"home.action.close"); enabled=YES;
         } else {
-            detail=@"Try again. Details are available in Diagnostics and logs.";
-            action=@"Try again"; enabled=YES;
+            detail=WKLocalized(@"home.status.failed.retry");
+            action=WKLocalized(@"home.action.retry"); enabled=YES;
         }
     } else if (_sessionUsed) {
-        title=@"Game closed";
-        detail=@"WolkaraForever cannot start the game again in this process. Close WolkaraForever and reopen it to play again.";
-        action=@"Close WolkaraForever"; enabled=YES;
+        title=WKLocalized(@"home.status.closed");
+        detail=WKLocalized(@"home.status.closed.detail");
+        action=WKLocalized(@"home.action.close"); enabled=YES;
     } else if (_busy && _updating) {
-        title=@"Updating your game…";
-        NSDictionary *phases=@{@"snapshot":@"Preparing the installation",
-            @"manifests":@"Reading the update",
-            @"verify":@"Checking existing data",
-            @"reuse":@"Comparing installed content",
-            @"indices":@"Locating download files",
-            @"download":@"Downloading new data",
-            @"files":@"Installing game files",
-            @"activate":@"Finishing the update",
-            @"complete":@"Update complete"};
-        detail=phases[_updatePhase]?:@"Preparing…";
+        title=WKLocalized(@"home.status.updating");
+        // The updater reports these phase names and they stay English: they are log keys,
+        // matched in the device matrix, and only the words beside them are translated.
+        NSDictionary *phases=@{@"snapshot":WKLocalized(@"home.phase.snapshot"),
+            @"manifests":WKLocalized(@"home.phase.manifests"),
+            @"verify":WKLocalized(@"home.phase.verify"),
+            @"reuse":WKLocalized(@"home.phase.reuse"),
+            @"indices":WKLocalized(@"home.phase.indices"),
+            @"download":WKLocalized(@"home.phase.download"),
+            @"files":WKLocalized(@"home.phase.files"),
+            @"activate":WKLocalized(@"home.phase.activate"),
+            @"complete":WKLocalized(@"home.phase.complete")};
+        detail=phases[_updatePhase]?:WKLocalized(@"home.phase.preparing");
         if(_updateTotal) {
-            BOOL bytes=[_updatePhase isEqual:@"verify"] || [_updatePhase isEqual:@"download"];
-            NSString *done=bytes?[NSByteCountFormatter stringFromByteCount:(int64_t)_updateDone countStyle:NSByteCountFormatterCountStyleFile]:@(_updateDone).stringValue;
-            NSString *total=bytes?[NSByteCountFormatter stringFromByteCount:(int64_t)_updateTotal countStyle:NSByteCountFormatterCountStyleFile]:@(_updateTotal).stringValue;
+            // Counts and the clock are written with the app language's own separators, so a German
+            // page writes 1.234 where the English one writes 1,234. Byte counts come from
+            // NSByteCountFormatter, whose units ("MB", "GB") are the same word in both of the
+            // languages this app ships; it takes no locale, so only they follow the system.
+            NSByteCountFormatter *bytes=[NSByteCountFormatter new];
+            bytes.countStyle=NSByteCountFormatterCountStyleFile;
+            BOOL counted=[_updatePhase isEqual:@"verify"] || [_updatePhase isEqual:@"download"];
+            NSNumberFormatter *number=[NSNumberFormatter new];
+            number.locale=WKLocalization.shared.locale; number.numberStyle=NSNumberFormatterDecimalStyle;
+            NSString *done=counted?[bytes stringFromByteCount:(int64_t)_updateDone]
+                :[number stringFromNumber:@(_updateDone)];
+            NSString *total=counted?[bytes stringFromByteCount:(int64_t)_updateTotal]
+                :[number stringFromNumber:@(_updateTotal)];
             detail=[detail stringByAppendingFormat:@" · %@ / %@",done,total];
         }
-        action=@"Updating…";
+        action=WKLocalized(@"home.action.updating");
     } else if (_busy) {
-        title=@"Checking for updates…";
-        detail=@"Checking the latest version and your installed copy.";
-        action=@"Checking…";
+        title=WKLocalized(@"home.status.checking");
+        detail=WKLocalized(@"home.status.checking.detail");
+        action=WKLocalized(@"home.action.checking");
     } else if (_error || !_plan) {
-        title=_updateError?@"Update interrupted":@"Could not check this edition";
-        detail=_updateError?@"Your installed copy is preserved. Try again to resume the update; see Settings for details.":@"We cannot confirm that your game is up to date. Check your connection and try again.";
-        action=@"Try again"; enabled=YES;
+        title=_updateError?WKLocalized(@"home.status.updateInterrupted"):WKLocalized(@"home.status.checkFailed");
+        detail=_updateError?WKLocalized(@"home.status.updateInterrupted.detail"):WKLocalized(@"home.status.checkFailed.detail");
+        action=WKLocalized(@"home.action.retry"); enabled=YES;
     } else {
         switch (_installation.state) {
         case TKWoWInstallationMissing:
-            title=@"Not installed";
-            detail=@"Install this edition on your device. The download may require several gigabytes.";
-            action=@"Install"; enabled=YES; break;
+            title=WKLocalized(@"home.status.missing");
+            detail=WKLocalized(@"home.status.missing.detail");
+            action=WKLocalized(@"home.action.install"); enabled=YES; break;
         case TKWoWInstallationOutdated:
-            title=@"Update required";
-            detail=@"A newer build is available. The update starts automatically.";
-            action=@"Update needed to play"; break;
+            title=_installation.localeNeedsUpdate?WKLocalized(@"home.status.localeUpdate"):WKLocalized(@"home.status.outdated");
+            detail=_installation.localeNeedsUpdate?WKLocalized(@"home.status.localeUpdate.detail"):WKLocalized(@"home.status.outdated.detail");
+            action=WKLocalized(@"home.action.update"); break;
         case TKWoWInstallationNeedsRepair:
-            title=@"Your copy needs attention";
-            detail=@"We could not verify all game files. Repair downloads the original files and keeps your settings and addons.";
-            action=@"Repair installation"; enabled=YES; break;
+            title=WKLocalized(@"home.status.repair");
+            detail=WKLocalized(@"home.status.repair.detail");
+            action=WKLocalized(@"home.action.repair"); enabled=YES; break;
         case TKWoWInstallationReady:
-            title=@"Ready to play";
-            detail=@"Your game is up to date.";
-            action=_executionMode==TKExecutionModeNone?@"Startup unavailable":@"Play"; enabled=_executionMode!=TKExecutionModeNone; break;
+            title=WKLocalized(@"home.status.ready");
+            detail=WKLocalized(@"home.status.ready.detail");
+            action=_executionMode==TKExecutionModeNone?WKLocalized(@"home.action.startupUnavailable"):WKLocalized(@"home.action.play");
+            enabled=_executionMode!=TKExecutionModeNone; break;
         }
     }
     _stateLabel.text=title; _detailLabel.text=detail;
@@ -725,22 +851,27 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _diagnosticsButton.tintColor=_diagnosticsButton.enabled?Gold():RowGrey();
     if (_busy) [_activity startAnimating]; else [_activity stopAnimating];
     if (_checkedAt) {
-        NSString *time=[NSDateFormatter localizedStringFromDate:_checkedAt dateStyle:NSDateFormatterNoStyle timeStyle:NSDateFormatterShortStyle];
+        // The time is written the way the chosen language writes it, not the way the iPad is
+        // set to: a German page with an English clock reads as two apps.
+        NSDateFormatter *clock=[NSDateFormatter new];
+        clock.locale=WKLocalization.shared.locale;
+        clock.dateStyle=NSDateFormatterNoStyle; clock.timeStyle=NSDateFormatterShortStyle;
+        NSString *time=[clock stringFromDate:_checkedAt];
         NSString *available=_plan[@"version"][@"VersionsName"];
         _versionLabel.text=[_installation.installedVersion isEqual:available]?
-            [NSString stringWithFormat:@"Version %@ · Checked %@",available,time]:
-            [NSString stringWithFormat:@"Installed %@ · Available %@",_installation.installedVersion?:@"—",available];
+            WKLocalizedFormat(@"home.version.upToDate",available,time):
+            WKLocalizedFormat(@"home.version.compare",_installation.installedVersion?:@"—",available);
     } else _versionLabel.text=nil;
     _versionLabel.hidden=!_versionLabel.text.length;
     switch (_executionMode) {
     case TKExecutionModeDeveloperService:
-        _startupLabel.text=@"Starting can take a few minutes each time."; break;
+        _startupLabel.text=WKLocalized(@"home.startup.developerService"); break;
     case TKExecutionModeLocalSigning:
-        _startupLabel.text=@"Startup requires a signed container matching this version."; break;
+        _startupLabel.text=WKLocalized(@"home.startup.localSigning"); break;
     case TKExecutionModeExternalJIT:
-        _startupLabel.text=@"Enable JIT before starting a new session."; break;
+        _startupLabel.text=WKLocalized(@"home.startup.externalJIT"); break;
     case TKExecutionModeNone:
-        _startupLabel.text=@"This build cannot start the game. See Diagnostics and logs."; break;
+        _startupLabel.text=WKLocalized(@"home.startup.unavailable"); break;
     }
 }
 // The launcher's own pages open over it rather than being pushed away to. The
@@ -754,70 +885,83 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     frame.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     frame.navigationBar.tintColor=WKGold();
     WKLog("ui", @"opening %@ over the home page", NSStringFromClass(page.class));
-    [self presentViewController:frame animated:YES completion:nil];
+    WKPresentWhenFree(self, ^{ [self presentViewController:frame animated:YES completion:nil]; });
 }
 - (void)presentSheet:(UIAlertController *)sheet anchor:(UIView *)anchor {
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    if (anchor) { sheet.popoverPresentationController.sourceView=anchor; sheet.popoverPresentationController.sourceRect=anchor.bounds; }
-    else sheet.popoverPresentationController.barButtonItem=self.navigationItem.rightBarButtonItem;
-    [self presentViewController:sheet animated:YES completion:nil];
+    // A sheet that brings its own way out keeps it: two cancel actions is a UIKit warning
+    // and one that reads differently in two languages is a bug.
+    BOOL cancellable=YES;
+    for (UIAlertAction *action in sheet.actions) if (action.style==UIAlertActionStyleCancel) cancellable=NO;
+    if (cancellable)
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    WKPresentWhenFree(self, ^{
+        if (anchor) { sheet.popoverPresentationController.sourceView=anchor; sheet.popoverPresentationController.sourceRect=anchor.bounds; }
+        else sheet.popoverPresentationController.barButtonItem=self.navigationItem.rightBarButtonItem;
+        [self presentViewController:sheet animated:YES completion:nil];
+    });
 }
 - (void)chooseEdition {
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Choose your edition" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.edition.title") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSDictionary *product in TKWoWProducts()) [sheet addAction:[UIAlertAction actionWithTitle:product[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         (void)action; [self selectProduct:product];
     }]];
     [self presentSheet:sheet anchor:_editionButton];
 }
+// The game's download language, through the one writer. The app's language is a different
+// setting and lives on its own row; both routes that change the game's language - this
+// picker and the offer that follows the first German selection - come through here, so the
+// validated locale writer and the update gate are the same in both.
+- (void)setGameLocale:(NSString *)value {
+    _locale=value;
+    NSString *directory=[self foreverWorkingDirectory];
+    if (directory) {
+        NSError *error=nil;
+        if (![TKForeverUI setLocale:value inWorkingDirectory:directory error:&error])
+            WKLog("ui", @"language: unable to update Forever locale: %@", error.localizedDescription?:@"unknown reason");
+    }
+    [NSUserDefaults.standardUserDefaults setObject:value forKey:@"WoWLocale"];
+    [self refresh];
+}
 - (void)choosePreference:(BOOL)region {
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:region?@"Region":@"Download language" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:region?WKLocalized(@"home.preferences.region"):WKLocalized(@"home.preferences.downloadLanguage") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     NSArray *values=region?@[@"eu",@"us",@"kr",@"tw"]:@[@"enUS",@"esES",@"deDE"];
-    NSDictionary *names=@{@"eu":@"Europe",@"us":@"Americas",@"kr":@"Korea",@"tw":@"Taiwan",@"enUS":@"English",@"esES":@"Spanish",@"deDE":@"German"};
-    for (NSString *value in values) [sheet addAction:[UIAlertAction actionWithTitle:names[value] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    for (NSString *value in values) [sheet addAction:[UIAlertAction actionWithTitle:region?TKWoWRegionName(value):TKWoWLocaleName(value) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         (void)action;
-        if (region) self->_region=value;
-        else {
-            self->_locale=value;
-            NSString *directory=[self foreverWorkingDirectory];
-            if (directory) {
-                NSError *error=nil;
-                if (![TKForeverUI setLocale:value inWorkingDirectory:directory error:&error])
-                    WKLog("ui", @"language: unable to update Forever locale: %@", error.localizedDescription?:@"unknown reason");
-            }
-        }
-        [NSUserDefaults.standardUserDefaults setObject:value forKey:region?@"WoWRegion":@"WoWLocale"]; [self refresh];
+        if (region) { self->_region=value; [NSUserDefaults.standardUserDefaults setObject:value forKey:@"WoWRegion"]; [self refresh]; }
+        else [self setGameLocale:value];
     }]];
     [self presentSheet:sheet anchor:_preferencesButton];
 }
 - (void)preferences {
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Download preferences"
-        message:@"These settings do not change your game's login region. Changing Language also updates Forever's text and audio language." preferredStyle:UIAlertControllerStyleActionSheet];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Region" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:YES]; }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Language" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:NO]; }]];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.preferences.title")
+        message:WKLocalized(@"home.preferences.message") preferredStyle:UIAlertControllerStyleActionSheet];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.preferences.region") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:YES]; }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.preferences.language") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:NO]; }]];
     [self presentSheet:sheet anchor:_preferencesButton];
 }
 - (void)settings {
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Settings"
-        message:@"Updates install automatically while this app is open. Settings and addons are preserved. Startup preparation is separate from downloading updates." preferredStyle:UIAlertControllerStyleActionSheet];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.title")
+        message:WKLocalized(@"home.settings.message") preferredStyle:UIAlertControllerStyleActionSheet];
     if(!_busy && !_starting && !_sessionUsed && _installation.app) {
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Manage add-ons" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.manageAddons") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             (void)a; [self manageAddons];
         }]];
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Verify and repair game files" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.repair") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             (void)a; [self repairInstallation];
         }]];
     }
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Diagnostics and logs" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.diagnostics") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a; [self diagnostics];
     }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"About and open-source licenses" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.about") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a; [self about];
     }]];
-    if (_startupFailure || _error || _installation.error) [sheet addAction:[UIAlertAction actionWithTitle:@"Technical details" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+    if (_startupFailure || _error || _installation.error) [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.technical") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a;
-        UIAlertController *details=[UIAlertController alertControllerWithTitle:@"Details" message:self->_startupFailure?:(self->_error?:self->_installation.error).localizedDescription preferredStyle:UIAlertControllerStyleAlert];
-        [details addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:details animated:YES completion:nil];
+        // The raw reason, in whatever language the layer produced it: it is detail, and it matches
+        // the log line beside it. The title is ours and is translated.
+        [self presentMessage:WKLocalized(@"home.settings.details.title")
+                     message:self->_startupFailure?:(self->_error?:self->_installation.error).localizedDescription];
     }]];
     [self presentSheet:sheet anchor:nil];
 }
@@ -889,7 +1033,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSString *path=[url.path stringByResolvingSymlinksInPath].stringByStandardizingPath;
     NSString *name=url.lastPathComponent;
     if (![path hasPrefix:[root stringByAppendingString:@"/"]] || ![name.lowercaseString hasSuffix:@".zip"]) {
-        [self presentMessage:@"Not a backup" message:@"Choose a WoW-UI ZIP from the game's WTF/Backups folder."];
+        [self presentMessage:WKLocalized(@"home.restore.notBackup.title") message:WKLocalized(@"home.restore.notBackup.message")];
         return;
     }
     [self restoreBackupNamed:name];
@@ -914,8 +1058,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (void)presentMessage:(NSString *)title message:(nullable NSString *)message {
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:title message:message
         preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
+    WKPresentWhenFree(self, ^{ [self presentViewController:alert animated:YES completion:nil]; });
 }
 // A snapshot of the complete Forever UI. It is an explicit user action here, and
 // it is also the rollback point the two destructive rows make for themselves.
@@ -934,10 +1078,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             self->_uiOperation=NO; [self render];
             if (name) {
                 WKLog("ui", @"backup: wrote a snapshot");
-                [self presentMessage:@"Backup complete" message:[NSString stringWithFormat:@"Saved %@ in the game's WTF/Backups folder.",name]];
+                [self presentMessage:WKLocalized(@"home.backup.done.title") message:WKLocalizedFormat(@"home.backup.done.message",name)];
             } else {
                 WKLog("ui", @"backup: failed: %@", error.localizedDescription?:@"unknown reason");
-                [self presentMessage:@"Backup failed" message:error.localizedDescription?:@"The backup could not be created."];
+                [self presentMessage:WKLocalized(@"home.backup.failed.title")
+                    message:error.localizedDescription?WKLocalizedFormat(@"home.backup.failed.reason",error.localizedDescription):WKLocalized(@"home.backup.failed.message")];
             }
         });
     });
@@ -948,11 +1093,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (![self foreverActionAllowed]) return;
     NSString *directory=[self foreverWorkingDirectory];
     if (!directory) return;
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Reset to default graphics settings?"
-        message:@"Forever will regenerate its graphics defaults when it next starts. A complete backup of WTF and Interface is made first, and Restore WoW UI Configuration can bring everything back."
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.reset.confirm.title")
+        message:WKLocalized(@"home.reset.confirm.message")
         preferredStyle:UIAlertControllerStyleAlert];
     __weak TKWoWViewController *weakSelf=self;
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Reset graphics" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.reset.action") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         (void)action; [weakSelf performGraphicsReset:directory];
     }]];
     [self presentSheet:sheet anchor:_resetButton];
@@ -971,13 +1116,15 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             self->_uiOperation=NO; [self render];
             if (!backup) {
                 WKLog("ui", @"reset: aborted, no backup: %@", error.localizedDescription?:@"unknown reason");
-                [self presentMessage:@"Nothing was changed" message:[NSString stringWithFormat:@"The backup could not be created, so the graphics settings were left alone. %@",error.localizedDescription?:@""]];
+                [self presentMessage:WKLocalized(@"home.reset.noBackup.title")
+                    message:WKLocalizedFormat(@"home.reset.noBackup.message",error.localizedDescription?:@"")];
             } else if (!reset) {
                 WKLog("ui", @"reset: backup kept, settings not reset: %@", error.localizedDescription?:@"unknown reason");
-                [self presentMessage:@"Reset incomplete" message:[NSString stringWithFormat:@"The backup is %@, but the graphics settings could not be reset. %@",backup,error.localizedDescription?:@""]];
+                [self presentMessage:WKLocalized(@"home.reset.incomplete.title")
+                    message:WKLocalizedFormat(@"home.reset.incomplete.message",backup,error.localizedDescription?:@"")];
             } else {
                 WKLog("ui", @"reset: graphics removed, backup kept");
-                [self presentMessage:@"Graphics reset" message:[NSString stringWithFormat:@"Default graphics settings take effect when Forever next launches. Backup: %@.",backup]];
+                [self presentMessage:WKLocalized(@"home.reset.done.title") message:WKLocalizedFormat(@"home.reset.done.message",backup)];
             }
         });
     });
@@ -985,8 +1132,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 // The browser opens at the game's WTF/Backups folder and the user picks the
 // snapshot to bring back. A fresh snapshot of the current state is made first,
 // so the restore can itself be undone.
-- (void)restoreUI {
-    if (![self foreverActionAllowed]) return;
+- (void)restoreUI {    if (![self foreverActionAllowed]) return;
     NSString *directory=[self foreverWorkingDirectory];
     if (!directory) return;
     NSError *error=nil;
@@ -998,8 +1144,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             return [name.lowercaseString hasSuffix:@".zip"];
         }]]:@[];
     if (!zips.count) {
-        [self presentMessage:@"No backup to restore"
-            message:@"Run Backup WoW UI Configuration first; its ZIPs are what this browser shows."];
+        [self presentMessage:WKLocalized(@"home.restore.none.title")
+            message:WKLocalized(@"home.restore.none.message")];
         return;
     }
     NSURL *folder=[NSURL fileURLWithPath:backups isDirectory:YES];
@@ -1024,7 +1170,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         BOOL restored=NO;
         if (!fresh) {
             error=[NSError errorWithDomain:TKForeverUIErrorDomain code:1 userInfo:@{NSLocalizedDescriptionKey:
-                [NSString stringWithFormat:@"A safety backup could not be created, so nothing was restored. %@",error.localizedDescription?:@""]}];
+                WKLocalizedFormat(@"home.restore.safetyFailed",error.localizedDescription?:@"")}];
         } else {
             restored=[TKForeverUI restoreUIBackupNamed:name inWorkingDirectory:directory edition:TKForeverUIEdition error:&error];
         }
@@ -1033,10 +1179,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             self->_uiOperation=NO; [self render];
             if (restored) {
                 WKLog("ui", @"restore: completed from the selected snapshot");
-                [self presentMessage:@"Restore complete" message:[NSString stringWithFormat:@"Restored %@. Your complete Forever UI - settings, bindings, SavedVariables, gamepad configuration and add-ons - applies the next time it starts. A snapshot of the previous state was saved as %@.",name,fresh]];
+                [self presentMessage:WKLocalized(@"home.restore.done.title") message:WKLocalizedFormat(@"home.restore.done.message",name,fresh)];
             } else {
                 WKLog("ui", @"restore: not completed: %@", error.localizedDescription?:@"unknown reason");
-                [self presentMessage:@"Restore failed" message:error.localizedDescription?:@"The selected backup could not be restored."];
+                [self presentMessage:WKLocalized(@"home.restore.failed.title")
+                    message:error.localizedDescription?WKLocalizedFormat(@"home.restore.failed.reason",error.localizedDescription):WKLocalized(@"home.restore.failed.message")];
             }
         });
     });
@@ -1059,11 +1206,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             self->_uiOperation=NO; [self render];
             if (stored) {
                 WKLog("ui", @"gamepad UI: %@", want?@"enabled":@"disabled");
-                [self presentMessage:want?@"Gamepad UI enabled":@"Gamepad UI disabled"
-                    message:@"It takes effect when Forever next starts."];
+                [self presentMessage:want?WKLocalized(@"home.gamepad.on.title"):WKLocalized(@"home.gamepad.off.title")
+                    message:WKLocalized(@"home.gamepad.message")];
             } else {
                 WKLog("ui", @"gamepad UI: not changed: %@", error.localizedDescription?:@"unknown reason");
-                [self presentMessage:@"Gamepad UI not changed" message:error.localizedDescription?:@"The setting could not be stored."];
+                [self presentMessage:WKLocalized(@"home.gamepad.unchanged.title")
+                    message:error.localizedDescription?WKLocalizedFormat(@"home.gamepad.unchanged.reason",error.localizedDescription):WKLocalized(@"home.gamepad.unchanged.message")];
             }
         });
     });
@@ -1087,10 +1235,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 // when its display bridge loads, so changing it never tears down a live game.
 - (void)chooseRenderProfile {
     if (_busy || _starting || _running || _sessionUsed) return;
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Render profile"
-        message:@"Applies the next time Forever starts. Performance reduces both the guest surface and Forever's internal render scale; it saves a full UI backup before changing those graphics settings." preferredStyle:UIAlertControllerStyleActionSheet];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.render.title")
+        message:WKLocalized(@"home.render.message") preferredStyle:UIAlertControllerStyleActionSheet];
     __weak TKWoWViewController *weakSelf=self;
-    void (^choose)(CGFloat,NSString *)=^(CGFloat scale,NSString *name) {
+    void (^choose)(CGFloat,NSString *,NSString *)=^(CGFloat scale,NSString *name,NSString *shown) {
         TKWoWViewController *self=weakSelf; if (!self) return;
         [NSUserDefaults.standardUserDefaults setObject:@(scale) forKey:@"WolkaraForeverBackingScale"];
         WKLog("ui", @"render profile: %@", name);
@@ -1114,18 +1262,18 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
                 self->_uiOperation=NO; [self render];
                 if (applied) {
                     WKLog("ui", @"render profile settings: %@", name);
-                    [self presentMessage:@"Render profile ready" message:[NSString stringWithFormat:@"%@ takes effect when Forever next starts. Backup: %@.",name,backup]];
+                    [self presentMessage:WKLocalized(@"home.render.ready.title") message:WKLocalizedFormat(@"home.render.ready.message",shown,backup)];
                 } else {
                     WKLog("ui", @"render profile settings not changed: %@", error.localizedDescription?:@"unknown reason");
-                    [self presentMessage:@"Render profile not applied" message:[NSString stringWithFormat:@"The display profile was selected, but Forever's graphics settings were left unchanged because a backup or write failed. %@",error.localizedDescription?:@""]];
+                    [self presentMessage:WKLocalized(@"home.render.failed.title") message:WKLocalizedFormat(@"home.render.failed.message",error.localizedDescription?:@"")];
                 }
             });
         });
     };
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Performance — 1024 × 768" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(.75,@"performance"); }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Balanced — 1366 × 1024" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(1.0,@"balanced"); }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Quality — 2732 × 2048" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(2.0,@"quality"); }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.render.performance.action") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(.75,@"performance",WKLocalized(@"home.render.performance")); }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.render.balanced.action") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(1.0,@"balanced",WKLocalized(@"home.render.balanced")); }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.render.quality.action") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(2.0,@"quality",WKLocalized(@"home.render.quality")); }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     [self presentSheet:sheet anchor:_renderProfileButton];
 }
 // Navigation only: the Files browser opens at Forever's WTF folder. The folder is
@@ -1136,7 +1284,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (!directory) return;
     NSError *error=nil;
     NSString *wtf=[TKForeverUI wtfDirectoryInWorkingDirectory:directory create:YES error:&error];
-    if (!wtf) { [self presentMessage:@"Settings folder unavailable" message:error.localizedDescription?:@"The game's settings folder could not be opened."]; return; }
+    if (!wtf) { [self presentMessage:WKLocalized(@"home.settingsFolder.unavailable.title")
+        message:error.localizedDescription?WKLocalizedFormat(@"home.settingsFolder.unavailable.reason",error.localizedDescription):WKLocalized(@"home.settingsFolder.unavailable.message")]; return; }
     NSURL *folder=[NSURL fileURLWithPath:wtf isDirectory:YES];
     if (self.openSettingsFolderURL) { self.openSettingsFolderURL(folder); return; }
     UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc]
@@ -1158,11 +1307,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     }];
 }
 - (void)presentAddonsUnavailable:(nullable NSError *)error {
-    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Add-ons unavailable"
-        message:error.localizedDescription?:@"The game's folder could not be opened."
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.addons.unavailable.title")
+        message:error.localizedDescription?WKLocalizedFormat(@"home.addons.unavailable.reason",error.localizedDescription):WKLocalized(@"home.addons.unavailable.message")
         preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
+    WKPresentWhenFree(self, ^{ [self presentViewController:alert animated:YES completion:nil]; });
 }
 - (nullable NSString *)addOnsDirectoryWithError:(NSError **)error {
     NSString *directory=[_library workingDirectoryForApp:_installation.app error:error];
@@ -1195,7 +1344,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (void)beginStartup {
     [self loadViewIfNeeded];
     [self cancel]; _starting=YES; _running=NO; _startupFailure=nil;
-    _detailLabel.text=@"Preparing to launch. Keep this app open.";
+    _detailLabel.text=WKLocalized(@"home.status.starting.detail");
     _diagnosticsButton.hidden=YES;
     [self render]; [_launchProgress start];
     [self.view layoutIfNeeded];
@@ -1220,12 +1369,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)diagnostics { if (self.showDiagnostics) self.showDiagnostics(); }
 - (void)about {
-    UIViewController *controller=[UIViewController new]; controller.title=@"About";
+    UIViewController *controller=[UIViewController new]; controller.title=WKLocalized(@"home.about.title");
     controller.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     UITextView *text=[UITextView new]; text.editable=NO;
     text.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; text.adjustsFontForContentSizeCategory=YES;
     text.textContainerInset=UIEdgeInsetsMake(20,20,20,20);
-    NSMutableString *credits=[@"WolkaraForever — an independent World of Warcraft launcher built on Tolkara. Not affiliated with or endorsed by Blizzard Entertainment. World of Warcraft belongs to Blizzard Entertainment.\n\n" mutableCopy];
+    text.accessibilityLanguage=WKLocalization.shared.languageCode;
+    NSMutableString *credits=[WKLocalized(@"about.intro") mutableCopy];
     // Four documents, and which is which matters. This app is a fork that ships upstream's
     // code, so it carries its own licence and notice and it keeps theirs; they are told
     // apart by name, which is why ours are prefixed in the bundle. The first version
@@ -1235,10 +1385,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // cannot disagree, and a missing document says so on the page.
     for (NSArray<NSString *> *document in WKBundledDocuments()) {
         NSString *name=document[1];
+        NSString *heading=WKLocalized(document[0]);
         NSString *path=[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:name];
         NSString *notice=[NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL];
-        if (notice) [credits appendFormat:@"\n\n———— %@ ————\n%@\n",document[0],notice];
-        else [credits appendFormat:@"\n\n———— %@ ————\n%@ is missing from this build.\n",document[0],name];
+        // The documents themselves are the licensors' words and are shown as they ship.
+        if (notice) [credits appendFormat:@"\n\n———— %@ ————\n%@\n",heading,notice];
+        else [credits appendFormat:@"\n\n———— %@ ————\n%@\n",heading,WKLocalizedFormat(@"about.documentMissing",name)];
     }
     text.text=credits; controller.view=text;
     [self.navigationController pushViewController:controller animated:YES];

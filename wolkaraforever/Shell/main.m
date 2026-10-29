@@ -26,6 +26,7 @@
 #import "StartupActivity.h"
 #import "WolkaraForeverConfig.h"
 #import "WolkaraForeverLog.h"
+#import "WKLocalization.h"
 // The checks the app can run on itself, on a device, for the two things a script cannot do:
 // press a pad button and speak. See SelfTest.h.
 #import "SelfTest.h"
@@ -110,8 +111,7 @@ static NSString *FilesFolderName(void) {
 }
 static NSString *LocalSigningNeeds(NSString *sha256) {
     NSString *container=TKLocalSigningAppContainerDisplayPath(sha256)?:TKLocalSigningContainerDisplayPath();
-    return [NSString stringWithFormat:@"Local signing needs this app's page container at %@ (visible in Files > On My iPad > %@ > LocalSigning). "
-        "Build it on a Mac with tools/build_signed_container.py (tools/install.sh does) and copy it there; see development/guides/BUILDING.md.",container,FilesFolderName()];
+    return WKLocalizedFormat(@"shell.localSigning.needs",container,FilesFolderName());
 }
 // Show the folder in Files so the user can put containers there.
 static void PrepareLocalSigningFolder(void) {
@@ -120,6 +120,41 @@ static void PrepareLocalSigningFolder(void) {
 }
 // JIT enabled from outside, or an arena its enabler left.
 static BOOL PreparedFromOutside(void) { return hd_may_run_unsigned_code() || ng_arena_reserved(); }
+
+// The execution modes as the chooser shows them. The identifiers, the saved setting and
+// every log line keep the platform's own English names (TKExecutionModeName), because they
+// are contract: the device matrix greps for them. Only the words a person reads are
+// translated, and they are looked up here rather than in ExecutionMode.m so that file stays
+// Foundation-only and unit-testable on the Mac.
+static NSString *TKModeNameText(TKExecutionMode mode) {
+    switch (mode) {
+    case TKExecutionModeDeveloperService: return WKLocalized(@"mode.developerService");
+    case TKExecutionModeLocalSigning: return WKLocalized(@"mode.localSigning");
+    case TKExecutionModeExternalJIT: return WKLocalized(@"mode.externalJIT");
+    case TKExecutionModeNone: break;
+    }
+    return @"";
+}
+static NSString *TKModeSummaryText(TKExecutionMode mode) {
+    switch (mode) {
+    case TKExecutionModeDeveloperService: return WKLocalized(@"mode.developerService.summary");
+    case TKExecutionModeLocalSigning: return WKLocalized(@"mode.localSigning.summary");
+    case TKExecutionModeExternalJIT: return WKLocalized(@"mode.externalJIT.summary");
+    case TKExecutionModeNone: break;
+    }
+    return @"";
+}
+// Why a mode is not in this build. Decided from the build itself rather than by matching the
+// platform's English sentence, so a reworded reason cannot slip through untranslated.
+static NSString *TKModeUnavailableText(TKExecutionMode mode) {
+    if (TKExecutionModeAvailable(mode,NULL)) return nil;
+#if TOLKARA_INTEGRATED_AUTH
+    if (mode==TKExecutionModeExternalJIT) return WKLocalized(@"mode.unavailable.tolkara");
+#else
+    if (mode==TKExecutionModeDeveloperService) return WKLocalized(@"mode.unavailable.diagnostics");
+#endif
+    return WKLocalized(@"mode.unavailable.none");
+}
 
 // Explicit execution-mode choice: equal buttons, neither highlighted nor
 // recommended. The first choice cannot be dismissed without choosing.
@@ -140,9 +175,9 @@ static BOOL PreparedFromOutside(void) { return hd_may_run_unsigned_code() || ng_
     [super viewDidLoad];
     self.view.backgroundColor=UIColor.systemBackgroundColor;
     UILabel *title=[UILabel new], *line=[UILabel new];
-    title.text=[NSString stringWithFormat:@"Startup options for %@",_app];
+    title.text=WKLocalizedFormat(@"mode.chooser.title",_app);
     title.font=[UIFont preferredFontForTextStyle:UIFontTextStyleTitle1];
-    line.text=@"Choose how to start. You can change this later in Settings.";
+    line.text=WKLocalized(@"mode.chooser.line");
     line.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     line.textColor=UIColor.secondaryLabelColor;
     for (UILabel *label in @[title,line]) { label.numberOfLines=0; label.adjustsFontForContentSizeCategory=YES; }
@@ -151,13 +186,12 @@ static BOOL PreparedFromOutside(void) { return hd_may_run_unsigned_code() || ng_
     [stack setCustomSpacing:28 afterView:line];
     __weak TKExecutionModeChooser *weakSelf=self;
     for (NSNumber *each in @[@(TKExecutionModeDeveloperService),@(TKExecutionModeLocalSigning),@(TKExecutionModeExternalJIT)]) {
-        TKExecutionMode mode=each.integerValue; NSString *unavailable=nil;
-        BOOL available=TKExecutionModeAvailable(mode,&unavailable);
-        NSString *subtitle=TKExecutionModeSummary(mode);
-        if (_cancellable && mode==_current) subtitle=[@"Current. " stringByAppendingString:subtitle];
-        if (!available) subtitle=[subtitle stringByAppendingFormat:@"\n%@",unavailable];
+        TKExecutionMode mode=each.integerValue; NSString *unavailable=TKModeUnavailableText(mode);
+        NSString *subtitle=TKModeSummaryText(mode);
+        if (_cancellable && mode==_current) subtitle=WKLocalizedFormat(@"mode.chooser.current",subtitle);
+        if (unavailable) subtitle=[subtitle stringByAppendingFormat:@"\n%@",unavailable];
         UIButtonConfiguration *configuration=UIButtonConfiguration.grayButtonConfiguration;
-        configuration.title=TKExecutionModeName(mode); configuration.subtitle=subtitle;
+        configuration.title=TKModeNameText(mode); configuration.subtitle=subtitle;
         configuration.titleAlignment=UIButtonConfigurationTitleAlignmentLeading;
         configuration.titlePadding=8;
         configuration.contentInsets=NSDirectionalEdgeInsetsMake(20,20,20,20);
@@ -170,11 +204,11 @@ static BOOL PreparedFromOutside(void) { return hd_may_run_unsigned_code() || ng_
         UIButton *button=[UIButton buttonWithConfiguration:configuration primaryAction:[UIAction actionWithHandler:^(UIAction *action) {
             (void)action;[weakSelf choose:mode];
         }]];
-        button.enabled=available;
+        button.enabled=!unavailable;
         [stack addArrangedSubview:button];
     }
     if (_cancellable) {
-        UIButtonConfiguration *configuration=UIButtonConfiguration.plainButtonConfiguration; configuration.title=@"Cancel";
+        UIButtonConfiguration *configuration=UIButtonConfiguration.plainButtonConfiguration; configuration.title=WKLocalized(@"common.cancel");
         [stack addArrangedSubview:[UIButton buttonWithConfiguration:configuration primaryAction:[UIAction actionWithHandler:^(UIAction *action) {
             (void)action;[weakSelf.presentingViewController dismissViewControllerAnimated:YES completion:nil];
         }]]];
@@ -230,7 +264,7 @@ static BOOL PreparedFromOutside(void) { return hd_may_run_unsigned_code() || ng_
     (void)note;
     WKLog("host", @"the user chose to leave the game; closing WolkaraForever after the countdown");
     [self.steamCloud flush];
-    [self showClosingPage:@"Leaving the game"];
+    [self showClosingPage:WKLocalized(@"shell.leaving")];
 }
 
 // The microphone key on the layer's own keyboard. It asks for the same thing the mapped
@@ -553,7 +587,7 @@ static NSString *AKAudioStateDescription(void) {
     self.startupActivity.translatesAutoresizingMaskIntoConstraints = NO;
     [controller.view addSubview:self.startupActivity];
     self.diagnosticsButton=[UIButton buttonWithType:UIButtonTypeSystem];
-    [self.diagnosticsButton setTitle:@"Diagnostics and logs" forState:UIControlStateNormal];
+    [self.diagnosticsButton setTitle:WKLocalized(@"home.diagnostics") forState:UIControlStateNormal];
     [self.diagnosticsButton addTarget:self action:@selector(showDiagnostics) forControlEvents:UIControlEventTouchUpInside];
     self.diagnosticsButton.translatesAutoresizingMaskIntoConstraints=NO;
     self.diagnosticsButton.hidden=YES;
@@ -663,7 +697,7 @@ static NSString *AKAudioStateDescription(void) {
 - (void)libraryViewController:(TKLibraryViewController *)controller checkApp:(TKApp *)app {
     (void)controller;
     TKReportViewController *report=[[TKReportViewController alloc] initWithTitle:app.name file:nil];
-    report.text=@"Checking the loader… No app code is run.";
+    report.text=WKLocalized(@"shell.checkingLoader");
     [self.navigation pushViewController:report animated:YES];
     NSError *error=nil;
     NSString *path=[self.library executablePathForApp:app error:&error];
@@ -682,7 +716,7 @@ static NSString *AKAudioStateDescription(void) {
 }
 - (void)alert:(NSString *)title message:(NSString *)message {
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
     [self.window.rootViewController presentViewController:alert animated:YES completion:nil];
 }
 
@@ -692,7 +726,7 @@ static NSString *AKAudioStateDescription(void) {
     TKDiagnosticsViewController *diagnostics=[[TKDiagnosticsViewController alloc] initWithSections:[self diagnosticSections]];
     __weak AKHostSceneDelegate *weakSelf=self;
     diagnostics.sessionEnding=^{
-        [weakSelf endSession:@"A diagnostic test ran in this session. Close this app in the app switcher and open it again before starting an app."];
+        [weakSelf endSession:WKLocalized(@"shell.diagnosticUsedSession")];
     };
     if (self.navigation && self.window.rootViewController==self.navigation) {
         [self.navigation setNavigationBarHidden:NO animated:YES];
@@ -707,52 +741,52 @@ static NSString *AKAudioStateDescription(void) {
 - (NSArray<TKDiagnosticSection *> *)diagnosticSections {
     NSMutableArray *sections=[NSMutableArray new];
     TKAppLibrary *library=self.library;
-    [sections addObject:[TKDiagnosticSection sectionWithTitle:@"Runtime" footer:@"These checks run only Tolkara's own code." items:@[
-        [TKDiagnostic diagnosticWithTitle:@"Host diagnostics" detail:@"Debugger, code signing, memory and the arena limit. No probe sample runs." run:^(TKDiagnosticReport report) {
+    [sections addObject:[TKDiagnosticSection sectionWithTitle:WKLocalized(@"diag.runtime.title") footer:WKLocalized(@"diag.runtime.footer") items:@[
+        [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.host.title") detail:WKLocalized(@"diag.host.detail") run:^(TKDiagnosticReport report) {
             report(TKHostDiagnosticsReport(),YES);
         }],
-        [TKDiagnostic diagnosticWithTitle:@"Check loader" detail:@"Loads the most recently started app into emulated memory without running it." run:^(TKDiagnosticReport report) {
+        [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.loader.title") detail:WKLocalized(@"diag.loader.detail") run:^(TKDiagnosticReport report) {
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
                 [library discover];
                 TKApp *app=library.defaultApp;
                 NSError *error=nil;
                 NSString *path=app ? [library executablePathForApp:app error:&error] : nil;
-                NSString *message=TKLoaderCheck(path,app ? error.localizedDescription : @"Add an app to the library first.");
+                NSString *message=TKLoaderCheck(path,app ? error.localizedDescription : WKLocalized(@"diag.addAppFirst"));
                 report(app ? [NSString stringWithFormat:@"%@\n\n%@",app.name,message] : message,YES);
             });
         }],
-        [TKDiagnostic diagnosticWithTitle:@"CPU interpreter" detail:@"Runs Tolkara's test program through the interpreter." run:^(TKDiagnosticReport report) {
+        [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.cpu.title") detail:WKLocalized(@"diag.cpu.detail") run:^(TKDiagnosticReport report) {
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{ report(TKCPUProbeReport(),YES); });
         }],
-        [TKDiagnostic diagnosticWithTitle:@"Signed code mapping" detail:@"Remaps Tolkara's own signed pages." run:^(TKDiagnosticReport report) {
+        [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.signed.title") detail:WKLocalized(@"diag.signed.detail") run:^(TKDiagnosticReport report) {
             report(TKSignedCacheProbeReport(),YES);
         }],
-        [TKDiagnostic diagnosticWithTitle:@"Local shader compiler" detail:@"Compiles the shader fixtures staged in Documents/LocalShaderProbe." run:^(TKDiagnosticReport report) {
+        [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.localShader.title") detail:WKLocalized(@"diag.localShader.detail") run:^(TKDiagnosticReport report) {
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{ report(TKLocalShaderProbeReport(),YES); });
         }],
-        [TKDiagnostic diagnosticWithTitle:@"Captured shaders" detail:@"Compiles every shader library a game left in Documents/ShaderRequests on this iPad." run:^(TKDiagnosticReport report) {
+        [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.capturedShaders.title") detail:WKLocalized(@"diag.capturedShaders.detail") run:^(TKDiagnosticReport report) {
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{ report(TKCapturedShaderProbeReport(),YES); });
         }],
     ]]];
 #if TOLKARA_INTEGRATED_AUTH
     TKLocalAuthorization *authorization=self.localAuthorization;
-    [sections addObject:[TKDiagnosticSection sectionWithTitle:@"Local launch"
-        footer:@"The local route connects Tolkara to the iPad's development service. Starting it may ask to add a VPN configuration." items:@[
-        [TKDiagnostic diagnosticWithTitle:@"Check direct access" detail:nil run:^(TKDiagnosticReport report) {
+    [sections addObject:[TKDiagnosticSection sectionWithTitle:WKLocalized(@"diag.local.title")
+        footer:WKLocalized(@"diag.local.footer") items:@[
+        [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.directAccess.title") detail:nil run:^(TKDiagnosticReport report) {
             [TKLocalAuthorization probeDirectAccess:^(NSString *result) { report(result,YES); }];
         }],
-        [TKDiagnostic diagnosticWithTitle:@"Start local route" detail:nil run:^(TKDiagnosticReport report) {
+        [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.startRoute.title") detail:nil run:^(TKDiagnosticReport report) {
             [authorization startLocalRoute:^(NSString *result) { report(result,YES); }];
         }],
-        [TKDiagnostic diagnosticWithTitle:@"Check local route service" detail:nil run:^(TKDiagnosticReport report) {
+        [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.routeService.title") detail:nil run:^(TKDiagnosticReport report) {
             [TKLocalAuthorization probeLocalRouteService:^(NSString *result) {
                 [result writeToFile:TKDocumentsPath(@"local-route-service-probe.txt") atomically:YES encoding:NSUTF8StringEncoding error:NULL];
                 report(result,YES);
             }];
         }],
-        [TKDiagnostic diagnosticWithTitle:@"Stop local route" detail:nil run:^(TKDiagnosticReport report) {
+        [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.stopRoute.title") detail:nil run:^(TKDiagnosticReport report) {
             [authorization stopLocalRoute];
-            report(@"Local route stopped.",YES);
+            report(WKLocalized(@"diag.stopRoute.result"),YES);
         }],
     ]]];
 #endif
@@ -762,18 +796,18 @@ static NSString *AKAudioStateDescription(void) {
         [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:NO block:^(NSTimer *timer) { (void)timer; block(); }];
     };
     NSArray<NSString *> *arguments=NSProcessInfo.processInfo.arguments;
-    [sections addObject:[TKDiagnosticSection sectionWithTitle:@"Session-ending tests"
-        footer:@"These execute host-generated code or load compatibility libraries, and the system may close Tolkara. Reopen the app before starting an app." items:@[
-        endsSession([TKDiagnostic diagnosticWithTitle:@"Execution: RW → RX" detail:@"Tolkara's two-instruction sample." run:^(TKDiagnosticReport report) {
+    [sections addObject:[TKDiagnosticSection sectionWithTitle:WKLocalized(@"diag.session.title")
+        footer:WKLocalized(@"diag.session.footer") items:@[
+        endsSession([TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.rw.title") detail:WKLocalized(@"diag.sample.detail") run:^(TKDiagnosticReport report) {
             onMainRunLoop(^{ report(TKExecutionProbeReport(HP_WRITE_THEN_EXECUTE,arguments),YES); });
         }]),
-        endsSession([TKDiagnostic diagnosticWithTitle:@"Execution: shared RW / RX views" detail:@"Tolkara's two-instruction sample." run:^(TKDiagnosticReport report) {
+        endsSession([TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.dual.title") detail:WKLocalized(@"diag.sample.detail") run:^(TKDiagnosticReport report) {
             onMainRunLoop(^{ report(TKExecutionProbeReport(HP_DUAL_MAPPING,arguments),YES); });
         }]),
-        endsSession([TKDiagnostic diagnosticWithTitle:@"Execution: RWX" detail:@"Tolkara's two-instruction sample." run:^(TKDiagnosticReport report) {
+        endsSession([TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.rwx.title") detail:WKLocalized(@"diag.sample.detail") run:^(TKDiagnosticReport report) {
             onMainRunLoop(^{ report(TKExecutionProbeReport(HP_READ_WRITE_EXECUTE,arguments),YES); });
         }]),
-        endsSession([TKDiagnostic diagnosticWithTitle:@"Shader pause and recovery" detail:@"Needs Documents/shader-pause-probe.metallib. Takes over a minute." run:^(TKDiagnosticReport report) {
+        endsSession([TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.shaderPause.title") detail:WKLocalized(@"diag.shaderPause.detail") run:^(TKDiagnosticReport report) {
             onMainRunLoop(^{ report(TKShaderPauseProbeReport(),YES); });
         }]),
     ]]];
@@ -787,17 +821,17 @@ static NSString *AKAudioStateDescription(void) {
 // before any application code runs.
 - (void)launchLocalApp:(TKApp *)app {
     if(self.sessionUsed) {
-        [self alert:@"Reopen the app" message:@"Only one app can start per session. Close this app in the app switcher and open it again."];
+        [self alert:WKLocalized(@"shell.reopen.title") message:WKLocalized(@"shell.reopen.message")];
         return;
     }
     NSError *error=nil;
     if(!app || ![self.library executablePathForApp:app error:&error] || ![self.library workingDirectoryForApp:app error:&error]) {
-        NSString *message=app ? error.localizedDescription : @"Add an app to the library first.";
-        if(self.navigation) [self alert:@"Cannot Start App" message:message];
+        NSString *message=app ? error.localizedDescription : WKLocalized(@"shell.addAppFirst");
+        if(self.navigation) [self alert:WKLocalized(@"shell.cannotStart.title") message:message];
         else self.status.text=message;
         return;
     }
-    [self endSession:[NSString stringWithFormat:@"%@ was started in this session. Close this app in the app switcher and open it again to start an app.",app.name]];
+    [self endSession:[NSString stringWithFormat:WKLocalized(@"shell.session.used"),app.name]];
     self.launchingApp=app;
     [self.library recordLaunchOfApp:app error:NULL];
     [self showStatusScreen];
@@ -807,15 +841,15 @@ static NSString *AKAudioStateDescription(void) {
     if([NSProcessInfo.processInfo.arguments containsObject:@"--local-shaders-only"])
         setenv("TOLKARA_LOCAL_SHADERS_ONLY","1",1);
     UIApplication.sharedApplication.idleTimerDisabled=YES;
-    self.status.text=@"Connecting to the startup service…";
+    self.status.text=WKLocalized(@"shell.connecting");
     [self.launchProgress start];
     [self.localAuthorization startAndPrepareLocalAuthorization:^(NSString *report) {
         [report writeToFile:TKDocumentsPath(@"local-game-setup.txt") atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         if(!self.localAuthorization.localSessionReady || !ng_use_local_authorization()) {
-            self.status.text=[@"Local launch could not prepare. Close and reopen the app to retry.\n" stringByAppendingString:report];
+            self.status.text=[WKLocalized(@"shell.localLaunch.failed") stringByAppendingString:report];
             [self showStartStopped];return;
         }
-        self.status.text=@"Loading the game. Keep this app open.";
+        self.status.text=WKLocalized(@"shell.loadingGame");
         // Guest main must enter from a timer callout, never a dispatch block.
         [self performSelector:@selector(startLocalGame) withObject:nil afterDelay:0];
     }];
@@ -827,41 +861,41 @@ static NSString *AKAudioStateDescription(void) {
 // stays usable and the library remains in front.
 - (void)launchLocalSigningApp:(TKApp *)app {
     if(self.sessionUsed) {
-        [self alert:@"Reopen the app" message:@"Only one app can start per session. Close this app in the app switcher and open it again."];
+        [self alert:WKLocalized(@"shell.reopen.title") message:WKLocalized(@"shell.reopen.message")];
         return;
     }
     NSError *error=nil;
     if(![self.library executablePathForApp:app error:&error] || ![self.library workingDirectoryForApp:app error:&error]) {
-        [self alert:@"Cannot Start App" message:error.localizedDescription];
+        [self alert:WKLocalized(@"shell.cannotStart.title") message:error.localizedDescription];
         return;
     }
     // The container is named after the executable's current SHA-256; hashing
     // it is slow, so look for the container off the main thread.
     if (self.wowController) [self.wowController beginStartup];
-    self.libraryController.navigationItem.prompt=[NSString stringWithFormat:@"Preparing %@…",app.name];
+    self.libraryController.navigationItem.prompt=WKLocalizedFormat(@"shell.preparingApp",app.name);
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         NSString *sha=[self.library currentSHA256OfApp:app error:NULL];
         NSString *container=TKLocalSigningFindContainer(NSHomeDirectory(),sha);
         dispatch_async(dispatch_get_main_queue(),^{
             self.libraryController.navigationItem.prompt=nil;
             if(self.sessionUsed) {
-                [self alert:@"Reopen the app" message:@"Only one app can start per session. Close this app in the app switcher and open it again."];
+                [self alert:WKLocalized(@"shell.reopen.title") message:WKLocalized(@"shell.reopen.message")];
                 return;
             }
             if(!container) {
                 PrepareLocalSigningFolder();
                 [self.wowController finishStartupWithMessage:LocalSigningNeeds(sha?:app.sha256) failed:YES];
-                [self alert:@"Page Container Needed" message:LocalSigningNeeds(sha?:app.sha256)];
+                [self alert:WKLocalized(@"shell.containerNeeded.title") message:LocalSigningNeeds(sha?:app.sha256)];
                 return;
             }
-            [self endSession:[NSString stringWithFormat:@"%@ was started in this session. Close this app in the app switcher and open it again to start an app.",app.name]];
+            [self endSession:[NSString stringWithFormat:WKLocalized(@"shell.session.used"),app.name]];
             self.launchingApp=app;
             [self.library recordLaunchOfApp:app error:NULL];
             [self showStatusScreen];
             // As for Developer service: an uncached shader waits instead of failing.
             setenv("TOLKARA_WAIT_FOR_MISSING_SHADERS","1",1);
             UIApplication.sharedApplication.idleTimerDisabled=YES;
-            self.status.text=@"Loading the game. Keep this app open.";
+            self.status.text=WKLocalized(@"shell.loadingGame");
             // Guest main must enter from a timer callout, never a dispatch block.
             [self performSelector:@selector(startSignedGame:) withObject:container afterDelay:0];
         });
@@ -871,28 +905,27 @@ static NSString *AKAudioStateDescription(void) {
 // External JIT: a tool outside the app prepares memory.
 - (void)launchExternalJITApp:(TKApp *)app {
     if(self.sessionUsed) {
-        [self alert:@"Reopen the app" message:@"Only one app can start per session. Close this app in the app switcher and open it again."];
+        [self alert:WKLocalized(@"shell.reopen.title") message:WKLocalized(@"shell.reopen.message")];
         return;
     }
     NSError *error=nil;
     if(![self.library executablePathForApp:app error:&error] || ![self.library workingDirectoryForApp:app error:&error]) {
-        [self alert:@"Cannot Start App" message:error.localizedDescription];
+        [self alert:WKLocalized(@"shell.cannotStart.title") message:error.localizedDescription];
         return;
     }
     // Opened without JIT: say so; the session stays usable.
     if(!PreparedFromOutside()) {
-        [self alert:@"JIT Not Enabled" message:@"This app was opened without JIT. Enable JIT with your sideloading tool "
-            "(such as SideStore) or a JIT enabler such as StikDebug, then open it again."];
+        [self alert:WKLocalized(@"shell.jit.title") message:WKLocalized(@"shell.jit.message")];
         return;
     }
-    [self endSession:[NSString stringWithFormat:@"%@ was started in this session. Close this app in the app switcher and open it again to start an app.",app.name]];
+    [self endSession:[NSString stringWithFormat:WKLocalized(@"shell.session.used"),app.name]];
     self.launchingApp=app;
     [self.library recordLaunchOfApp:app error:NULL];
     [self showStatusScreen];
     // An uncached shader waits instead of failing.
     setenv("TOLKARA_WAIT_FOR_MISSING_SHADERS","1",1);
     UIApplication.sharedApplication.idleTimerDisabled=YES;
-    self.status.text=@"Loading the game. Keep this app open.";
+    self.status.text=WKLocalized(@"shell.loadingGame");
     // Enter from a timer callout, never a dispatch block.
     [self performSelector:@selector(startExternalJITGame) withObject:nil afterDelay:0];
 }
@@ -996,24 +1029,24 @@ static NSString *AKAudioStateDescription(void) {
 - (void)localServiceWaiting:(NSNotification *)notification {
     if(notification.object!=self.localAuthorization)return;
     self.waitedForLocalService=YES;
-    self.status.text=@"Waiting for the local connection…\nIf using mobile data, temporarily turn it off in Control Centre and return here. We will retry for two minutes without closing the app.\nAfter preparation finishes, turn mobile data back on to connect to the game.";
+    self.status.text=WKLocalized(@"shell.waitingForLocal");
     [self.status.superview layoutIfNeeded];
 }
 - (void)arenaWillPrepare:(NSNotification *)notification {
     double mib = [notification.userInfo[@"bytes"] unsignedLongLongValue] / (1024.0 * 1024.0);
-    self.status.text=self.wowController?@"Preparing to run. This can take a few minutes. Keep this app open.":
-        [NSString stringWithFormat:@"Setting up %.0f MiB of execution memory. Keep this app open.",mib];
+    self.status.text=self.wowController?WKLocalized(@"shell.preparingToRun"):
+        WKLocalizedFormat(@"shell.settingUpMemory",mib);
     if(self.waitedForLocalService) self.status.text=[self.status.text stringByAppendingString:
-        @"\nIf you turned off mobile data, wait until this step finishes before turning it back on."];
+        WKLocalized(@"shell.mobileData.off")];
     [self.launchProgress start];
     [self.status.superview layoutIfNeeded];
 }
 - (void)arenaDidPrepare:(NSNotification *)notification {
     if ([notification.userInfo[@"prepared"] boolValue] && self.launchingApp)
-        self.status.text=@"Preparation complete. Loading the game…";
+        self.status.text=WKLocalized(@"shell.preparationComplete");
     else [self.launchProgress stop];
     if(self.waitedForLocalService) self.status.text=[self.status.text stringByAppendingString:
-        @"\nYou can now turn mobile data back on."];
+        WKLocalized(@"shell.mobileData.on")];
     [self.status.superview layoutIfNeeded];
 }
 #endif
@@ -1082,7 +1115,7 @@ static NSString *AKAudioStateDescription(void) {
     title.font = [UIFont systemFontOfSize:28 weight:UIFontWeightBold];
 
     UILabel *instructions = [UILabel new];
-    instructions.text = @"WolkaraForever closes when this reaches zero, and opening it again brings this page back with Play ready.";
+    instructions.text = WKLocalized(@"shell.closing.instructions");
     instructions.numberOfLines = 0;
     instructions.textAlignment = NSTextAlignmentCenter;
     instructions.textColor = [UIColor colorWithRed:0.66 green:0.72 blue:0.78 alpha:1];
@@ -1100,7 +1133,7 @@ static NSString *AKAudioStateDescription(void) {
     // press if it does not, which is exactly the dead end it exists to prevent.
     UIButton *closeNow = [UIButton buttonWithType:UIButtonTypeSystem];
     UIButtonConfiguration *closeConfiguration = UIButtonConfiguration.filledButtonConfiguration;
-    closeConfiguration.title = @"Close WolkaraForever";
+    closeConfiguration.title = WKLocalized(@"home.action.close");
     closeConfiguration.baseBackgroundColor = [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1];
     closeConfiguration.baseForegroundColor = [UIColor colorWithRed:0.08 green:0.065 blue:0.035 alpha:1];
     closeConfiguration.cornerStyle = UIButtonConfigurationCornerStyleMedium;
@@ -1149,19 +1182,19 @@ static NSString *AKAudioStateDescription(void) {
     if (!self.uiSession) return;
     fprintf(log, "[host] %s; ending this process so the next launch can start the game\n", why.UTF8String);
     fflush(log);
-    [self showClosingPage:@"The game did not start"];
+    [self showClosingPage:WKLocalized(@"shell.didNotStart")];
 }
 - (void)runNativeGame:(BOOL)fullStartup app:(TKApp *)app container:(NSString *)container {
     if (!self.cloudPrepared && [TKSteamCloudCoordinator configuredProfile:app.profile documents:TKDocumentsPath(@"")]) {
         if(self.cloudPreparing)return;self.cloudPreparing=YES;
         self.cloudFullStartup=fullStartup;self.cloudApp=app;self.cloudContainer=container;
         self.steamCloud=[[TKSteamCloudCoordinator alloc] initWithProfile:app.profile documents:TKDocumentsPath(@"")];
-        self.status.text=@"Synchronizing Steam Cloud saves…";
+        self.status.text=WKLocalized(@"shell.cloudSync");
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
             NSError *error=nil;NSString *report=nil;BOOL ready=[self.steamCloud prepareWithReport:&report error:&error];
             dispatch_async(dispatch_get_main_queue(),^{
                 self.cloudPreparing=NO;
-                if(!ready) { self.status.text=report?:[NSString stringWithFormat:@"Steam Cloud sync failed (%@:%ld). Saves preserved. See SteamCloud/%@/sync.log.",error.domain,(long)error.code,app.profile];[self showStartStopped];return; }
+                if(!ready) { self.status.text=report?:WKLocalizedFormat(@"shell.cloudFailed",error.domain,(long)error.code,app.profile);[self showStartStopped];return; }
                 self.cloudPrepared=YES;[self.steamCloud startPeriodicSync];
                 ng_set_exit_observer(FlushSteamCloudAtExit,(__bridge void *)self.steamCloud);
                 // The guest enters from a timer callout, after this dispatch block returns.
@@ -1173,7 +1206,7 @@ static NSString *AKAudioStateDescription(void) {
     UIApplication.sharedApplication.idleTimerDisabled = YES;
     NSString *logPath = TKDocumentsPath(@"native-guest.log");
     FILE *log = fopen(logPath.fileSystemRepresentation, "w");
-    if (!log) { self.status.text = @"Cannot open native runtime log."; [self showStartStopped]; return; }
+    if (!log) { self.status.text = WKLocalized(@"shell.logUnavailable"); [self showStartStopped]; return; }
     setvbuf(log, NULL, _IOLBF, 0);
     dup2(fileno(log), STDERR_FILENO);
     dup2(fileno(log), STDOUT_FILENO);
@@ -1190,7 +1223,7 @@ static NSString *AKAudioStateDescription(void) {
     // The application finds its resources relative to its working directory.
     NSString *directory=path ? [self.library workingDirectoryForApp:app error:&error] : nil;
     if (!directory) {
-        self.status.text=app ? error.localizedDescription : @"Import an app into the library before running the development loader.";
+        self.status.text=app ? error.localizedDescription : WKLocalized(@"shell.importFirst");
         fprintf(log,"[host] %s\n",self.status.text.UTF8String);
         [self showStartStopped];
         [self endSessionThatCannotStartAgain:self.status.text log:log];
@@ -1258,9 +1291,9 @@ static NSString *AKAudioStateDescription(void) {
         if(!ng_use_signed_image(container.fileSystemRepresentation,reason,sizeof reason)) {
             fprintf(log,"[host] signed-image rejected: %s (container=%s)\n",reason[0]?reason:"backend unavailable",shown.UTF8String); fflush(log);
             // One startup attempt per process, as for Developer service.
-            NSString *retry=@"Close and reopen the app to retry.";
-            if(self.sessionUsed) retry=@"Close and reopen the app to retry or to change the execution mode.";
-            self.status.text=[NSString stringWithFormat:@"Local signing could not start: %s\n%@",reason[0]?reason:"see runtime log",retry];
+            NSString *retry=WKLocalized(@"shell.retry.reopen");
+            if(self.sessionUsed) retry=WKLocalized(@"shell.retry.reopenOrMode");
+            self.status.text=WKLocalizedFormat(@"shell.localSigning.failed",reason[0]?reason:"see runtime log",retry);
             [self showStartStopped];
             [self endSessionThatCannotStartAgain:self.status.text log:log];
             return;
@@ -1270,15 +1303,15 @@ static NSString *AKAudioStateDescription(void) {
     BOOL ok = ng_initialize(path.fileSystemRepresentation, NSBundle.mainBundle.privateFrameworksPath.fileSystemRepresentation, map.fileSystemRepresentation, log, fullStartup);
     // The outcome as the host saw it (tools/run.sh requires "returned").
     fprintf(log,"[host] native %s %s\n",fullStartup?"startup":"first initializer",ok?"returned":"stopped"); fflush(log);
-    self.status.text = ok ? (fullStartup ? [app.name stringByAppendingString:@" closed."] : @"Original client first initializer returned.") : @"Native startup stopped. See runtime log.";
+    self.status.text = ok ? (fullStartup ? [app.name stringByAppendingString:WKLocalized(@"shell.closed")] : WKLocalized(@"shell.firstInitializer")) : WKLocalized(@"shell.nativeStopped");
     [self showStartStopped];
-    if (ok && fullStartup) [self.wowController finishStartupWithMessage:@"Session ended." failed:NO];
+    if (ok && fullStartup) [self.wowController finishStartupWithMessage:WKLocalized(@"shell.sessionEnded") failed:NO];
     // One guest per process: a full startup, whether it ran or not, means Play
     // cannot work again here. Say so on the home page as well, so the close
     // action exists even if the closing page cannot appear.
     if (fullStartup)
-        [self endSession:ok?@"The game has closed. Close WolkaraForever and reopen it to play again.":
-            @"The game did not start. Close WolkaraForever and reopen it to try again."];
+        [self endSession:ok?WKLocalized(@"shell.session.gameClosed"):
+            WKLocalized(@"shell.session.didNotStart")];
     // One guest per process, and the guest has now ended: whatever the outcome, this process
     // can never start another. Leaving the launcher up was a dead end - once a session has
     // been used its Play button answers nothing, and the only way back was to force-quit
@@ -1291,7 +1324,7 @@ static NSString *AKAudioStateDescription(void) {
         [self.steamCloud flush];
         fprintf(log,"[host] %s: the session is over; ending this process so the next launch can start the game\n",
                 ok ? "guest closed" : "the guest did not start"); fflush(log);
-        [self showClosingPage:[app.name stringByAppendingString:@" has closed"]];
+        [self showClosingPage:[app.name stringByAppendingString:WKLocalized(@"shell.hasClosed")]];
     }
     // Runtime callbacks retain this log for the life of the guest.
 }
@@ -1580,6 +1613,12 @@ static NSString *AKAudioStateDescription(void) {
 }
 @end
 
+// Where the app's language writes its few lines: the same log as everything else, with the same
+// `language` tag, so "which language was in use" is answerable from a device log after the fact.
+static void WKLanguageLogSink(NSString *tag, NSString *message) {
+    WKLog(tag.UTF8String, @"%@", message);
+}
+
 @interface AKHostAppDelegate : UIResponder <UIApplicationDelegate>
 @end
 @implementation AKHostAppDelegate
@@ -1596,5 +1635,9 @@ int main(int argc, char *argv[]) {
     // Documents/wolkaraforever.log as well as in the system crash report. See
     // WolkaraForeverLog.h for why stderr alone was not enough.
     WKLogStart();
+    // The app's language reports what it resolved through this hook, so the service itself stays
+    // free of the log and the Mac-side suites can link it. Installed here, before any screen or
+    // setting asks for a string.
+    WKLocalizationSetLogger(WKLanguageLogSink);
     @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(AKHostAppDelegate.class)); }
 }

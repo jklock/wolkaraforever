@@ -39,15 +39,15 @@
 - (NSString *)executablePathForApp:(id)app error:(NSError **)error { (void)app; (void)error; return _executable; }
 - (NSDictionary *)planForProduct:(NSString *)product revision:(NSUInteger)revision {
     NSString *version=[NSString stringWithFormat:@"1.60.1.%lu (demo)",(unsigned long)revision];
-    return @{@"product":product,@"version":@{@"VersionsName":version,
+    return @{@"product":product,@"region":@"eu",@"locale":@"enUS",@"version":@{@"VersionsName":version,
         @"BuildConfig":TKWoWMD5([version dataUsingEncoding:NSUTF8StringEncoding]),
         @"CDNConfig":TKWoWMD5([@"synthetic CDN" dataUsingEncoding:NSUTF8StringEncoding])},
         @"files":@[@{@"path":@"Synthetic.app/Contents/MacOS/Synthetic",@"size":@(_bytes.length),@"contentKey":TKWoWMD5(_bytes)}]};
 }
 - (void)writeMetadata:(NSUInteger)revision duplicate:(BOOL)duplicate {
     NSDictionary *v=[self planForProduct:@"wowf" revision:revision][@"version"];
-    NSString *row=[NSString stringWithFormat:@"wowf|1|%@|%@|%@\n",v[@"BuildConfig"],v[@"CDNConfig"],v[@"VersionsName"]];
-    NSString *text=[@"Product|Active|Build Key|CDN Key|Version\n" stringByAppendingString:duplicate?[row stringByAppendingString:row]:row];
+    NSString *row=[NSString stringWithFormat:@"wowf|1|%@|%@|%@|OSX arm64 EU enUS speech?:OSX arm64 EU enUS text?\n",v[@"BuildConfig"],v[@"CDNConfig"],v[@"VersionsName"]];
+    NSString *text=[@"Product|Active|Build Key|CDN Key|Version|Tags\n" stringByAppendingString:duplicate?[row stringByAppendingString:row]:row];
     assert([text writeToFile:[_root stringByAppendingPathComponent:@".build.info"] atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
 }
 - (void)dealloc { [NSFileManager.defaultManager removeItemAtPath:_root error:NULL]; }

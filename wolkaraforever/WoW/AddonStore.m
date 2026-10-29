@@ -6,6 +6,7 @@
 #include <errno.h>
 #import <objc/message.h>
 #import "UpdateLock.h"
+#import "../App/WKLocalization.h"
 
 static NSString *const ManifestName=@".wolkaraforever-addons.json";
 static BOOL Fail(NSError **error, NSString *message) { if(error)*error=[NSError errorWithDomain:@"WolkaraForever.AddOns" code:1 userInfo:@{NSLocalizedDescriptionKey:message}];return NO; }
@@ -51,9 +52,9 @@ static BOOL Managed(NSDictionary *item) { return [item[@"folders"] isKindOfClass
     for(id item in manifest[@"packages"])if([item isKindOfClass:NSDictionary.class]&&[item[@"identifier"] isKindOfClass:NSString.class])owned[item[@"identifier"]]=item;
     NSMutableArray *found=[NSMutableArray new];NSArray *names=[[NSFileManager.defaultManager contentsOfDirectoryAtPath:_directory error:NULL] sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
     for(NSString *folder in names) { if([folder hasPrefix:@"."])continue;NSString *path=[_directory stringByAppendingPathComponent:folder];BOOL isDirectory=NO;if(![NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&isDirectory]||!isDirectory)continue;NSString *toc=TOC(path);if(!toc)continue;
-        NSDictionary *item=owned[folder];TKAddonRecord *record=[TKAddonRecord new];record.identifier=folder;record.name=Value(toc,@"Title:")?:folder;record.version=Value(toc,@"Version:")?:@"Unknown version";record.source=item?@"WolkaraForever import":@"Existing";record.folders=item[@"folders"]?:@[folder];record.managed=item!=nil;record.disabled=NO;record.pinned=[item[@"pinned"] boolValue];[found addObject:record]; }
+        NSDictionary *item=owned[folder];TKAddonRecord *record=[TKAddonRecord new];record.identifier=folder;record.name=Value(toc,@"Title:")?:folder;record.version=Value(toc,@"Version:")?:WKLocalized(@"addons.version.unknown");record.source=item?@"WolkaraForever import":@"Existing";record.folders=item[@"folders"]?:@[folder];record.managed=item!=nil;record.disabled=NO;record.pinned=[item[@"pinned"] boolValue];[found addObject:record]; }
     for (NSDictionary *item in manifest[@"packages"]) { if (!Managed(item) || ![item[@"disabled"] boolValue]) continue;
-        TKAddonRecord *record=[TKAddonRecord new]; record.identifier=item[@"identifier"]; record.name=item[@"name"]?:record.identifier; record.version=item[@"version"]?:@"Unknown version"; record.source=@"WolkaraForever import"; record.folders=item[@"folders"]; record.managed=YES; record.disabled=YES; record.pinned=[item[@"pinned"] boolValue]; [found addObject:record];
+        TKAddonRecord *record=[TKAddonRecord new]; record.identifier=item[@"identifier"]; record.name=item[@"name"]?:record.identifier; record.version=item[@"version"]?:WKLocalized(@"addons.version.unknown"); record.source=@"WolkaraForever import"; record.folders=item[@"folders"]; record.managed=YES; record.disabled=YES; record.pinned=[item[@"pinned"] boolValue]; [found addObject:record];
     }
     _records=found;
 }

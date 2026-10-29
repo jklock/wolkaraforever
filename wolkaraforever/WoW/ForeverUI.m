@@ -1,4 +1,5 @@
 #import "ForeverUI.h"
+#import "../App/WKLocalization.h"
 
 NSErrorDomain const TKForeverUIErrorDomain = @"WolkaraForever.ForeverUI";
 // The released Forever product. It was `wow_classic_beta` while the game was in
@@ -90,7 +91,7 @@ static NSString *TKReadConfig(NSString *path, NSError **error) {
     NSData *data = [NSData dataWithContentsOfFile:path options:0 error:error];
     if (!data) return nil;
     if (data.length > TKForeverConfigLimit) {
-        if (error) *error = TKError(@"The game's configuration file is unexpectedly large.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.configTooLarge"));
         return nil;
     }
     // Latin-1 maps every byte to one character, so splitting into lines and
@@ -98,7 +99,7 @@ static NSString *TKReadConfig(NSString *path, NSError **error) {
     // endings, comments and settings this code does not understand.
     NSString *text = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
     if (!text) {
-        if (error) *error = TKError(@"The game's configuration file is not readable text.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.configNotText"));
         return nil;
     }
     return text;
@@ -107,7 +108,7 @@ static NSString *TKReadConfig(NSString *path, NSError **error) {
 static BOOL TKWriteConfig(NSString *path, NSString *text, NSError **error) {
     NSData *data = [text dataUsingEncoding:NSISOLatin1StringEncoding];
     if (!data) {
-        if (error) *error = TKError(@"The game's configuration could not be written.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.configNotWritable"));
         return NO;
     }
     return [data writeToFile:path options:NSDataWritingAtomic error:error];
@@ -119,28 +120,28 @@ static BOOL TKWriteConfig(NSString *path, NSString *text, NSError **error) {
                                                create:(BOOL)create
                                                 error:(NSError **)error {
     if (!directory.length) {
-        if (error) *error = TKError(@"The game's working folder is not known.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.noWorkingFolder"));
         return nil;
     }
     BOOL isDirectory = NO;
     if (![NSFileManager.defaultManager fileExistsAtPath:directory isDirectory:&isDirectory] || !isDirectory) {
-        if (error) *error = TKError(@"The game's working folder is missing.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.workingFolderMissing"));
         return nil;
     }
     NSString *wtf = [directory stringByAppendingPathComponent:@"WTF"];
     if (!TKInside(directory, wtf)) {
-        if (error) *error = TKError(@"The game's settings folder is outside its working folder.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.wtfOutside"));
         return nil;
     }
     if (![NSFileManager.defaultManager fileExistsAtPath:wtf]) {
         if (!create) {
-            if (error) *error = TKError(@"The game's settings folder is missing. Start the game once.");
+            if (error) *error = TKError(WKLocalized(@"forever.error.wtfMissing"));
             return nil;
         }
         NSError *failure = nil;
         if (![NSFileManager.defaultManager createDirectoryAtPath:wtf withIntermediateDirectories:NO
                                                       attributes:nil error:&failure]) {
-            if (error) *error = failure ?: TKError(@"The game's settings folder could not be created.");
+            if (error) *error = failure ?: TKError(WKLocalized(@"forever.error.wtfCreate"));
             return nil;
         }
     }
@@ -156,7 +157,7 @@ static BOOL TKWriteConfig(NSString *path, NSString *text, NSError **error) {
     if (!wtf) return NO;
     NSString *path = [wtf stringByAppendingPathComponent:@"Config.wtf"];
     if (!TKInside(directory, path)) {
-        if (error) *error = TKError(@"The game's configuration is outside its working folder.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.configOutside"));
         return NO;
     }
 
@@ -196,7 +197,7 @@ static BOOL TKWriteConfig(NSString *path, NSString *text, NSError **error) {
         stored = [TKCVarValue(line) isEqualToString:value];
     }
     if (assignments != 1 || !stored) {
-        if (error) *error = TKError(@"The gamepad setting could not be stored.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.gamepadStore"));
         return NO;
     }
     return YES;
@@ -210,7 +211,7 @@ inWorkingDirectory:(NSString *)directory
     if (!wtf) return NO;
     NSString *path = [wtf stringByAppendingPathComponent:@"Config.wtf"];
     if (!TKInside(directory, path)) {
-        if (error) *error = TKError(@"The game's configuration is outside its working folder.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.configOutside"));
         return NO;
     }
     // A name that is not a bare CVar name would write a line the client cannot
@@ -219,13 +220,13 @@ inWorkingDirectory:(NSString *)directory
     for (NSString *name in values) {
         if (name.length == 0 || [name rangeOfCharacterFromSet:space].location != NSNotFound ||
             [name rangeOfString:@"\""].location != NSNotFound) {
-            if (error) *error = TKError(@"A setting name is not a bare name.");
+            if (error) *error = TKError(WKLocalized(@"forever.error.settingName"));
             return NO;
         }
         NSString *value = values[name];
         if ([value rangeOfCharacterFromSet:space].location != NSNotFound ||
             [value rangeOfString:@"\""].location != NSNotFound) {
-            if (error) *error = TKError(@"A setting value contains a space or a quote.");
+            if (error) *error = TKError(WKLocalized(@"forever.error.settingValue"));
             return NO;
         }
     }
@@ -269,7 +270,7 @@ inWorkingDirectory:(NSString *)directory
             stored = [TKCVarValue(line) isEqualToString:values[wanted]];
         }
         if (assignments != 1 || !stored) {
-            if (error) *error = TKError(@"A setting could not be stored.");
+            if (error) *error = TKError(WKLocalized(@"forever.error.settingStore"));
             return NO;
         }
     }
@@ -300,7 +301,7 @@ inWorkingDirectory:(NSString *)directory
                                             @"esMX", @"ptBR", @"ruRU", @"koKR", @"zhTW"]];
     });
     if (![supported containsObject:locale]) {
-        if (error) *error = TKError(@"The selected game language is not supported.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.unsupportedLanguage"));
         return NO;
     }
     return [self setCVars:@{@"textLocale": locale, @"audioLocale": locale}
@@ -349,7 +350,7 @@ inWorkingDirectory:(NSString *)directory
 static Class TKArchiveClass(NSError **error) {
     Class archive = NSClassFromString(@"TKForeverUIArchive");
     if (!archive) {
-        if (error) *error = TKError(@"The backup component is not available in this build.");
+        if (error) *error = TKError(WKLocalized(@"forever.error.noBackupComponent"));
         return Nil;
     }
     return archive;
@@ -361,7 +362,7 @@ static Class TKArchiveClass(NSError **error) {
     SEL selector = @selector(createBackupInWorkingDirectory:edition:error:);
     Class archive = TKArchiveClass(error);
     if (!archive || ![archive respondsToSelector:selector]) {
-        if (archive && error) *error = TKError(@"The backup component cannot be used in this build.");
+        if (archive && error) *error = TKError(WKLocalized(@"forever.error.backupComponent"));
         return nil;
     }
     IMP implementation = [archive methodForSelector:selector];
@@ -373,7 +374,7 @@ static Class TKArchiveClass(NSError **error) {
     SEL selector = @selector(newestBackupInWorkingDirectory:error:);
     Class archive = TKArchiveClass(error);
     if (!archive || ![archive respondsToSelector:selector]) {
-        if (archive && error) *error = TKError(@"The backup component cannot be used in this build.");
+        if (archive && error) *error = TKError(WKLocalized(@"forever.error.backupComponent"));
         return nil;
     }
     IMP implementation = [archive methodForSelector:selector];
@@ -387,7 +388,7 @@ static Class TKArchiveClass(NSError **error) {
     SEL selector = @selector(restoreBackupNamed:inWorkingDirectory:edition:error:);
     Class archive = TKArchiveClass(error);
     if (!archive || ![archive respondsToSelector:selector]) {
-        if (archive && error) *error = TKError(@"The backup component cannot be used in this build.");
+        if (archive && error) *error = TKError(WKLocalized(@"forever.error.backupComponent"));
         return NO;
     }
     IMP implementation = [archive methodForSelector:selector];
@@ -400,7 +401,7 @@ static Class TKArchiveClass(NSError **error) {
     SEL selector = @selector(recoverInterruptedRestoreInWorkingDirectory:error:);
     Class archive = TKArchiveClass(error);
     if (!archive || ![archive respondsToSelector:selector]) {
-        if (archive && error) *error = TKError(@"The backup component cannot be used in this build.");
+        if (archive && error) *error = TKError(WKLocalized(@"forever.error.backupComponent"));
         return NO;
     }
     IMP implementation = [archive methodForSelector:selector];

@@ -21,6 +21,7 @@
 #import "../Input/InputElement.h"
 #import "../Controller/ControllerInspector.h"
 #import "../App/WolkaraForeverLog.h"
+#import "../App/WKLocalization.h"
 #import "../App/WolkaraForeverTheme.h"
 
 @interface AKVoiceViewController ()
@@ -46,11 +47,11 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Key / Button Configuration".uppercaseString;
+    self.title = WKLocalized(@"voice.title").uppercaseString;
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     self.view.backgroundColor = WKInk();
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
-    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Done"
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:WKLocalized(@"common.done")
         style:UIBarButtonItemStyleDone target:self action:@selector(done)];
     self.navigationItem.leftBarButtonItem.tintColor = WKGold();
 
@@ -65,30 +66,30 @@
     rows.translatesAutoresizingMaskIntoConstraints = NO;
     [scroll addSubview:rows];
 
-    [rows addArrangedSubview:WKNote(@"Nothing here happens on its own. Until this is switched on and a button is set, the microphone is never opened and no controller behaves any differently.")];
+    [rows addArrangedSubview:WKNote(WKLocalized(@"voice.intro"))];
 
     // --- On, or off ---------------------------------------------------------
-    [rows addArrangedSubview:WKHeading(@"Voice")];
+    [rows addArrangedSubview:WKHeading(WKLocalized(@"voice.heading.voice"))];
     self.enabledSwitch = [self switchWithAction:@selector(enabledChanged)
-                                         title:@"Use a button to talk"
+                                         title:WKLocalized(@"voice.enabled")
                                     identifier:@"voice.enabled"];
     self.enabledNote = WKNote(@"");
-    [rows addArrangedSubview:[self card:@[[self switchRow:@"Use a button to talk"
+    [rows addArrangedSubview:[self card:@[[self switchRow:WKLocalized(@"voice.enabled")
                                                   control:self.enabledSwitch], self.enabledNote]]];
 
     // --- Which button -------------------------------------------------------
-    [rows addArrangedSubview:WKHeading(@"Button")];
+    [rows addArrangedSubview:WKHeading(WKLocalized(@"voice.heading.button"))];
     self.mappingValue = WKLabel(16, UIFontWeightSemibold, UIColor.whiteColor);
     self.mappingValue.accessibilityIdentifier = @"voice.mapping";
-    self.mapButton = [self filledButton:@"voice.map" title:@"Map a button…" action:@selector(beginMapping)];
-    self.clearButton = [self borderedButton:@"voice.clear" title:@"Clear" action:@selector(clearMapping)];
-    self.mappingHint = WKNote(@"Tap Map, then press the button you want to use.");
+    self.mapButton = [self filledButton:@"voice.map" title:WKLocalized(@"voice.map") action:@selector(beginMapping)];
+    self.clearButton = [self borderedButton:@"voice.clear" title:WKLocalized(@"common.clear") action:@selector(clearMapping)];
+    self.mappingHint = WKNote(WKLocalized(@"voice.mapping.hint"));
     // The audit's finding, said where the mapping is made rather than in a document
     // reads: by default this feature listens to a button and does not take it from the game.
     // The switch below is how the user takes it, and it says which buttons that works for. It
     // carries an identifier because the voice fixture asserts the warning is still on the
     // page: a warning that can disappear without a test is the same as no warning.
-    UILabel *collision = WKNote(@"The button you map still reaches the game unless you take it below. Nothing here takes it away from the game by itself, so choosing one the game already uses makes it do both things at once.");
+    UILabel *collision = WKNote(WKLocalized(@"voice.mapping.collision"));
     collision.accessibilityIdentifier = @"voice.mapping.collision";
     self.mappingCard = [self card:@[self.mappingValue, self.mapButton, self.clearButton, self.mappingHint, collision]];
     [rows addArrangedSubview:self.mappingCard];
@@ -99,22 +100,22 @@
     // which those are, because a pad button cannot be taken - iPadOS gives us the pad's
     // buttons as gamepad elements and the guest's key events cannot be traced back to them.
     self.takeButtonSwitch = [self switchWithAction:@selector(takeButtonChanged)
-                                            title:@"Keep the game from seeing it"
+                                            title:WKLocalized(@"voice.takeButton")
                                        identifier:@"voice.takebutton"];
     self.takeButtonSwitch.on = AKVoiceSettings.shared.takeButtonFromGame;
     // The sentence about what cannot be taken carries an identifier for the same reason the
     // collision warning does: the fixture asserts it is still on the page. A limit that can
     // disappear without a test is not a stated limit.
-    UILabel *padLimit = WKNote(@"On, a keyboard key you have mapped for dictation does not reach the game at all. A controller button cannot be taken this way, because iOS tells us about the pad's buttons in a form we cannot match to the game's own input - so for a pad, pick a button the game does not use.");
+    UILabel *padLimit = WKNote(WKLocalized(@"voice.takeButton.note"));
     padLimit.accessibilityIdentifier = @"voice.takebutton.note";
-    self.takeButtonCard = [self card:@[[self switchRow:@"Keep the game from seeing it"
+    self.takeButtonCard = [self card:@[[self switchRow:WKLocalized(@"voice.takeButton")
                                               control:self.takeButtonSwitch],
         padLimit]];
     [rows addArrangedSubview:self.takeButtonCard];
 
     // --- How it behaves -----------------------------------------------------
-    [rows addArrangedSubview:WKHeading(@"Mode")];
-    self.modeControl = [[UISegmentedControl alloc] initWithItems:@[@"Hold to talk", @"Press to start and stop"]];
+    [rows addArrangedSubview:WKHeading(WKLocalized(@"voice.heading.mode"))];
+    self.modeControl = [[UISegmentedControl alloc] initWithItems:@[WKLocalized(@"voice.mode.hold"), WKLocalized(@"voice.mode.toggle")]];
     self.modeControl.accessibilityIdentifier = @"voice.mode";
     self.modeControl.selectedSegmentIndex = AKVoiceSettings.shared.mode == AKVoiceModeHold ? 0 : 1;
     self.modeControl.selectedSegmentTintColor = WKGold();
@@ -122,27 +123,27 @@
     [self.modeControl setTitleTextAttributes:@{NSForegroundColorAttributeName: WKMuted()} forState:UIControlStateNormal];
     [self.modeControl addTarget:self action:@selector(modeChanged) forControlEvents:UIControlEventValueChanged];
     self.modeCard = [self card:@[self.modeControl,
-        WKNote(@"Hold to talk needs a button whose press and release both reach us. A button Apple keeps for itself, like Share, can only press to start and stop.")]];
+        WKNote(WKLocalized(@"voice.mode.note"))]];
     [rows addArrangedSubview:self.modeCard];
 
     // --- What happens to the words ------------------------------------------
-    [rows addArrangedSubview:WKHeading(@"After transcribing")];
+    [rows addArrangedSubview:WKHeading(WKLocalized(@"voice.heading.after"))];
     self.autoSubmitSwitch = [self switchWithAction:@selector(autoSubmitChanged)
-                                           title:@"Send it straight away"
+                                           title:WKLocalized(@"voice.autoSubmit")
                                       identifier:@"voice.autosubmit"];
     self.trailingSpaceSwitch = [self switchWithAction:@selector(trailingSpaceChanged)
-                                               title:@"Add a space after the text"
+                                               title:WKLocalized(@"voice.trailingSpace")
                                           identifier:@"voice.trailingspace"];
     self.afterCard = [self card:@[
-        [self switchRow:@"Send it straight away" control:self.autoSubmitSwitch],
-        [self switchRow:@"Add a space after the text" control:self.trailingSpaceSwitch]
+        [self switchRow:WKLocalized(@"voice.autoSubmit") control:self.autoSubmitSwitch],
+        [self switchRow:WKLocalized(@"voice.trailingSpace") control:self.trailingSpaceSwitch]
     ]];
     [rows addArrangedSubview:self.afterCard];
 
     // --- Dictionary ---------------------------------------------------------
-    [rows addArrangedSubview:WKHeading(@"Words to expect")];
+    [rows addArrangedSubview:WKHeading(WKLocalized(@"voice.heading.words"))];
     self.wordsCard = [self card:@[self.dictionaryField,
-        WKNote(@"These bias the recogniser, so a name comes out spelled the way you mean it.")]];
+        WKNote(WKLocalized(@"voice.words.note"))]];
     [rows addArrangedSubview:self.wordsCard];
 
     [NSLayoutConstraint activateConstraints:@[
@@ -176,7 +177,7 @@
         WKLog("voice", @"mapped %@ for %@ (the game still receives it; a shared button does both)",
               trigger.element, device);
         [weakSelf refreshMapping];
-        weakSelf.mappingHint.text = @"Saved. It applies whenever that controller is connected — and the game still receives that button.";
+        weakSelf.mappingHint.text = WKLocalized(@"voice.mapping.saved");
     };
     // The arming expires in the router, not here, but this is where the user is
     // looking when it does.
@@ -236,9 +237,9 @@
     BOOL on = AKVoiceSettings.shared.enabled;
     NSString *device = self.pad.vendorName;
     self.enabledNote.text = on
-        ? (device ? [NSString stringWithFormat:@"On. The button below applies to %@.", device]
-                  : @"On. Connect a controller and map a button.")
-        : @"Off. The microphone is not opened and no controller is affected.";
+        ? (device ? WKLocalizedFormat(@"voice.enabled.on", device)
+                  : WKLocalized(@"voice.enabled.on.none"))
+        : WKLocalized(@"voice.enabled.off");
     for (UIView *card in @[self.mappingCard, self.takeButtonCard, self.modeCard, self.afterCard, self.wordsCard]) {
         card.alpha = on ? 1.0 : 0.4;
         card.userInteractionEnabled = on;
@@ -256,7 +257,7 @@
 
 - (void)beginMapping {
     WKLog("voice", @"waiting for a button to map");
-    self.mappingHint.text = @"Press the button you want to use now…";
+    self.mappingHint.text = WKLocalized(@"voice.mapping.press");
     self.mapButton.enabled = NO;
     [AKInputRouter.shared beginLearning];
 }
@@ -264,13 +265,13 @@
 - (void)clearMapping {
     [AKVoiceSettings.shared clearMappingForDevice:[self deviceIdentity]];
     [self refreshMapping];
-    self.mappingHint.text = @"Cleared. Nothing will start dictation until a button is set again.";
+    self.mappingHint.text = WKLocalized(@"voice.mapping.cleared");
 }
 
 - (void)learningExpired:(NSNotification *)notification {
     (void)notification;
     if (!AKVoiceSettings.shared.enabled) return;
-    self.mappingHint.text = @"Nothing arrived, so nothing was set. Tap Map and try again.";
+    self.mappingHint.text = WKLocalized(@"voice.mapping.nothing");
     [self refreshEnabledAppearance];
 }
 
@@ -278,9 +279,12 @@
     NSString *device = [self deviceIdentity];
     NSString *summary = [AKVoiceSettings.shared mappingSummaryForDevice:device];
     GCController *pad = self.pad;
+    // The settings object answers in its own words - "Not set" is its own value, compared here
+    // and asserted by the voice fixture - so the translated form is made where it is shown.
+    NSString *shown = [summary isEqualToString:@"Not set"] ? WKLocalized(@"voice.mapping.notSet") : summary;
     self.mappingValue.text = pad
-        ? [NSString stringWithFormat:@"%@ — %@", summary, pad.vendorName]
-        : [NSString stringWithFormat:@"%@ — no controller connected", summary];
+        ? WKLocalizedFormat(@"voice.mapping.device", shown, pad.vendorName)
+        : WKLocalizedFormat(@"voice.mapping.noController", shown);
     self.clearButton.hidden = [summary isEqualToString:@"Not set"];
     self.mapButton.enabled = AKVoiceSettings.shared.enabled && !AKInputRouter.shared.learning;
 }
@@ -320,7 +324,7 @@
     _dictionaryField.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     _dictionaryField.adjustsFontForContentSizeCategory = YES;
     _dictionaryField.attributedPlaceholder = [[NSAttributedString alloc]
-        initWithString:@"Names, places, game terms — separated by commas"
+        initWithString:WKLocalized(@"voice.words.placeholder")
         attributes:@{NSForegroundColorAttributeName: WKMuted()}];
     // Losing the border costs the field its own inset, so put one back.
     _dictionaryField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 12, 1)];
