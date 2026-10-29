@@ -33,6 +33,7 @@
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls;
 - (BOOL)foreverActionAllowed;
 - (NSString *)foreverWorkingDirectory;
+- (void)preferences;
 - (void)chooseAppLanguage;
 - (void)applyAppLanguage:(WKAppLanguage)language;
 - (void)setGameLocale:(NSString *)locale;
@@ -365,7 +366,10 @@ static void TestAddons(void) {
     // German part at the end sets it itself and leaves it back in English.
     [NSUserDefaults.standardUserDefaults removeObjectForKey:WKAppLanguageDefaultsKey];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverGameLanguageOfferShown"];
-    if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
+    // A hang guard, not a budget: the whole scripted run - including the German pass, the
+    // one-time offer and the largest-text pass - takes about half of this, and a fixture that is
+    // still going after it is stuck rather than slow.
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,60*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
         fprintf(stderr,"WoW UIKit TIMEOUT\n"); _Exit(1);
     });
     // Watching for the software keyboard tells a shim-level input block apart
@@ -1134,9 +1138,39 @@ static NSString *configBeforeReset;
     assert([[self row:@"wow.language"].configuration.title hasPrefix:@"App language: English"]);
     WKLocalization.shared.language = WKAppLanguageEnglish;
 
-    // --- the sheet offers the three choices, and the last one names its resolution
+    // --- a sheet opened from another sheet's action is not lost to the dismissal
+    [self.controller preferences];
+    [self performSelector:@selector(checkNestedSheet) withObject:nil afterDelay:0.4];
+}
+
+// Declared on TKWoWViewController for the fixture; see the category above.
+
+- (void)checkNestedSheet {
+    UIAlertController *preferences = (id)self.controller.presentedViewController;
+    assert([preferences isKindOfClass:UIAlertController.class]);
+    assert([preferences.title isEqual:@"Download preferences"]);
+    // Exactly what the sheet's own "Language" action does: the sheet starts its animated
+    // dismissal, and the handler opens the picker in the same turn.
+    [self.controller dismissViewControllerAnimated:YES completion:nil];
+    [self.controller choosePreference:NO];
+    [self performSelector:@selector(checkNestedSheetOpened) withObject:nil afterDelay:1.0];
+}
+
+- (void)checkNestedSheetOpened {
+    UIAlertController *picker = (id)self.controller.presentedViewController;
+    assert([picker isKindOfClass:UIAlertController.class]);
+    assert([picker.title isEqual:@"Download language"]);
+    NSArray *titles = [picker.actions valueForKey:@"title"];
+    assert([titles containsObject:@"German"]);
+    assert([titles containsObject:@"Spanish"]);
+    [self dismissPresented];
+    // --- the row's own sheet offers the three choices, and the last one names its resolution
+    [self performSelector:@selector(openLanguageSheet) withObject:nil afterDelay:0.4];
+}
+
+- (void)openLanguageSheet {
     [self.controller chooseAppLanguage];
-    [self performSelector:@selector(checkLanguageSheet) withObject:nil afterDelay:0.5];
+    [self performSelector:@selector(checkLanguageSheet) withObject:nil afterDelay:0.6];
 }
 
 - (void)checkLanguageSheet {
@@ -1150,17 +1184,15 @@ static NSString *configBeforeReset;
     assert([titles containsObject:@"System Default (English)"]);
     assert([titles containsObject:@"Cancel"]);
     [self dismissPresented];
-    // After the sheet has actually gone: UIKit refuses a second presentation while one is on its
-    // way out, and the language would then be changed with no offer to see.
-    [self performSelector:@selector(applyGerman) withObject:nil afterDelay:0.5];
-}
-
-- (void)applyGerman {
-    // --- German, applied to the page as it stands: no relaunch, no lost installation state
+    // The app's own sequence, reproduced: the choice is applied from the sheet's action handler,
+    // in the same turn the sheet begins its animated dismissal. UIKit silently drops a
+    // presentation that starts while another is going away, so without the wait the one-time
+    // offer is lost and its flag spent - which is what this checks now.
+    [self.controller dismissViewControllerAnimated:YES completion:nil];
     int backupsBefore = stubBackups;
     [self.controller applyAppLanguage:WKAppLanguageGerman];
     assert(stubBackups == backupsBefore);   // a language is not a file operation
-    [self performSelector:@selector(checkGermanPage) withObject:nil afterDelay:0.4];
+    [self performSelector:@selector(checkGermanPage) withObject:nil afterDelay:1.4];
 }
 
 - (void)checkGermanPage {

@@ -176,8 +176,10 @@
 "home.render.failed.message" = "The display profile was selected, but Forever's graphics settings were left unchanged because a backup or write failed. %@";
 "home.addons.unavailable.title" = "Add-ons unavailable";
 "home.addons.unavailable.message" = "The game's folder could not be opened.";
+"home.addons.unavailable.reason" = "The game's folder could not be opened: %@";
 "home.settingsFolder.unavailable.title" = "Settings folder unavailable";
 "home.settingsFolder.unavailable.message" = "The game's settings folder could not be opened.";
+"home.settingsFolder.unavailable.reason" = "The game's settings folder could not be opened: %@";
 "home.about.title" = "About";
 "about.intro" = "WolkaraForever — an independent World of Warcraft launcher built on Tolkara. Not affiliated with or endorsed by Blizzard Entertainment. World of Warcraft belongs to Blizzard Entertainment.\n\n";
 "about.documentMissing" = "%@ is missing from this build.";

@@ -176,8 +176,10 @@
 "home.render.failed.message" = "Das Anzeigeprofil wurde gewählt, aber die Grafikeinstellungen von Forever blieben unverändert, weil eine Sicherung oder das Schreiben fehlgeschlagen ist. %@";
 "home.addons.unavailable.title" = "Add-ons nicht verfügbar";
 "home.addons.unavailable.message" = "Der Ordner des Spiels konnte nicht geöffnet werden.";
+"home.addons.unavailable.reason" = "Der Ordner des Spiels konnte nicht geöffnet werden: %@";
 "home.settingsFolder.unavailable.title" = "Einstellungsordner nicht verfügbar";
 "home.settingsFolder.unavailable.message" = "Der Einstellungsordner des Spiels konnte nicht geöffnet werden.";
+"home.settingsFolder.unavailable.reason" = "Der Einstellungsordner des Spiels konnte nicht geöffnet werden: %@";
 "home.about.title" = "Über diese App";
 "about.intro" = "WolkaraForever – ein unabhängiger World-of-Warcraft-Launcher auf Basis von Tolkara. Nicht mit Blizzard Entertainment verbunden und nicht von Blizzard Entertainment unterstützt. World of Warcraft gehört Blizzard Entertainment.\n\n";
 "about.documentMissing" = "%@ fehlt in dieser Version.";

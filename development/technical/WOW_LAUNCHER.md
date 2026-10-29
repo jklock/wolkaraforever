@@ -357,7 +357,9 @@ or the app's private cache on a device. Never commit or distribute them.
 ## Unified home validation (2026-10-06)
 
 The isolated UIKit fixture uses synthetic game metadata and never runs a game
-or contacts Blizzard. It verifies English copy on a Spanish device, automatic
+or contacts Blizzard. It verifies English copy on a Spanish device — and the
+German page after the app language is switched, including that no raw
+localization key is visible — plus automatic
 check/update, edition races, offline retry, background cancellation, startup
 configuration, the verified Play gate and one-session restriction. Added cases
 keep preparation and failure in the same navigation root, block repeat launch

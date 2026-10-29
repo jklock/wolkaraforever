@@ -652,6 +652,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (localization.language==language) return;
     WKLog("language", @"the user chose %@", [WKLocalization storedValueForLanguage:language]);
     localization.language=language;      // persists, and posts; -appLanguageChanged: redraws
+    // This runs inside the sheet's own action handler, so the sheet is dismissing as it does.
+    // -presentSheet: waits for that; the log line says so when the wait is what happened.
     [self offerGermanGameLanguage];
 }
 // The first time the app is put into German, offer to put the *game* into German too -
@@ -883,7 +885,33 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     frame.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     frame.navigationBar.tintColor=WKGold();
     WKLog("ui", @"opening %@ over the home page", NSStringFromClass(page.class));
-    [self presentViewController:frame animated:YES completion:nil];
+    __weak TKWoWViewController *weakSelf=self;
+    [self whenNothingIsPresented:^{
+        TKWoWViewController *self=weakSelf; if (!self) return;
+        [self presentViewController:frame animated:YES completion:nil];
+    }];
+}
+// Presenting from an alert's action handler is presenting while that alert is going away, and
+// UIKit drops the new page - silently, with a console warning nobody on a device ever sees. The
+// tap that opened a second sheet, or the message that announced what a choice had done, simply
+// did not happen. So everything this controller shows goes through here and waits for the page to
+// have nothing presented; the dismissal is animated, hence the re-check rather than one delay.
+// Twenty attempts is several times the longest one; if something the person opened is still up
+// after that, putting our own page over it would be the wrong answer anyway.
+- (void)whenNothingIsPresented:(void (^)(void))presentation attempts:(NSInteger)attempts {
+    if (!self.presentedViewController) { presentation(); return; }
+    if (attempts<=0) {
+        WKLog("ui", @"not showing a page over %@: it is still presented",
+              NSStringFromClass(self.presentedViewController.class));
+        return;
+    }
+    __weak TKWoWViewController *weakSelf=self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.1*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        [weakSelf whenNothingIsPresented:presentation attempts:attempts-1];
+    });
+}
+- (void)whenNothingIsPresented:(void (^)(void))presentation {
+    [self whenNothingIsPresented:presentation attempts:20];
 }
 - (void)presentSheet:(UIAlertController *)sheet anchor:(UIView *)anchor {
     // A sheet that brings its own way out keeps it: two cancel actions is a UIKit warning
@@ -892,9 +920,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     for (UIAlertAction *action in sheet.actions) if (action.style==UIAlertActionStyleCancel) cancellable=NO;
     if (cancellable)
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
-    if (anchor) { sheet.popoverPresentationController.sourceView=anchor; sheet.popoverPresentationController.sourceRect=anchor.bounds; }
-    else sheet.popoverPresentationController.barButtonItem=self.navigationItem.rightBarButtonItem;
-    [self presentViewController:sheet animated:YES completion:nil];
+    __weak TKWoWViewController *weakSelf=self;
+    [self whenNothingIsPresented:^{
+        TKWoWViewController *self=weakSelf; if (!self) return;
+        if (anchor) { sheet.popoverPresentationController.sourceView=anchor; sheet.popoverPresentationController.sourceRect=anchor.bounds; }
+        else sheet.popoverPresentationController.barButtonItem=self.navigationItem.rightBarButtonItem;
+        [self presentViewController:sheet animated:YES completion:nil];
+    }];
 }
 - (void)chooseEdition {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.edition.title") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
@@ -954,9 +986,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     }]];
     if (_startupFailure || _error || _installation.error) [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.technical") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a;
-        UIAlertController *details=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.details.title") message:self->_startupFailure?:(self->_error?:self->_installation.error).localizedDescription preferredStyle:UIAlertControllerStyleAlert];
-        [details addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:details animated:YES completion:nil];
+        // The raw reason, in whatever language the layer produced it: it is detail, and it matches
+        // the log line beside it. The title is ours and is translated.
+        [self presentMessage:WKLocalized(@"home.settings.details.title")
+                     message:self->_startupFailure?:(self->_error?:self->_installation.error).localizedDescription];
     }]];
     [self presentSheet:sheet anchor:nil];
 }
@@ -1054,7 +1087,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:title message:message
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    __weak TKWoWViewController *weakSelf=self;
+    [self whenNothingIsPresented:^{
+        TKWoWViewController *self=weakSelf; if (!self) return;
+        [self presentViewController:alert animated:YES completion:nil];
+    }];
 }
 // A snapshot of the complete Forever UI. It is an explicit user action here, and
 // it is also the rollback point the two destructive rows make for themselves.
@@ -1279,7 +1316,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (!directory) return;
     NSError *error=nil;
     NSString *wtf=[TKForeverUI wtfDirectoryInWorkingDirectory:directory create:YES error:&error];
-    if (!wtf) { [self presentMessage:WKLocalized(@"home.settingsFolder.unavailable.title") message:error.localizedDescription?:WKLocalized(@"home.settingsFolder.unavailable.message")]; return; }
+    if (!wtf) { [self presentMessage:WKLocalized(@"home.settingsFolder.unavailable.title")
+        message:error.localizedDescription?WKLocalizedFormat(@"home.settingsFolder.unavailable.reason",error.localizedDescription):WKLocalized(@"home.settingsFolder.unavailable.message")]; return; }
     NSURL *folder=[NSURL fileURLWithPath:wtf isDirectory:YES];
     if (self.openSettingsFolderURL) { self.openSettingsFolderURL(folder); return; }
     UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc]
@@ -1302,10 +1340,14 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)presentAddonsUnavailable:(nullable NSError *)error {
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.addons.unavailable.title")
-        message:error.localizedDescription?:WKLocalized(@"home.addons.unavailable.message")
+        message:error.localizedDescription?WKLocalizedFormat(@"home.addons.unavailable.reason",error.localizedDescription):WKLocalized(@"home.addons.unavailable.message")
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    __weak TKWoWViewController *weakSelf=self;
+    [self whenNothingIsPresented:^{
+        TKWoWViewController *self=weakSelf; if (!self) return;
+        [self presentViewController:alert animated:YES completion:nil];
+    }];
 }
 - (nullable NSString *)addOnsDirectoryWithError:(NSError **)error {
     NSString *directory=[_library workingDirectoryForApp:_installation.app error:error];
