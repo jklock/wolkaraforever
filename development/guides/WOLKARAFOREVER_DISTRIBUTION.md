@@ -10,8 +10,9 @@ and the [fresh-install checklist](../testing/FRESH_INSTALL_TEST.md).
 
 The existing personal setup uses Xcode signing, the integrated Developer service
 target, Developer Mode and one-time device enrolment. Forever gameplay and
-Mac-disconnected reboot/launch were reported on an iPad Pro M5. Those
-reports do not prove network startup, the latest updater revision, or a
+Mac-disconnected reboot/launch were reported on an iPad Pro M5; no record of that
+session is retained here, so neither is demonstrated at the current revision.
+Those reports do not prove network startup, the latest updater revision, or a
 fresh install using another user's signing identity. See [COMPATIBILITY.md](../../COMPATIBILITY.md).
 
 The updater checks editions and installs patches while open. A first full

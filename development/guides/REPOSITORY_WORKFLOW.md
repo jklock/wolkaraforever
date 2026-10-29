@@ -1,6 +1,6 @@
 # Repository workflow and GitHub settings
 
-> **Current as of 2026-10-28 · source revision `fbd69f8`**
+> **Current as of 2026-10-29 · branch `main`.**
 
 This is the durable contributor workflow for WolkaraForever. It protects the pinned upstream
 engine and evidence that must remain tied to the exact build that ran.

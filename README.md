@@ -4,7 +4,7 @@
 
 # WolkaraForever
 
-> **Current as of 2026-10-29 · source revision `4934e20`**
+> **Current as of 2026-10-29 · branch `main`.**
 
 **World of Warcraft Forever on iPad, running locally through Tolkara.**
 

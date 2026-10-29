@@ -1,6 +1,6 @@
 # Install WolkaraForever
 
-> **Current as of 2026-10-28 · source revision `fbd69f8`**
+> **Current as of 2026-10-29 · branch `main`.**
 
 WolkaraForever is installed from source. It is not an App Store, TestFlight, or public-IPA
 release. The supported integrated route uses the iPad Developer service.

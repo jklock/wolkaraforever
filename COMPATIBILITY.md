@@ -1,6 +1,6 @@
 # Compatibility
 
-> **Current source review: 2026-10-28 · revision `fbd69f8`**
+> **Current source review: 2026-10-29 · branch `main`.**
 
 Compatibility is specific to an iPad model, iPadOS version, WoW build, execution mode,
 account state, and the exact source revision. This page deliberately does not turn a past
@@ -26,9 +26,10 @@ a general consumer-install promise.
 | Forever configuration operations | Focused source tests | Backup/restore, graphics reset, gamepad setting, locale writes, and path safety. |
 | Earlier device work | Historical records | Dated results, with their device/build/revision boundaries retained in `development/validation/`. |
 
-No statement here certifies that `fbd69f8` has been physically exercised on a particular
-device after this documentation review. Treat a device result as valid only when it names the
-device, iPadOS version, client build, execution mode, and source revision.
+No statement here certifies that the current branch has been physically exercised on a
+particular device after this documentation review: the source is what was reviewed. Treat a
+device result as valid only when it names the device, iPadOS version, client build, execution
+mode, and source revision.
 
 ## Before you rely on it
 

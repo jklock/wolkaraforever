@@ -1,6 +1,11 @@
 # Changelog
 
-> **Documentation index current as of 2026-10-28 · source revision `fbd69f8`**
+> **Documentation index current as of 2026-10-29 · branch `main`.**
+
+This page names no source revision on purpose: it describes whatever commit you are
+reading, and a pinned hash here would be stale by the next commit. Physical results are
+kept as dated records under [development/validation/](development/validation/), where
+they name the revision that actually ran.
 
 This changelog records release history. It is not a compatibility guarantee: read the current
 [installation guide](docs/INSTALLATION.md), [user guide](docs/USING_WOLKARAFOREVER.md), and

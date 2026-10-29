@@ -23,8 +23,12 @@ Own-code execution and full original-image authorization now pass through our
 bundled helper. Full 87,425,024-byte preparation, verification and confirmed
 detachment took 81.584 seconds with checked -O optimization. The host accepted
 its matching receipt and executed every original initializer. Original main
-subsequently reached Metal rendering and audio after a QuartzCore sizing wait;
-the login screen was confirmed on the device. Disconnected cold launch and launch after a reboot were confirmed later.
+subsequently reached Metal rendering and audio after a QuartzCore sizing wait,
+and the login screen was confirmed on the device. A disconnected cold launch and
+a launch after a reboot were later **reported** on the reference iPad; no record
+of them is retained in this repository, and the integration update further down
+this file still records them as not demonstrated. Read that update, not this
+paragraph, for what the repository can prove.
 The implementation notes below include historical intermediate states.
 
 Long-lived provider-message replies could be lost while the host was stopped.
@@ -231,7 +235,12 @@ owns existing-pair verification -> encrypted tunnel -> discovery and retains the
 pairing control connection until teardown. Its ready callback supplies a catalog
 and connection manager, not any executable-memory authorization. It still needs
 a trusted pairing identity and separately bound expected RSD device identifier.
-It is compiled into the helper but is not wired into the app's launch UI.
+
+`LocalDeveloperSession` is a library the host uses directly. The route the app
+itself launches on is `TKPacketServiceProbe` in the helper (its extension), which
+runs the same verification -> tunnel -> discovery sequence over the packet flow
+and, after confirming the raw debugger capability, installs exactly that verified
+service on `ArenaPreparationService`. See *How the app's launch reaches it* below.
 
 ASan evidence: build/tunnel-streams-unit-tests.log,
 build/tunnel-manager-unit-tests.log, build/developer-session-unit-tests.log.
@@ -272,7 +281,9 @@ Tolkara and its extension now share the signed
 Tolkara uses Integrated-Info.plist; HostBase excludes its old Info.plist
 from copied resources to avoid a duplicate after the override. The baseline Host
 still uses its original Info.plist. Only our own storage/identity code was added
-to the host. The storage API is not connected to enrollment UI yet.
+to the host. The storage API has no in-app enrollment UI by design: the supported
+flow is `tools/enroll.sh` followed by the two import arguments (see *Remaining
+gates*, item 2).
 
 ASan unit evidence: build/pairing-storage-unit-tests.log. Simulator evidence:
 build/pairing-storage-simulator-tests.log. Three **simulator-only** probe app
@@ -380,12 +391,13 @@ argument, Mac-assisted startup still uses host_debugger_publish_arena.
 The bundled provider now passes binary arena messages to `ArenaPreparationService`.
 Its default is a definite rejection: no debugger connection is attempted until
 an authenticated ready raw service/manager is explicitly installed. Its private
-setter is currently exercised only by fixtures, not connected to real enrollment
-or service discovery. Once configured it runs DebugArenaClient with the request
-deadline, returns a bound receipt, and refuses a second attach attempt. Provider
-shutdown invalidates it and cancels outstanding work. Pairing keys are never put
-in these messages. Keep the owning LocalDeveloperSession alive when connecting
-this service to the real backend.
+setter is exercised by fixtures and, in production, by `TKPacketServiceProbe`
+after its raw `qSupported` capability check on the discovered RSD port. Once
+configured it runs DebugArenaClient with the request deadline, returns a bound
+receipt, and refuses a second attach attempt. Provider shutdown invalidates it
+and cancels outstanding work. Pairing keys are never put in these messages. The
+probe retains itself for the route's lifetime, so the owning session stays alive
+while the service is in use.
 
 Evidence:
 - build/arena-control-tests.log: literal wire fixture, every-byte reply binding,
@@ -434,45 +446,69 @@ services explicitly. See the primary debugserver/RSD references below.
 1. Verify direct route availability on M5/iPadOS 27, then the optional virtual
    route. The simulator cannot validate the physical development service, TXM
    executable permissions, or packet-tunnel device behavior.
-2. Implement authenticated Remote Pairing from the protocol specification using
-   system cryptography. Protected shared Keychain storage is now implemented;
-   connect a supported enrollment/approved-import flow to it. Never use
-   Files-shared Documents or logs. Do not weaken verification or substitute an
-   unauthenticated endpoint check. No real pairing credentials have been read or
-   transferred by this new implementation.
-   The raw `_remotepairing._tcp` endpoint supports existing-pair verification,
-   **not initial pair setup**. Establish a supported enrollment/import path;
-   availability of a local VPN or development signing does not supply a pairing
-   identity. The reference spec calls device-proof decryption optional and TLS
+2. Enrollment is implemented as a development handoff, not in-app UI: `tools/enroll.sh`
+   creates the identity, writes `Enrollment.pending` into the app's protected handoff
+   directory, and the app imports it with `--prepare-authorization-import` and
+   `--import-authorization-enrollment`, which verifies the supplied device identifier
+   and fingerprint and then inserts into the shared protected Keychain. If enrollment
+   ever needs to happen without a Mac, that is a new feature and a new trust review,
+   not a missing branch. Never use Files-shared Documents or logs as the store. Do not
+   weaken verification or substitute an unauthenticated endpoint check. The raw
+   `_remotepairing._tcp` endpoint supports existing-pair verification, **not initial
+   pair setup**. The reference spec calls device-proof decryption optional and TLS
    Finished mismatches nonfatal; do not carry those relaxations into our code.
    Resolve and verify device identity proof rather than claiming that a decrypted
    message authenticates its sender. System TLS now avoids implementing TLS
-   records ourselves and must retain its authentication checks.
-   The existing-pair session/transport now has synthetic coverage; next validate
-   its real device envelope fields and proof format, and implement enrollment
-   using the new protected store. Do not silently accept an unverified peer to get
-   past an interoperability failure.
-3. The managed pairing/tunnel/discovery lifecycle now has local synthetic peer
-   coverage. Validate actual Remote Pairing, direct/optional tunnel routing,
-   device discovery and developer-image readiness/service check-in. The manager
-   retains the pairing control connection through its owning session; the app
-   launch UI is not yet connected to it.
+   records ourselves and must retain its authentication checks. What source cannot
+   settle is the real device's envelope fields and proof format.
+3. The managed pairing/tunnel/discovery lifecycle has local synthetic peer coverage
+   and is connected to the app's launch path (see *How the app's launch reaches it*).
+   What remains is physical: actual Remote Pairing, the real RSD catalog, and
+   developer-image readiness on a device.
 4. Validate a separate helper process and its network path. A tunnel extension
-   already supplies a second process, but its own outgoing connections may bypass
-   tunnel routing. Do not assume it can act as the debug client without testing;
-   a separate *bundled* extension may be necessary. Do not attach from the target
-   process itself or rely on the suspended host to relay debugger traffic.
-5. Connect authenticated enrollment/session/discovery to the new preparation
-   service; its production instance currently rejects as unconfigured. Host IPC,
-   retention, one-shot launch and quarantine are implemented and tested. Select
-   the validated raw debugserver service and handle developer-image readiness;
-   then test the entire path on M5. Preserve visible startup errors and never
-   treat transport readiness or CS_DEBUGGED alone as native authorization.
+   already supplies a second process, which is what `TKPacketServiceProbe` uses, so
+   the debug client is not the target process. Whether the extension's outgoing
+   connections bypass the tunnel's own routes is still unverified on a device; do
+   not attach from the target process itself.
+5. The authenticated session and discovery are connected to `ArenaPreparationService`
+   through `TKPacketServiceProbe`, which installs the verified service only after a
+   raw `qSupported` capability check. Host IPC, retention, one-shot launch and
+   quarantine are implemented and tested. What remains is a physical run of that
+   whole path, developer-image readiness on a real device, and confirming that a
+   blocked or failed step still surfaces as a visible startup error rather than a
+   launch. Never treat transport readiness or CS_DEBUGGED alone as native
+   authorization.
 6. Demonstrate original native startup after force-close/relaunch with no Mac.
    The Mac shader compiler is now only a fallback for libraries the iPad
    refuses (the adapter tries the iPad first; see ARCHITECTURE.md); confirm
    with the captured-shader diagnostic (`tools/probe_captured_shaders.py`)
    that none of the game's libraries needs it.
+
+## How the app's launch reaches it
+
+The path is source-complete; what is missing is device evidence, not a
+connection. In order:
+
+1. `main.m` resolves the execution mode; the integrated build selects Developer
+   service (`TKWolkaraForeverExecutionMode`).
+2. `launchLocalApp:` calls `TKLocalAuthorization startAndPrepareLocalAuthorization:`.
+3. That starts our own packet-tunnel provider and sends `prepareAuthorization`
+   with the enrolled device identifier from `TKEnrolledDeviceIdentifier`.
+4. `TKLocalPacketProvider` hands the request to `TKPacketServiceProbe
+   startAuthorization`, which loads the protected enrollment, verifies the pinned
+   peer, opens the encrypted tunnel, discovers the RSD catalog and confirms the raw
+   debugproxy capability.
+5. On success it installs that verified manager/port on `ArenaPreparationService`
+   and replies `readyForPreparation = YES`, which the app turns into
+   `localSessionReady`.
+6. The launch then enters the guest; `NativeGuest` prepares memory through
+   `TKPrepareLocalArena` -> `LocalArenaPublisher` -> the provider's
+   `ArenaPreparationService`, and takes the arena only after a bound receipt whose
+   detach succeeded.
+
+Every step refuses rather than falling back: no enrollment, an unverified peer, a
+catalog without the debugproxy service, an insufficient arena and an unconfirmed
+detach each leave the guest unlaunched with a message naming the step.
 
 ## Primary protocol/API references (not bundled dependencies)
 

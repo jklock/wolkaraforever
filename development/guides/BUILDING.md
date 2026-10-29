@@ -196,8 +196,14 @@ private address to the iPad's own developer service and carries no other
 traffic; nothing leaves the device. How it works is documented in
 [LOCAL_AUTHORIZATION.md](../architecture/LOCAL_AUTHORIZATION.md).
 
-After enrolment the Mac is no longer needed: launches, relaunches and reboots
-work on the iPad alone. You need to repeat steps 3 and 4 only when your
+After enrolment the Mac is no longer needed for the transport: the app reaches
+the iPad's own developer service through its bundled tunnel, so a launch does not
+depend on a Mac. A disconnected cold launch and a launch after a reboot were
+**reported** on the reference iPad and are not retained as a record in this
+repository, which means they are not demonstrated at the current revision; the
+engineering record still lists them as unproven in
+[LOCAL_AUTHORIZATION.md](../architecture/LOCAL_AUTHORIZATION.md#remaining-gates).
+You need to repeat steps 3 and 4 only when your
 provisioning profile expires or you change the bundle ID or Keychain group.
 
 > `tools/enroll.sh` packages the procedure used during development into one

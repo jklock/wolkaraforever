@@ -1,6 +1,6 @@
 # Security
 
-> **Current as of 2026-10-28 · source revision `fbd69f8`**
+> **Current as of 2026-10-29 · branch `main`.**
 
 Tolkara's authorization module handles pairing keys and talks to the iPad's
 developer service, and its loader parses untrusted binary input. Please report

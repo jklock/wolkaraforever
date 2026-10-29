@@ -48,17 +48,21 @@ That catches assumptions our already-configured Mac/iPad cannot expose.
 
 ## Report
 
+Fill the right-hand column in as you go. The template values are deliberately
+empty: a row that reads `Verified` without a commit, date, device and record is
+not evidence, and this checklist is the form, not a result.
+
 | Check | Result / evidence |
 | --- | --- |
-| Commit, Xcode, device/OS, game build | Verified |
-| Clean build and independent enrollment | Verified |
-| Empty home and full on-device download | Verified |
-| Interrupted download / network recovery | Verified |
-| Version verified and first world entry | Verified |
-| Keyboard, touch, controller | Verified |
-| Reopen / reboot, Mac disconnected | Verified |
-| Subsequent real patch, settings preserved | Verified |
-| Another tester's signing/device | Verified |
+| Commit, Xcode, device/OS, game build | _not recorded_ |
+| Clean build and independent enrollment | _not recorded_ |
+| Empty home and full on-device download | _not recorded_ |
+| Interrupted download / network recovery | _not recorded_ |
+| Version verified and first world entry | _not recorded_ |
+| Keyboard, touch, controller | _not recorded_ |
+| Reopen / reboot, Mac disconnected | _not recorded_ |
+| Subsequent real patch, settings preserved | _not recorded_ |
+| Another tester's signing/device | _not recorded_ |
 
 Only mark a row passed after observing it. These results are separate from the
 existing gameplay reports in [COMPATIBILITY.md](../../COMPATIBILITY.md).
