@@ -42,7 +42,7 @@ Create one active ruleset targeting the default branch `main`.
 | Dismiss stale approval | Yes | A reviewed diff must remain the merged diff. |
 | Require conversation resolution | Yes | Prevents acknowledged issues from being silently merged. |
 | Require branch up to date | No by default | Avoids needless rebases for low-risk docs work. Enable temporarily during a release cut or a sensitive upstream ingest. |
-| Required checks | `Documentation`, `Layer integrity` from **Verify** | These are already the repository-wide CI checks. Add focused tests to PR evidence; promote another check only after it is stable in CI. |
+| Required checks | None from hosted CI | The **Verify** workflow was deleted on 2026-10-29: its macOS job never acquired a runner and failed after fifteen minutes on every push, so the check was about GitHub's capacity rather than about the change. `check_docs.sh` and `check_layers.sh` are run locally and their results recorded in the PR. Add focused tests to PR evidence; promote a check back into hosted CI only when it can complete on a runner the free tier provides. |
 | Block force pushes | Yes | Protects the integration history. |
 | Block branch deletion | Yes | `main` must always exist. |
 | Require linear history | Yes | Keeps review/revert history readable. |
@@ -97,8 +97,8 @@ be added when team size or release frequency makes them useful.
 
 1. Confirm the owner and contributor GitHub handles and whether owner bypass is desired.
 2. Apply Phase 1 settings and the Phase 2 ruleset through repository Settings.
-3. Verify the `Documentation` and `Layer integrity` check names on a test PR before making them
-   required.
+3. Run `wolkaraforever/tools/check_docs.sh` and `wolkaraforever/tools/check_layers.sh` on the
+   candidate branch and put both results in the PR: there is no hosted CI to do it.
 4. Replace CODEOWNERS placeholders, then enable CODEOWNERS enforcement in a follow-up PR.
 5. Add labels/templates/security configuration and create the initial Wiki structure.
 6. Open a test PR from the contributor account to prove review, checks, merge, and branch cleanup

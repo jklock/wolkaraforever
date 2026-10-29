@@ -13,8 +13,15 @@ repository; this page is the authoritative configuration record.
 - Require a pull request before merging, with at least one approval.
 - Dismiss stale approvals when new commits are pushed; require conversation resolution and
   the branch to be current with `main`.
-- Require the **Documentation** and **Layer integrity** status checks after the verification
-  workflow is enabled. Require any additional focused or release checks named in the PR.
+- No hosted CI. The verification is `wolkaraforever/tools/check_docs.sh` and
+  `wolkaraforever/tools/check_layers.sh`, run locally before the PR is opened, with the results
+  and the exact source SHA written into the PR. The **Verify** workflow was deleted on
+  2026-10-29: its macOS job never acquired a runner — the run said *"The job was not acquired by
+  Runner of type hosted even after multiple attempts"* and failed after fifteen minutes on every
+  push — so the red cross was about GitHub's capacity, not about the change, and reviewers learned
+  to ignore it. A check that cannot run is worse than one a person runs and reports. If hosted CI
+  comes back it has to be able to finish: a runner image the free tier actually provides, or only
+  the checks that run on Linux.
 - Require linear history; allow squash merges for ordinary PRs. Reserve merge commits for
   intentional integration branches.
 - Block force-pushes and branch deletion. Do not grant bypass permission to contributors.
