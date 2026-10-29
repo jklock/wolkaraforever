@@ -1,7 +1,7 @@
 # Implementation prompt: German app localization
 
 > **Implemented on 2026-10-29** (`1bf95d0`, recorded in
-> [the device check](../../validation/56ddc87-german-app-localization.md)). This file is kept as the
+> [the device check](../validation/56ddc87-german-app-localization.md)). This file is kept as the
 > prompt the work was written against, not as outstanding work: what was built, what is
 > deliberately not translated and how a string is added are in
 > [the localization guide](../../guides/LOCALIZATION.md).
