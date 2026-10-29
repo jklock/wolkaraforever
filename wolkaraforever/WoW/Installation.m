@@ -4,6 +4,15 @@
 @implementation TKWoWInstallation
 @end
 
+// .build.info tags are space-delimited. Match a complete token: `deDE` must
+// not become a match merely because it occurs inside another tag.
+static BOOL TKWoWTagsContainLocale(NSString *tags, NSString *locale) {
+    if (![tags isKindOfClass:NSString.class] || ![locale isKindOfClass:NSString.class] || !locale.length) return NO;
+    for (NSString *tag in [tags componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet])
+        if ([tag isEqual:locale]) return YES;
+    return NO;
+}
+
 TKWoWInstallation *TKWoWInspectInstallation(TKAppLibrary *library, NSDictionary *product, NSDictionary *plan) {
     TKWoWInstallation *result=[TKWoWInstallation new];
     result.state=TKWoWInstallationMissing;
@@ -33,6 +42,11 @@ TKWoWInstallation *TKWoWInspectInstallation(TKAppLibrary *library, NSDictionary 
         result.installedVersion=match[@"Version"];
         if (!TKWoWBuildCurrent(rows,product[@"id"],plan[@"version"])) {
             result.state=TKWoWInstallationOutdated; return result;
+        }
+        if (!TKWoWTagsContainLocale(match[@"Tags"],plan[@"locale"])) {
+            result.state=TKWoWInstallationOutdated;
+            result.localeNeedsUpdate=YES;
+            return result;
         }
         NSString *prefix=[directory stringByAppendingString:@"/"];
         if (![path hasPrefix:prefix]) { result.error=TKWoWError(@"Executable is outside the edition folder."); return result; }

@@ -9,6 +9,9 @@ typedef NS_ENUM(NSInteger, TKWoWInstallationState) {
 @interface TKWoWInstallation : NSObject
 @property(nonatomic) TKWoWInstallationState state;
 @property(nonatomic, copy, nullable) NSString *installedVersion;
+// The installed build is current, but its selected-language content differs
+// from the plan. The launcher uses this to explain why it is updating.
+@property(nonatomic) BOOL localeNeedsUpdate;
 @property(nonatomic, strong, nullable) TKApp *app;
 @property(nonatomic, strong, nullable) NSError *error;
 @end

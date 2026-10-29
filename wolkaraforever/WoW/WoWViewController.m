@@ -16,6 +16,9 @@ static UIColor *Gold(void) { return [UIColor colorWithRed:0.88 green:0.73 blue:0
 // reads as one thing instead of a mix of dimmed and full-strength text.
 static UIColor *RowGrey(void) { return [UIColor colorWithWhite:0.55 alpha:1]; }
 static UIColor *Muted(void) { return [UIColor colorWithRed:0.66 green:0.72 blue:0.78 alpha:1]; }
+static NSString *TKWoWLocaleName(NSString *locale) {
+    return @{@"enUS":@"English",@"esES":@"Spanish",@"deDE":@"German"}[locale]?:@"English";
+}
 static UILabel *Label(CGFloat size, UIFontWeight weight, UIColor *color) {
     UILabel *label=[UILabel new]; label.numberOfLines=0; label.textColor=color;
     label.font=[[UIFontMetrics metricsForTextStyle:UIFontTextStyleBody] scaledFontForFont:[UIFont systemFontOfSize:size weight:weight]];
@@ -577,7 +580,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_editionButton title:[_product[@"name"] stringByAppendingString:@"  ▾"] filled:NO];
     _editionButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _editionButton.backgroundColor=[UIColor colorWithWhite:1 alpha:0.055]; _editionButton.layer.cornerRadius=10;
-    [self configureButton:_preferencesButton title:[NSString stringWithFormat:@"%@  ·  %@  ▾",_region.uppercaseString,[_locale isEqual:@"esES"]?@"Spanish":@"English"] filled:NO];
+    [self configureButton:_preferencesButton title:[NSString stringWithFormat:@"%@  ·  %@  ▾",_region.uppercaseString,TKWoWLocaleName(_locale)] filled:NO];
     _preferencesButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     [self configureButton:_addonsButton title:_installation.app?@"Install Addons (Curse & Direct)":@"Install Addons (Curse & Direct) (install game first)" filled:NO];
     _addonsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
@@ -701,8 +704,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             detail=@"Install this edition on your device. The download may require several gigabytes.";
             action=@"Install"; enabled=YES; break;
         case TKWoWInstallationOutdated:
-            title=@"Update required";
-            detail=@"A newer build is available. The update starts automatically.";
+            title=_installation.localeNeedsUpdate?@"Language update required":@"Update required";
+            detail=_installation.localeNeedsUpdate?@"The selected language needs to be downloaded. The update starts automatically.":@"A newer build is available. The update starts automatically.";
             action=@"Update needed to play"; break;
         case TKWoWInstallationNeedsRepair:
             title=@"Your copy needs attention";
@@ -791,7 +794,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)preferences {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Download preferences"
-        message:@"These settings do not change your game's login region. Changing Language also updates Forever's text and audio language." preferredStyle:UIAlertControllerStyleActionSheet];
+        message:@"These settings do not change your game's login region. Changing Language updates Forever's text and audio language and downloads its selected-language files." preferredStyle:UIAlertControllerStyleActionSheet];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Region" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:YES]; }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Language" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:NO]; }]];
     [self presentSheet:sheet anchor:_preferencesButton];

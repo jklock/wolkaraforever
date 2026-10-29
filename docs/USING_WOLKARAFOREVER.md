@@ -9,15 +9,17 @@ the selected client, download state, and iPad permissions change.
 
 ![WolkaraForever home screen](screenshots/launcher-home.jpg)
 
-On the home screen, choose **Forever**, then select a region and language. Regions are
-Europe, Americas, Korea, and Taiwan; launcher languages are English, Spanish, and German.
+On the home screen, choose **Forever**, then select a region and game language. Regions are
+Europe, Americas, Korea, and Taiwan; game languages are English, Spanish, and German. The
+launcher interface itself remains English.
 Choose **Install** to download and verify the client, or let the app complete a required
 update before playing. Keep WolkaraForever foregrounded while it downloads, verifies, or
 prepares a launch.
 
-For a ready Forever installation, changing the launcher language updates both `textLocale`
-and `audioLocale` in the game's configuration. It does not change the login region or other
-game settings.
+For a ready Forever installation, changing the game language updates both `textLocale` and
+`audioLocale` in the game's configuration. If its installed files belong to another language,
+WolkaraForever marks the install as requiring a language update and downloads the selected-language
+files before Play is available. It does not change the login region or other game settings.
 
 Select **Play** when it becomes available. Startup preparation can take several minutes.
 When the game is running, use **Leave game** in the in-game toolbar if the game has no useful

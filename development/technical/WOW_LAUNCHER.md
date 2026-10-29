@@ -39,9 +39,11 @@ still select another mode. Hiding the selector does not remove enrolment, JIT
 or memory requirements; see [the distribution plan](../guides/WOLKARAFOREVER_DISTRIBUTION.md).
 
 - Remembers Forever, Classic Era, Classic, Retail or Retail Beta, region
-  and language. The picker offers English, Spanish and German; for an installed
+  and game language. The picker offers English, Spanish and German; for an installed
   Forever client, selecting a language keeps `textLocale` and `audioLocale` in
-  `Config.wtf` aligned without changing its login region or unrelated settings.
+  `Config.wtf` aligned without changing its login region or unrelated settings. An
+  install with a current build but different `.build.info` locale tags is treated as
+  update-required, so selected-language content is downloaded before Play is enabled.
   Forever is the released product `wowf`, installed in
   `_forever_`; the beta it was before that (`wow_classic_beta`, `_classic_beta_`)
   is no longer offered. A listed edition is not a claim of runtime compatibility.
@@ -189,10 +191,11 @@ for downloading patches. It does not automate login or gameplay.
 - Fresh installation, including a full real-game download, has been performed
   end to end. Other listed editions have
   metadata checks, not complete update/runtime coverage.
-- Existing game language preferences are preserved; changing the download
-  language is not a WoW settings editor. Download only a language matching the
-  installation until switching languages is tested. Optional packs are not
-  part of this standard-content updater.
+- Changing game language updates both locale CVars and, when the installed
+  `.build.info` tags do not match, redownloads the selected-language standard
+  content before Play is enabled. It does not edit the login portal, account,
+  input, graphics, or other game preferences. Optional packs are not part of
+  this standard-content updater.
 - Transfers stop on protocol/storage errors and offer Retry. Oversized objects,
   unsupported local-index layouts and encrypted loose files fail explicitly.
   New upstream formats may require code changes. Obsolete data/abandoned build

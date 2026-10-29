@@ -27,6 +27,7 @@
 - (void)testVoice;
 - (void)performGraphicsReset:(NSString *)directory;
 - (void)render;
+- (void)choosePreference:(BOOL)region;
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls;
 - (BOOL)foreverActionAllowed;
 - (NSString *)foreverWorkingDirectory;
@@ -349,6 +350,7 @@ static void TestAddons(void) {
     method_setImplementation(class_getInstanceMethod(TKWoWClient.class,@selector(planForProduct:region:locale:error:)),(IMP)Plan);
     method_setImplementation(class_getInstanceMethod(TKWoWUpdater.class,@selector(updatePlan:root:progress:error:)),(IMP)Update);
     [NSUserDefaults.standardUserDefaults setObject:@"wowf" forKey:@"WoWProduct"];
+    [NSUserDefaults.standardUserDefaults setObject:@"enUS" forKey:@"WoWLocale"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWRepairRequested.wowf"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWInstallRequested.wowf"];
     // Device language must not change this fork's English launcher UI.
@@ -386,6 +388,18 @@ static void TestAddons(void) {
     TestAddons();
     assert([self primary].enabled);
     assert([[self status] isEqual:@"Ready to play"] && self.controller.title.length==0);
+    // German is a first-class persisted game language, not an English fallback
+    // in the home row or a hidden downloader-only locale.
+    [self.controller setValue:@"deDE" forKey:@"_locale"];
+    [self.controller render];
+    assert([[(UIButton *)Find(self.controller.view,@"wow.preferences") configuration].title containsString:@"German"]);
+    [self.controller choosePreference:NO];
+    UIAlertController *languages=(id)self.controller.presentedViewController;
+    assert([languages isKindOfClass:UIAlertController.class]);
+    assert(([[languages.actions valueForKey:@"title"] isEqual:@[@"English",@"Spanish",@"German",@"Cancel"]]));
+    [languages dismissViewControllerAnimated:NO completion:nil];
+    [self.controller setValue:@"enUS" forKey:@"_locale"];
+    [self.controller render];
     // The mark is the artwork when the asset catalog reaches the build, and the
     // wordmark when it does not. Either is a pass; neither is not.
     assert(Find(self.controller.view,@"wow.logo") || Find(self.controller.view,@"wow.title"));
