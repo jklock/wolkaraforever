@@ -1,14 +1,15 @@
-# Validation: German app localization (a0d3510)
+# Validation: German app localization (0f44553)
 
 > **Historical record.** Evidence for the German app-language work, recorded by hand on the
 > device as the prompt requires. It is not current guidance for later builds. See
 > [docs/README.md](../../docs/README.md) for the live documents and
 > [localization](../guides/LOCALIZATION.md) for how the feature is built.
 
-- Code revision: `a0d3510` *fix: do not lose a page that opens from another page's action*, whose
-  parents are `8eb56bb` (this record's first version) and `1bf95d0` *feat: make German a complete
-  app language*. The screenshots below are from an install of `a0d3510`, made after that fix: the
-  fix changes when a sheet is presented, so the launcher was re-checked rather than assumed.
+- Code revision: `0f44553` *fix: share the presentation wait, and translate the last two add-on
+  alerts*, on top of `a0d3510` (the presentation fix), `8eb56bb` (this record's first version) and
+  `1bf95d0` *feat: make German a complete app language*. The screenshots below are from an install
+  of `0f44553`: each follow-up changed when a page is presented or what an alert says, so the
+  launcher was re-checked on the build that carries them rather than assumed.
 - Recorded: 2026-10-29T10:46Z
 - Host: macOS, Xcode 27.1 (arm64)
 - Device: **Dadpad**, iPad Pro 12.9-inch (5th generation), **iPadOS 27.0.1**, landscape, over the
@@ -33,7 +34,7 @@
 | `wolkaraforever/tools/test_forever_ui.sh` | PASS (Config.wtf rules and archive) |
 | `wolkaraforever/tools/test_addon_archive.sh` | PASS, 58 checks |
 | `wolkaraforever/tools/test_translation_sim.sh` | PASS |
-| `wolkaraforever/tools/check_localization.py` after the last string change | PASS, 477 keys |
+| `wolkaraforever/tools/check_localization.py` after the last string change | PASS, 479 keys |
 | `wolkaraforever/tools/check_layers.sh` | OK (now also checks the string tables) |
 | `wolkaraforever/tools/check_docs.sh` | OK, 73 markdown files |
 | `wolkaraforever/tools/install.sh --replace-running` | installed and launched |
@@ -76,8 +77,9 @@ never, and the flag said it had been. The same race made "Language" in Download 
 "Manage add-ons" and "Technical details" in Settings dead taps, which predated this work.
 
 `a0d3510` puts every sheet, page and message the launcher shows behind one wait until nothing is
-presented. Both cases are now assertions in the launcher fixture, and both were shown to fail
-without the wait before it was kept.
+presented, and `0f44553` moves that wait into `WolkaraForeverTheme` so the add-on manager uses it
+too instead of a second copy. Both cases are now assertions in the launcher fixture, and both were
+shown to fail without the wait before it was kept.
 
 The device was left on that home screen with the app running and no game started.
 
