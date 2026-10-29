@@ -1,7 +1,9 @@
 // Focused tests for the Forever Config.wtf operations. No game, no simulator:
 // the rules are about bytes in a file, so this runs wherever the code does.
 #import <Foundation/Foundation.h>
-#import "../ForeverUI.h"
+// Through the prepared tree's layout, like every other test of layer code: this suite is built
+// there too, so the header it tests is the one the app compiles against.
+#import "../launcher/WoW/ForeverUI.h"
 #include <assert.h>
 
 static NSString *Read(NSString *path) {

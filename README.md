@@ -38,7 +38,8 @@ The upstream history, MIT licence, and third-party notices are retained. See
 
 | Area | Current behavior |
 | --- | --- |
-| **Forever lifecycle** | Select Forever, a Blizzard CDN region, and English, Spanish, or German game language; download, resume, verify, repair, update, and start the selected client. A language change writes both game locale settings and requires selected-language files before Play is available. The launcher interface remains English. |
+| **Forever lifecycle** | Select Forever, a Blizzard CDN region, and English, Spanish, or German game language; download, resume, verify, repair, update, and start the selected client. A language change writes both game locale settings and requires selected-language files before Play is available. |
+| **App language** | Read the launcher in English or German, or follow the iPad's preferred language. It applies without a relaunch to every label, alert, menu, accessibility string and status line — including the in-game overlay and touch keyboard — and the first German selection offers once to put the *game* into German. Game and app language are separate settings; see the [user guide](docs/USING_WOLKARAFOREVER.md#app-language). |
 | **Data integrity** | Reuses verified unchanged game data and stages updates so a partial replacement does not become a playable-looking broken installation. The original executable remains verified data, never a patched or re-signed repository artifact. |
 | **Add-ons** | Browse installed packages, import a validated archive, open the add-on directory, and manage only packages the app recorded. CurseForge browsing/download uses an approved Core API key stored in the device Keychain. |
 | **UI protection** | Create verified backups of `WTF` and `Interface`, restore through staging and a recovery journal, reset only graphics/display CVars, and write only `GamePadEnable` for the game's native gamepad UI switch. |

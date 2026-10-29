@@ -2,10 +2,21 @@
 #import "AddonStore.h"
 #import "AddonCredentialStore.h"
 #import "CurseForgeClient.h"
+#import "../App/WKLocalization.h"
 #import "../App/WolkaraForeverTheme.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 static NSString *const TKForeverGameVersion=@"1.60.1";
+
+// A record's source as a person reads it. The stored word is contract - the store writes it, the
+// package files carry it, and the log repeats it - so only the words beside it are translated. An
+// unknown one is shown as it came rather than as a key.
+static NSString *TKAddonSourceName(NSString *source) {
+    if ([source isEqual:@"Existing"]) return WKLocalized(@"addons.source.existing");
+    if ([source isEqual:@"WolkaraForever import"]) return WKLocalized(@"addons.source.import");
+    if ([source isEqual:@"zip"]) return WKLocalized(@"addons.source.zip");
+    return source ?: @"";
+}
 
 @interface TKWoWAddon ()
 @property(nonatomic, readwrite, copy) NSString *folder;
@@ -35,12 +46,12 @@ static NSString *const TKAddonColumnsKey = @"WolkaraForeverAddonColumnsV1";
 
 static NSString *TKAddonColumnTitle(TKAddonColumn column) {
     switch (column) {
-        case TKAddonColumnDownloads: return @"Downloads";
-        case TKAddonColumnTop:       return @"Top";
-        case TKAddonColumnLatest:    return @"Latest";
-        case TKAddonColumnCategory:  return @"Category";
-        case TKAddonColumnVersion:   return @"Game Version";
-        case TKAddonColumnAuthor:    return @"Author";
+        case TKAddonColumnDownloads: return WKLocalized(@"addons.column.downloads");
+        case TKAddonColumnTop:       return WKLocalized(@"addons.column.top");
+        case TKAddonColumnLatest:    return WKLocalized(@"addons.column.latest");
+        case TKAddonColumnCategory:  return WKLocalized(@"addons.column.category");
+        case TKAddonColumnVersion:   return WKLocalized(@"addons.column.version");
+        case TKAddonColumnAuthor:    return WKLocalized(@"addons.column.author");
         default: return @"";
     }
 }
@@ -245,7 +256,7 @@ static UIImage *TKAddonPlaceholderIcon(void) {
 }
 - (void)configureWithProject:(NSDictionary *)project file:(NSDictionary *)file rank:(NSString *)rank
                      columns:(NSUInteger)columns gameVersion:(NSString *)gameVersion compact:(BOOL)compact {
-    _titleLabel.text=[project[@"name"] isKindOfClass:NSString.class]?project[@"name"]:@"Untitled add-on";
+    _titleLabel.text=[project[@"name"] isKindOfClass:NSString.class]?project[@"name"]:WKLocalized(@"addons.untitled");
     NSString *fileText=[file[@"displayName"] isKindOfClass:NSString.class]?file[@"displayName"]:@"";
     _fileLabel.text=fileText.length?fileText:([project[@"summary"] isKindOfClass:NSString.class]?project[@"summary"]:@"");
     NSArray *categories=[project[@"categories"] isKindOfClass:NSArray.class]?project[@"categories"]:@[];
@@ -294,7 +305,7 @@ static UIImage *TKAddonPlaceholderIcon(void) {
     if ((self=[super initWithFrame:frame])) {
         self.backgroundColor=WKInk();
         UILabel *name=[UILabel new];
-        name.text=@"NAME";
+        name.text=WKLocalized(@"addons.column.name").uppercaseString;
         name.font=[UIFont systemFontOfSize:10 weight:UIFontWeightSemibold];
         name.textColor=[UIColor colorWithWhite:0.55 alpha:1];
         UIStackView *row=[ [UIStackView alloc] initWithArrangedSubviews:@[name] ];
@@ -408,7 +419,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 - (instancetype)initWithAddOnsDirectory:(NSString *)directory edition:(NSString *)edition browse:(BOOL)browse {
     if (!(self=[super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
     _startInBrowse=browse;
-    _addOnsDirectory=directory.copy; _edition=edition.copy; _addons=@[]; self.title=@"ADD-ON MANAGER";
+    _addOnsDirectory=directory.copy; _edition=edition.copy; _addons=@[]; self.title=WKLocalized(@"addons.title").uppercaseString;
     _store=[[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wowf" gameVersion:TKForeverGameVersion]; _results=@[]; _sortField=1; _sortOrder=@"desc";
     _credentials=[TKAddonCredentialStore new];
     _gameVersion=TKForeverGameVersion;
@@ -428,7 +439,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     self.tableView.backgroundColor=WKInk();
     self.tableView.separatorStyle=UITableViewCellSeparatorStyleNone;
     self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
-    self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"Done" style:UIBarButtonItemStyleDone target:self action:@selector(done)];
+    self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:WKLocalized(@"common.done") style:UIBarButtonItemStyleDone target:self action:@selector(done)];
     self.navigationItem.leftBarButtonItem.tintColor=WKGold();
     self.navigationItem.rightBarButtonItems=@[
         [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(importAddon)],
@@ -461,20 +472,20 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     UIView *editionPanel=[[UIView alloc] init];
     editionPanel.translatesAutoresizingMaskIntoConstraints=NO;
     editionPanel.backgroundColor=WKPanel(); editionPanel.layer.cornerRadius=14; editionPanel.layer.masksToBounds=YES;
-    UILabel *edition=[UILabel new]; edition.text=[NSString stringWithFormat:@"Edition: %@  ▾",_edition];
+    UILabel *edition=[UILabel new]; edition.text=WKLocalizedFormat(@"addons.edition",_edition);
     edition.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; edition.textColor=gold;
     edition.backgroundColor=UIColor.clearColor;
     edition.translatesAutoresizingMaskIntoConstraints=NO;
     [editionPanel addSubview:edition];
     [header addSubview:editionPanel];
-    _mode=[[UISegmentedControl alloc] initWithItems:@[[NSString stringWithFormat:@"Installed (%lu)",(unsigned long)_addons.count],@"Browse CurseForge"]];
+    _mode=[[UISegmentedControl alloc] initWithItems:@[WKLocalizedFormat(@"addons.mode.installed",(unsigned long)_addons.count),WKLocalized(@"addons.mode.browse")]];
     _mode.selectedSegmentIndex=0; _mode.selectedSegmentTintColor=gold;
     [_mode setTitleTextAttributes:@{NSForegroundColorAttributeName:UIColor.blackColor} forState:UIControlStateSelected];
     [_mode setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor colorWithWhite:0.72 alpha:1]} forState:UIControlStateNormal];
     [_mode addTarget:self action:@selector(changeMode:) forControlEvents:UIControlEventValueChanged];
     _mode.translatesAutoresizingMaskIntoConstraints=NO;
     [header addSubview:_mode];
-    _search=[UISearchBar new]; _search.placeholder=@"Search World of Warcraft add-ons"; _search.searchBarStyle=UISearchBarStyleMinimal; _search.delegate=self;
+    _search=[UISearchBar new]; _search.placeholder=WKLocalized(@"addons.search"); _search.searchBarStyle=UISearchBarStyleMinimal; _search.delegate=self;
     _search.translatesAutoresizingMaskIntoConstraints=NO;
     [header addSubview:_search];
 
@@ -484,9 +495,9 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _countLabel.textColor=[UIColor colorWithWhite:0.62 alpha:1];
     _countLabel.accessibilityIdentifier=@"wow.addons.count";
     [_countLabel setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
-    _sortButton=[self toolbarButton:@"wow.addons.sort" title:@"Sort"];
-    _filterButton=[self toolbarButton:@"wow.addons.filters" title:@"Filters"];
-    _columnsButton=[self toolbarButton:@"wow.addons.columns" title:@"Columns"];
+    _sortButton=[self toolbarButton:@"wow.addons.sort" title:WKLocalized(@"addons.sort")];
+    _filterButton=[self toolbarButton:@"wow.addons.filters" title:WKLocalized(@"addons.filters")];
+    _columnsButton=[self toolbarButton:@"wow.addons.columns" title:WKLocalized(@"addons.columns")];
     UIStackView *toolbar=[[UIStackView alloc] initWithArrangedSubviews:@[_countLabel,_sortButton,_filterButton,_columnsButton]];
     toolbar.axis=UILayoutConstraintAxisHorizontal; toolbar.spacing=10; toolbar.alignment=UIStackViewAlignmentCenter;
     toolbar.translatesAutoresizingMaskIntoConstraints=NO;
@@ -535,11 +546,12 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     if (!browse) return;
     if (_totalCount) {
         NSNumberFormatter *formatter=[NSNumberFormatter new];
+        formatter.locale=WKLocalization.shared.locale;
         formatter.numberStyle=NSNumberFormatterDecimalStyle;
-        _countLabel.text=[NSString stringWithFormat:@"%@ projects found",[formatter stringFromNumber:@(_totalCount)]];
-    } else _countLabel.text=[self hasKey]?@"Searching…":@"Enter a CurseForge key";
-    [_sortButton setTitle:[NSString stringWithFormat:@"Sort: %@",BrowseSortLabel(_sortField)] forState:UIControlStateNormal];
-    [_filterButton setTitle:(_categoryID||_gameVersion.length)?[NSString stringWithFormat:@"Filters · %@",_categoryLabel?:_gameVersion]:@"Filters" forState:UIControlStateNormal];
+        _countLabel.text=WKLocalizedFormat(@"addons.projectsFound",[formatter stringFromNumber:@(_totalCount)]);
+    } else _countLabel.text=[self hasKey]?WKLocalized(@"addons.searching"):WKLocalized(@"addons.enterKey");
+    [_sortButton setTitle:WKLocalizedFormat(@"addons.sort.current",BrowseSortLabel(_sortField)) forState:UIControlStateNormal];
+    [_filterButton setTitle:(_categoryID||_gameVersion.length)?WKLocalizedFormat(@"addons.filters.active",_categoryLabel?:_gameVersion):WKLocalized(@"addons.filters") forState:UIControlStateNormal];
     _sortButton.menu=[self sortMenu];
     _filterButton.menu=[self filterMenu];
     _columnsButton.menu=[self columnsMenu];
@@ -559,24 +571,24 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
         action.state=field==_sortField?UIMenuElementStateOn:UIMenuElementStateOff;
         [fields addObject:action];
     }
-    UIAction *ascending=[UIAction actionWithTitle:@"Ascending" image:nil identifier:nil handler:^(UIAction *a) {
+    UIAction *ascending=[UIAction actionWithTitle:WKLocalized(@"addons.sort.ascending") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
         self.sortOrder=@"asc"; [self updateToolbar]; [self beginBrowse];
     }];
     ascending.state=[_sortOrder isEqual:@"asc"]?UIMenuElementStateOn:UIMenuElementStateOff;
-    UIAction *descending=[UIAction actionWithTitle:@"Descending" image:nil identifier:nil handler:^(UIAction *a) {
+    UIAction *descending=[UIAction actionWithTitle:WKLocalized(@"addons.sort.descending") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
         self.sortOrder=@"desc"; [self updateToolbar]; [self beginBrowse];
     }];
     descending.state=[_sortOrder isEqual:@"desc"]?UIMenuElementStateOn:UIMenuElementStateOff;
-    return [UIMenu menuWithTitle:@"Sort projects" children:@[
-        [UIMenu menuWithTitle:@"Field" children:fields],
-        [UIMenu menuWithTitle:@"Direction" children:@[ascending,descending]],
+    return [UIMenu menuWithTitle:WKLocalized(@"addons.sort.title") children:@[
+        [UIMenu menuWithTitle:WKLocalized(@"addons.sort.field") children:fields],
+        [UIMenu menuWithTitle:WKLocalized(@"addons.sort.direction") children:@[ascending,descending]],
     ]];
 }
 - (UIMenu *)filterMenu {
     __weak TKWoWAddonManagerViewController *weakSelf=self;
-    UIAction *allVersions=[UIAction actionWithTitle:@"All game versions" image:nil identifier:nil handler:^(UIAction *a) {
+    UIAction *allVersions=[UIAction actionWithTitle:WKLocalized(@"addons.filters.allVersions") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
         self.gameVersion=nil; [self updateToolbar]; [self beginBrowse];
     }];
@@ -586,22 +598,22 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
         self.gameVersion=TKForeverGameVersion; [self updateToolbar]; [self beginBrowse];
     }];
     forever.state=[_gameVersion isEqual:TKForeverGameVersion]?UIMenuElementStateOn:UIMenuElementStateOff;
-    UIAction *allCategories=[UIAction actionWithTitle:@"All categories" image:nil identifier:nil handler:^(UIAction *a) {
+    UIAction *allCategories=[UIAction actionWithTitle:WKLocalized(@"addons.filters.allCategories") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
         self.categoryID=nil; self.categoryLabel=nil; [self updateToolbar]; [self beginBrowse];
     }];
     allCategories.state=_categoryID?UIMenuElementStateOff:UIMenuElementStateOn;
-    UIAction *choose=[UIAction actionWithTitle:_categoryLabel?[NSString stringWithFormat:@"Category: %@",_categoryLabel]:@"Choose category…" image:nil identifier:nil handler:^(UIAction *a) {
+    UIAction *choose=[UIAction actionWithTitle:_categoryLabel?WKLocalizedFormat(@"addons.filters.category",_categoryLabel):WKLocalized(@"addons.filters.chooseCategory") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; [weakSelf chooseCategoryFrom:nil];
     }];
-    UIAction *clear=[UIAction actionWithTitle:@"Clear filters" image:nil identifier:nil handler:^(UIAction *a) {
+    UIAction *clear=[UIAction actionWithTitle:WKLocalized(@"addons.filters.clear") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
         self.gameVersion=TKForeverGameVersion; self.categoryID=nil; self.categoryLabel=nil;
         [self updateToolbar]; [self beginBrowse];
     }];
-    return [UIMenu menuWithTitle:@"Filters" children:@[
-        [UIMenu menuWithTitle:@"Game version" children:@[allVersions,forever]],
-        [UIMenu menuWithTitle:@"Category" children:@[allCategories,choose]],
+    return [UIMenu menuWithTitle:WKLocalized(@"addons.filters") children:@[
+        [UIMenu menuWithTitle:WKLocalized(@"addons.filters.gameVersion") children:@[allVersions,forever]],
+        [UIMenu menuWithTitle:WKLocalized(@"addons.column.category") children:@[allCategories,choose]],
         clear,
     ]];
 }
@@ -619,11 +631,11 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
         action.state=(_columns & column)?UIMenuElementStateOn:UIMenuElementStateOff;
         [actions addObject:action];
     }
-    return [UIMenu menuWithTitle:@"Columns" children:actions];
+    return [UIMenu menuWithTitle:WKLocalized(@"addons.columns") children:actions];
 }
 - (void)done { WKDismissPage(self); }
 - (void)changeMode:(UISegmentedControl *)sender {
-    if (sender.selectedSegmentIndex==1) { if ([self hasKey]) [self beginBrowse]; else _browseStatus=@"Enter an approved CurseForge Core API key to search and install World of Warcraft add-ons."; }
+    if (sender.selectedSegmentIndex==1) { if ([self hasKey]) [self beginBrowse]; else _browseStatus=WKLocalized(@"addons.enterKey.long"); }
     [self updateToolbar];
     [self.tableView reloadData];
 }
@@ -634,9 +646,9 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 - (void)loadMore { if (_loadingMore) return; [self fetchPageAtIndex:_results.count append:YES]; }
 - (void)fetchPageAtIndex:(NSUInteger)index append:(BOOL)append {
     NSString *key=[_credentials curseForgeKey:NULL];
-    if (!key.length) { _browseStatus=@"Enter an approved CurseForge Core API key to search and install World of Warcraft add-ons."; _results=@[]; _totalCount=0; [self.tableView reloadData]; return; }
-    if (append) _browseStatus=@"Loading more projects…";
-    else { _results=@[]; _totalCount=0; _browseStatus=@"Loading CurseForge…"; }
+    if (!key.length) { _browseStatus=WKLocalized(@"addons.enterKey.long"); _results=@[]; _totalCount=0; [self.tableView reloadData]; return; }
+    if (append) _browseStatus=WKLocalized(@"addons.loadingMore");
+    else { _results=@[]; _totalCount=0; _browseStatus=WKLocalized(@"addons.loading"); }
     _loadingMore=YES; [self.tableView reloadData];
     TKCurseForgeClient *client=[[TKCurseForgeClient alloc] initWithAPIKey:key];
     [client browseModsWithQuery:_search.text?:@"" sortField:_sortField sortOrder:_sortOrder categoryID:_categoryID
@@ -650,38 +662,39 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
                 NSDictionary *pagination=[value[@"pagination"] isKindOfClass:NSDictionary.class]?value[@"pagination"]:@{};
                 NSNumber *total=[pagination[@"totalCount"] isKindOfClass:NSNumber.class]?pagination[@"totalCount"]:nil;
                 self.totalCount=total?total.unsignedIntegerValue:MAX(self.results.count,page.count);
-                self.browseStatus=[NSString stringWithFormat:@"%lu of %lu projects · Forever compatibility is verified at install",(unsigned long)self.results.count,(unsigned long)MAX(self.totalCount,self.results.count)];
+                self.browseStatus=WKLocalizedFormat(@"addons.projectsShown",
+                    (unsigned long)self.results.count,(unsigned long)MAX(self.totalCount,self.results.count));
             }
             [self updateToolbar];
             [self.tableView reloadData];
         });
     }];
 }
-static NSArray *BrowseSorts(void) { return @[ @[@(1),@"Featured"], @[@(2),@"Popularity"], @[@(3),@"Last Updated"], @[@(4),@"Name"], @[@(5),@"Author"], @[@(6),@"Total Downloads"], @[@(11),@"Release Date"] ]; }
-static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in BrowseSorts()) if ([option[0] integerValue]==field) return option[1]; return @"Featured"; }
+static NSArray *BrowseSorts(void) { return @[ @[@(1),@"addons.sort.featured"], @[@(2),@"addons.sort.popularity"], @[@(3),@"addons.sort.lastUpdated"], @[@(4),@"addons.column.name"], @[@(5),@"addons.column.author"], @[@(6),@"addons.sort.totalDownloads"], @[@(11),@"addons.sort.releaseDate"] ]; }
+static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in BrowseSorts()) if ([option[0] integerValue]==field) return WKLocalized(option[1]); return WKLocalized(@"addons.sort.featured"); }
 - (void)presentSheet:(UIAlertController *)sheet from:(NSIndexPath *)indexPath {
     sheet.popoverPresentationController.sourceView=self.view;
     sheet.popoverPresentationController.sourceRect=indexPath?[self.tableView rectForRowAtIndexPath:indexPath]:CGRectMake(CGRectGetMidX(self.view.bounds),CGRectGetMaxY(self.view.bounds),1,1);
     [self presentViewController:sheet animated:YES completion:nil];
 }
 - (void)presentSortMenuFrom:(NSIndexPath *)indexPath {
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Sort projects" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.sort.title") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSArray *option in BrowseSorts()) {
         NSInteger field=[option[0] integerValue];
-        [sheet addAction:[UIAlertAction actionWithTitle:field==_sortField?[@"✓ " stringByAppendingString:option[1]]:option[1] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action;
+        [sheet addAction:[UIAlertAction actionWithTitle:field==_sortField?[@"✓ " stringByAppendingString:WKLocalized(option[1])]:WKLocalized(option[1]) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action;
             if (self.sortField==field) self.sortOrder=[self.sortOrder isEqual:@"asc"]?@"desc":@"asc";
             else { self.sortField=field; self.sortOrder=(field==4||field==5)?@"asc":@"desc"; }
             [self beginBrowse];
         }]];
     }
-    [sheet addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"Direction: %@",[_sortOrder isEqual:@"asc"]?@"Ascending":@"Descending"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.sortOrder=[self.sortOrder isEqual:@"asc"]?@"desc":@"asc"; [self beginBrowse];}]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalizedFormat(@"addons.sort.directionValue",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.sortOrder=[self.sortOrder isEqual:@"asc"]?@"desc":@"asc"; [self beginBrowse];}]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     [self presentSheet:sheet from:indexPath];
 }
 - (void)chooseCategoryFrom:(NSIndexPath *)indexPath {
     if (_categories.count) { [self presentCategoryMenuFrom:indexPath]; return; }
     NSString *key=[_credentials curseForgeKey:NULL]; if (!key.length) { [self setupKey]; return; }
-    _browseStatus=@"Loading CurseForge categories…"; [self.tableView reloadData];
+    _browseStatus=WKLocalized(@"addons.loadingCategories"); [self.tableView reloadData];
     TKCurseForgeClient *client=[[TKCurseForgeClient alloc] initWithAPIKey:key];
     [client categoriesForGameID:1 completion:^(id value,NSError *error){
         dispatch_async(dispatch_get_main_queue(),^{
@@ -700,50 +713,50 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
                 if (parent.integerValue==0) [top addObject:category];
             }
             NSArray *categories=top.count?top:(matched.count?matched:nil);
-            if (!categories.count) { self.browseStatus=@"CurseForge returned no add-on categories."; [self.tableView reloadData]; return; }
+            if (!categories.count) { self.browseStatus=WKLocalized(@"addons.noCategories"); [self.tableView reloadData]; return; }
             self.categories=[categories sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a,NSDictionary *b){return [a[@"name"] localizedCaseInsensitiveCompare:b[@"name"]];}];
             [self presentCategoryMenuFrom:indexPath];
         });
     }];
 }
 - (void)presentCategoryMenuFrom:(NSIndexPath *)indexPath {
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Filter by category" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    [sheet addAction:[UIAlertAction actionWithTitle:_categoryID?@"All categories":@"✓ All categories" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.categoryID=nil; self.categoryLabel=nil; [self beginBrowse];}]];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.filters.categoryTitle") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    [sheet addAction:[UIAlertAction actionWithTitle:_categoryID?WKLocalized(@"addons.filters.allCategories"):[@"✓ " stringByAppendingString:WKLocalized(@"addons.filters.allCategories")] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.categoryID=nil; self.categoryLabel=nil; [self beginBrowse];}]];
     for (NSDictionary *category in _categories) {
         [sheet addAction:[UIAlertAction actionWithTitle:[category[@"id"] isEqual:_categoryID]?[@"✓ " stringByAppendingString:category[@"name"]]:category[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.categoryID=category[@"id"]; self.categoryLabel=category[@"name"]; [self updateToolbar]; [self beginBrowse];}]];
     }
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     [self presentSheet:sheet from:indexPath];
 }
 - (void)presentProject:(NSDictionary *)entry {
-    NSString *name=[entry[@"name"] isKindOfClass:NSString.class]?entry[@"name"]:@"Untitled add-on";
+    NSString *name=[entry[@"name"] isKindOfClass:NSString.class]?entry[@"name"]:WKLocalized(@"addons.untitled");
     NSMutableArray<NSString *> *details=[NSMutableArray new];
     if ([entry[@"summary"] isKindOfClass:NSString.class] && [entry[@"summary"] length]) [details addObject:entry[@"summary"]];
     NSMutableArray<NSString *> *authors=[NSMutableArray new];
     if ([entry[@"authors"] isKindOfClass:NSArray.class]) for (NSDictionary *author in entry[@"authors"]) if ([author isKindOfClass:NSDictionary.class] && [author[@"name"] isKindOfClass:NSString.class]) [authors addObject:author[@"name"]];
-    if (authors.count) [details addObject:[@"By " stringByAppendingString:[authors componentsJoinedByString:@", "]]];
-    if ([entry[@"downloadCount"] isKindOfClass:NSNumber.class]) [details addObject:[NSString stringWithFormat:@"%@ downloads on CurseForge",entry[@"downloadCount"]]];
+    if (authors.count) [details addObject:WKLocalizedFormat(@"addons.by",[authors componentsJoinedByString:@", "])];
+    if ([entry[@"downloadCount"] isKindOfClass:NSNumber.class]) [details addObject:WKLocalizedFormat(@"addons.downloads",entry[@"downloadCount"])];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:name message:[details componentsJoinedByString:@"\n"] preferredStyle:UIAlertControllerStyleActionSheet];
     // Whether the author lets CurseForge hand the file out through the API at all. The search
     // result says so, so the page can say so instead of letting the user tap Install and collect
     // a 403 that reads like a broken key - which is what happened on the device on 2026-10-22.
     BOOL distribution = ![entry[@"allowModDistribution"] isKindOfClass:NSNumber.class] || [entry[@"allowModDistribution"] boolValue];
     if (distribution) {
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Install latest compatible file" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action;[self installMod:entry];}]];
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.installLatest") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action;[self installMod:entry];}]];
     } else {
-        [sheet setValue:[NSString stringWithFormat:@"%@\n\nThis project does not allow downloads through the CurseForge API. Open its project page to install it by hand, or import the ZIP.", [details componentsJoinedByString:@"\n"]] forKey:@"message"];
+        [sheet setValue:WKLocalizedFormat(@"addons.noDistribution", [details componentsJoinedByString:@"\n"]) forKey:@"message"];
     }
     NSString *website=nil;
     if ([entry[@"links"] isKindOfClass:NSDictionary.class] && [entry[@"links"][@"websiteUrl"] isKindOfClass:NSString.class]) website=entry[@"links"][@"websiteUrl"];
     if (!website.length && [entry[@"slug"] isKindOfClass:NSString.class]) website=[@"https://www.curseforge.com/wow/addons/" stringByAppendingString:entry[@"slug"]];
-    if (website.length) [sheet addAction:[UIAlertAction actionWithTitle:@"Open project page" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; NSURL *url=[NSURL URLWithString:website]; if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];}]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    if (website.length) [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.openProject") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; NSURL *url=[NSURL URLWithString:website]; if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];}]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     [self presentSheet:sheet from:nil];
 }
 - (void)showError:(NSString *)title message:(NSString *)message {
     dispatch_async(dispatch_get_main_queue(),^{
         UIAlertController *alert=[UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
     });
 }
@@ -757,15 +770,15 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
 - (void)installMod:(NSDictionary *)entry {
     NSNumber *modID=[entry[@"id"] isKindOfClass:NSNumber.class]?entry[@"id"]:nil;
     if (!modID) return;
-    NSString *name=[entry[@"name"] isKindOfClass:NSString.class]?entry[@"name"]:@"This add-on";
+    NSString *name=[entry[@"name"] isKindOfClass:NSString.class]?entry[@"name"]:WKLocalized(@"addons.thisAddon");
     NSString *key=[_credentials curseForgeKey:NULL];
     if (!key.length) { [self setupKey]; return; }
-    _browseStatus=[NSString stringWithFormat:@"Downloading %@…",name]; [self.tableView reloadData];
+    _browseStatus=WKLocalizedFormat(@"addons.downloading",name); [self.tableView reloadData];
     TKCurseForgeClient *client=[[TKCurseForgeClient alloc] initWithAPIKey:key];
     [client latestFileForModID:modID gameVersion:TKForeverGameVersion completion:^(NSDictionary *file,NSError *error){
         if (error) { [self providerFailed:error]; return; }
         NSNumber *fileID=[file[@"id"] isKindOfClass:NSNumber.class]?file[@"id"]:nil;
-        if (!fileID) { [self providerFailed:[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:@"CurseForge returned an incomplete file record."}]]; return; }
+        if (!fileID) { [self providerFailed:[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:WKLocalized(@"addons.error.incompleteFile")}]]; return; }
         // The file record carries the URL when the author allows API distribution. Asking the
         // download-url endpoint for a file that already came with a URL is a request that can only
         // fail - and on 2026-10-22 it did, with a 403 that the app used to report as a rejected key.
@@ -784,15 +797,15 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
     if (!request) { [self providerFailed:requestError]; return; }
     NSURLSessionDownloadTask *task=[[NSURLSession sharedSession] downloadTaskWithRequest:request completionHandler:^(NSURL *location,NSURLResponse *response,NSError *failure){
         (void)response;
-        if (failure||!location) { [self providerFailed:failure?:[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:@"CurseForge did not return an archive."}]]; return; }
+        if (failure||!location) { [self providerFailed:failure?:[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:WKLocalized(@"addons.error.noArchive")}]]; return; }
         NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:@".zip"]];
         NSError *moveError=nil; [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:path] error:&moveError];
         NSError *importError=nil;
         BOOL imported=!moveError && [self.store importZIPAtURL:[NSURL fileURLWithPath:path] error:&importError];
         [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
         dispatch_async(dispatch_get_main_queue(),^{
-            if (!imported) { NSError *cause=moveError?:importError; [self showError:@"Could not install add-on" message:cause.localizedDescription?:@"The downloaded archive could not be imported."]; return; }
-            self.browseStatus=[NSString stringWithFormat:@"Installed %@. Forever compatibility was verified from its TOC.",name];
+            if (!imported) { NSError *cause=moveError?:importError; [self showError:WKLocalized(@"addons.error.installTitle") message:cause.localizedDescription?:WKLocalized(@"addons.error.importMessage")]; return; }
+            self.browseStatus=WKLocalizedFormat(@"addons.installedStatus",name);
             [self reloadAddons];
         });
     }];
@@ -801,7 +814,7 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
 - (void)reloadAddons {
     [NSFileManager.defaultManager createDirectoryAtPath:_addOnsDirectory withIntermediateDirectories:YES attributes:nil error:NULL];
     [_store reload]; _addons=TKWoWAddonsAtDirectory(_addOnsDirectory); [self.tableView reloadData];
-    [_mode setTitle:[NSString stringWithFormat:@"Installed (%lu)",(unsigned long)_store.records.count] forSegmentAtIndex:0];
+    [_mode setTitle:WKLocalizedFormat(@"addons.mode.installed",(unsigned long)_store.records.count) forSegmentAtIndex:0];
 }
 - (void)importAddon {
     UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeZIP] asCopy:YES];
@@ -818,8 +831,8 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
         // The document picker is still dismissing on this callback. Queue the
         // alert so an import failure is never hidden behind that transition.
         dispatch_async(dispatch_get_main_queue(), ^{
-            UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Could not import add-on" message:failure.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            UIAlertController *alert=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.error.importTitle") message:failure.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];
         });
     }
@@ -840,24 +853,24 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
     if (_mode.selectedSegmentIndex==1 && section==1 && _results.count) return 22;
     return UITableViewAutomaticDimension;
 }
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { (void)tableView; return _mode.selectedSegmentIndex==0 && section==1?@"Installed":nil; }
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { (void)tableView; return _mode.selectedSegmentIndex==0 && section==1?WKLocalized(@"addons.installed"):nil; }
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     (void)tableView;
     if (_mode.selectedSegmentIndex==1) return section==1?_browseStatus:nil;
-    return section==1?@"Existing add-ons are preserved. WolkaraForever only removes package folders it installed and recorded.":nil;
+    return section==1?WKLocalized(@"addons.installed.footer"):nil;
 }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell=[tableView dequeueReusableCellWithIdentifier:@"addon"];
     if (!cell) cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"addon"];
     cell.selectionStyle=UITableViewCellSelectionStyleDefault;
     if (_mode.selectedSegmentIndex==1 && indexPath.section==0) {
-        if (![self hasKey]) { cell.textLabel.text=@"Set up CurseForge access"; cell.detailTextLabel.text=@"Enter an approved Core API key to search and install from CurseForge."; }
-        else if (indexPath.row==0) { cell.textLabel.text=[NSString stringWithFormat:@"Sort: %@",BrowseSortLabel(_sortField)]; cell.detailTextLabel.text=[NSString stringWithFormat:@"%@ · tap to change",[_sortOrder isEqual:@"asc"]?@"Ascending":@"Descending"]; }
-        else { cell.textLabel.text=[NSString stringWithFormat:@"Category: %@",_categoryLabel?:@"All"]; cell.detailTextLabel.text=@"Tap to filter by category"; }
+        if (![self hasKey]) { cell.textLabel.text=WKLocalized(@"addons.setUpAccess"); cell.detailTextLabel.text=WKLocalized(@"addons.setUpAccess.detail"); }
+        else if (indexPath.row==0) { cell.textLabel.text=WKLocalizedFormat(@"addons.sort.current",BrowseSortLabel(_sortField)); cell.detailTextLabel.text=WKLocalizedFormat(@"addons.sort.tapToChange",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")); }
+        else { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
     } else if (_mode.selectedSegmentIndex==1) {
         if (indexPath.row==(NSInteger)_results.count) {
-            cell.textLabel.text=@"Load more…";
-            cell.detailTextLabel.text=[NSString stringWithFormat:@"%lu of %lu projects shown",(unsigned long)_results.count,(unsigned long)_totalCount];
+            cell.textLabel.text=WKLocalized(@"addons.loadMore");
+            cell.detailTextLabel.text=WKLocalizedFormat(@"addons.projectsOfShown",(unsigned long)_results.count,(unsigned long)_totalCount);
         } else {
             TKAddonProjectCell *project=[tableView dequeueReusableCellWithIdentifier:@"project"];
             if (!project) project=[[TKAddonProjectCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"project"];
@@ -872,13 +885,13 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
             return project;
         }
     } else if (indexPath.section==0) {
-        cell.textLabel.text=_addons.count?[NSString stringWithFormat:@"%lu add-on%@ installed",(unsigned long)_addons.count,_addons.count==1?@"":@"s"]:@"No add-ons installed";
+        cell.textLabel.text=_addons.count?WKLocalizedCountFormat(@"addons.count",(NSInteger)_addons.count,(unsigned long)_addons.count):WKLocalized(@"addons.count.none");
         cell.detailTextLabel.text=nil; cell.selectionStyle=UITableViewCellSelectionStyleNone;
     }
     else {
     TKAddonRecord *addon=_store.records[indexPath.row]; cell.textLabel.text=addon.name;
-    NSString *state=addon.disabled?@"Disabled":(addon.managed?@"Compatible · managed":@"Unverified · existing");
-    cell.detailTextLabel.text=[NSString stringWithFormat:@"%@ · %@ · %@%@",addon.version,addon.source,state,addon.pinned?@" · pinned":@""];
+    NSString *state=addon.disabled?WKLocalized(@"addons.state.disabled"):(addon.managed?WKLocalized(@"addons.state.managed"):WKLocalized(@"addons.state.unverified"));
+    cell.detailTextLabel.text=[NSString stringWithFormat:@"%@ · %@ · %@%@",addon.version,TKAddonSourceName(addon.source),state,addon.pinned?WKLocalized(@"addons.state.pinned"):@""];
     cell.selectionStyle=UITableViewCellSelectionStyleNone;
     }
     cell.backgroundColor=[UIColor colorWithRed:0.07 green:0.09 blue:0.13 alpha:1]; cell.textLabel.textColor=[UIColor colorWithRed:0.9 green:0.72 blue:0.35 alpha:1]; cell.detailTextLabel.textColor=[UIColor colorWithWhite:0.75 alpha:1]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
@@ -894,7 +907,7 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
     if (indexPath.section==0) return;
     TKAddonRecord *record=_store.records[indexPath.row]; if(!record.managed)return;
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:record.name message:record.disabled?@"This package is stored privately and is not visible to World of Warcraft.":@"Only this managed package can be changed. Existing folders are left alone." preferredStyle:UIAlertControllerStyleActionSheet];
-    [sheet addAction:[UIAlertAction actionWithTitle:record.disabled?@"Restore":@"Disable" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store setDisabled:!record.disabled record:record error:e];}];}]];
+    [sheet addAction:[UIAlertAction actionWithTitle:record.disabled?WKLocalized(@"addons.restore"):WKLocalized(@"addons.disable") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store setDisabled:!record.disabled record:record error:e];}];}]];
     [sheet addAction:[UIAlertAction actionWithTitle:record.pinned?@"Unpin updates":@"Pin this version" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store setPinned:!record.pinned record:record error:e];}];}]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Remove managed package" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store removeRecord:record error:e];}];}]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
@@ -902,5 +915,5 @@ static NSString *BrowseSortLabel(NSInteger field) { for (NSArray *option in Brow
 }
 - (void)showProviderError:(NSError *)error { dispatch_async(dispatch_get_main_queue(),^{UIAlertController *a=[UIAlertController alertControllerWithTitle:@"CurseForge request failed" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];[self presentViewController:a animated:YES completion:nil];}); }
 - (void)mutate:(BOOL (^)(NSError **))operation { NSError *error=nil; if(!operation(&error)){UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Could not change add-on" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];[self presentViewController:a animated:YES completion:nil];} [self reloadAddons]; }
-- (void)setupKey { UIAlertController *a=[UIAlertController alertControllerWithTitle:@"CurseForge API key" message:@"Enter a current approved key. It stays only in this device’s Keychain and is sent only to CurseForge metadata APIs." preferredStyle:UIAlertControllerStyleAlert];[a addTextFieldWithConfigurationHandler:^(UITextField *f){f.secureTextEntry=YES;f.autocorrectionType=UITextAutocorrectionTypeNo;f.autocapitalizationType=UITextAutocapitalizationTypeNone;f.placeholder=@"API key";}];[a addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){(void)x;NSError *e=nil;if(![self.credentials storeCurseForgeKey:a.textFields.firstObject.text error:&e]){UIAlertController *failure=[UIAlertController alertControllerWithTitle:@"Could not save key" message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[failure addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];[self presentViewController:failure animated:YES completion:nil];}else { [self.tableView reloadData]; if (self.mode.selectedSegmentIndex==1) [self beginBrowse]; }}]];[a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];[self presentViewController:a animated:YES completion:nil]; }
+- (void)setupKey { UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.title") message:WKLocalized(@"addons.key.message") preferredStyle:UIAlertControllerStyleAlert];[a addTextFieldWithConfigurationHandler:^(UITextField *f){f.secureTextEntry=YES;f.autocorrectionType=UITextAutocorrectionTypeNo;f.autocapitalizationType=UITextAutocapitalizationTypeNone;f.placeholder=WKLocalized(@"addons.key.placeholder");}];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.key.save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){(void)x;NSError *e=nil;if(![self.credentials storeCurseForgeKey:a.textFields.firstObject.text error:&e]){UIAlertController *failure=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.errorTitle") message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[failure addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentViewController:failure animated:YES completion:nil];}else { [self.tableView reloadData]; if (self.mode.selectedSegmentIndex==1) [self beginBrowse]; }}]];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];[self presentViewController:a animated:YES completion:nil]; }
 @end

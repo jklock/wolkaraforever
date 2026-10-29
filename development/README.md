@@ -20,7 +20,8 @@ For installation and everyday use, start with the [user guide](../docs/README.md
 Key entry points: [project map](architecture/PROJECT_MAP.md),
 [repository workflow](guides/REPOSITORY_WORKFLOW.md),
 [layer architecture](architecture/WOLKARAFOREVER_LAYER.md),
-[contributing](guides/CONTRIBUTING.md), [profiles](guides/PROFILES.md), and the
-[WoW Forever profile](guides/WOW_FOREVER_PROFILE.md). Planned next steps: [German app
-localization](plans/GERMAN_APP_LOCALIZATION_PROMPT.md), [GitHub administration](github/REPOSITORY_MANAGEMENT_PLAN.md),
+[contributing](guides/CONTRIBUTING.md), [localization](guides/LOCALIZATION.md),
+[profiles](guides/PROFILES.md), and the
+[WoW Forever profile](guides/WOW_FOREVER_PROFILE.md). Planned next steps:
+[GitHub administration](github/REPOSITORY_MANAGEMENT_PLAN.md),
 [launcher reorganization](uichanges/LAUNCHER_REORGANIZATION_PLAN.md), and [Wiki publishing](wiki/GITHUB_WIKI_PLAN.md).

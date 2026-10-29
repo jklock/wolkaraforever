@@ -237,6 +237,24 @@ else
     printf '     %s\n' $named
 fi
 
+# 9. The app's own language. Both tables must carry the same keys with the same conversions, and
+#    every key the source asks for must exist in both. This is the check no compiler makes: a
+#    label whose German string was never written still builds, still runs, and shows English.
+#    The script is also runnable on its own by anyone changing a string; see
+#    development/guides/LOCALIZATION.md.
+if [ -f wolkaraforever/tools/check_localization.py ]; then
+    strings=$(mktemp)
+    if python3 wolkaraforever/tools/check_localization.py > "$strings" 2>&1; then
+        ok "$(grep '^check_localization:' "$strings" | tail -1)"
+    else
+        bad "the app's string tables are not in agreement:"
+        grep '^FAIL' "$strings" | head -5 | sed 's/^/     /'
+    fi
+    rm -f "$strings"
+else
+    bad "no wolkaraforever/tools/check_localization.py: nothing checks the app's string tables"
+fi
+
 if [ "$fail" -eq 0 ]; then
     echo "check_layers: OK"
 else

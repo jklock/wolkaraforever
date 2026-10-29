@@ -1,4 +1,5 @@
 #import "AKPerformanceOverlay.h"
+#import "AKHostLocalization.h"
 #import <mach/mach.h>
 #import <os/proc.h>
 #import <dlfcn.h>
@@ -123,7 +124,10 @@ static double ReadMetalWaitMs(void) {
         self.layer.shadowOffset = CGSizeMake(0, 2);
         self.clipsToBounds = YES;
         self.accessibilityIdentifier = @"wolkaraforever.overlay.performance";
-        self.accessibilityLabel = @"Performance overlay";
+        self.accessibilityLabel = AKHostLocalized(@"overlay.title");
+        // A VoiceOver reader is told which language to read these numbers in, so a German HUD
+        // is not read out by an English voice.
+        self.accessibilityLanguage = AKHostLanguageCode();
         self.isAccessibilityElement = YES;
 
         // Battery monitoring is process-wide and cheap; the readings are only
@@ -145,7 +149,7 @@ static double ReadMetalWaitMs(void) {
     _fpsLabel = [UILabel new];
     _fpsLabel.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightBold];
     _fpsLabel.textColor = UIColor.whiteColor;
-    _fpsLabel.text = @"-- FPS";
+    _fpsLabel.text = AKHostLocalized(@"overlay.fps.waiting");
 
     _thermalDot = [UIView new];
     _thermalDot.layer.cornerRadius = 4;
@@ -159,7 +163,7 @@ static double ReadMetalWaitMs(void) {
     _thermalLabel = [UILabel new];
     _thermalLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
     _thermalLabel.textColor = UIColor.whiteColor;
-    _thermalLabel.text = @"Nominal";
+    _thermalLabel.text = AKHostLocalized(@"overlay.thermal.nominal");
 
     _compactSeparator = [UILabel new];
     _compactSeparator.font = [UIFont systemFontOfSize:12 weight:UIFontWeightLight];
@@ -183,7 +187,7 @@ static double ReadMetalWaitMs(void) {
     UILabel *header = [UILabel new];
     header.font = [UIFont systemFontOfSize:11 weight:UIFontWeightBold];
     header.textColor = UIColor.systemCyanColor;
-    header.text = @"PERFORMANCE & THERMALS";
+    header.text = AKHostLocalized(@"overlay.heading");
 
     _expandedFPSLabel = [self detailLabel];
     _expandedGPULabel = [self detailLabel];
@@ -195,7 +199,7 @@ static double ReadMetalWaitMs(void) {
     UILabel *hint = [UILabel new];
     hint.font = [UIFont systemFontOfSize:10 weight:UIFontWeightRegular];
     hint.textColor = [UIColor colorWithWhite:1.0 alpha:0.55];
-    hint.text = @"Tap to collapse · Drag to reposition";
+    hint.text = AKHostLocalized(@"overlay.hint");
 
     _expandedStack = [[UIStackView alloc] initWithArrangedSubviews:@[
         header,
@@ -417,16 +421,22 @@ static double ReadMetalWaitMs(void) {
     if (frameTimeMs <= 0.0 && fps > 0.0) frameTimeMs = 1000.0 / fps;
 
     NSProcessInfoThermalState thermal = NSProcessInfo.processInfo.thermalState;
-    NSString *thermalName = @"Nominal";
-    NSString *thermalDetail = @"Cool";
+    NSString *thermalName = AKHostLocalized(@"overlay.thermal.nominal");
+    NSString *thermalDetail = AKHostLocalized(@"overlay.thermal.nominal.detail");
     UIColor *thermalColor = UIColor.systemGreenColor;
     switch (thermal) {
         case NSProcessInfoThermalStateFair:
-            thermalName = @"Fair"; thermalDetail = @"Warm"; thermalColor = UIColor.systemYellowColor; break;
+            thermalName = AKHostLocalized(@"overlay.thermal.fair");
+            thermalDetail = AKHostLocalized(@"overlay.thermal.fair.detail");
+            thermalColor = UIColor.systemYellowColor; break;
         case NSProcessInfoThermalStateSerious:
-            thermalName = @"Serious"; thermalDetail = @"Throttling active"; thermalColor = UIColor.systemOrangeColor; break;
+            thermalName = AKHostLocalized(@"overlay.thermal.serious");
+            thermalDetail = AKHostLocalized(@"overlay.thermal.serious.detail");
+            thermalColor = UIColor.systemOrangeColor; break;
         case NSProcessInfoThermalStateCritical:
-            thermalName = @"Critical"; thermalDetail = @"Heavy throttle"; thermalColor = UIColor.systemRedColor; break;
+            thermalName = AKHostLocalized(@"overlay.thermal.critical");
+            thermalDetail = AKHostLocalized(@"overlay.thermal.critical.detail");
+            thermalColor = UIColor.systemRedColor; break;
         case NSProcessInfoThermalStateNominal:
         default:
             break;
@@ -437,11 +447,13 @@ static double ReadMetalWaitMs(void) {
     UIDeviceBatteryState state = device.batteryState;
     BOOL charging = (state == UIDeviceBatteryStateCharging || state == UIDeviceBatteryStateFull);
     NSString *batteryCompact = @"";
-    NSString *batteryExpanded = @"Battery: AC power";
+    NSString *batteryExpanded = AKHostLocalized(@"overlay.battery.ac");
     if (level >= 0.0f) {
         int percent = (int)(level * 100.0f + 0.5f);
-        batteryCompact = [NSString stringWithFormat:@"%d%%%@", percent, charging ? @" ⚡" : @""];
-        batteryExpanded = [NSString stringWithFormat:@"Battery: %d%% (%@)", percent, charging ? @"Charging" : @"Unplugged"];
+        batteryCompact = [AKHostLocalizedFormat(@"overlay.battery.compact", percent)
+            stringByAppendingString:(charging ? @" ⚡" : @"")];
+        batteryExpanded = AKHostLocalizedFormat(@"overlay.battery", percent,
+            charging ? AKHostLocalized(@"overlay.battery.charging") : AKHostLocalized(@"overlay.battery.unplugged"));
     }
 
     size_t available = 0;
@@ -463,7 +475,7 @@ static double ReadMetalWaitMs(void) {
     double gpuLoad = ReadMetalGPULoad();
     double waitMs = ReadMetalWaitMs();
 
-    _fpsLabel.text = fps > 0.0 ? [NSString stringWithFormat:@"%.1f FPS", fps] : @"-- FPS";
+    _fpsLabel.text = fps > 0.0 ? AKHostLocalizedFormat(@"overlay.fps", fps) : AKHostLocalized(@"overlay.fps.waiting");
     _thermalDot.backgroundColor = thermalColor;
     _thermalLabel.text = thermalName;
     _batteryLabel.text = batteryCompact;
@@ -473,19 +485,20 @@ static double ReadMetalWaitMs(void) {
     // gap, so displaying them as if they describe one sample made a steady
     // 60 FPS average appear to contradict an 8.3 or 25 ms latest interval.
     _expandedFPSLabel.text = fps > 0.0
-        ? [NSString stringWithFormat:@"Frame Rate (60-frame): %.1f FPS · latest gap %.1f ms", fps, frameTimeMs]
-        : @"Frame Rate: Waiting for frames…";
+        ? AKHostLocalizedFormat(@"overlay.frameRate", fps, frameTimeMs)
+        : AKHostLocalized(@"overlay.frameRate.waiting");
     _expandedGPULabel.text = gpuMs > 0.0
-        ? [NSString stringWithFormat:@"GPU (latest): %.1f ms (%.0f%% busy) · drawable wait %.1f ms", gpuMs, gpuLoad * 100.0, waitMs]
-        : @"GPU: waiting for frames…";
-    _expandedThermalLabel.text = [NSString stringWithFormat:@"Thermal State: %@ (%@)", thermalName, thermalDetail];
+        ? AKHostLocalizedFormat(@"overlay.gpu", gpuMs, gpuLoad * 100.0, waitMs)
+        : AKHostLocalized(@"overlay.gpu.waiting");
+    _expandedThermalLabel.text = AKHostLocalizedFormat(@"overlay.thermalState", thermalName, thermalDetail);
     _expandedMemoryLabel.text = available > 0
-        ? [NSString stringWithFormat:@"RAM Footprint: %.0f MB · Headroom: %.0f MB", usedMB, freeMB]
-        : [NSString stringWithFormat:@"RAM Footprint: %.0f MB", usedMB];
+        ? AKHostLocalizedFormat(@"overlay.memory.headroom", usedMB, freeMB)
+        : AKHostLocalizedFormat(@"overlay.memory", usedMB);
     _expandedBatteryLabel.text = batteryExpanded;
-    _expandedPowerLabel.text = [NSString stringWithFormat:@"Low Power Mode: %@", lowPower ? @"On" : @"Off"];
+    _expandedPowerLabel.text = AKHostLocalizedFormat(@"overlay.power",
+        lowPower ? AKHostLocalized(@"overlay.power.on") : AKHostLocalized(@"overlay.power.off"));
 
-    self.accessibilityValue = [NSString stringWithFormat:@"%.1f FPS, thermal %@, %.0f MB used", fps, thermalName, usedMB];
+    self.accessibilityValue = AKHostLocalizedFormat(@"overlay.accessibilityValue", fps, thermalName, usedMB);
 }
 
 - (void)thermalStateChanged:(NSNotification *)note {

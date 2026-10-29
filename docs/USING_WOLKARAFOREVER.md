@@ -1,6 +1,6 @@
 # Using WolkaraForever
 
-> **Current as of 2026-10-28 · source revision `fbd69f8`**
+> **Current as of 2026-10-29**
 
 Use this guide after [installing the app](INSTALLATION.md). Labels may differ slightly as
 the selected client, download state, and iPad permissions change.
@@ -11,7 +11,7 @@ the selected client, download state, and iPad permissions change.
 
 On the home screen, choose **Forever**, then select a region and game language. Regions are
 Europe, Americas, Korea, and Taiwan; game languages are English, Spanish, and German. The
-launcher interface itself remains English.
+launcher itself can be read in English or German: see [App language](#app-language) below.
 Choose **Install** to download and verify the client, or let the app complete a required
 update before playing. Keep WolkaraForever foregrounded while it downloads, verifies, or
 prepares a launch.
@@ -24,6 +24,25 @@ files before Play is available. It does not change the login region or other gam
 Select **Play** when it becomes available. Startup preparation can take several minutes.
 When the game is running, use **Leave game** in the in-game toolbar if the game has no useful
 quit path. It closes WolkaraForever; reopen the app for a fresh session.
+
+## App language
+
+WolkaraForever has two language settings, and they are separate.
+
+- **App language** (`English`, `Deutsch`, or `System Default`) changes the labels, alerts, menus
+  and spoken (VoiceOver) descriptions that WolkaraForever itself draws — including the in-game
+  performance overlay and the on-screen keyboard. The change applies immediately; the app does
+  not have to be restarted. **System Default** follows the iPad's own preferred-language list, and
+  uses German when that list prefers German, English otherwise.
+- **Game language** (the row above it) changes the text and audio World of Warcraft downloads. It
+  is the setting described above, and it is the only one of the two that costs a download.
+
+The first time you choose German as the app language, WolkaraForever offers to change the game
+language as well. Accepting that offer sets the game to German and downloads its German files; declining it leaves the game exactly as it was. Either answer is remembered, and the offer is not
+made again — the **Game language** row is always there if you change your mind later.
+
+Changing one setting never changes the other: reading the launcher in German does not download
+German game text, and playing the German game does not change the launcher's language.
 
 ## Add-ons
 

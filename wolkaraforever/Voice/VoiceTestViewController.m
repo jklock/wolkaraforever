@@ -23,6 +23,7 @@
 #import "../Input/InputElement.h"
 #import "../Controller/ControllerInspector.h"
 #import "../App/WolkaraForeverLog.h"
+#import "../App/WKLocalization.h"
 #import "../App/WolkaraForeverTheme.h"
 
 @interface AKVoiceTestViewController ()
@@ -36,11 +37,11 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Test Voice".uppercaseString;
+    self.title = WKLocalized(@"voice.test.title").uppercaseString;
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     self.view.backgroundColor = WKInk();
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
-    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Done"
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:WKLocalized(@"common.done")
         style:UIBarButtonItemStyleDone target:self action:@selector(done)];
     self.navigationItem.leftBarButtonItem.tintColor = WKGold();
 
@@ -55,7 +56,7 @@
     rows.translatesAutoresizingMaskIntoConstraints = NO;
     [scroll addSubview:rows];
 
-    [rows addArrangedSubview:WKNote(@"Press the button you set up on the Key / Button Configuration page. What you say appears below, exactly as the game would receive it — nothing is typed into the game from here.")];
+    [rows addArrangedSubview:WKNote(WKLocalized(@"voice.test.note"))];
 
     self.buttonLabel = WKLabel(16, UIFontWeightSemibold, UIColor.whiteColor);
     self.buttonLabel.accessibilityIdentifier = @"voice.test.button";
@@ -84,7 +85,7 @@
     [rows addArrangedSubview:self.hint];
 
     UIButton *clear = WKRowButton(@"voice.test.clear");
-    [clear setTitle:@"Clear" forState:UIControlStateNormal];
+    [clear setTitle:WKLocalized(@"common.clear") forState:UIControlStateNormal];
     [clear addTarget:self action:@selector(clearBox) forControlEvents:UIControlEventTouchUpInside];
     [rows addArrangedSubview:clear];
 
@@ -144,14 +145,15 @@
 - (void)appendTranscript:(NSString *)text {
     if (!text.length) {
         double peak = AKVoiceLoudestSample();
-        self.hint.text = [NSString stringWithFormat:@"Nothing was heard (microphone peak %.5f). Try again, a little closer to the iPad.", peak];
+        self.hint.text = WKLocalizedFormat(@"voice.test.nothingHeard", peak);
         return;
     }
     if (AKVoiceSettings.shared.trailingSpace) text = [text stringByAppendingString:@" "];
     NSString *current = self.box.text ?: @"";
     self.box.text = current.length ? [current stringByAppendingFormat:@"\n%@", text] : text;
-    NSMutableString *said = [NSMutableString stringWithFormat:@"Heard %lu characters.", (unsigned long)text.length];
-    if (AKVoiceSettings.shared.autoSubmit) [said appendString:@" In the game, Return would follow."];
+    NSMutableString *said = [NSMutableString stringWithFormat:@"%@",
+        WKLocalizedCountFormat(@"voice.test.heard",(NSInteger)text.length,(unsigned long)text.length)];
+    if (AKVoiceSettings.shared.autoSubmit) [said appendString:WKLocalized(@"voice.test.return")];
     self.hint.text = said;
     [self.box scrollRangeToVisible:NSMakeRange(self.box.text.length, 0)];
 }
@@ -173,12 +175,14 @@
     NSString *device = [self deviceIdentity];
     NSString *summary = [AKVoiceSettings.shared mappingSummaryForDevice:device];
     BOOL toggle = AKVoiceSettings.shared.mode == AKVoiceModeToggle;
-    NSString *state = AKVoiceSettings.shared.enabled ? @"" : @"Voice is switched off, so nothing will start it. Turn it on in Key / Button Configuration.";
+    // The settings object's own word for no mapping, shown in the app's language.
+    if ([summary isEqualToString:@"Not set"]) summary = WKLocalized(@"voice.mapping.notSet");
+    NSString *state = AKVoiceSettings.shared.enabled ? @"" : WKLocalized(@"voice.test.off");
     self.buttonLabel.text = [NSString stringWithFormat:@"%@\n%@%@",
-        pad ? [NSString stringWithFormat:@"%@ — %@", summary, pad.vendorName]
-            : [NSString stringWithFormat:@"%@ — no controller connected", summary],
-        toggle ? @"Press it once to start and again to stop."
-               : @"Hold it while you speak, then let go.",
+        pad ? WKLocalizedFormat(@"voice.mapping.device", summary, pad.vendorName)
+            : WKLocalizedFormat(@"voice.mapping.noController", summary),
+        toggle ? WKLocalized(@"voice.test.tapOnce")
+               : WKLocalized(@"voice.test.hold"),
         state.length ? [@"\n" stringByAppendingString:state] : @""];
 }
 
@@ -191,10 +195,10 @@
 - (void)showState:(AKDictationState)state {
     NSString *text = nil;
     switch (state) {
-    case AKDictationStateIdle: text = @"Microphone off"; break;
-    case AKDictationStateAuthorizing: text = @"Waiting for permission…"; break;
-    case AKDictationStateListening: text = @"Listening…"; break;
-    case AKDictationStateFinalizing: text = @"Finishing what it heard…"; break;
+    case AKDictationStateIdle: text = WKLocalized(@"voice.state.off"); break;
+    case AKDictationStateAuthorizing: text = WKLocalized(@"voice.state.authorizing"); break;
+    case AKDictationStateListening: text = WKLocalized(@"voice.state.listening"); break;
+    case AKDictationStateFinalizing: text = WKLocalized(@"voice.state.finalizing"); break;
     }
     self.stateLabel.text = text;
     BOOL busy = state != AKDictationStateIdle;

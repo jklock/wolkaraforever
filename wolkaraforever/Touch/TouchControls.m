@@ -1,5 +1,6 @@
 #import "TouchControls.h"
 #import "AKSupport.h"
+#import "AKHostLocalization.h"
 #import "TouchTrackpad.h"
 #import "TouchGamepadLayout.h"
 #import "TouchGamepad.h"
@@ -47,7 +48,9 @@ static NSString *const AKTouchTrackpadDefaultsKey = @"TKTouchTrackpadEnabled";
 // this small is the shortcut bar alone, which is what iPadOS shows for a
 // hardware keyboard. Its microphone key is part of the keys that are hidden.
 static CGFloat const AKKeyboardKeysHeight = 150;
-static NSString *const AKComposerDefaultLabel = @"Draft · Replaces the field; empty clears it";
+// The composer's placeholder when nothing has been dictated or typed: it says what the field
+// does, so an empty box is not mistaken for the game's own text.
+static NSString *AKComposerDefaultLabel(void) { return AKHostLocalized(@"touch.draft.placeholder"); }
 // GameController's own class, asked by name: this adapter's headers carry a
 // GCKeyboard of their own for the guest.
 static BOOL hardwareKeyboardAttached(void) {
@@ -106,8 +109,9 @@ static BOOL hardwareKeyboardAttached(void) {
         self.tintColor = UIColor.systemCyanColor;
         self.font = [UIFont systemFontOfSize:17];
         self.layer.cornerRadius = 8;
-        self.accessibilityLabel = @"Replacement text";
-        self.accessibilityHint = @"Tap Replace to replace the selected game field, or leave this empty to clear it. Existing game text is not shown here.";
+        self.accessibilityLabel = AKHostLocalized(@"touch.draft.label");
+        self.accessibilityHint = AKHostLocalized(@"touch.draft.hint");
+        self.accessibilityLanguage = AKHostLanguageCode();
         self.accessibilityIdentifier = @"wolkaraforever.keyboard.draft";
         self.autocapitalizationType = UITextAutocapitalizationTypeNone;
         self.autocorrectionType = UITextAutocorrectionTypeNo;
@@ -346,7 +350,8 @@ static BOOL hardwareKeyboardAttached(void) {
             button.tag = (NSInteger)specs.count;
             button.accessibilityIdentifier = [@"wolkaraforever.layerkey." stringByAppendingString:
                 [self actionTitle:title] ?: [self accessibilityNameFor:title]];
-            button.accessibilityLabel = [self accessibilityNameFor:title];
+            NSString *nameKey = AKKeyAccessibilityNameKey(title);
+            button.accessibilityLabel = nameKey ? AKHostLocalized(nameKey) : [self accessibilityNameFor:title];
             [button addTarget:self action:@selector(keyTapped:) forControlEvents:UIControlEventTouchUpInside];
             [specs addObject:@{@"title": title}];
             [buttons addObject:button];
@@ -385,6 +390,21 @@ static BOOL hardwareKeyboardAttached(void) {
     if ([title isEqual:@"ABC"]) return @"Letters";
     if ([title isEqual:@" "]) return @"Space";
     return title;
+}
+// The localization key for a named key, or nil when the key is its own name in every language:
+// a letter, a digit or a punctuation character. The English names above stay as they are, because
+// they are also the accessibility identifiers the tests and the device matrix look up; only what a
+// reader hears is translated.
+static NSString *AKKeyAccessibilityNameKey(NSString *title) {
+    if ([title isEqual:@"⇧"]) return @"touch.key.shift";
+    if ([title isEqual:@"⌫"]) return @"touch.key.backspace";
+    if ([title isEqual:@"↵"]) return @"touch.key.return";
+    if ([title isEqual:@"🎤"]) return @"touch.key.dictate";
+    if ([title isEqual:@"⌨"]) return @"touch.key.systemKeyboard";
+    if ([title isEqual:@"123"]) return @"touch.key.numbers";
+    if ([title isEqual:@"ABC"]) return @"touch.key.letters";
+    if ([title isEqual:@" "]) return @"touch.key.space";
+    return nil;
 }
 - (void)keyTapped:(UIButton *)button {
     if (button.tag < 0 || button.tag >= (NSInteger)_specs.count) return;
@@ -476,6 +496,9 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
         self.layer.zPosition = 100001;
+        // VoiceOver reads what is under this view in the app's language, not the iPad's, so a
+        // German HUD and German keyboard keys are pronounced as German.
+        self.accessibilityLanguage = AKHostLanguageCode();
         _haptics = [AKTouchHaptics new];
         _keyboardInput = [[AKKeyboardTextView alloc] initWithFrame:CGRectMake(0, 0, 1, 1) textContainer:nil];
         _keyboardInput.inputOwner = self;
@@ -489,33 +512,34 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         [NSNotificationCenter.defaultCenter postNotificationName:AKTouchGameTextInputDidAppearNotification
                                                         object:self];
         [self buildComposer];
-        _keyboardButton = [self buttonWithSymbol:@"keyboard" label:@"Show keyboard" action:@selector(toggleKeyboard)];
+        _keyboardButton = [self buttonWithSymbol:@"keyboard" label:AKHostLocalized(@"touch.keyboard.show") action:@selector(toggleKeyboard)];
         _keyboardButton.accessibilityIdentifier = @"tolkara.keyboard";
-        _trackpadButton = [self buttonWithSymbol:@"cursorarrow" label:@"Enable touch trackpad" action:@selector(toggleTrackpad)];
+        _trackpadButton = [self buttonWithSymbol:@"cursorarrow" label:AKHostLocalized(@"touch.trackpad.enable") action:@selector(toggleTrackpad)];
         // Optical centering for the left-leaning symbol; keep its hit area fixed.
         _trackpadButton.imageView.transform = CGAffineTransformMakeTranslation(4, 0);
         _trackpadButton.accessibilityIdentifier = @"tolkara.trackpad";
-        _gamepadButton = [self buttonWithSymbol:@"gamecontroller" label:@"Automatic touch controller" action:@selector(toggleGamepad)];
+        _gamepadButton = [self buttonWithSymbol:@"gamecontroller" label:AKHostLocalized(@"touch.gamepad.automatic") action:@selector(toggleGamepad)];
         _gamepadButton.accessibilityIdentifier = @"tolkara.gamepad";
-        _settingsButton = [self buttonWithSymbol:@"gearshape" label:@"Touch control settings" action:@selector(showControlSettings)];
+        _settingsButton = [self buttonWithSymbol:@"gearshape" label:AKHostLocalized(@"touch.settings") action:@selector(showControlSettings)];
         _settingsButton.accessibilityIdentifier = @"wolkaraforever.controlSettings";
         // A way out of the game from any screen. Until this existed, a guest screen with no
         // quit of its own - the login screen is one - left the user with no control that
         // returned to WolkaraForever's launcher at all, and closing the app was the only exit
         // (reported on Dadpad, 2026-10-21). It closes WolkaraForever, which ends the guest with it.
-        _leaveButton=[self buttonWithSymbol:@"house" label:@"Leave the game" action:@selector(leaveGame)];
+        _leaveButton=[self buttonWithSymbol:@"house" label:AKHostLocalized(@"touch.leave") action:@selector(leaveGame)];
         _leaveButton.accessibilityIdentifier=@"wolkaraforever.leaveGame";
-        _leaveButton.accessibilityHint=@"Closes WolkaraForever and the game; anything the game has not saved is lost. Open WolkaraForever again to start it.";
+        _leaveButton.accessibilityHint=AKHostLocalized(@"touch.leave.hint");
         // Said once at build time so a device run can be read back without a tap.
         AKLog(@"toolbar: leave game control on the toolbar (house; asks the guest to terminate)");
-        _gamepadButton.accessibilityHint = @"Show touch controls when no physical controller is connected. Tap to turn off or restore automatic controls.";
+        _gamepadButton.accessibilityHint = AKHostLocalized(@"touch.gamepad.hint");
         NSNumber *gamepad = [NSUserDefaults.standardUserDefaults objectForKey:@"TKTouchGamepadEnabled"];
         _gamepadEnabled = gamepad ? gamepad.boolValue : YES;
         [self setGamepadVisible:NO];
-        _trackpadButton.accessibilityHint = @"One finger moves; tap to click. Two fingers scroll or tap for right click. Three fingers tap for middle click. Hold then slide to drag. Long-press this button for mouse buttons.";
+        _trackpadButton.accessibilityHint = AKHostLocalized(@"touch.trackpad.hint");
         __weak AKTouchControls *weakSelf = self;
         NSMutableArray<UIAction *> *actions = [NSMutableArray new];
-        NSArray<NSString *> *buttons = @[@"Left click", @"Right click", @"Middle click"];
+        NSArray<NSString *> *buttons = @[AKHostLocalized(@"touch.mouse.left"), AKHostLocalized(@"touch.mouse.right"),
+                                         AKHostLocalized(@"touch.mouse.middle")];
         for (unsigned i = 0; i < buttons.count; i++) {
             [actions addObject:[UIAction actionWithTitle:buttons[i] image:nil identifier:nil handler:^(UIAction *action) {
                 (void)action;
@@ -594,8 +618,8 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     [self cancelTouches];
     _trackpadEnabled = enabled;
     _trackpadButton.tintColor = enabled ? UIColor.systemCyanColor : UIColor.whiteColor;
-    _trackpadButton.accessibilityLabel = enabled ? @"Disable touch trackpad" : @"Enable touch trackpad";
-    _trackpadButton.accessibilityValue = enabled ? @"On" : @"Off";
+    _trackpadButton.accessibilityLabel = enabled ? AKHostLocalized(@"touch.trackpad.disable") : AKHostLocalized(@"touch.trackpad.enable");
+    _trackpadButton.accessibilityValue = enabled ? AKHostLocalized(@"touch.value.on") : AKHostLocalized(@"touch.value.off");
     [self.delegate touchTrackpadChanged:enabled];
 }
 - (void)toggleTrackpad {
@@ -629,11 +653,11 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     // shortly afterwards (ERROR #132, Dadpad, 2026-10-21): a half-asked shutdown that is then
     // cancelled is not a state to put a running client in for a UI convenience. WolkaraForever ends
     // its own process instead, and says plainly what that costs.
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Leave the game?"
-        message:@"The game will close without saving its settings, and WolkaraForever ends with it. Open WolkaraForever again to start the game."
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:AKHostLocalized(@"touch.leave.title")
+        message:AKHostLocalized(@"touch.leave.message")
         preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Keep playing" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Close WolkaraForever" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+    [alert addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"touch.leave.keep") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"touch.leave.close") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         (void)action;
         AKLog(@"leave game: the user chose to close WolkaraForever");
         [NSNotificationCenter.defaultCenter postNotificationName:AKTouchCloseAppNotification object:nil];
@@ -642,7 +666,8 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 }
 - (void)setGamepadVisible:(BOOL)visible {
     _gamepadButton.tintColor = visible ? UIColor.systemCyanColor : UIColor.whiteColor;
-    _gamepadButton.accessibilityValue = _gamepadEnabled ? (visible ? @"Active" : @"Automatic") : @"Off";
+    _gamepadButton.accessibilityValue = _gamepadEnabled ? (visible ? AKHostLocalized(@"touch.gamepad.value.active") :
+        AKHostLocalized(@"touch.gamepad.value.automatic")) : AKHostLocalized(@"touch.gamepad.value.off");
 }
 - (void)toggleGamepad {
     _gamepadEnabled = !_gamepadEnabled;
@@ -691,7 +716,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     _composer.hidden = !self.keyboardVisible;
     [self updateDraftButtons];
     [_keyboardButton setImage:[UIImage systemImageNamed:self.keyboardVisible ? @"keyboard.chevron.compact.down" : @"keyboard"] forState:UIControlStateNormal];
-    _keyboardButton.accessibilityLabel = self.keyboardVisible ? @"Hide keyboard" : @"Show keyboard";
+    _keyboardButton.accessibilityLabel = self.keyboardVisible ? AKHostLocalized(@"touch.keyboard.hide") : AKHostLocalized(@"touch.keyboard.show");
     _gamepad.keyboardVisible = self.keyboardVisible;
     if ([self.delegate respondsToSelector:@selector(touchKeyboardVisibilityChanged:)])
         [self.delegate touchKeyboardVisibilityChanged:self.keyboardVisible];
@@ -822,7 +847,10 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
             button.tintColor = UIColor.whiteColor;
             [button setTitle:titles[i] forState:UIControlStateNormal];
             button.accessibilityIdentifier = [NSString stringWithFormat:@"wolkaraforever.keyboard.key.%lu", (unsigned long)i];
-            button.accessibilityLabel = @[@"Escape", @"Tab", @"Left arrow", @"Right arrow", @"Game backspace", @"Return", @"Hide keyboard"][i];
+            button.accessibilityLabel = @[AKHostLocalized(@"touch.key.escape"), AKHostLocalized(@"touch.key.tab"),
+                AKHostLocalized(@"touch.key.leftArrow"), AKHostLocalized(@"touch.key.rightArrow"),
+                AKHostLocalized(@"touch.key.gameBackspace"), AKHostLocalized(@"touch.key.return"),
+                AKHostLocalized(@"touch.keyboard.hide")][i];
             [button addTarget:self action:@selector(accessoryKey:) forControlEvents:UIControlEventTouchUpInside];
             [row addArrangedSubview:button];
         }
@@ -858,20 +886,20 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     _composer.layer.cornerRadius = 12;
     _composer.layer.zPosition = self.layer.zPosition;
     UILabel *label = _composerLabel = [UILabel new];
-    label.text = AKComposerDefaultLabel;
+    label.text = AKComposerDefaultLabel();
     label.font = [UIFont systemFontOfSize:12];
     label.textColor = UIColor.lightGrayColor;
     label.adjustsFontSizeToFitWidth = YES;
     label.minimumScaleFactor = 0.75;
     UIButton *insert = _insertDraftButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [insert setTitle:@"Replace" forState:UIControlStateNormal];
+    [insert setTitle:AKHostLocalized(@"touch.draft.replace") forState:UIControlStateNormal];
     insert.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     insert.accessibilityIdentifier = @"wolkaraforever.keyboard.insert";
-    insert.accessibilityHint = @"Replaces the whole selected game field. An empty draft clears it. Does not press Return.";
+    insert.accessibilityHint = AKHostLocalized(@"touch.draft.replace.hint");
     [insert addTarget:self action:@selector(insertDraft) forControlEvents:UIControlEventTouchUpInside];
     UIButton *clear = _clearDraftButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [clear setImage:[UIImage systemImageNamed:@"xmark.circle"] forState:UIControlStateNormal];
-    clear.accessibilityLabel = @"Clear draft";
+    clear.accessibilityLabel = AKHostLocalized(@"touch.draft.clear");
     clear.accessibilityIdentifier = @"wolkaraforever.keyboard.clear";
     [clear addTarget:self action:@selector(clearDraft) forControlEvents:UIControlEventTouchUpInside];
     for (UIView *view in @[label, _keyboardInput, insert, clear]) {
@@ -976,7 +1004,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     _systemKeyboardHeight = [frame CGRectValue].size.height;
     _systemKeyboardSeen = YES;
     // With the keys on screen the microphone is one tap away again.
-    if (_systemKeyboardHeight >= AKKeyboardKeysHeight) _composerLabel.text = AKComposerDefaultLabel;
+    if (_systemKeyboardHeight >= AKKeyboardKeysHeight) _composerLabel.text = AKComposerDefaultLabel();
     AKLog(@"system keyboard shown draftFirstResponder=%d markedText=%d height=%.0f", _keyboardInput.isFirstResponder, _keyboardInput.markedTextRange != nil, _systemKeyboardHeight);
 }
 - (void)systemKeyboardHidden:(NSNotification *)notification {

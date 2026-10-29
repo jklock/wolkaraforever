@@ -20,6 +20,8 @@ wolkaraforever/Shell/Info.plist launcher/Info.plist replace
 wolkaraforever/Shell/Integrated-Info.plist authorization/App/Integrated-Info.plist replace
 wolkaraforever/Shell/SelfTest.h launcher/App/SelfTest.h add
 wolkaraforever/Shell/SelfTest.m launcher/App/SelfTest.m add
+wolkaraforever/Shell/WKLocalization.h launcher/App/WKLocalization.h add
+wolkaraforever/Shell/WKLocalization.m launcher/App/WKLocalization.m add
 wolkaraforever/Shell/WolkaraForeverConfig.h launcher/App/WolkaraForeverConfig.h add
 wolkaraforever/Shell/WolkaraForeverConfig.m launcher/App/WolkaraForeverConfig.m add
 wolkaraforever/Shell/WolkaraForeverLog.h launcher/App/WolkaraForeverLog.h add
@@ -31,8 +33,11 @@ wolkaraforever/Shell/artwork/default.svg artwork/wolkaraforever/default.svg add
 wolkaraforever/Shell/artwork/tinted.svg artwork/wolkaraforever/tinted.svg add
 wolkaraforever/Shell/artwork/wolkaraforever-icon-source.png artwork/wolkaraforever/wolkaraforever-icon-source.png add
 wolkaraforever/Shell/artwork/wolkaraforever-logo.png artwork/wolkaraforever/wolkaraforever-logo.png add
+wolkaraforever/Shell/de.lproj/Localizable.strings launcher/App/de.lproj/Localizable.strings add
+wolkaraforever/Shell/en.lproj/Localizable.strings launcher/App/en.lproj/Localizable.strings add
 wolkaraforever/Shell/main.m launcher/App/main.m replace
 wolkaraforever/Shell/tests/test_execution_mode.m tests/test_execution_mode.m replace
+wolkaraforever/Shell/tests/test_localization.m tests/test_localization.m add
 #
 # WoW: the launcher module, its test script source and its tests
 wolkaraforever/WoW/AddonArchive.swift launcher/WoW/AddonArchive.swift add
@@ -76,6 +81,8 @@ wolkaraforever/WoW/tests/wow_installation_fixture.h tests/wow_installation_fixtu
 wolkaraforever/WoW/wow_cdn.m tools/wow_cdn.m add
 #
 # Touch: the on-screen controls, the gamepad, haptics and the adapter's fonts
+wolkaraforever/Touch/AKHostLocalization.h translation/AppKit/AKHostLocalization.h add
+wolkaraforever/Touch/AKHostLocalization.m translation/AppKit/AKHostLocalization.m add
 wolkaraforever/Touch/AKPerformanceOverlay.h translation/AppKit/AKPerformanceOverlay.h add
 wolkaraforever/Touch/AKPerformanceOverlay.m translation/AppKit/AKPerformanceOverlay.m add
 wolkaraforever/Touch/Fonts.h translation/AppKit/Fonts.h add

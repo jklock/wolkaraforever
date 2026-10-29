@@ -36,10 +36,13 @@ NSString *WKLogRotationPath(void);
 /// crash handlers, which run when it is too late to be careful.
 void WKLogFatal(const char *tag, NSString *message);
 
-/// The documents a build of this app has to carry, as pairs of a heading and the file
-/// name in the bundle: this app's own licence and notice, and upstream Tolkara's, which
+/// The documents a build of this app has to carry, as pairs of a localization key and the
+/// file name in the bundle: this app's own licence and notice, and upstream Tolkara's, which
 /// have to stay because the app ships upstream's code too. One list, so the launch-time
 /// log line and the About page cannot come to different conclusions about what should be
 /// there - and so a build that is missing one says so, in the log and on the page, rather
 /// than quietly showing nothing. See development/NOTES.md for how that happened.
+///
+/// The key rather than the heading: the About page shows these in the app's language, and
+/// a file name is not something a translation table may change.
 NSArray<NSArray<NSString *> *> *WKBundledDocuments(void);

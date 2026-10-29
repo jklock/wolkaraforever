@@ -46,6 +46,23 @@ around you and do not reformat unrelated lines. Keep the module prefixes
 (`gm_`, `gi_`, `ng_` in the runtime, `AK` in the translation layer, `TK` in
 authorization).
 
+## User-visible text
+
+Every string WolkaraForever draws belongs in the app's own tables, not in a source file:
+`wolkaraforever/Shell/en.lproj/Localizable.strings` and `de.lproj/Localizable.strings`, used through
+`WKLocalized` (or `AKHostLocalized` from the compatibility libraries). Read
+[the localization guide](LOCALIZATION.md) before adding or changing one: it says what is
+translated and what never is, how a count is written, what German copy has to read like, and the
+review checklist a translator and a reviewer both work through.
+
+```sh
+wolkaraforever/tools/check_localization.py     # tables agree; every key the source uses exists
+wolkaraforever/tools/test_localization.sh      # the service's own behaviour
+```
+
+A new visible string without both tables fails the first of those, so it is not a step you can
+forget for long.
+
 Pull requests use the repository template: explain the problem, resulting behavior, commands
 and results, exact device evidence where applicable, and what remains untested. A simulator
 pass does not prove Metal or native-execution behavior.

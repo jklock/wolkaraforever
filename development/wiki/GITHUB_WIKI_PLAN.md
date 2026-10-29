@@ -44,13 +44,17 @@ Home
 
 ## Page specifications
 
+Two pages of this tree are already written and only need publishing from the files named here:
+[App language](APP_LANGUAGE.md) and [Game region and language](GAME_REGION_AND_LANGUAGE.md). Both
+carry their canonical source and a review date, which is what the rollout checklist asks for.
+
 | Wiki page | Content | Canonical repository sources |
 | --- | --- | --- |
 | Home | One-paragraph purpose, current support boundary, quick links, safety statement, and source-build expectation. | `README.md`, `docs/README.md` |
 | What WolkaraForever Is | Tolkara/Wolkara/WolkaraForever lineage, what the product adds, and what it does not do. | `README.md`, `NOTICE.md`, `development/architecture/PROJECT_MAP.md` |
 | Install on iPad | Prerequisites, safe setup, `local.env` concept without values, installation command, and first-launch expectations. | `docs/INSTALLATION.md` |
 | First Launch and Game Installation | Edition, CDN region, game language, download/update behavior, selected-language update gate, and no game-data distribution. | `docs/USING_WOLKARAFOREVER.md`, `development/technical/WOW_LAUNCHER.md` |
-| Game Region and Language | Distinguish region, game text/audio locale, app language, portal boundary, and German support status. | `docs/USING_WOLKARAFOREVER.md`, German localization prompt when it is implemented |
+| Game Region and Language | Distinguish region, game text/audio locale, app language, portal boundary, and the one-time offer to align the game language. | `docs/USING_WOLKARAFOREVER.md`, `development/guides/LOCALIZATION.md` |
 | Add-ons and CurseForge | What import does, what the app manages, Core API key boundary, and safe recovery behavior. | `docs/USING_WOLKARAFOREVER.md`, `development/technical/FEATURES.md` |
 | Controls, Controllers, and Voice | Touch, keyboard, controller, dictation permissions, and what needs human/device testing. | `docs/USING_WOLKARAFOREVER.md`, `development/testing/TESTING.md` |
 | UI Backup, Restore, and Performance | Backup contents/exclusions, graphics reset boundary, gamepad switch, overlay, profiles, background behavior. | `docs/USING_WOLKARAFOREVER.md`, `development/technical/FEATURES.md` |
@@ -60,7 +64,7 @@ Home
 | Contributing | Branch/PR workflow, layer rule, review, code ownership, required checks, and issue labels. | `CONTRIBUTING.md`, `development/guides/REPOSITORY_WORKFLOW.md` |
 | Architecture and Layering | Prepared-tree model, modules, patches/overlays, and upstream updates. | `development/architecture/PROJECT_MAP.md`, `development/architecture/ARCHITECTURE.md` |
 | Testing and Device Evidence | Which scripts prove what, physical-device protocol, and report template. | `development/testing/TESTING.md` |
-| Localization and iPhone Work | Contribution boundaries, app/game language separation, planned localization/device profiles, and links to accepted plans. | `development/plans/GERMAN_APP_LOCALIZATION_PROMPT.md`, `development/uichanges/LAUNCHER_REORGANIZATION_PLAN.md` |
+| Localization and iPhone Work | Contribution boundaries, app/game language separation, what is translated and what never is, translator instructions and review checklist, and links to accepted plans. | `development/guides/LOCALIZATION.md`, `development/plans/GERMAN_APP_LOCALIZATION_PROMPT.md`, `development/uichanges/LAUNCHER_REORGANIZATION_PLAN.md` |
 | Releases | Exact-SHA/tagging rule, experimental IPA scope, release-note template, and rollback policy. | `development/guides/REPOSITORY_WORKFLOW.md`, `.github/workflows/release.yml` |
 | Credits, Licenses, and Upstream | Attribution, licences/notices, upstream relationships, and non-affiliation. | `README.md`, `LICENSE`, `NOTICE.md`, `platform/LICENSE`, `platform/NOTICE.md` |
 
@@ -73,8 +77,9 @@ Home
 3. State scope precisely: **source build**, **simulator test**, **installed app**, and
    **human-confirmed gameplay** are different evidence levels.
 4. Prefer linking to a stable heading rather than reproducing a lengthy technical procedure.
-5. Mark planned features as planned, including German app localization and iPhone device profiles,
-   until their exact release proof exists.
+5. Mark planned features as planned, including iPhone device profiles, until their exact release
+   proof exists. The app language is implemented and is described as such; the German launcher
+   claim still needs its recorded physical check on the released SHA.
 
 ## Rollout checklist
 

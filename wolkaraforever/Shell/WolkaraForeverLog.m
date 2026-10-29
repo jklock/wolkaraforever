@@ -197,14 +197,17 @@ void WKLogStart(void) {
     });
 }
 
+// Each entry is a localization *key* and the file name. The key is what the About page
+// shows in the app's language; the file name is a file name, and a bundle cannot translate
+// one, so it stays exactly as the target ships it.
 NSArray<NSArray<NSString *> *> *WKBundledDocuments(void) {
     static NSArray *documents = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        documents = @[@[@"WolkaraForever — this app's licence", @"WolkaraForever-LICENSE"],
-                      @[@"WolkaraForever — notices, and the licences of what this app adapts", @"WolkaraForever-NOTICE.md"],
-                      @[@"Tolkara — the platform this app is built on", @"LICENSE"],
-                      @[@"Tolkara — notices", @"NOTICE.md"]];
+        documents = @[@[@"about.document.ownLicence", @"WolkaraForever-LICENSE"],
+                      @[@"about.document.ownNotices", @"WolkaraForever-NOTICE.md"],
+                      @[@"about.document.platformLicence", @"LICENSE"],
+                      @[@"about.document.platformNotices", @"NOTICE.md"]];
     });
     return documents;
 }

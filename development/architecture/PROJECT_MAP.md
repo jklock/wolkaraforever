@@ -26,7 +26,7 @@ cross-module reach-in. Never edit `platform/` directly.
 
 | Module | Responsibility | Key additions over Tolkara |
 | --- | --- | --- |
-| `Shell/` | Branded app shell and lifecycle | WolkaraForever branding, theme, icon, configuration recovery, redacted logging, execution-mode glue, app self-tests. |
+| `Shell/` | Branded app shell and lifecycle | WolkaraForever branding, theme, icon, configuration recovery, redacted logging, execution-mode glue, app self-tests, the app's own language service and its `en`/`de` string tables. |
 | `WoW/` | Forever client lifecycle | CDN metadata, install/update/verify/resume, CASC handling, edition/region/locale choices, safe update lock, launcher UI. |
 | `WoW/` add-ons and UI | User-owned game files | Validated archive import, managed package state, device-Keychain CurseForge credentials, browse/download, UI backup/restore, graphics-only reset, locale and `GamePadEnable` writes. |
 | `Touch/` | iPad game interaction | In-game toolbar, trackpad, keyboard/draft path, on-screen gamepad, layout editor, haptics, performance overlay. |
@@ -44,6 +44,10 @@ The full behavioral inventory and owning tests are in
   client without shipping game data.
 - Separate region and language choices; for a ready Forever install, language changes text and
   audio locale together without changing the login portal.
+- A separate app language (English, German, or the iPad's preference) for everything
+  WolkaraForever draws, applied without a relaunch, with English as the fallback and a one-time
+  offer to put the *game* into German; see
+  [localization](../guides/LOCALIZATION.md).
 - Add-on import and management that only deletes packages it recorded; CurseForge access with a
   device-local Core API key.
 - Verified UI archive/restore with staging, journal recovery, digest checks, traversal defence,

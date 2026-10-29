@@ -12,6 +12,8 @@
 #import "../launcher/WoW/ForeverUI.h"
 #import "../launcher/WoW/Updater.h"
 #import "../launcher/App/LaunchProgressView.h"
+#import "../launcher/App/WKLocalization.h"
+#import "../launcher/App/WolkaraForeverConfig.h"
 #import "../launcher/App/WolkaraForeverLog.h"
 #import "../launcher/Voice/VoiceViewController.h"
 #import "../launcher/Voice/VoiceTestViewController.h"
@@ -31,6 +33,9 @@
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls;
 - (BOOL)foreverActionAllowed;
 - (NSString *)foreverWorkingDirectory;
+- (void)chooseAppLanguage;
+- (void)applyAppLanguage:(WKAppLanguage)language;
+- (void)setGameLocale:(NSString *)locale;
 @end
 @interface TKWoWAddonManagerViewController (Fixture)
 - (void)done;
@@ -355,6 +360,11 @@ static void TestAddons(void) {
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWInstallRequested.wowf"];
     // Device language must not change this fork's English launcher UI.
     [NSUserDefaults.standardUserDefaults setObject:@[@"es-ES"] forKey:@"AppleLanguages"];
+    // The app's own language is persisted like any other choice, so a run that ended in German
+    // would make the next run's English assertions a test of the last run. Cleared here; the
+    // German part at the end sets it itself and leaves it back in English.
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:WKAppLanguageDefaultsKey];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverGameLanguageOfferShown"];
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
         fprintf(stderr,"WoW UIKit TIMEOUT\n"); _Exit(1);
     });
@@ -799,7 +809,10 @@ static void TestAddons(void) {
     assert([boxOrder isEqualToArray:expectedBoxes]);
     // --- each box's heading and rows, exactly
     NSDictionary *expectedRows = @{
-        @"wow.box.edition": @[@"wow.heading.edition", @"wow.edition", @"wow.preferences", @""],
+        // The Game Edition card: the edition, the *game's* language, the *app's* language, and
+        // the compatibility note. Three separate settings, three separate rows.
+        @"wow.box.edition": @[@"wow.heading.edition", @"wow.edition", @"wow.preferences",
+                              @"wow.language", @""],
         @"wow.box.addons": @[@"wow.heading.addons", @"wow.addons.manage", @"wow.addons.macEver",
                              @"wow.addons.directory"],
         @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.voice.test"],
@@ -1008,11 +1021,267 @@ static NSString *configBeforeReset;
     assert(stubRestores == 1);
     assert(stubBackups == 3);   // restore snapshotted the current state first
     [self dismissPresented];
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow.");
+    [self performSelector:@selector(tapRenderProfile) withObject:nil afterDelay:0.4];
+}
+- (void)tapRenderProfile {
+    // Opening the row is what crashed: the sheet carried two Cancel actions,
+    // the row's own and the one -presentSheet:anchor: adds for every action
+    // sheet, and UIKit raises on the second.
+    [[self row:@"wow.performance.renderProfile"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    [self performSelector:@selector(checkRenderProfileSheet) withObject:nil afterDelay:0.6];
+}
+- (void)checkRenderProfileSheet {
+    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    assert([sheet isKindOfClass:UIAlertController.class]);
+    assert([sheet.title isEqual:@"Render profile"]);
+    assert(sheet.actions.count == 4);
+    NSUInteger cancels = 0;
+    for (UIAlertAction *action in sheet.actions) if (action.style == UIAlertActionStyleCancel) cancels++;
+    assert(cancels == 1);
+    assert([sheet.actions[0].title isEqual:@"Performance — 1024 × 768"]);
+    assert([sheet.actions[1].title isEqual:@"Balanced — 1366 × 1024"]);
+    assert([sheet.actions[2].title isEqual:@"Quality — 2732 × 2048"]);
+    assert([sheet.actions[3].title isEqual:@"Cancel"]);
+    // Choosing a profile is the whole point of the row, so run the action the
+    // way a tap would: through the handler UIKit holds.
+    void (^handler)(UIAlertAction *) = [sheet.actions[0] valueForKey:@"handler"];
+    assert(handler != nil);
+    [self dismissPresented];
+    handler(sheet.actions[0]);
+    [self performSelector:@selector(checkRenderProfileApplied) withObject:nil afterDelay:1.2];
+}
+- (void)checkRenderProfileApplied {
+    UIAlertController *alert = (id)self.controller.presentedViewController;
+    assert([alert isKindOfClass:UIAlertController.class]);
+    assert([alert.title isEqual:@"Render profile ready"]);
+    assert([alert.message containsString:stubNewest]);
+    [self dismissPresented];
+    assert(stubBackups == 4);   // the profile saved its own rollback point
+    assert([NSUserDefaults.standardUserDefaults doubleForKey:@"WolkaraForeverBackingScale"] == 0.75);
+    NSString *config = [self configText];
+    assert([config containsString:@"SET renderScale \"0.75\""]);
+    assert([config containsString:@"SET gxForegroundFPS \"60\""]);
+    assert([config containsString:@"SET gxBackgroundFPS \"30\""]);
+    assert([config containsString:@"SET vsync \"1\""]);
+    // Everything the profile does not own is still there, byte for byte.
+    assert([config containsString:@"SET accountName \"TESTACCOUNT\""]);
+    assert([config containsString:@"SET unknownSetting \"keep\""]);
+    assert([config containsString:@"SET cameraDistance \"1.5\""]);
+    // And the row now says which profile is selected.
+    NSString *title = [(UIButton *)Find(self.controller.view, @"wow.performance.renderProfile") configuration].title;
+    assert([title isEqual:@"Render profile: Performance (1024 × 768)"]);
+    // Finally the app's own language: the setting, the German page, the one-time offer to put
+    // the game into German too, and the switch back.
+    [self performSelector:@selector(startLanguageTests) withObject:nil afterDelay:0.3];
+}
+
+#pragma mark - The app's language, and the game's
+
+// The two settings are independent and both are ours to keep. What is checked here: the config
+// file owns both (and still refuses an invented language), the row reads in the language in use,
+// German applies to the page without a relaunch, no raw key is ever visible, the first German
+// selection offers - once - to put the *game* into German through the existing validated writer,
+// and switching back is immediate too.
+- (void)startLanguageTests {
+    // The launch checks above ended on a deliberate startup failure, which the page still says.
+    // A language change is judged against a ready installation, so that page is put back first.
+    [self.controller setValue:nil forKey:@"_startupFailure"];
+    [self.controller render];
+    assert([[self status] isEqual:@"Ready to play"]);
+    WKLocalization.shared.language = WKAppLanguageEnglish;
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverGameLanguageOfferShown"];
+    [NSUserDefaults.standardUserDefaults setObject:@"enUS" forKey:@"WoWLocale"];
+
+    // --- the config file owns both languages
+    assert([TKWolkaraForeverConfig ownsKey:@"WolkaraForeverAppLanguage"]);
+    assert([TKWolkaraForeverConfig ownsKey:@"WolkaraForeverGameLanguageOfferShown"]);
+    NSString *problem = nil;
+    NSDictionary *accepted = [TKWolkaraForeverConfig
+        validatedSettingsFromFile:@{@"version": @1,
+                                    @"settings": @{@"WolkaraForeverAppLanguage": @"de",
+                                                   @"WoWLocale": @"deDE"}}
+                           problem:&problem];
+    assert([accepted[@"WolkaraForeverAppLanguage"] isEqual:@"de"]);
+    // deDE is a game language the schema accepts: it was selectable long before the schema knew
+    // it, and a German setting that cannot be exported is not a German setting.
+    assert([accepted[@"WoWLocale"] isEqual:@"deDE"]);
+    assert(problem == nil);
+    // An invented language is refused, and the rest of the file still stands.
+    problem = nil;
+    accepted = [TKWolkaraForeverConfig
+        validatedSettingsFromFile:@{@"version": @1,
+                                    @"settings": @{@"WolkaraForeverAppLanguage": @"fr",
+                                                   @"WoWLocale": @"deDE"}}
+                           problem:&problem];
+    assert(accepted[@"WolkaraForeverAppLanguage"] == nil);
+    assert([accepted[@"WoWLocale"] isEqual:@"deDE"]);
+    assert(problem != nil);
+    // A file written before the setting existed carries no app language at all, and that is
+    // System Default rather than a refusal or an English guess.
+    problem = nil;
+    accepted = [TKWolkaraForeverConfig validatedSettingsFromFile:@{@"version": @1,
+                                                                  @"settings": @{@"WoWRegion": @"eu"}}
+                                                          problem:&problem];
+    assert(problem == nil);
+    assert([WKLocalization languageForStoredValue:accepted[WKAppLanguageDefaultsKey]] == WKAppLanguageSystem);
+
+    // --- the row exists, on its own identifier, and reads in the language in use
+    UIButton *language = [self row:@"wow.language"];
+    assert(language != nil);
+    assert([language.configuration.title isEqual:@"App language: English"]);
+    // System Default says what it resolved to, because the row above it is a different language.
+    WKLocalization.shared.language = WKAppLanguageSystem;
+    assert([[self row:@"wow.language"].configuration.title hasPrefix:@"App language: English"]);
+    WKLocalization.shared.language = WKAppLanguageEnglish;
+
+    // --- the sheet offers the three choices, and the last one names its resolution
+    [self.controller chooseAppLanguage];
+    [self performSelector:@selector(checkLanguageSheet) withObject:nil afterDelay:0.5];
+}
+
+- (void)checkLanguageSheet {
+    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    assert([sheet isKindOfClass:UIAlertController.class]);
+    assert([sheet.title isEqual:@"App language"]);
+    assert([sheet.message containsString:@"game language"]);
+    NSArray *titles = [sheet.actions valueForKey:@"title"];
+    assert([titles containsObject:@"English"]);
+    assert([titles containsObject:@"Deutsch"]);
+    assert([titles containsObject:@"System Default (English)"]);
+    assert([titles containsObject:@"Cancel"]);
+    [self dismissPresented];
+    // After the sheet has actually gone: UIKit refuses a second presentation while one is on its
+    // way out, and the language would then be changed with no offer to see.
+    [self performSelector:@selector(applyGerman) withObject:nil afterDelay:0.5];
+}
+
+- (void)applyGerman {
+    // --- German, applied to the page as it stands: no relaunch, no lost installation state
+    int backupsBefore = stubBackups;
+    [self.controller applyAppLanguage:WKAppLanguageGerman];
+    assert(stubBackups == backupsBefore);   // a language is not a file operation
+    [self performSelector:@selector(checkGermanPage) withObject:nil afterDelay:0.4];
+}
+
+- (void)checkGermanPage {
+    WKLocalization *localization = WKLocalization.shared;
+    assert(localization.resolvedLanguage == WKAppLanguageGerman);
+    assert([localization.languageCode isEqual:@"de"]);
+    // The page, in German, from the same controller that was showing English a moment ago.
+    NSLog(@"DE STATUS: %@ / %@", [self status], [(UILabel *)Find(self.controller.view, @"wow.detail") text]);
+    assert([[self status] isEqual:@"Bereit zum Spielen"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.backup") configuration].title
+        isEqual:@"WoW-Oberflächenkonfiguration sichern"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
+        isEqual:@"Mac-Ever laden"]);
+    // A product name stays itself in both languages.
+    assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text]
+        isEqual:@"Gamepad-Oberfläche"]);
+    // Section headings, which were made before this language existed.
+    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"SPIELEDITION"]);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.performance") text] isEqual:@"LEISTUNG & OBERFLÄCHE"]);
+    // The row that made the change, and the accessibility labels VoiceOver reads.
+    assert([[(UIButton *)Find(self.controller.view, @"wow.language") configuration].title
+        isEqual:@"App-Sprache: Deutsch"]);
+    assert([self.controller.navigationItem.rightBarButtonItem.accessibilityLabel isEqual:@"Einstellungen"]);
+    // Nothing on the page is a raw key, and nothing is left in the other language's words.
+    [self assertNoRawKeysInView:self.controller.view];
+    [self capture:@"wow-home-de.png"];
+
+    // --- the one-time offer, localized, with the two answers it promises
+    UIAlertController *offer = (id)self.controller.presentedViewController;
+    assert([offer isKindOfClass:UIAlertController.class]);
+    assert([offer.title isEqual:@"Auch die Spielsprache ändern?"]);
+    NSArray *titles = [offer.actions valueForKey:@"title"];
+    assert([titles containsObject:@"Spielsprache ebenfalls auf Deutsch ändern"]);
+    assert([titles containsObject:@"Spielsprache unverändert lassen"]);
+    [self dismissPresented];
+    assert([[NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverGameLanguageOfferShown"] boolValue]);
+
+    // --- and the first answer, which is the game's own language, through the same writer the
+    //     Game language row uses: WoWLocale, Config.wtf's two locales, and no portal change.
+    [self.controller setGameLocale:@"deDE"];
+    [self performSelector:@selector(checkGermanGameLanguage) withObject:nil afterDelay:1.2];
+}
+
+- (void)checkGermanGameLanguage {
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWLocale"] isEqual:@"deDE"]);
+    NSString *config = [self configText];
+    assert([config containsString:@"SET textLocale \"deDE\""]);
+    assert([config containsString:@"SET audioLocale \"deDE\""]);
+    // The region, and every unrelated setting, is exactly as it was.
+    assert([config containsString:@"SET portal \"eu\""]);
+    assert([config containsString:@"SET accountName \"TESTACCOUNT\""]);
+    // The Game language row says Deutsch, in German, and the app's language did not move.
+    assert([[[self row:@"wow.preferences"].configuration.title componentsSeparatedByString:@"Deutsch"] count] == 2);
+    assert(WKLocalization.shared.resolvedLanguage == WKAppLanguageGerman);
+
+    // --- switching back is immediate, and the offer is not repeated
+    [self.controller applyAppLanguage:WKAppLanguageEnglish];
+    assert([[self status] isEqual:@"Ready to play"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.language") configuration].title
+        isEqual:@"App language: English"]);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"GAME EDITION"]);
+    assert(self.controller.presentedViewController == nil);   // no German offer again
+    [self assertNoRawKeysInView:self.controller.view];
+
+    // German at the largest text size: the longest labels the app has, in the layout that has
+    // the least room for them.
+    WKLocalization.shared.language = WKAppLanguageGerman;
+    self.controller.traitOverrides.preferredContentSizeCategory = UIContentSizeCategoryAccessibilityExtraExtraExtraLarge;
+    [self performSelector:@selector(checkGermanLargeText) withObject:nil afterDelay:0.4];
+}
+
+- (void)checkGermanLargeText {
+    [self.window layoutIfNeeded];
+    UIScrollView *scroll = (id)Find(self.controller.view, @"wow.scroll");
+    assert(scroll != nil);
+    // The page is a scrolling column at this size, and every row is inside it: nothing is
+    // clipped to a width that was measured for English.
+    for (NSString *identifier in @[@"wow.language", @"wow.performance.backup", @"wow.addons.directory",
+                                   @"wow.permissions", @"wow.primary"]) {
+        UIView *row = Find(self.controller.view, identifier);
+        assert(row != nil);
+        assert(row.bounds.size.height > 0);
+        CGRect inScroll = [row convertRect:row.bounds toView:scroll];
+        assert(CGRectGetWidth(inScroll) <= scroll.bounds.size.width + 1);
+    }
+    [self capture:@"wow-home-de-large-text.png"];
+    self.controller.traitOverrides.preferredContentSizeCategory = UIContentSizeCategoryLarge;
+    // Leave the app as it was found: English, and the game's own language back where it started.
+    [self.controller setGameLocale:@"enUS"];
+    [self performSelector:@selector(finishLanguageTests) withObject:nil afterDelay:0.4];
+}
+
+- (void)finishLanguageTests {
+    [NSUserDefaults.standardUserDefaults setObject:@"en" forKey:WKAppLanguageDefaultsKey];
+    assert(WKLocalization.shared.resolvedLanguage == WKAppLanguageEnglish);
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; render profile sheet and applied preset; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size).");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.
     [self.controller refresh];
+}
+
+// Nothing visible may be a localization key. The service falls back to English and then to a
+// readable name rather than to the key itself, and the tables are checked as a whole by
+// wolkaraforever/tools/check_localization.py; this asserts the other half - that no call site
+// handed a key to a label by mistake.
+- (void)assertNoRawKeysInView:(UIView *)view {
+    NSRegularExpression *key = [NSRegularExpression regularExpressionWithPattern:@"^[a-z][A-Za-z0-9]*(\\.[A-Za-z0-9_]+)+$"
+                                                                        options:0 error:NULL];
+    NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:view];
+    while (pending.count) {
+        UIView *each = pending.lastObject; [pending removeLastObject];
+        [pending addObjectsFromArray:each.subviews];
+        NSString *text = [each isKindOfClass:UILabel.class] ? ((UILabel *)each).text
+            : [each isKindOfClass:UIButton.class] ? (((UIButton *)each).configuration.title ?: [(UIButton *)each titleForState:UIControlStateNormal])
+            : nil;
+        if (text.length && [key firstMatchInString:text options:0 range:NSMakeRange(0, text.length)]) {
+            NSLog(@"RAW KEY VISIBLE: %@", text);
+            assert(!text);
+        }
+    }
 }
 
 - (void)checkLaunch {

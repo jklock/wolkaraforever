@@ -22,6 +22,10 @@
 // (an install or repair asked for, and since carried out).
 static NSArray<NSString *> *TKWolkaraForeverConfigKeys(void) {
     return @[@"WoWProduct", @"WoWRegion", @"WoWLocale",
+             // The app's own language. Separate from WoWLocale, which is the game's, and
+             // written here for the same reason: a choice that costs a restart should
+             // survive one.
+             @"WolkaraForeverAppLanguage", @"WolkaraForeverGameLanguageOfferShown",
              @"AKVoiceEnabled", @"AKVoiceMode", @"AKVoiceAutoSubmit",
              @"AKVoiceTrailingSpace", @"AKVoiceCustomWords",
              // The voice layer's choice about whether the game keeps the button. It lived only in
@@ -89,7 +93,12 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
         schema = @{
             @"WoWProduct": @{@"kind": @"slug"},
             @"WoWRegion": @{@"kind": @"enum", @"values": @[@"eu", @"us", @"kr", @"tw"]},
-            @"WoWLocale": @{@"kind": @"enum", @"values": @[@"enUS", @"esES"]},
+            // deDE belongs in this list: it was selectable and persisted to the defaults
+            // database long before this schema knew it, so the game's German setting was
+            // being refused on export and silently dropped on import.
+            @"WoWLocale": @{@"kind": @"enum", @"values": @[@"enUS", @"esES", @"deDE"]},
+            @"WolkaraForeverAppLanguage": @{@"kind": @"enum", @"values": @[@"en", @"de", @"system"]},
+            @"WolkaraForeverGameLanguageOfferShown": @{@"kind": @"bool"},
             @"AKVoiceEnabled": @{@"kind": @"bool"},
             @"AKVoiceMode": @{@"kind": @"int", @"min": @0, @"max": @1},
             @"AKVoiceAutoSubmit": @{@"kind": @"bool"},
