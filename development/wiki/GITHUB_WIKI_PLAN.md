@@ -64,7 +64,7 @@ carry their canonical source and a review date, which is what the rollout checkl
 | Contributing | Branch/PR workflow, layer rule, review, code ownership, required checks, and issue labels. | `CONTRIBUTING.md`, `development/guides/REPOSITORY_WORKFLOW.md` |
 | Architecture and Layering | Prepared-tree model, modules, patches/overlays, and upstream updates. | `development/architecture/PROJECT_MAP.md`, `development/architecture/ARCHITECTURE.md` |
 | Testing and Device Evidence | Which scripts prove what, physical-device protocol, and report template. | `development/testing/TESTING.md` |
-| Localization and iPhone Work | Contribution boundaries, app/game language separation, what is translated and what never is, translator instructions and review checklist, and links to accepted plans. | `development/guides/LOCALIZATION.md`, `development/plans/GERMAN_APP_LOCALIZATION_PROMPT.md`, `development/uichanges/LAUNCHER_REORGANIZATION_PLAN.md` |
+| Localization and iPhone Work | Contribution boundaries, app/game language separation, what is translated and what never is, translator instructions and review checklist, and links to the completed localization record plus the active launcher plan. | `development/guides/LOCALIZATION.md`, `development/archive/plans/GERMAN_APP_LOCALIZATION_PROMPT.md`, `development/uichanges/LAUNCHER_REORGANIZATION_PLAN.md` |
 | Releases | Exact-SHA/tagging rule, experimental IPA scope, release-note template, and rollback policy. | `development/guides/REPOSITORY_WORKFLOW.md`, `.github/workflows/release.yml` |
 | Credits, Licenses, and Upstream | Attribution, licences/notices, upstream relationships, and non-affiliation. | `README.md`, `LICENSE`, `NOTICE.md`, `platform/LICENSE`, `platform/NOTICE.md` |
 

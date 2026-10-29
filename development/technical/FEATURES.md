@@ -31,7 +31,7 @@ These features operate on files in the game's working directory. They never insp
 | Graphics reset and preset | Removes only an explicit graphics/display CVar allowlist, or writes the documented performance preset. | Account, portal, locale, sound, bindings, gamepad, and unknown settings survive. `ForeverUI.m`; `test_forever_ui.sh`. |
 | Gamepad UI | Normalizes exactly one `SET GamePadEnable` line. | It changes the game's native switch only; no bindings, controller profile, or touch layout is rewritten. `ForeverUI.m`; `test_forever_ui.sh`. |
 
-See [the user guide](../../docs/USING_WOLKARAFOREVER.md#performance-device-profile-and-ui-recovery). The [add-on plan](../plans/ADDON_MANAGER_PLAN.md) is historical design context; code and tests above define current behavior.
+See [the user guide](../../docs/USING_WOLKARAFOREVER.md#performance-device-profile-and-ui-recovery). The [archived add-on plan](../archive/plans/ADDON_MANAGER_PLAN.md) is historical design context; code and tests above define current behavior.
 
 ## Input, controls, and voice
 

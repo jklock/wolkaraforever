@@ -49,7 +49,7 @@ finish or recover before Play becomes available.
    URLs from file IDs. [API access](https://support.curseforge.com/support/solutions/articles/9000208346-about-the-curseforge-api-and-how-to-apply-for-a-key),
    [API reference](https://docs.curseforge.com/rest-api/).
 5. WolkaraForever already preserves `WTF` and `Interface` during game updates.
-   [Updater.m](../../wolkaraforever/WoW/Updater.m) locks
+   [Updater.m](../../../wolkaraforever/WoW/Updater.m) locks
    `<game-root-parent>/.tolkara-updates/update.lock`, refreshes user folders in its
    staged installation, then swaps the whole game root. Add-on mutations must
    share this exact lock and re-resolve the active installation after acquiring
@@ -188,7 +188,7 @@ the manager does not translate guide content or rewrite add-on Lua.
 ## Storage and installation transaction
 
 Resolve the target using the registered library installation and the product
-mapping in [Manifest.m](../../wolkaraforever/WoW/Manifest.m). The normal Forever location is
+mapping in [Manifest.m](../../../wolkaraforever/WoW/Manifest.m). The normal Forever location is
 `Documents/World of Warcraft/_forever_/Interface/AddOns`; imported game roots
 must work through the same resolver.
 
