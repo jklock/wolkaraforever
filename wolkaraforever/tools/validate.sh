@@ -218,6 +218,10 @@ run_step "install does the right thing per execution mode" wolkaraforever/tools/
 run_step "pilot.sh fails closed and keeps its own session" wolkaraforever/tools/tests/test_pilot.sh || failures=$((failures+1))
 run_step "launcher pages (simulator fixture)" wolkaraforever/tools/test_wow_launcher_ui.sh || failures=$((failures+1))
 run_step "input, voice and config rules (simulator fixture)" wolkaraforever/tools/test_voice.sh || failures=$((failures+1))
+# The app language is a product setting, not a build detail: it has its own suite,
+# and nothing was running it. A missing or one-sided table is caught by the layer
+# gate, but resolution, fallback and formatting were only ever run by hand.
+run_step "app language resolution, tables and formatting" wolkaraforever/tools/test_localization.sh || failures=$((failures+1))
 # The two touch fixtures are ours and nothing ran them: not this script, and not either
 # platform suite. That is how a fixture asserting whole-field replacement sat failing for a
 # day while every recorded run said PASS - the assertions were about behaviour the adapter
@@ -239,6 +243,9 @@ run_step "CurseForge response and request contracts" wolkaraforever/tools/test_c
 run_step "real ZIP extraction (Swift and pinned ZIPFoundation)" wolkaraforever/tools/test_addon_archive.sh || failures=$((failures+1))
 run_step "the app icon's assets and catalog" wolkaraforever/tools/test_icon_assets.sh || failures=$((failures+1))
 run_step "game file verification and repair (CASC)" wolkaraforever/tools/test_wow_launcher.sh || failures=$((failures+1))
+# Backup, restore, the CVar rules and the gamepad setting are the operations a user
+# cannot redo if they go wrong, and this suite was only ever run by hand.
+run_step "config, gamepad and UI backup/restore" wolkaraforever/tools/test_forever_ui.sh || failures=$((failures+1))
 run_step "the app builds for the device" wolkaraforever/tools/install.sh --build-only || failures=$((failures+1))
 if [ "$full" = 1 ]; then
     # The platform's suites, with its known failures told apart from ours. A failure the

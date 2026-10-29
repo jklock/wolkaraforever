@@ -39,10 +39,12 @@ ASan and UBSan where configured. A failing layer suite fails the run.
 | Gamepad UI (`test_touch_gamepad_ui.sh`) | The on-screen controller fixture. |
 | Voice (`test_voice.sh`) | Input, dictation and configuration rules, as a tiny app in the simulator. |
 | Forever UI (`test_forever_ui.sh`) | The `Config.wtf` rules and the Forever UI archive (backup/reset/restore). |
+| Localization (`test_localization.sh`) | The app language: resolution, stored values, both tables, fallback, formatting, plurals and the change notice. |
 | Add-on archive (`test_addon_archive.sh`) | The production Swift extractor and the app's pinned ZIPFoundation. |
 | CurseForge (`test_curseforge.sh`) | The CurseForge client against its expected request/response shapes. |
 | Icon assets (`test_icon_assets.sh`) | The generated app icon: 1024 square, opaque, non-empty, and a catalog that names exactly the files present. |
-| Local-service retry (`test_local_service_retry.sh`) | The retry engine and packet-service probe. |
+| Local-service retry (`test_local_service_retry.sh`) | The retry engine, the packet-service probe, and the blocked states a refused developer-service launch reports. |
+| Developer-service handoff (`test_authorization_handoff.sh`) | Peer verification, the managed TLS/CDTunnel/RSP transport, the raw debugger capability check, and the preparation service's one permitted attach: valid, wrong challenge, lost detach reply, expired request and unconfigured. |
 
 The UI fixtures build and open *our* input fixtures, never an imported application.
 
