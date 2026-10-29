@@ -17,7 +17,7 @@ compatibility layer:
   container on their own machine, with their own identity, for their own iPad.
 - No features that read or change a running application's memory beyond loading
   it, no input automation, and no workarounds for anti-cheat, licence or
-  integrity checks. See the [project policy](../../README.md#limits-and-safety).
+  integrity checks. See the [project policy](../../README.md#safety-policy).
 - That is a rule about the application, not about this repository's own work.
   Fixtures, the device matrix, `pilot.sh` and the app's own self-tests exist to
   drive *our* code with synthetic input, and contributing more of that is
