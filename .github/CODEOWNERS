@@ -1,0 +1,21 @@
+# Enforce these paths through the main-branch ruleset described in
+# development/guides/REPOSITORY_WORKFLOW.md. Replace @jklock with the maintainer account
+# or team that has accepted review responsibility before enabling required CODEOWNERS review.
+
+* @jklock
+
+# The upstream vendor tree and layer assembly boundary.
+/platform/ @jklock
+/wolkaraforever/patches/ @jklock
+/wolkaraforever/overlay.map @jklock
+/wolkaraforever/tools/ @jklock
+
+# Security, execution, authorization, device and release boundaries.
+/runtime/ @jklock
+/translation/ @jklock
+/authorization/ @jklock
+/.github/ @jklock
+/AGENTS.md @jklock
+/SECURITY.md @jklock
+/development/architecture/ @jklock
+/development/guides/REPOSITORY_WORKFLOW.md @jklock

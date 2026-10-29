@@ -1,5 +1,7 @@
 # Security
 
+> **Current as of 2026-10-28 · source revision `fbd69f8`**
+
 Tolkara's authorization module handles pairing keys and talks to the iPad's
 developer service, and its loader parses untrusted binary input. Please report
 vulnerabilities privately, by email to vk@tolkara.org or through GitHub's "Report a

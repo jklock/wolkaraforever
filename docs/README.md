@@ -1,23 +1,20 @@
 # WolkaraForever user guide
 
-This folder is for people using WolkaraForever. It explains installing the app,
-playing World of Warcraft Forever, and using the app's controls and recovery
-features. It does not contain development history or engine implementation notes.
+> **Current as of 2026-10-28 · source revision `fbd69f8`**
 
-## Start here
+These guides are for using WolkaraForever. They describe the supported source install and
+the features exposed by the current app; engineering notes and historical records are kept
+outside this folder.
 
-1. [Install WolkaraForever](INSTALLATION.md) on your iPad.
-2. [Use WolkaraForever](USING_WOLKARAFOREVER.md) to install Forever, manage add-ons,
-   configure voice input, and recover your UI settings.
+1. [Install WolkaraForever](INSTALLATION.md) on an iPad.
+2. [Use WolkaraForever](USING_WOLKARAFOREVER.md) to install Forever, configure controls
+   and voice, manage add-ons, and protect or recover the UI.
 
-## Need help?
+If something fails, capture the exact **Settings → Technical details** message and a
+redacted log. Do not include account credentials, signing material, pairing records, or
+device identifiers. Do not delete the app as a first troubleshooting step because that
+removes its downloaded game data and enrollment state.
 
-- Use **Settings → Technical details** in the app and save a redacted log before
-  asking for help. Do not share account credentials, pairing information, or device IDs.
-- Do not delete the app as a first troubleshooting step: that removes downloaded game
-  data and enrollment state.
-- [Compatibility results](../COMPATIBILITY.md) list dated, device-specific results;
-  they are not a compatibility promise for every iPad or WoW build.
-
-Developer architecture, build instructions, tests, tools, and historical records live
-under [`development/`](../development/README.md).
+[Compatibility](../COMPATIBILITY.md) distinguishes the current source from dated
+device-specific evidence. Development, architecture, tools, and validation records live in
+[development/](../development/README.md).

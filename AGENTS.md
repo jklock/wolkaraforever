@@ -1,5 +1,19 @@
 # Repository Guidelines
 
+## Repository governance
+
+- `main` is the integration branch. Work on one short-lived, single-purpose branch and open a
+  pull request; do not force-push a shared branch.
+- Rebase on current `main`, require review, resolve every conversation, and run the checks in
+  `development/guides/REPOSITORY_WORKFLOW.md` before merge.
+- Squash ordinary pull requests. A merge commit is reserved for an intentional integration
+  branch. Do not mix upstream ingestion, product behavior, documentation-only work, and
+  formatting cleanup in one pull request.
+- A change carries its narrowest relevant test, documentation when behavior changes, and
+  exact-SHA evidence for any claim beyond source-level behavior.
+- `platform/`, execution/security code, device tools, release automation, and repository
+  policy require maintainer review. See `.github/CODEOWNERS`.
+
 ## Project Structure & Module Organization
 
 - `runtime/`: Mach-O loading, guest memory, native execution (Developer service arena, Local signing page container `SignedImage`, or External JIT arena `DebuggerArena`), carried libraries (`GuestLink`), runtime stubs (`GuestStubs`), interpreter diagnostics.
@@ -7,9 +21,13 @@
 - `authorization/`: Developer service: bundled pairing, transport, tunnel extension and memory-preparation protocol.
 - `launcher/`: the iPad app. `profiles/`: data-only descriptions of tested applications.
 - `tests/`: C, Objective-C, Swift and Python tests; `testguest/`: our synthetic guest fixture.
-- `wolkaraforever/tools/`: the layer's scripts - prepare, the gate, and the wrappers that run the platform's own build, install, run and test scripts against the prepared tree. The platform's own tools are `platform/tools/` and run inside that tree. `docs/`: building guide and architecture.
+- `wolkaraforever/tools/`: the layer's scripts - prepare, the gate, and the wrappers that run the platform's own build, install, run and test scripts against the prepared tree. The platform's own tools are `platform/tools/` and run inside that tree. `docs/` is user-facing; engineering documentation is under `development/`.
 - `platform/`: upstream tolkara, vendored byte-identical to `upstream/main` and never edited by hand; `wolkaraforever/`: our layer above it. Start at `development/architecture/ARCHITECTURE.md`.
 - `build/` and `logs/` are ignored outputs. Third-party applications and assets are never committed.
+- `development/architecture/PROJECT_MAP.md`: canonical map of engine, layer modules, patches,
+  overlays, scripts, tests, and WolkaraForever enhancements. Read it before a cross-cutting change.
+- `development/guides/REPOSITORY_WORKFLOW.md`: durable branching, review, CI, release, and
+  evidence policy. `.codex/skills/wolkaraforever-maintenance/` packages the same rules for Codex.
 
 ## Build, Test, and Development Commands
 
@@ -49,6 +67,11 @@ Four-space indentation in source files, two spaces in YAML; match surrounding co
 ## Testing Guidelines
 
 Standalone native executables and Python `unittest`, with ASan/UBSan where configured. Add focused coverage for memory bounds, malformed modules, protocol failures and adapter behavior. Simulator success does not prove physical Metal or authorization behavior; record device results in `COMPATIBILITY.md`.
+
+Before a pull request is ready, run `wolkaraforever/tools/check_layers.sh` for layer or
+platform-facing changes, `wolkaraforever/tools/check_docs.sh` for documentation, and the
+focused suite that owns the changed behavior. `validate.sh` records exact-SHA evidence;
+physical claims require the installed build, device, iPadOS, client build, and execution mode.
 
 ## Runtime & Security Constraints
 

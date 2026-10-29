@@ -121,7 +121,7 @@ Metal behaviour or native execution on a real device.
 - Add a unit test beside the code it covers, named `test_*.{c,m,swift,py}`.
 - Cover memory bounds, malformed input, protocol failures and adapter behaviour you touch.
 - Prefer a synthetic fixture over anything imported from an application. See the
-  ground rules in [CONTRIBUTING.md](../../CONTRIBUTING.md).
+  ground rules in [CONTRIBUTING.md](../guides/CONTRIBUTING.md).
 
 ## What still needs a person
 

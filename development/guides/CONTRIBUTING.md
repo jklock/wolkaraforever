@@ -1,7 +1,8 @@
 # Contributing
 
-Thanks for helping. The most useful contributions are API coverage for a new
-application, a compatibility report, and device test results.
+Thanks for helping. Start with the [repository workflow](REPOSITORY_WORKFLOW.md) and
+[project map](../architecture/PROJECT_MAP.md). The most useful contributions are focused
+WolkaraForever improvements, compatibility reports, and bounded device test results.
 
 ## Ground rules
 
@@ -16,7 +17,7 @@ compatibility layer:
   container on their own machine, with their own identity, for their own iPad.
 - No features that read or change a running application's memory beyond loading
   it, no input automation, and no workarounds for anti-cheat, licence or
-  integrity checks. See "Policy" in the [README](README.md).
+  integrity checks. See the [project policy](../../README.md#limits-and-safety).
 - That is a rule about the application, not about this repository's own work.
   Fixtures, the device matrix, `pilot.sh` and the app's own self-tests exist to
   drive *our* code with synthetic input, and contributing more of that is
@@ -25,17 +26,18 @@ compatibility layer:
   profiles, credentials, or files from `build/` and `logs/`. Personal settings
   belong in the ignored `local.env`.
 - If your change is based on someone else's code, say so and add its licence to
-  [NOTICE.md](NOTICE.md). Reading public protocol documentation is fine.
+  [NOTICE.md](../../NOTICE.md). Reading public protocol documentation is fine.
 
 ## Workflow
 
-```bash
+Run the verification required by `REPOSITORY_WORKFLOW.md`; cross-cutting runtime work uses:
+
+```sh
 wolkaraforever/tools/test_emulation.sh
 ```
 
-must pass; it enforces `-Wall -Wextra -Werror` and runs under ASan and UBSan.
-Add a focused test for memory bounds, malformed input, protocol failures and
-adapter behaviour you touch. Tests are standalone executables or Python
+It enforces `-Wall -Wextra -Werror` and runs under ASan and UBSan. Add a focused test for
+memory bounds, malformed input, protocol failures and adapter behaviour you touch. Tests are standalone executables or Python
 `unittest` files named `test_*.{c,m,swift,py}`, under `platform/tests/` or beside
 the layer code they cover.
 
@@ -44,9 +46,9 @@ around you and do not reformat unrelated lines. Keep the module prefixes
 (`gm_`, `gi_`, `ng_` in the runtime, `AK` in the translation layer, `TK` in
 authorization).
 
-Pull requests should explain the problem, the resulting behaviour, the commands
-you ran with their results, and what is still untested. A simulator pass does
-not prove Metal or native-execution behaviour; say which device you tested on.
+Pull requests use the repository template: explain the problem, resulting behavior, commands
+and results, exact device evidence where applicable, and what remains untested. A simulator
+pass does not prove Metal or native-execution behavior.
 
 ## Supporting a new application
 
@@ -56,4 +58,4 @@ not prove Metal or native-execution behaviour; say which device you tested on.
    call to each unimplemented function.
 3. Implement what it needs under `platform/translation/<Framework>/`, with a test.
 4. Add a profile under `profiles/` and a row in
-   [COMPATIBILITY.md](COMPATIBILITY.md).
+   [COMPATIBILITY.md](../../COMPATIBILITY.md).

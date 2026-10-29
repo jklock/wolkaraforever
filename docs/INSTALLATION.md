@@ -1,23 +1,20 @@
 # Install WolkaraForever
 
-WolkaraForever is installed from source with Xcode. The supported route uses an
-Apple-silicon Mac, your paid Apple Developer membership, and your own iPad. It is not
-an App Store, TestFlight, or public IPA install.
+> **Current as of 2026-10-28 · source revision `fbd69f8`**
 
-## Before you begin
+WolkaraForever is installed from source. It is not an App Store, TestFlight, or public-IPA
+release. The supported integrated route uses the iPad Developer service.
 
-You need:
+## Requirements
 
-- An Apple-silicon Mac with current Xcode, Xcode command-line tools, XcodeGen, and
-  Python 3.
-- A paid Apple Developer membership. The app's tunnel needs Network Extension,
-  increased-memory-limit, and extended-address-space capabilities; a Personal Team
-  cannot provide them.
-- An iPad with Developer Mode enabled, unlocked, trusted by the Mac, and with enough
-  space for the game. A Forever installation needs roughly 70 GB.
-- Your own eligible WoW account. No game files are included in this repository.
+- Apple-silicon Mac with current Xcode and command-line tools, XcodeGen, and Python 3.
+- A paid Apple Developer membership. The required tunnel and memory capabilities are not
+  available to a Personal Team.
+- An unlocked iPad in Developer Mode that trusts the Mac and has sufficient free storage.
+  A Forever installation needs roughly 70 GB.
+- Your own eligible WoW account. This repository contains no game files or account access.
 
-## 1. Get the source and configure your identity
+## Configure the local build
 
 ```sh
 git clone https://github.com/jklock/wolkaraforever.git
@@ -27,7 +24,7 @@ wolkaraforever/tools/install_prerequisites.sh --check
 wolkaraforever/tools/device_variables.sh --write
 ```
 
-Open `local.env` and set these values:
+Set the values requested in the ignored `local.env` file:
 
 ```sh
 DEVELOPMENT_TEAM=YOUR_TEAM_ID
@@ -36,67 +33,64 @@ TOLKARA_KEYCHAIN_GROUP=your.unique.bundle.id.authorization
 DEVICE=YOUR_CONNECTED_IPAD
 ```
 
-Keep the bundle ID and Keychain group stable. They are what allow a later build to
-replace the app without removing its game data or enrollment. `local.env` is private;
-never commit or share it.
+Keep the bundle ID and Keychain group stable. They allow later builds to replace the app
+without erasing its data or enrollment. Never commit or share `local.env`.
 
-## 2. Check the iPad, then install
+## Install on the iPad
 
-Keep the iPad unlocked and connected. Before the first install, run:
+Keep the iPad unlocked and connected, then run:
 
 ```sh
 wolkaraforever/tools/preflight.sh
 wolkaraforever/tools/install.sh
 ```
 
-`install.sh` prepares the project, builds and signs the app, installs it, performs the
-Developer-service enrollment when required, verifies the bundle on the iPad, and returns
-the app to its normal home screen. Approve the pairing or tunnel prompt on the iPad if
-iPadOS asks.
+The installer prepares the project, builds and signs it, installs the app, performs
+Developer-service enrollment when needed, verifies the installed bundle, and returns the
+app to its launcher. Approve any iPadOS pairing or tunnel prompt.
 
-The script refuses to replace an active game session. Quit WoW first. If the app is
-still running and you explicitly want the script to request a clean stop, use:
+The installer refuses to replace an active game session. Quit the game first, or explicitly
+request a clean stop:
 
 ```sh
 wolkaraforever/tools/install.sh --replace-running
 ```
 
-Do not use `--force-kill` unless you accept the risk of interrupting a game-file write.
+`--force-kill` can interrupt a game-file write; use it only when you accept that risk.
 
-### If Xcode reports signing errors
+## Repair signing in Xcode
 
-Run this once to generate the project:
+If Xcode reports a signing error, generate the project and open it:
 
 ```sh
 wolkaraforever/tools/generate.sh
 open build/platform/Tolkara.xcodeproj
 ```
 
-In Xcode, select the **Tolkara** and **LocalAuthorizationTunnel** targets, choose your
-team in **Signing & Capabilities**, then let Xcode repair provisioning. Keep the
-configuration in `local.env`; regenerating the project replaces manual project edits.
+Select **Tolkara** and **LocalAuthorizationTunnel**, choose your team under
+**Signing & Capabilities**, and let Xcode repair provisioning. Preserve the actual values in
+`local.env`; generated project changes are not a durable configuration surface.
 
-## 3. Install Forever and play
+## First launch
 
-1. Open **WolkaraForever** on the iPad.
-2. Choose **Forever**, your download region, and language.
-3. Tap **Install** and keep the app in the foreground until it finishes verifying.
-4. Tap **Play**. Allow the private tunnel if asked, then keep the app foregrounded while
-   memory preparation completes. The first launch can take several minutes.
+1. Open **WolkaraForever**.
+2. Choose **Forever**, a region, and a language.
+3. Select **Install**, then keep the app open while it downloads and verifies the client.
+4. Select **Play**. Allow the private tunnel if asked and keep the app foregrounded while
+   memory preparation completes; it can take several minutes.
 5. Sign in with your own account.
 
-After the game is ready, read [Using WolkaraForever](USING_WOLKARAFOREVER.md) for
-add-ons, controls, voice input, UI backups, and recovery.
+Continue with [Using WolkaraForever](USING_WOLKARAFOREVER.md).
 
-## If something goes wrong
+## Troubleshooting
 
-| Problem | What to do |
+| Problem | Action |
 | --- | --- |
-| The Mac cannot see the iPad | Unlock it, reconnect it, tap **Trust**, confirm Developer Mode, then rerun `device_variables.sh --write`. |
-| The app will not install | Rerun `preflight.sh`; then check the exact Xcode signing error for both app targets. |
-| Enrollment or the tunnel does not complete | Keep the iPad unlocked and connected, then rerun `install.sh`. |
-| Play is unavailable | Let any update or verification complete. Use **Settings → Technical details** for the reason. |
-| Preparation appears stalled | Keep the app foregrounded for several minutes. If it fails, reopen the app; do not delete it first. |
+| Mac cannot see the iPad | Unlock and reconnect it, accept **Trust**, confirm Developer Mode, then rerun `device_variables.sh --write`. |
+| App will not install | Run `preflight.sh` and inspect the exact Xcode signing error for both app targets. |
+| Enrollment or tunnel fails | Keep the iPad connected and unlocked, then rerun `install.sh`. |
+| Play is unavailable | Let download or verification finish; use **Settings → Technical details** for the reason. |
+| Startup appears stalled | Keep the app foregrounded for several minutes. If it fails, reopen the app rather than deleting it. |
 
-For a problem report, include the exact Technical details message and a redacted log. Never
-include credentials, pairing records, or a device identifier.
+For support, provide the exact Technical details message and a redacted log—never credentials,
+pairing records, provisioning data, or a device identifier.

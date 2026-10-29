@@ -10,7 +10,7 @@ The branded launcher is the normal entry point. It keeps state in the app contai
 
 | Capability | Behavior and reason | Boundary and proof |
 | --- | --- | --- |
-| Edition, region, language | Selects a supported WoW edition, Blizzard CDN region, and English or Spanish locale. Changing language in an installed Forever client updates only `textLocale` and `audioLocale`; it does not change the login portal. Region and locale are separate because they solve different user problems. | `WoW/WoWViewController.m`, `ForeverUI.m`; `test_forever_ui.sh`. |
+| Edition, region, language | Selects a supported WoW edition, Blizzard CDN region, and English, Spanish, or German locale. Changing language in an installed Forever client updates only `textLocale` and `audioLocale`; it does not change the login portal. Region and locale are separate because they solve different user problems. | `WoW/WoWViewController.m`, `ForeverUI.m`; `test_forever_ui.sh`. |
 | Install, repair, update | Fetches CDN metadata, stages verified files, reuses verified unchanged content, and blocks Play until a required update completes. | A partial game-tree replacement is worse than a failed update. `Client.m`, `Manifest.m`, `Updater.m`, `CASC.m`; `test_wow_launcher.sh`. |
 | Play and leave | Starts the selected client through the chosen execution mode. The in-game toolbar's Leave control returns to the normal launcher state after guest exit. | The app must not leave a user trapped on an unusable guest screen. `Shell/`, `Touch/`; launcher and touch simulator fixtures. |
 | Logging and diagnostics | Stores a redacted app log in the app container; device tools retrieve it without touching game files or manipulating an active session. | Reports need evidence without credentials, pairing data, teams, or device identifiers. `Shell/WolkaraForeverLog.*`, `pilot.sh log`, `device_log.sh`. |
@@ -30,7 +30,7 @@ These features operate on files in the game's working directory. They never insp
 | Graphics reset and preset | Removes only an explicit graphics/display CVar allowlist, or writes the documented performance preset. | Account, portal, locale, sound, bindings, gamepad, and unknown settings survive. `ForeverUI.m`; `test_forever_ui.sh`. |
 | Gamepad UI | Normalizes exactly one `SET GamePadEnable` line. | It changes the game's native switch only; no bindings, controller profile, or touch layout is rewritten. `ForeverUI.m`; `test_forever_ui.sh`. |
 
-See [the user guide](../../docs/USING_WOLKARAFOREVER.md#performance-ui-manager). The [add-on plan](../plans/ADDON_MANAGER_PLAN.md) is historical design context; code and tests above define current behavior.
+See [the user guide](../../docs/USING_WOLKARAFOREVER.md#ui-recovery-and-performance). The [add-on plan](../plans/ADDON_MANAGER_PLAN.md) is historical design context; code and tests above define current behavior.
 
 ## Input, controls, and voice
 
@@ -55,6 +55,7 @@ The device scope for voice and controller behavior is deliberately bounded in [C
 | Renderer timing | Attributes frames at the presentation boundary only when the marker proves a guest frame. | A display link is a scheduling signal, not proof of a submitted game frame. patches `0018`, `0019`, `0035`; [performance lanes](PERFORMANCE_LANES.md). |
 | Backing scale and budget | Supplies backing scale and offers a measured performance preset. | It makes no universal frame-rate claim without matching device/build/scene evidence. patches `0023`–`0025`; [performance and thermal](PERFORMANCE_THERMAL.md). |
 | Measurement tools | `perf_sweep.py` samples controlled variants; `capture_gameplay_log.sh` labels baseline/candidate evidence. | They refuse unsafe session state and write ignored artifacts under `logs/`. [tools reference](../guides/TOOLING.md). |
+| Background pacing | Limits the Metal frame loop to 5 fps while the app is inactive or backgrounded, then restores normal pacing on foreground. | It reduces active work but does not override iPadOS background scheduling. `Bridge/BackgroundPacing.m`. |
 
 ## Layer and safety architecture
 

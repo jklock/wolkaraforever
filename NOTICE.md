@@ -1,5 +1,7 @@
 # Notices
 
+> **Reviewed 2026-10-28 · source revision `fbd69f8`**
+
 WolkaraForever is a WoW-focused fork of Tolkara, by Vasilii Kharitonov and the Tolkara
 contributors. The original runtime, translation layer and history are retained.
 WolkaraForever additions are provided under the same MIT license.

@@ -246,7 +246,7 @@ An app whose profile is in `profiles/` appears in Tolkara's library by itself
 once its files are there. For anything else, copy the application's folder with
 Finder or the Files app, then tap **+** in Tolkara and choose its executable (or
 its `.app`). Tolkara remembers it; you do not pick it again. Optionally write a
-profile: see [profiles/README.md](../../profiles/README.md).
+profile: see [profiles](PROFILES.md).
 
 ## 6. Run
 
@@ -313,7 +313,7 @@ for apps started from the library:
   macOS, and the log names the folder. Files being created and Foundation's
   own file APIs are not covered, and each miss costs a directory listing. For
   a known case, prefer a profile's `caseAliases` (see
-  [profiles/README.md](../../profiles/README.md)). Not for Wine, which ignores
+  [profiles](PROFILES.md)). Not for Wine, which ignores
   case itself: with it, a folder spelled differently is found for a lookup
   but not for a file created in it, so a Windows game cannot save there.
 - `--guest-arguments=<arguments>` and `--guest-environment=NAME=value` (with
