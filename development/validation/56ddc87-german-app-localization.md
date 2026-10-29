@@ -1,12 +1,13 @@
-# Validation: German app localization (56ddc87 + this record)
+# Validation: German app localization (1bf95d0)
 
 > **Historical record.** Evidence for the German app-language work, recorded by hand on the
 > device as the prompt requires. It is not current guidance for later builds. See
 > [docs/README.md](../../docs/README.md) for the live documents and
 > [localization](../guides/LOCALIZATION.md) for how the feature is built.
 
-- Code revision: `56ddc87` plus the localization work in the working tree (this record is part
-  of it). Two installs were made: one while the work was being checked, and a second of the final
+- Code revision: `1bf95d0` *feat: make German a complete app language*, whose parent is
+  `56ddc87` *feat: complete German game-language update path*. This record is the commit after
+  it. Two installs were made: one while the work was being checked, and a second of the committed
   tree so that the build on the device and the code in the record are the same; the screenshots
   below are from the second.
 - Recorded: 2026-10-29T10:46Z
