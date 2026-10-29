@@ -7,7 +7,7 @@
 > `prepare.sh`). `runtime/`, `translation/` and `authorization/` live under `platform/`;
 > the generated `Tolkara.xcodeproj` is in `build/platform/`.
 
-For the WoW-focused WolkaraForever app, start with [GETTING_STARTED.md](GETTING_STARTED.md).
+For the supported WolkaraForever install, start with [INSTALLATION.md](../../docs/INSTALLATION.md).
 This page covers the shared engine and its advanced development modes.
 
 Tolkara is meant to be built by you: you build it, you sign it with your own
@@ -67,7 +67,7 @@ xcrun devicectl list devices
   list all their executables separated by `:` (like `PATH`); the compatibility
   libraries are built for all of them.
 - `TOLKARA_PROFILE` (optional): your own profile, if it is not in
-  [`profiles/`](../profiles). Every profile there is included automatically.
+  [`profiles/`](../../profiles). Every profile there is included automatically.
 - `TOLKARA_MODE` (optional): `developer-service` or `local-signing`, see step 4.
   Used by explicit development runs. WolkaraForever's ordinary integrated launch
   selects Developer service without a picker.
@@ -94,7 +94,7 @@ Metal debug wrapper is the suspected cause; an ordinary icon launch worked.
 The shared scheme now explicitly disables this option; regenerate it with
 `tools/generate.sh` after updating an older checkout. This changes Xcode's
 launch diagnostics, not the game's files or the memory-preparation route.
-The [compatibility report](../COMPATIBILITY.md) tracks the pending device retest.
+The [compatibility report](../../COMPATIBILITY.md) tracks the pending device retest.
 Direct Xcode builds include the generic compatibility
 libraries by default. `tools/install.sh` retains its application-specific
 default; pass `NATIVE_GUEST_SHIMS=GENERIC` to that script to build without a
@@ -145,7 +145,7 @@ The first time you start an app, iPadOS asks permission to add a VPN
 configuration. This is Tolkara's own on-device packet tunnel. It routes one
 private address to the iPad's own developer service and carries no other
 traffic; nothing leaves the device. How it works is documented in
-[LOCAL_AUTHORIZATION.md](LOCAL_AUTHORIZATION.md).
+[LOCAL_AUTHORIZATION.md](../architecture/LOCAL_AUTHORIZATION.md).
 
 After enrolment the Mac is no longer needed: launches, relaunches and reboots
 work on the iPad alone. You need to repeat steps 3 and 4 only when your
@@ -224,7 +224,7 @@ tools usually change the app's bundle identifier: copy your application's files
 with Finder or the Files app, or set `TOLKARA_BUNDLE_ID` to the installed
 identifier before running a profile's `install.py` (step 5). This mode has
 not been run on a device yet; report what you find in
-[COMPATIBILITY.md](../COMPATIBILITY.md).
+[COMPATIBILITY.md](../../COMPATIBILITY.md).
 
 A generic build also works with the other modes where they are available:
 `NATIVE_GUEST_SHIMS=GENERIC tools/install.sh` needs no `GUEST_EXE` (with Local
@@ -246,7 +246,7 @@ An app whose profile is in `profiles/` appears in Tolkara's library by itself
 once its files are there. For anything else, copy the application's folder with
 Finder or the Files app, then tap **+** in Tolkara and choose its executable (or
 its `.app`). Tolkara remembers it; you do not pick it again. Optionally write a
-profile: see [profiles/README.md](../profiles/README.md).
+profile: see [profiles/README.md](../../profiles/README.md).
 
 ## 6. Run
 
@@ -270,7 +270,7 @@ tools/run.sh sim
 
 The first runs the sanitizer regression suite on the Mac. The second builds the
 `TolkaraDiagnostics` scheme and runs the loader diagnostics in the simulator
-against a synthetic test application from [`testguest/`](../platform/testguest). To try
+against a synthetic test application from [`testguest/`](../../platform/testguest). To try
 Local signing in the simulator:
 
 ```bash
@@ -313,7 +313,7 @@ for apps started from the library:
   macOS, and the log names the folder. Files being created and Foundation's
   own file APIs are not covered, and each miss costs a directory listing. For
   a known case, prefer a profile's `caseAliases` (see
-  [profiles/README.md](../profiles/README.md)). Not for Wine, which ignores
+  [profiles/README.md](../../profiles/README.md)). Not for Wine, which ignores
   case itself: with it, a folder spelled differently is found for a lookup
   but not for a file created in it, so a Windows game cannot save there.
 - `--guest-arguments=<arguments>` and `--guest-environment=NAME=value` (with

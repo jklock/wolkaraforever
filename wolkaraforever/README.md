@@ -13,11 +13,8 @@ platform file, or as an **overlay** of one of our files.
 | `overlay.map` | Which of our files takes which path in the prepared tree, and whether it replaces a platform file or adds a new one. Regenerate with `tools/overlay_map.sh`. |
 | `tools/` | `prepare.sh`, `check_layers.sh`, `overlay_map.sh`, and the scripts that build, install, run and test - each prepares the tree and then runs the platform's own script against it. |
 | `Shell/` | The app's own shell: entry point, library home, execution-mode glue, branding plist, icon art, the assets catalog, its test. |
-| `WoW/` | The launcher for WoW Forever: CDN client, CASC storage, verified update/repair, installation state, add-on lifecycle, CurseForge client, UI backup/restore, graphics and gamepad settings, and their focused tests. It owns game-directory data but never game memory or the original executable. |
-| `Touch/` | On-screen controls: the toolbar, trackpad and gamepad, layout and haptics, keyboard/dictation insertion path, performance HUD, and adapter fonts. It turns user gestures into host input; it does not automate gameplay. |
-| `Voice/` | On-device speech recognition, microphone/session ownership, trigger settings, Test Voice, and the finalized-text path into the focused game field. It is separate from the touch adapter so audio policy has one owner. |
-| `Input/` | Learned keyboard/controller trigger identity, Hold/Toggle state, ownership, and routing. It keeps trigger policy separate from speech recognition and controller inspection. |
-| `Controller/` | A diagnostic inventory of what an attached controller exposes to iPadOS. It exists so mappings are based on observed elements, including platform-reserved-button limitations. |
+| `WoW/` | The launcher for WoW Forever: Client, CASC, Updater, Installation, Manifest, UpdateLock, WoWViewController, the add-on manager, their tests and their tools. |
+| `Touch/` | On-screen controls: the toolbar, trackpad and gamepad, layout and haptics, the drafts and dictation path, and the adapter's fonts. |
 | `Bridge/` | What the patched platform files and the public APIs call into: the background pacing install, the local-service retry engine, and the source of the pending AppKit patch. |
 
 ## How the layer reaches the build
@@ -49,10 +46,6 @@ project is the platform's project, and our files are simply in the tree.
 
 ## Building, running, testing
 
-The commands below are the short operational set. Read [docs/FEATURES.md](../docs/FEATURES.md)
-for the behavior and safety boundary of each product feature, [docs/TESTING.md](../docs/TESTING.md)
-for what each test proves, and [docs/TOOLING.md](../docs/TOOLING.md) before a device operation.
-
 ```sh
 wolkaraforever/tools/prepare.sh              # platform/ -> build/platform, patched and overlaid
 wolkaraforever/tools/check_layers.sh         # the gate
@@ -73,8 +66,8 @@ replaces the app in place and the device keeps its data.
 - The two touch fixtures still block headless unless run with `--self-test`.
 - Documentation: the fork's docs are current. The front door is [README.md](../README.md),
   the full index is [docs/README.md](../docs/README.md), and the testing and scripts
-  references are [docs/TESTING.md](../docs/TESTING.md) and
-  [docs/TOOLING.md](../docs/TOOLING.md). `platform/` still carries upstream's own docs,
+  references are [development/testing/TESTING.md](../development/testing/TESTING.md) and
+  [development/guides/TOOLING.md](../development/guides/TOOLING.md). `platform/` still carries upstream's own docs,
   unchanged.
 
 The adapter needs no file of ours any more. What it does for us is patch 0009: the

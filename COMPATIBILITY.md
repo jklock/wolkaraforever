@@ -48,7 +48,7 @@ ignored build output, `build/device-backup/2026-10-27-beta/`.
 On Dadpad (iPad Pro 12.9-inch, 5th generation, M1, iPadOS 27) with Developer
 service, against the installed Forever client 1.60.1, launched with
 `--local-game-startup --measure-native`. The evaluation and its evidence are in
-[PERFORMANCE_LANES.md](docs/PERFORMANCE_LANES.md).
+[PERFORMANCE_LANES.md](development/technical/PERFORMANCE_LANES.md).
 
 - **Frame pacing at the login screen**: 55 consecutive 5 s windows, 59.9-60.2 fps,
   longest gap 20.8 or 25.0 ms, and **no gap over 50 ms in any window**. Nothing in
@@ -75,7 +75,7 @@ service, against the installed Forever client 1.60.1, launched with
   Low Power Mode off, RAM 3826 MB with 12.5 GB headroom**. The GPU is doing the same
   8-10 ms it did at 60 fps on the login screen, so the in-world frame is **not
   GPU-bound and not thermal at that moment**: the client is producing 20 ms frames on
-  the CPU side. See [PERFORMANCE_LANES.md](docs/PERFORMANCE_LANES.md).
+  the CPU side. See [PERFORMANCE_LANES.md](development/technical/PERFORMANCE_LANES.md).
 - **Shader warm-up, measured in the same session**: 114 Metal libraries loaded
   during play, **96 of them inside one 20 s window at world entry** (dated against
   the audio engine's fixed-rate log counters). A burst, not the steady frame cost.
@@ -180,7 +180,7 @@ rather than guessing, and `--force` does not override that either.
 First measurements against the released client (1.60.1.70634, `wowf`), on Dadpad with
 Developer service, at the login screen — the only scene reachable without an account.
 Full method, limits and the ordered plan are in
-[PERFORMANCE_THERMAL.md](docs/PERFORMANCE_THERMAL.md); the tool that produces every row
+[PERFORMANCE_THERMAL.md](development/technical/PERFORMANCE_THERMAL.md); the tool that produces every row
 is `wolkaraforever/tools/perf_sweep.py`.
 
 | configuration | fps | GPU per frame | GPU busy | thermal |
@@ -253,7 +253,7 @@ flow or the latest update-recovery fix. Those require separate device tests.
 
 ## iPad validation (2026-10-01)
 
-The [WoW launcher branch](docs/WOW_LAUNCHER.md) was compiled for iOS on 2026-10-03.
+The [WoW launcher branch](development/technical/WOW_LAUNCHER.md) was compiled for iOS on 2026-10-03.
 The user tested the themed home screen on this iPad and requested automatic
 installation of detected patches. This revision implements native CDN updates,
 verified data reuse, resumable staging and atomic activation. Synthetic tests
@@ -286,9 +286,9 @@ a subsequent physical retry reached `activate` and `complete` in Xcode after
 rechecking `data.075`. The logged counters were 67,488,524,145 bytes read and
 44,033,527 reused during that adoption/resume pass. This is an observed update
 completion, not a warm-patch speed measurement or a post-update gameplay test.
-See [persistent verification](docs/WOW_LAUNCHER.md#persistent-verification-2026-10-07).
+See [persistent verification](development/technical/WOW_LAUNCHER.md#persistent-verification-2026-10-07).
 
-On 2026-10-06, the follow-up adds an [automatic touch controller](docs/TOUCH_CONTROLLER_PROPOSAL.md)
+On 2026-10-06, the follow-up adds an [automatic touch controller](development/technical/TOUCH_CONTROLLER_PROPOSAL.md)
 with a custom UIKit layout, and fixes clipped descenders in the home status.
 Real GameController input and connection lifecycle are covered by synthetic
 simulator fixtures. This touch-controller revision has **not yet been tested
@@ -305,10 +305,10 @@ working; beginning the Control Center gesture released the UI. A follow-up fixes
 UIKit starvation reproduced with a busy synthetic desktop-event queue and
 publishes pending native UI changes after event processing. Regression tests,
 manual simulator typing/slider drags and the signed device build pass. The
-[UI-pump correction](docs/TOUCH_INPUT.md#native-ui-stalls-while-the-guest-continues-2026-10-06)
+[UI-pump correction](development/technical/TOUCH_INPUT.md#native-ui-stalls-while-the-guest-continues-2026-10-06)
 did **not** resolve the full device symptom: on 2026-10-07 the user reported
 queued keyboard taps released by Control Center / Notification Center. The new
-[visible draft editor and tracking-mode follow-up](docs/TOUCH_INPUT.md#visible-draft-and-tracking-mode-follow-up-2026-10-07)
+[visible draft editor and tracking-mode follow-up](development/technical/TOUCH_INPUT.md#visible-draft-and-tracking-mode-follow-up-2026-10-07)
 remove per-key native document resets and service UIKit tracking work while the
 keyboard/settings are open. Synthetic checks pass; resolution of the device
 stall and frame-rate impact remain unverified. The toolbar now stays top center
@@ -360,7 +360,7 @@ was needed to enter account details. With AssistiveTouch
 enabled, clicking the mouse wheel (middle button, not scrolling) selected the
 controls used to enable controller support; left mouse click did not. The
 controller could then navigate the menus. The separate
-[touch-input implementation](docs/TOUCH_INPUT.md) now provides an on-screen keyboard
+[touch-input implementation](development/technical/TOUCH_INPUT.md) now provides an on-screen keyboard
 and trackpad with two-finger scrolling. Its synthetic and simulator checks
 pass, and on 2026-10-02 the user confirmed the new controls working correctly
 in Forever on the same iPad Pro M5 / iPadOS 27. Other-device input testing

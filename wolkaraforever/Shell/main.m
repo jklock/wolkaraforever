@@ -111,7 +111,7 @@ static NSString *FilesFolderName(void) {
 static NSString *LocalSigningNeeds(NSString *sha256) {
     NSString *container=TKLocalSigningAppContainerDisplayPath(sha256)?:TKLocalSigningContainerDisplayPath();
     return [NSString stringWithFormat:@"Local signing needs this app's page container at %@ (visible in Files > On My iPad > %@ > LocalSigning). "
-        "Build it on a Mac with tools/build_signed_container.py (tools/install.sh does) and copy it there; see docs/BUILDING.md.",container,FilesFolderName()];
+        "Build it on a Mac with tools/build_signed_container.py (tools/install.sh does) and copy it there; see development/guides/BUILDING.md.",container,FilesFolderName()];
 }
 // Show the folder in Files so the user can put containers there.
 static void PrepareLocalSigningFolder(void) {
@@ -406,12 +406,12 @@ static NSString *AKAudioStateDescription(void) {
     NSArray<NSString *> *arguments=NSProcessInfo.processInfo.arguments;
     // WolkaraForever: report what the controller has and what it does, so pad input is
     // measured rather than assumed. It reads only, and never consumes an input.
-    // See docs/CONTROLLER_INPUT.md.
+    // See development/technical/CONTROLLER_INPUT.md.
     [AKControllerInspector.shared begin];
     // Any button, on any controller, starts and stops dictation - but only the button
     // the user mapped, and only while they have the feature switched on. The router
     // asks the settings for the trigger and gets nil unless both are true, so there is
-    // no path here that acts on an input nobody chose. See docs/INPUT_TRIGGERS.md.
+    // no path here that acts on an input nobody chose. See development/technical/INPUT_TRIGGERS.md.
     AKInputRouter.shared.onTrigger = ^(AKTrigger *trigger, AKInputEvent *event) {
         (void)event;
         WKLog("voice", @"input trigger pressed: %@", [trigger summary]);

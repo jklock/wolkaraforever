@@ -111,7 +111,7 @@ case "$args" in
     fi
     exit 0;;
 *"device info apps"*)
-    printf 'WolkaraForever  local.wolkaraforever.johnklock\n'
+    printf 'WolkaraForever  local.wolkaraforever.example\n'
     exit 0;;
 esac
 exit 0

@@ -147,14 +147,14 @@ int main(void) {
                "SET accountName \"ACC\"\r\n"
                "SET audioLocale \"esES\"\r\n"
                "SET textLocale \"esES\"\r\n");
-        assert([TKForeverUI setLocale:@"enUS" inWorkingDirectory:root error:&error]);
+        assert([TKForeverUI setLocale:@"deDE" inWorkingDirectory:root error:&error]);
         assert([Read(ConfigPath(root)) isEqual:@"SET portal \"eu\"\r\n"
                                               "SET accountName \"ACC\"\r\n"
-                                              "SET audioLocale \"enUS\"\n"
-                                              "SET textLocale \"enUS\"\n"]);
+                                              "SET audioLocale \"deDE\"\n"
+                                              "SET textLocale \"deDE\"\n"]);
         NSString *localeConfig = Read(ConfigPath(root));
-        assert(![localeConfig containsString:@"esES"]);
-        assert(![TKForeverUI setLocale:@"deDE" inWorkingDirectory:root error:&error]);
+        assert(![localeConfig containsString:@"enUS"] && ![localeConfig containsString:@"esES"]);
+        assert(![TKForeverUI setLocale:@"invalid" inWorkingDirectory:root error:&error]);
         assert([Read(ConfigPath(root) ) isEqual:localeConfig]);
 
         // --- names and values that would write an unreadable line are refused
@@ -164,7 +164,7 @@ int main(void) {
         assert(![TKForeverUI setCVars:badName inWorkingDirectory:root error:&error]);
         assert(![TKForeverUI setCVars:badSpace inWorkingDirectory:root error:&error]);
         assert(![TKForeverUI setCVars:badQuote inWorkingDirectory:root error:&error]);
-        assert([Read(ConfigPath(root)) isEqual:localeConfig]);   // nothing was written
+        assert([Read(ConfigPath(root)) isEqual:localeConfig]); // nothing was written
 
         // --- the performance preset writes exactly its own names
         assert([TKForeverUI applyPerformancePresetInWorkingDirectory:root error:&error]);
@@ -196,7 +196,7 @@ int main(void) {
         [files removeItemAtPath:root error:NULL];
         [files removeItemAtPath:bare error:NULL];
         [files removeItemAtPath:outside error:NULL];
-        puts("FOREVER_CONFIG_PASS: graphics allowlist, byte preservation, CRLF, missing config, gamepad normalisation, CVar set/replace/idempotence, refusal of unreadable names and values, performance preset and its reset, locale alignment of textLocale/audioLocale with duplicates and unsupported tags refused, and path boundary.");
+        puts("FOREVER_CONFIG_PASS: graphics allowlist, byte preservation, CRLF, missing config, gamepad normalisation, CVar set/replace/idempotence, refusal of unreadable names and values, performance preset and its reset, and path boundary.");
         return 0;
     }
 }

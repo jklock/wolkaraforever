@@ -104,7 +104,7 @@ Command: wolkaraforever/tools/test_wow_launcher_ui.sh
 15:59:05.383 [ui] home: back in front
 WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses.
 org.tolkara.tests.wow-launcher: 50334
-screenshots: /Users/klock/Library/Developer/CoreSimulator/Devices/<identifier>/data/Containers/Data/Application/<identifier>/Documents
+screenshots: <home>/Library/Developer/CoreSimulator/Devices/<identifier>/data/Containers/Data/Application/<identifier>/Documents
 ```
 
 ### input, voice and config rules (simulator fixture) - PASS

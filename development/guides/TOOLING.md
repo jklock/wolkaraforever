@@ -1,7 +1,7 @@
 # Tools reference
 
 Every script that builds, installs, runs, tests or pilots WolkaraForever lives in
-[`wolkaraforever/tools/`](../wolkaraforever/tools). Each one that needs a platform step
+[`wolkaraforever/tools/`](../../wolkaraforever/tools). Each one that needs a platform step
 first prepares the tree, then runs the platform's own script against it - so you rarely
 call `build/platform/tools/*` yourself.
 
@@ -12,26 +12,9 @@ call `build/platform/tools/*` yourself.
 > layer's copy.
 
 All scripts read the repository root's ignored `local.env` through
-[`env.sh`](../wolkaraforever/tools/env.sh); a value given on the command line
+[`env.sh`](../../wolkaraforever/tools/env.sh); a value given on the command line
 (`VAR=value wolkaraforever/tools/...`) wins over the file. The variables are listed at the
 end of this page.
-
-## Read the side effect before you run a command
-
-The command name is not enough to decide whether it is safe in the current state. This
-table is the fast safety classification; the detailed tables below define arguments and
-preconditions.
-
-| Class | Commands | What may change |
-| --- | --- | --- |
-| Read-only inspection | `check_docs.sh`, `check_layers.sh`, `update_tolkara.sh --check`, `preflight.sh`, `device_log.sh`, `pilot.sh state`, `pilot.sh view`, `pilot.sh log`, `pilot.sh crash` | No source, game data, or device process state. `check_layers.sh` and `update_tolkara.sh --check` may fetch Git metadata. |
-| Ignored local build output | `prepare.sh`, `generate.sh`, simulator tests, `run.sh sim`, `package_ipa.sh` | `build/` and, for measurements, `logs/`. Source and device data remain untouched unless a command explicitly says otherwise. |
-| Source-tree maintenance | `update_tolkara.sh` without `--check`, `overlay_map.sh`, `make_wolkaraforever_icon.py` | The vendored subtree, generated layer map, or tracked icon assets. Review the diff before committing. |
-| Device app lifecycle | `install.sh`, `pilot.sh install`, `pilot.sh launch`, `pilot.sh leave`, `pilot.sh return`, `pilot.sh cycle`, `launch.sh` | The installed app, its process state, and developer enrollment. These commands inspect the session first and refuse unsafe replacement by default. |
-| Device game data | `push_game.sh`, `remove_game.sh`, in-app updater, `perf_sweep.py` | The app-container game tree or `Config.wtf`. Use the relevant dry-run/stop-first option and do not run while a user is playing. |
-
-`pilot.sh game` intentionally bypasses the launcher's normal update checks and is for a
-controlled diagnostic only. It is not the ordinary way to play.
 
 ## Prepare and gate
 
@@ -40,7 +23,6 @@ controlled diagnostic only. It is not the ordinary way to play.
 | `prepare.sh` | Exports `platform/` with `git archive HEAD` into `build/platform`, applies every patch in `wolkaraforever/patches/`, then copies the overlay in `wolkaraforever/overlay.map`. A patch that no longer applies, or a `replace`/`add` overlay entry that does not match, stops the run. `build/` is ignored, so the result can be deleted at any time. |
 | `check_layers.sh` | The gate. Fails if `platform/` drifted from the most current Tolkara (`upstream/main`), if anything in `platform/` names WolkaraForever, if a patch does not apply, if an overlay entry no longer matches, or if one module reaches into another (`WoW/` into `Touch/`, say). Run it before trusting any suite. |
 | `update_tolkara.sh [--check] [--test] [--install]` | Fetches the Tolkara source repo, reports what changed, pulls it into `platform/` with `git subtree pull --squash`, then runs `check_layers.sh`. `--check` reports only and changes nothing; `--test` and `--install` follow through. Refuses a dirty worktree unless `--allow-dirty`. |
-| `check_origin.sh [--fetch] [--strict] [--remote N] [--branch N]` | Compares this fork with the original Wolkara (`fJavierLasso/wolkara`), the second upstream. A ref already joined into this history is reported and skipped; any other is compared by commit subject, because the engine move rewrote the SHAs. Lists the files of every commit whose subject has no equivalent here and says what each becomes: a patch, a layer module, or documentation. Read-only; never merges or cherry-picks. `--strict` exits 1 when anything is missing. See `docs/MAINTAINING.md#two-upstreams`. |
 | `overlay_map.sh` | Regenerates `wolkaraforever/overlay.map` from the layer's tracked files. Run it after adding, moving or removing a file under `wolkaraforever/`. |
 | `apply.sh <tree>` | Applies the patches, then the overlay, to any tolkara tree - the prepared build tree or someone else's checkout. |
 | `adopt.sh <path/to/tolkara>` | Turns someone's own tolkara checkout into WolkaraForever by running `apply.sh` on it, in place. Run it on a copy if you want to keep the original. |
@@ -94,8 +76,6 @@ refusing is the feature.
 | Script | What it does |
 | --- | --- |
 | `validate.sh [--allow-dirty] [--full] [--device] [--out <path>]` | Runs the suites and writes one record per commit under `development/validation/`: the commit, whether the tree was clean, host and Xcode, each command with its exit status, and the tail of its output. Refuses a dirty tree unless `--allow-dirty`. `--full` adds the slow platform suites; `--device` also installs and pilots on the connected iPad. Device identifiers are scrubbed from what it writes. |
-| `capture_gameplay_log.sh <baseline\|candidate\|label>` | Captures the app's current gameplay log into the evidence directory with a label that says how to interpret it. Use it around a controlled comparison, not as a substitute for the actual device observation. |
-| `make_wolkaraforever_icon.py` | Regenerates the product icon at every required appearance and size. It needs Google Chrome; follow it with `test_icon_assets.sh` so a generated image is not mistaken for a valid asset catalog. |
 
 ## Tests
 

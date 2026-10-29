@@ -6,7 +6,7 @@ update each of the three things that can change: the **engine (Tolkara)**, the
 delete by hand what a script updates for you, and always keep the same bundle ID.
 
 - Setting up from nothing for the first time: [FROM_ZERO.md](FROM_ZERO.md).
-- What each suite proves: [TESTING.md](TESTING.md).
+- What each suite proves: [TESTING.md](../testing/TESTING.md).
 - What every script does: [TOOLING.md](TOOLING.md).
 
 ---
@@ -24,43 +24,6 @@ There are three layers. Only the middle one is ours.
 WolkaraForever does not change how Tolkara works. The loader, authorization and execution
 behaviour are upstream's, and how Tolkara does things is how WolkaraForever does them; the
 layer adds the WoW app and input, not a different execution model.
-
-### Two upstreams
-
-There are two upstreams, and they answer different questions. Confusing them is the mistake
-this section exists to prevent.
-
-| Remote | Repository | Answers | Adopted by | Enforced by |
-| --- | --- | --- | --- | --- |
-| `upstream` | [tolkara/tolkara](https://github.com/tolkara/tolkara) | "Which engine does this sit on?" | Vendoring it whole into `platform/`. | `check_layers.sh`: `platform/` must be byte-identical to `upstream/main`. |
-| `fJavierLasso` | [fJavierLasso/wolkara](https://github.com/fJavierLasso/wolkara) | "Which project does this continue?" | Feature by feature, as patches and layer modules. | `check_origin.sh`: nothing is adopted automatically. |
-
-The engine is taken wholesale; the original Wolkara is taken idea by idea. Its tree predates
-the `platform/` split, so one of its commits describes behaviour to reproduce - a layer module
-in `wolkaraforever/`, plus a patch if it also changes engine behaviour - not a diff to apply.
-Its history is genuinely this repository's ancestry: the fork's history was re-rooted on their
-tip, so the parent of its first commit of ours (the GPU/Metal work) is their
-`fc27035`, and `git merge-base HEAD fJavierLasso/main` is that same commit. Every commit after
-the fork point kept its tree, message, author, date and parent structure; only the identity
-above it changed. A later `git merge fJavierLasso/<branch>` therefore brings only what is
-genuinely new - today the three commits of `feature/iphone-support` - instead of replaying 150.
-
-`check_origin.sh` is the answer to "are we behind the original Wolkara?":
-
-```bash
-wolkaraforever/tools/check_origin.sh --fetch          # what it has that this fork does not
-wolkaraforever/tools/check_origin.sh --fetch --strict # the same, exit 1 when anything is missing
-```
-
-For a joined ref it says so and stops. For any other ref it compares commit subjects, because
-those SHAs were rewritten, and then names the files of every commit it cannot match, with what
-each one becomes: a patch on a platform file, a layer module, or documentation. Read-only: it
-never merges and never cherry-picks. The engine is the other way round, a tree comparison,
-because a subtree squash drops the upstream history entirely:
-
-```bash
-wolkaraforever/tools/update_tolkara.sh --check    # is platform/ the most current Tolkara
-```
 
 ### How the build is assembled
 
@@ -310,7 +273,7 @@ A light routine that keeps things healthy:
   and let the gate and suites decide - do not install on a failed gate.
 - **When the fork's code moves:** [Updating WolkaraForever](#updating-wolkaraforever-the-app).
 - **After installing:** reopen to home, run a session, and record the result in
-  [COMPATIBILITY.md](../COMPATIBILITY.md) with the date and device.
+  [COMPATIBILITY.md](../../COMPATIBILITY.md) with the date and device.
 - **Periodically:** `wolkaraforever/tools/test_emulation.sh` and
   `wolkaraforever/tools/device_matrix.sh`; `wolkaraforever/tools/check_docs.sh` to keep the docs
   honest.

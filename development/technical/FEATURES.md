@@ -2,7 +2,7 @@
 
 WolkaraForever is the World of Warcraft product layer over the vendored [Tolkara](https://github.com/tolkara/tolkara) engine. Tolkara loads an unchanged macOS application on iPadOS and translates the APIs it needs. WolkaraForever supplies the WoW-specific experience: obtaining and protecting a client, making input usable, and making the result observable without reading or modifying game memory.
 
-This is the current feature map. It names the behavior, why it exists, the safety boundary, and the source or test that defines it. Dated device observations stay in [COMPATIBILITY.md](../COMPATIBILITY.md).
+This is the current feature map. It names the behavior, why it exists, the safety boundary, and the source or test that defines it. Dated device observations stay in [COMPATIBILITY.md](../../COMPATIBILITY.md).
 
 ## Product shell and game lifecycle
 
@@ -15,7 +15,7 @@ The branded launcher is the normal entry point. It keeps state in the app contai
 | Play and leave | Starts the selected client through the chosen execution mode. The in-game toolbar's Leave control returns to the normal launcher state after guest exit. | The app must not leave a user trapped on an unusable guest screen. `Shell/`, `Touch/`; launcher and touch simulator fixtures. |
 | Logging and diagnostics | Stores a redacted app log in the app container; device tools retrieve it without touching game files or manipulating an active session. | Reports need evidence without credentials, pairing data, teams, or device identifiers. `Shell/WolkaraForeverLog.*`, `pilot.sh log`, `device_log.sh`. |
 
-See [the launcher reference](WOW_LAUNCHER.md) for the update state machine and [the user guide](USING_WOLKARAFOREVER.md) for visible controls.
+See [the launcher reference](WOW_LAUNCHER.md) for the update state machine and [the user guide](../../docs/USING_WOLKARAFOREVER.md) for visible controls.
 
 ## Add-ons and the user's UI
 
@@ -30,7 +30,7 @@ These features operate on files in the game's working directory. They never insp
 | Graphics reset and preset | Removes only an explicit graphics/display CVar allowlist, or writes the documented performance preset. | Account, portal, locale, sound, bindings, gamepad, and unknown settings survive. `ForeverUI.m`; `test_forever_ui.sh`. |
 | Gamepad UI | Normalizes exactly one `SET GamePadEnable` line. | It changes the game's native switch only; no bindings, controller profile, or touch layout is rewritten. `ForeverUI.m`; `test_forever_ui.sh`. |
 
-See [the user guide](USING_WOLKARAFOREVER.md#performance-ui-manager). The [add-on plan](ADDON_MANAGER_PLAN.md) is historical design context; code and tests above define current behavior.
+See [the user guide](../../docs/USING_WOLKARAFOREVER.md#performance-ui-manager). The [add-on plan](../plans/ADDON_MANAGER_PLAN.md) is historical design context; code and tests above define current behavior.
 
 ## Input, controls, and voice
 
@@ -45,7 +45,7 @@ Input travels through the layer's UIKit-facing code. This is user-initiated inpu
 | Trigger ownership | Learns a key/controller element, supports Hold and Toggle, suppresses repeated presses, and can leave a controller button visible to the game. | Input cannot be assumed exclusive; the UI warns about collision risk until game mapping is measured. `Input/Trigger.*`, `InputRouter.*`; [input triggers](INPUT_TRIGGERS.md). |
 | Test Voice and permissions | Verifies mapping and recognition before a game starts, and links to the system permission page. | A configured microphone is not proof that speech reaches the app. `VoiceTestViewController.*`; [voice](VOICE.md). |
 
-The device scope for voice and controller behavior is deliberately bounded in [COMPATIBILITY.md](../COMPATIBILITY.md). Simulator tests validate routing and lifecycle, not a particular microphone, controller, or game screen.
+The device scope for voice and controller behavior is deliberately bounded in [COMPATIBILITY.md](../../COMPATIBILITY.md). Simulator tests validate routing and lifecycle, not a particular microphone, controller, or game screen.
 
 ## Performance and observability
 
@@ -54,7 +54,7 @@ The device scope for voice and controller behavior is deliberately bounded in [C
 | Performance HUD | Shows renderer-sourced FPS/frame time, GPU information, thermal state, memory, battery, and low-power state; users can move and expand it. | It reads host metrics only and never changes graphics because a threshold was observed. `Touch/AKPerformanceOverlay.*`; `test_wow_launcher_ui.sh`. |
 | Renderer timing | Attributes frames at the presentation boundary only when the marker proves a guest frame. | A display link is a scheduling signal, not proof of a submitted game frame. patches `0018`, `0019`, `0035`; [performance lanes](PERFORMANCE_LANES.md). |
 | Backing scale and budget | Supplies backing scale and offers a measured performance preset. | It makes no universal frame-rate claim without matching device/build/scene evidence. patches `0023`–`0025`; [performance and thermal](PERFORMANCE_THERMAL.md). |
-| Measurement tools | `perf_sweep.py` samples controlled variants; `capture_gameplay_log.sh` labels baseline/candidate evidence. | They refuse unsafe session state and write ignored artifacts under `logs/`. [tools reference](TOOLING.md). |
+| Measurement tools | `perf_sweep.py` samples controlled variants; `capture_gameplay_log.sh` labels baseline/candidate evidence. | They refuse unsafe session state and write ignored artifacts under `logs/`. [tools reference](../guides/TOOLING.md). |
 
 ## Layer and safety architecture
 
@@ -65,4 +65,4 @@ The device scope for voice and controller behavior is deliberately bounded in [C
 - Use layer install, launch, game-copy, log, and pilot tools for device work. They inspect live state, preserve a session where possible, and establish a baseline.
 - The original application executable is hash-verified data. It is never patched, re-signed, inspected after loading, or shipped in this repository.
 
-Read [architecture](ARCHITECTURE.md), [maintaining the layer](MAINTAINING.md), [testing](TESTING.md), and [the tools reference](TOOLING.md) before changing code or running a device workflow.
+Read [architecture](../architecture/ARCHITECTURE.md), [maintaining the layer](../guides/MAINTAINING.md), [testing](../testing/TESTING.md), and [the tools reference](../guides/TOOLING.md) before changing code or running a device workflow.

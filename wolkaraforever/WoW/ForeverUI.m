@@ -296,7 +296,8 @@ inWorkingDirectory:(NSString *)directory
     static NSSet<NSString *> *supported;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        supported = [NSSet setWithArray:@[@"enUS", @"esES"]];
+        supported = [NSSet setWithArray:@[@"enUS", @"esES", @"deDE", @"frFR", @"itIT",
+                                            @"esMX", @"ptBR", @"ruRU", @"koKR", @"zhTW"]];
     });
     if (![supported containsObject:locale]) {
         if (error) *error = TKError(@"The selected game language is not supported.");

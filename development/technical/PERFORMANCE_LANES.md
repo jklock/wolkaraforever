@@ -293,7 +293,7 @@ project, and unlike the frame-rate lanes it is definitely ours.
 
 The provider keeps its own progress in
 `Documents/local-authorization-progress.txt` in the extension's container
-(`local.wolkaraforever.johnklock.authorization`), rewritten once a second. Sampling
+(`TOLKARA_KEYCHAIN_GROUP`), rewritten once a second. Sampling
 it from the Mac during a launch gives the phase and the byte offset:
 
 ```

@@ -340,4 +340,3 @@ Two consequences, and one trap:
   the lines land in the same file.
 - The inspector's on-screen panel appears with `--inspect-controller`, and the
   guest-side key trace needs the same flag.
-

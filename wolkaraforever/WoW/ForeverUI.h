@@ -36,8 +36,8 @@ inWorkingDirectory:(NSString *)directory
 
 // Keeps the installed Forever client's text and audio language aligned with
 // the launcher selection. Only these two CVar assignments are replaced; every
-// other Config.wtf line keeps its bytes. Only launcher-supported locale tags
-// are accepted so it can never write an unusable setting.
+// other Config.wtf line keeps its bytes. Supported Blizzard locale tags are
+// required so the launcher can never write an unusable setting.
 + (BOOL)setLocale:(NSString *)locale
 inWorkingDirectory:(NSString *)directory
            error:(NSError **)error;
