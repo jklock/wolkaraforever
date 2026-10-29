@@ -1,15 +1,14 @@
-# Validation: German app localization (1bf95d0)
+# Validation: German app localization (a0d3510)
 
 > **Historical record.** Evidence for the German app-language work, recorded by hand on the
 > device as the prompt requires. It is not current guidance for later builds. See
 > [docs/README.md](../../docs/README.md) for the live documents and
 > [localization](../guides/LOCALIZATION.md) for how the feature is built.
 
-- Code revision: `1bf95d0` *feat: make German a complete app language*, whose parent is
-  `56ddc87` *feat: complete German game-language update path*. This record is the commit after
-  it. Two installs were made: one while the work was being checked, and a second of the committed
-  tree so that the build on the device and the code in the record are the same; the screenshots
-  below are from the second.
+- Code revision: `a0d3510` *fix: do not lose a page that opens from another page's action*, whose
+  parents are `8eb56bb` (this record's first version) and `1bf95d0` *feat: make German a complete
+  app language*. The screenshots below are from an install of `a0d3510`, made after that fix: the
+  fix changes when a sheet is presented, so the launcher was re-checked rather than assumed.
 - Recorded: 2026-10-29T10:46Z
 - Host: macOS, Xcode 27.1 (arm64)
 - Device: **Dadpad**, iPad Pro 12.9-inch (5th generation), **iPadOS 27.0.1**, landscape, over the
@@ -25,7 +24,7 @@
 | --- | --- |
 | `wolkaraforever/tools/check_localization.py` | PASS, 470 keys in both tables |
 | `wolkaraforever/tools/test_localization.sh` | PASS, 58 checks |
-| `wolkaraforever/tools/test_wow_launcher_ui.sh` | PASS, including the German flow |
+| `wolkaraforever/tools/test_wow_launcher_ui.sh` | PASS, including the German flow and the two presentation-race assertions |
 | `wolkaraforever/tools/test_voice.sh` | PASS, 303 checks |
 | `wolkaraforever/tools/test_touch_controls_ui.sh --self-test` | PASS |
 | `wolkaraforever/tools/test_touch_gamepad_ui.sh --self-test` | PASS |
@@ -34,6 +33,7 @@
 | `wolkaraforever/tools/test_forever_ui.sh` | PASS (Config.wtf rules and archive) |
 | `wolkaraforever/tools/test_addon_archive.sh` | PASS, 58 checks |
 | `wolkaraforever/tools/test_translation_sim.sh` | PASS |
+| `wolkaraforever/tools/check_localization.py` after the last string change | PASS, 477 keys |
 | `wolkaraforever/tools/check_layers.sh` | OK (now also checks the string tables) |
 | `wolkaraforever/tools/check_docs.sh` | OK, 73 markdown files |
 | `wolkaraforever/tools/install.sh --replace-running` | installed and launched |
@@ -60,11 +60,24 @@
    `US · English`.
 
    Two details of that restore are worth writing down, because they are behaviour, not
-   housekeeping: a key absent from the settings file leaves the value already in the app's
+   housekeeping. A key **absent** from the settings file leaves the value already in the app's
    defaults, so English had to be written explicitly (`"WolkaraForeverAppLanguage": "en"`,
-   `"WoWLocale": "enUS"`) rather than omitted; and
-   `WolkaraForeverGameLanguageOfferShown` was removed again, so a German selection by the person
-   holding the iPad still gets the one-time offer.
+   `"WoWLocale": "enUS"`) rather than omitted; the same is true of
+   `WolkaraForeverGameLanguageOfferShown`, which has to be written as `false` - deleting it
+   left the imported `true` in place, and the person holding the iPad would then never be offered
+   the German game language at all.
+
+## What re-checking the work found
+
+Reading the German flow again, against the same build, found a real defect in it: UIKit drops a
+presentation that starts while another is being dismissed, so choosing German closed the sheet and
+**lost the one-time offer**, spending its flag as it did - the offer would have been made once,
+never, and the flag said it had been. The same race made "Language" in Download preferences,
+"Manage add-ons" and "Technical details" in Settings dead taps, which predated this work.
+
+`a0d3510` puts every sheet, page and message the launcher shows behind one wait until nothing is
+presented. Both cases are now assertions in the launcher fixture, and both were shown to fail
+without the wait before it was kept.
 
 The device was left on that home screen with the app running and no game started.
 
@@ -76,6 +89,10 @@ The device was left on that home screen with the app running and no game started
   a relaunch. The tap path — the sheet, its three choices, the immediate redraw and the one-time
   German game-language offer — is proven by the launcher fixture in
   `wolkaraforever/WoW/tests/test_wow_launcher_app.m`, not by this record.
+- The in-game performance overlay and the on-screen keyboard were **not** exercised on the device:
+  that needs a guest running, and none was started. Their labels come from the same tables through
+  `Touch/AKHostLocalization`, and they are covered by `test_touch_controls_ui.sh --self-test` and
+  `test_touch_gamepad_ui.sh --self-test` in the simulator, not here.
 - The interrupted German update was not resumed. The installation remains verified for `enUS`,
   which is what the last screenshot shows.
 - Enrollment is still not possible over the network (`tools/enroll.sh` needs USB); the installed
