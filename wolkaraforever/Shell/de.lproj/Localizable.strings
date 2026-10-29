@@ -213,6 +213,13 @@
 "shell.loadingGame" = "Das Spiel wird geladen. Lassen Sie diese App geöffnet.";
 "shell.connecting" = "Verbindung zum Startdienst wird hergestellt …";
 "shell.localLaunch.failed" = "Der lokale Start konnte nicht vorbereitet werden. Schließen Sie die App und öffnen Sie sie erneut.\n";
+"shell.auth.title" = "Startdienst nicht bereit";
+"shell.auth.notEnrolled" = "Dieses iPad ist nicht für den Entwicklerdienst registriert, daher wurde kein Speicher vorbereitet und das Spiel nicht gestartet. Die Registrierung ist ein einmaliger Schritt am Mac: Führen Sie tools/enroll.sh aus, während dieses iPad verbunden und entsperrt ist, und öffnen Sie WolkaraForever danach erneut.";
+"shell.auth.untrustedPeer" = "Dieses iPad hat geantwortet, aber seine Kopplungsidentität ließ sich nicht bestätigen, daher wurde nichts vorbereitet und das Spiel nicht gestartet. Registrieren Sie das iPad am Mac erneut mit tools/enroll.sh, wenn es gelöscht, wiederhergestellt oder von einem anderen Mac gekoppelt wurde.";
+"shell.auth.developerImage" = "Der Entwicklerdienst dieses iPads hat geantwortet, aber keinen nutzbaren Debuggerdienst angeboten, daher wurde nichts vorbereitet und das Spiel nicht gestartet. Prüfen Sie, ob der Entwicklermodus aktiv und das Entwickler-Disk-Image eingebunden ist, und versuchen Sie es dann erneut.";
+"shell.auth.serviceUnavailable" = "Der lokale Entwicklerdienst dieses iPads war nicht erreichbar, daher wurde nichts vorbereitet und das Spiel nicht gestartet. Öffnen Sie WolkaraForever erneut, um es noch einmal zu versuchen; wenn es weiterhin auftritt, registrieren Sie das iPad am Mac erneut mit tools/enroll.sh.";
+"shell.auth.preparation" = "Die Speichervorbereitung wurde ohne bestätigte Trennung beendet, daher wurde das Spiel nicht gestartet. Öffnen Sie WolkaraForever erneut, um es noch einmal zu versuchen.";
+"shell.auth.generic" = "Der Entwicklerdienst konnte diesen Start nicht vorbereiten, daher wurde das Spiel nicht gestartet. Der genaue Schritt steht in Documents/local-game-setup.txt; öffnen Sie WolkaraForever erneut, um es noch einmal zu versuchen.";
 "shell.jit.title" = "JIT nicht aktiviert";
 "shell.jit.message" = "Diese App wurde ohne JIT geöffnet. Aktivieren Sie JIT mit dem Werkzeug, mit dem Sie die App installiert haben (etwa SideStore), oder mit einem JIT-Aktivierer wie StikDebug, und öffnen Sie die App erneut.";
 "shell.checkingLoader" = "Der Loader wird geprüft … Es wird kein App-Code ausgeführt.";

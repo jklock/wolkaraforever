@@ -101,7 +101,8 @@ itself. The UI fixtures need a booted simulator and are run directly.
 | `test_addon_archive.sh` | The production Swift extractor and the app's pinned ZIPFoundation. |
 | `test_curseforge.sh` | The CurseForge client. |
 | `test_icon_assets.sh` | The generated app icon: square, opaque, non-empty, catalog matches the files. |
-| `test_local_service_retry.sh` | The local-service retry and packet-service probe suites. |
+| `test_local_service_retry.sh` | The local-service retry, packet-service probe and authorization blocked-state suites. |
+| `test_authorization_handoff.sh` | The developer-service handoff against a synthetic local peer: peer verification, the managed TLS/CDTunnel/RSP transport, the raw debugger capability check, and the preparation service's one permitted attach (valid, wrong challenge, lost detach reply, expired request, unconfigured). |
 
 `wolkaraforever/tools/tests/` holds tests of the tools themselves -
 `test_after_install.sh`, `test_pilot.sh`, `test_running_app.sh`, `test_validate.sh`,

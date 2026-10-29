@@ -27,6 +27,10 @@
 #import "WolkaraForeverConfig.h"
 #import "WolkaraForeverLog.h"
 #import "WKLocalization.h"
+// Why the developer service refused, in the layer's own vocabulary. The sentence
+// is localized below; the layer's English text is only the fallback for a key the
+// tables do not carry yet.
+#import "AuthorizationBlockedState.h"
 // The checks the app can run on itself, on a device, for the two things a script cannot do:
 // press a pad button and speak. See SelfTest.h.
 #import "SelfTest.h"
@@ -823,6 +827,33 @@ static NSString *AKAudioStateDescription(void) {
 #pragma mark Starting apps
 
 #if TOLKARA_INTEGRATED_AUTH
+// The developer service refuses rather than falling back, and a refusal the user
+// cannot act on is the same as no message at all. The state is the helper's; the
+// sentence is ours, so it is drawn in the app's language like every other one.
+- (NSString *)authorizationBlockedText:(NSString *)state {
+    if([state isEqualToString:WKAuthorizationBlockedNotEnrolled]) return WKLocalized(@"shell.auth.notEnrolled");
+    if([state isEqualToString:WKAuthorizationBlockedUntrustedPeer]) return WKLocalized(@"shell.auth.untrustedPeer");
+    if([state isEqualToString:WKAuthorizationBlockedDeveloperImage]) return WKLocalized(@"shell.auth.developerImage");
+    if([state isEqualToString:WKAuthorizationBlockedServiceUnavailable]) return WKLocalized(@"shell.auth.serviceUnavailable");
+    if([state isEqualToString:WKAuthorizationBlockedPreparationIncomplete]) return WKLocalized(@"shell.auth.preparation");
+    return WKLocalized(@"shell.auth.generic");
+}
+// Enrolment is recorded here as the identifier the import verified. A device
+// without one cannot be served by the helper at all, so say so before a route is
+// started and a minute is spent timing out. Only the helper can say whether its
+// protected store still holds the record; that is the state it reports later.
+- (NSString *)preflightBlockedState {
+    return WKAuthorizationPreflightState([NSUserDefaults.standardUserDefaults objectForKey:@"TKEnrolledDeviceIdentifier"]);
+}
+- (BOOL)refuseBeforeAuthorization:(NSString *)state {
+    NSString *message=[self authorizationBlockedText:state];
+    // The refusal is also in the log: a launch that stops before the status screen
+    // exists must still leave a record of why.
+    WKLog("host", @"developer service blocked before any route started: %@", state);
+    if(self.navigation) [self alert:WKLocalized(@"shell.auth.title") message:message];
+    else self.status.text=message;
+    return YES;
+}
 // Developer service: the iPad's developer service prepares memory and detaches
 // before any application code runs.
 - (void)launchLocalApp:(TKApp *)app {
@@ -837,6 +868,8 @@ static NSString *AKAudioStateDescription(void) {
         else self.status.text=message;
         return;
     }
+    NSString *blocked=[self preflightBlockedState];
+    if(blocked) { [self refuseBeforeAuthorization:blocked];return; }
     [self endSession:[NSString stringWithFormat:WKLocalized(@"shell.session.used"),app.name]];
     self.launchingApp=app;
     [self.library recordLaunchOfApp:app error:NULL];
@@ -852,7 +885,9 @@ static NSString *AKAudioStateDescription(void) {
     [self.localAuthorization startAndPrepareLocalAuthorization:^(NSString *report) {
         [report writeToFile:TKDocumentsPath(@"local-game-setup.txt") atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         if(!self.localAuthorization.localSessionReady || !ng_use_local_authorization()) {
-            self.status.text=[WKLocalized(@"shell.localLaunch.failed") stringByAppendingString:report];
+            NSString *blocked=self.localAuthorization.localSessionBlockedState;
+            NSString *text=blocked ? [self authorizationBlockedText:blocked] : WKLocalized(@"shell.localLaunch.failed");
+            self.status.text=[text stringByAppendingFormat:@"\n%@",report];
             [self showStartStopped];return;
         }
         self.status.text=WKLocalized(@"shell.loadingGame");
@@ -1018,13 +1053,17 @@ static NSString *AKAudioStateDescription(void) {
 - (void)prepareNativeDiagnostic:(BOOL)fullStartup app:(TKApp *)app {
     self.launchingApp=app;
     self.nativeFullStartup=fullStartup;
+    NSString *blocked=[self preflightBlockedState];
+    if(blocked) { [self refuseBeforeAuthorization:blocked];return; }
     self.status.text=[NSString stringWithFormat:@"Preparing %@\nConnecting to the developer service…",app.name ?: @"app"];
     [self.launchProgress start];
     [self.localAuthorization startAndPrepareLocalAuthorization:^(NSString *report) {
         [report writeToFile:TKDocumentsPath(@"local-game-setup.txt") atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         if(!self.localAuthorization.localSessionReady || !ng_use_local_authorization()) {
-            [self refuseNativeGame:@"Developer service could not prepare; see Documents/local-game-setup.txt."];
-            self.status.text=[@"Developer service could not prepare. Close and reopen the app to retry.\n" stringByAppendingString:report];
+            NSString *blocked=self.localAuthorization.localSessionBlockedState;
+            NSString *text=blocked ? [self authorizationBlockedText:blocked] : WKLocalized(@"shell.auth.generic");
+            [self refuseNativeGame:text];
+            self.status.text=[text stringByAppendingFormat:@"\n%@",report];
             [self showStartStopped];return;
         }
         // Guest main must enter from a timer callout, never a dispatch block.

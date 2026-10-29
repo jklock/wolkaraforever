@@ -213,6 +213,13 @@
 "shell.loadingGame" = "Loading the game. Keep this app open.";
 "shell.connecting" = "Connecting to the startup service…";
 "shell.localLaunch.failed" = "Local launch could not prepare. Close and reopen the app to retry.\n";
+"shell.auth.title" = "Developer service not ready";
+"shell.auth.notEnrolled" = "This iPad is not enrolled for the developer service, so no memory was prepared and the game was not started. Enrolment is a one-time step from a Mac: run tools/enroll.sh with this iPad connected and unlocked, then reopen WolkaraForever.";
+"shell.auth.untrustedPeer" = "This iPad answered, but its pairing identity did not verify, so nothing was prepared and the game was not started. Enrol again from the Mac with tools/enroll.sh if the iPad was erased, restored or paired from a different Mac.";
+"shell.auth.developerImage" = "This iPad's developer service answered but did not offer a usable debugger service, so nothing was prepared and the game was not started. Confirm Developer Mode is on and the developer disk image is mounted, then try again.";
+"shell.auth.serviceUnavailable" = "This iPad's local developer service could not be reached, so nothing was prepared and the game was not started. Reopen WolkaraForever to retry; if it keeps happening, enrol again from the Mac with tools/enroll.sh.";
+"shell.auth.preparation" = "Memory preparation finished without a confirmed detach, so the game was not started. Reopen WolkaraForever to retry.";
+"shell.auth.generic" = "The developer service could not prepare this launch, so the game was not started. The exact step is written to Documents/local-game-setup.txt; reopen WolkaraForever to retry.";
 "shell.jit.title" = "JIT Not Enabled";
 "shell.jit.message" = "This app was opened without JIT. Enable JIT with your sideloading tool (such as SideStore) or a JIT enabler such as StikDebug, then open it again.";
 "shell.checkingLoader" = "Checking the loader… No app code is run.";

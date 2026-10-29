@@ -67,7 +67,7 @@ intent() {
             wolkaraforever/Bridge/tests/*) dst=tests/${f#wolkaraforever/Bridge/tests/};;
             wolkaraforever/Bridge/BackgroundPacing.m) dst=translation/Metal/BackgroundPacing.m;;
             wolkaraforever/Bridge/DisplayRate.m) dst=translation/Metal/DisplayRate.m;;
-            wolkaraforever/Bridge/LocalServiceRetry.*) dst=authorization/App/${f#wolkaraforever/Bridge/};;
+            wolkaraforever/Bridge/LocalServiceRetry.*|wolkaraforever/Bridge/AuthorizationBlockedState.*) dst=authorization/App/${f#wolkaraforever/Bridge/};;
             *) echo "# not overlaid yet (source of a pending patch): $f"; continue;;
         esac
         echo "$f $dst $(intent "$dst")"

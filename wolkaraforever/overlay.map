@@ -103,11 +103,15 @@ wolkaraforever/Touch/tests/test_touch_controls_app.m tests/test_touch_controls_a
 wolkaraforever/Touch/tests/test_touch_gamepad_app.m tests/test_touch_gamepad_app.m add
 #
 # Bridge: what the patched platform files and the public APIs call into
+wolkaraforever/Bridge/AuthorizationBlockedState.h authorization/App/AuthorizationBlockedState.h add
+wolkaraforever/Bridge/AuthorizationBlockedState.m authorization/App/AuthorizationBlockedState.m add
 wolkaraforever/Bridge/BackgroundPacing.m translation/Metal/BackgroundPacing.m add
 wolkaraforever/Bridge/DisplayRate.m translation/Metal/DisplayRate.m add
 wolkaraforever/Bridge/LocalServiceRetry.h authorization/App/LocalServiceRetry.h add
 wolkaraforever/Bridge/LocalServiceRetry.m authorization/App/LocalServiceRetry.m add
+wolkaraforever/Bridge/tests/test_authorization_blocked_state.m tests/test_authorization_blocked_state.m add
 wolkaraforever/Bridge/tests/test_local_service_retry.m tests/test_local_service_retry.m add
+wolkaraforever/Bridge/tests/test_packet_service_blocked.swift tests/test_packet_service_blocked.swift add
 wolkaraforever/Bridge/tests/test_packet_service_retry.swift tests/test_packet_service_retry.swift add
 #
 # Controller: what the pad reports, and every change to it (diagnostic)

@@ -231,6 +231,10 @@ run_step "the on-screen gamepad (simulator fixture)" wolkaraforever/tools/test_t
 # there. One of them is the only test of a patch we carry. Every suite the layer owns now
 # has a row of its own, so coverage does not depend on a wrapper's loop being reached.
 run_step "local service retry (patch 0006)" wolkaraforever/tools/test_local_service_retry.sh || failures=$((failures+1))
+# The developer-service handoff: peer verification, the managed transport, the
+# capability check and the preparation service's one permitted attach. Its probes
+# existed and nothing ran them, so these rows are new coverage, not new behaviour.
+run_step "developer-service handoff (synthetic peer)" wolkaraforever/tools/test_authorization_handoff.sh || failures=$((failures+1))
 run_step "CurseForge response and request contracts" wolkaraforever/tools/test_curseforge.sh || failures=$((failures+1))
 run_step "real ZIP extraction (Swift and pinned ZIPFoundation)" wolkaraforever/tools/test_addon_archive.sh || failures=$((failures+1))
 run_step "the app icon's assets and catalog" wolkaraforever/tools/test_icon_assets.sh || failures=$((failures+1))
