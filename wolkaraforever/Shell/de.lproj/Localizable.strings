@@ -424,6 +424,8 @@
 "addons.downloading" = "%@ wird geladen …";
 "addons.error.incompleteFile" = "CurseForge hat einen unvollständigen Dateieintrag geliefert.";
 "addons.error.noArchive" = "CurseForge hat kein Archiv geliefert.";
+"addons.error.providerTitle" = "CurseForge-Anfrage fehlgeschlagen";
+"addons.error.changeTitle" = "Add-on konnte nicht geändert werden";
 "addons.error.installTitle" = "Add-on konnte nicht installiert werden";
 "addons.error.importTitle" = "Add-on konnte nicht importiert werden";
 "addons.error.importMessage" = "Das geladene Archiv konnte nicht importiert werden.";

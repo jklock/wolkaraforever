@@ -885,33 +885,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     frame.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     frame.navigationBar.tintColor=WKGold();
     WKLog("ui", @"opening %@ over the home page", NSStringFromClass(page.class));
-    __weak TKWoWViewController *weakSelf=self;
-    [self whenNothingIsPresented:^{
-        TKWoWViewController *self=weakSelf; if (!self) return;
-        [self presentViewController:frame animated:YES completion:nil];
-    }];
-}
-// Presenting from an alert's action handler is presenting while that alert is going away, and
-// UIKit drops the new page - silently, with a console warning nobody on a device ever sees. The
-// tap that opened a second sheet, or the message that announced what a choice had done, simply
-// did not happen. So everything this controller shows goes through here and waits for the page to
-// have nothing presented; the dismissal is animated, hence the re-check rather than one delay.
-// Twenty attempts is several times the longest one; if something the person opened is still up
-// after that, putting our own page over it would be the wrong answer anyway.
-- (void)whenNothingIsPresented:(void (^)(void))presentation attempts:(NSInteger)attempts {
-    if (!self.presentedViewController) { presentation(); return; }
-    if (attempts<=0) {
-        WKLog("ui", @"not showing a page over %@: it is still presented",
-              NSStringFromClass(self.presentedViewController.class));
-        return;
-    }
-    __weak TKWoWViewController *weakSelf=self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.1*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
-        [weakSelf whenNothingIsPresented:presentation attempts:attempts-1];
-    });
-}
-- (void)whenNothingIsPresented:(void (^)(void))presentation {
-    [self whenNothingIsPresented:presentation attempts:20];
+    WKPresentWhenFree(self, ^{ [self presentViewController:frame animated:YES completion:nil]; });
 }
 - (void)presentSheet:(UIAlertController *)sheet anchor:(UIView *)anchor {
     // A sheet that brings its own way out keeps it: two cancel actions is a UIKit warning
@@ -920,13 +894,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     for (UIAlertAction *action in sheet.actions) if (action.style==UIAlertActionStyleCancel) cancellable=NO;
     if (cancellable)
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
-    __weak TKWoWViewController *weakSelf=self;
-    [self whenNothingIsPresented:^{
-        TKWoWViewController *self=weakSelf; if (!self) return;
+    WKPresentWhenFree(self, ^{
         if (anchor) { sheet.popoverPresentationController.sourceView=anchor; sheet.popoverPresentationController.sourceRect=anchor.bounds; }
         else sheet.popoverPresentationController.barButtonItem=self.navigationItem.rightBarButtonItem;
         [self presentViewController:sheet animated:YES completion:nil];
-    }];
+    });
 }
 - (void)chooseEdition {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.edition.title") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
@@ -1087,11 +1059,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:title message:message
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
-    __weak TKWoWViewController *weakSelf=self;
-    [self whenNothingIsPresented:^{
-        TKWoWViewController *self=weakSelf; if (!self) return;
-        [self presentViewController:alert animated:YES completion:nil];
-    }];
+    WKPresentWhenFree(self, ^{ [self presentViewController:alert animated:YES completion:nil]; });
 }
 // A snapshot of the complete Forever UI. It is an explicit user action here, and
 // it is also the rollback point the two destructive rows make for themselves.
@@ -1343,11 +1311,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         message:error.localizedDescription?WKLocalizedFormat(@"home.addons.unavailable.reason",error.localizedDescription):WKLocalized(@"home.addons.unavailable.message")
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
-    __weak TKWoWViewController *weakSelf=self;
-    [self whenNothingIsPresented:^{
-        TKWoWViewController *self=weakSelf; if (!self) return;
-        [self presentViewController:alert animated:YES completion:nil];
-    }];
+    WKPresentWhenFree(self, ^{ [self presentViewController:alert animated:YES completion:nil]; });
 }
 - (nullable NSString *)addOnsDirectoryWithError:(NSError **)error {
     NSString *directory=[_library workingDirectoryForApp:_installation.app error:error];

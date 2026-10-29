@@ -35,6 +35,14 @@ UIView *WKCard(void);
 /// A row action, in the launcher's style and with an accessibility identifier.
 UIButton *WKRowButton(NSString *identifier);
 
+/// Presents `presentation` once `controller` has nothing presented. UIKit drops a presentation
+/// that starts while another one is being dismissed - silently, with a console warning nobody on
+/// a device sees - so a sheet opened from another sheet's action, or the message that reports what
+/// one did, is otherwise a tap that does nothing. It re-checks on the main queue because the
+/// dismissal is animated, gives up after a couple of seconds, and logs rather than dropping the
+/// page without a trace.
+void WKPresentWhenFree(UIViewController *controller, void (^presentation)(void));
+
 /// Closes a page whether it was presented as a sheet or pushed onto the launcher's
 /// own navigation stack, so one Done button is right either way. The launcher
 /// presents these pages as popups now; the push path is kept because the layer's

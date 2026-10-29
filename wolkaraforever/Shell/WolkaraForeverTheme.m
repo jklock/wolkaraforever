@@ -54,6 +54,28 @@ UIButton *WKRowButton(NSString *identifier) {
     return button;
 }
 
+// Twenty attempts of a tenth of a second is several times the longest dismissal UIKit has; a
+// page still up after that is one the person opened, and putting ours over it would be the wrong
+// answer anyway.
+static void WKPresentWhenFreeAfter(UIViewController *controller, void (^presentation)(void),
+                                   NSInteger attempts) {
+    if (!controller) return;
+    if (!controller.presentedViewController) { presentation(); return; }
+    if (attempts<=0) {
+        WKLog("ui", @"not presenting over %@: it is still presented",
+              NSStringFromClass(controller.presentedViewController.class));
+        return;
+    }
+    __weak UIViewController *weakController=controller;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.1*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        WKPresentWhenFreeAfter(weakController, presentation, attempts-1);
+    });
+}
+
+void WKPresentWhenFree(UIViewController *controller, void (^presentation)(void)) {
+    WKPresentWhenFreeAfter(controller, presentation, 20);
+}
+
 void WKDismissPage(UIViewController *page) {
     UINavigationController *frame=page.navigationController;
     WKLog("ui", @"closing %@ (frame=%@ presenter=%@)", NSStringFromClass(page.class),
