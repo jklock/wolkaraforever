@@ -8,6 +8,7 @@
 #import "SelfTest.h"
 #import "WolkaraForeverLog.h"
 #import "../WoW/ForeverUI.h"
+#import "../WoW/WoWViewController.h"
 #import "../WoW/AddonCredentialStore.h"
 #import "../WoW/CurseForgeClient.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -26,6 +27,7 @@ NSString *const AKSelfTestMic = @"mic";
 NSString *const AKSelfTestDictationTarget = @"dictation-target";
 NSString *const AKSelfTestForeverUI = @"forever-ui";
 NSString *const AKSelfTestForeverUIClean = @"forever-ui-clean";
+NSString *const AKSelfTestRenderProfile = @"render-profile";
 NSString *const AKSelfTestCurseForge = @"curseforge";
 NSString *const AKSelfTestSpeechFile = @"speech-file";
 
@@ -892,10 +894,125 @@ static void AKSelfTestRunSpeechFile(AKSelfTestRecorder *recorder) {
     recorder.detail = [NSString stringWithFormat:@"heard %lu characters", (unsigned long)heard.length];
 }
 
+#pragma mark - The Render profile row, pressed on this device
+
+// The row that ended the app. It builds its action sheet, gives it its own Cancel, and hands
+// it to the presenter every sheet goes through - which added the shared Cancel as well. UIKit
+// allows one action with the cancel style and raises from -[UIAlertController addAction:] on
+// the second, synchronously, before anything is on screen, so the app died on the press.
+//
+// The device matrix can install the app, launch it, read its log and stop it, but it cannot
+// press a row - so the app presses its own, which is what this file is for. Only the press:
+// choosing a profile writes the user's graphics settings, and that path is `forever-ui`'s. The
+// two checks at the end say the user's settings came out of this untouched.
+@interface TKWoWViewController (AKSelfTestRenderProfile)
+- (void)chooseRenderProfile;
+@end
+
+static NSString *const AKSelfTestHomePageKey = @"wowController";
+
+// The launcher is the scene delegate's property, not the application delegate's, and this runs
+// from the application delegate at launch - so it is looked for on whatever scene is connected,
+// by selector, rather than by reaching through a class name that is main.m's business.
+static TKWoWViewController *AKSelfTestHomePage(void) {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        id delegate = ((UIWindowScene *)scene).delegate;
+        if (![delegate respondsToSelector:NSSelectorFromString(AKSelfTestHomePageKey)]) continue;
+        id candidate = [delegate valueForKey:AKSelfTestHomePageKey];
+        if ([candidate isKindOfClass:TKWoWViewController.class]) return candidate;
+    }
+    return nil;
+}
+
+// The row declines to open while the page is busy, and an automatic check is running for the
+// first moment after launch, so the press is retried rather than taken as the answer. Running
+// again on the main queue keeps the app alive between attempts: the sheet is presented
+// synchronously, so nothing about this needs to hold the thread.
+static void AKSelfTestRenderProfilePress(AKSelfTestRecorder *recorder, NSInteger attempts) {
+    TKWoWViewController *page = AKSelfTestHomePage();
+    if (!page || page.view.window == nil) {
+        // The page is built during launch and only reaches a window once the scene is up;
+        // asking too early would fail this for a reason that has nothing to do with the row.
+        if (attempts > 0) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                AKSelfTestRenderProfilePress(recorder, attempts - 1);
+            });
+            return;
+        }
+        [recorder check:NO _:@"the home page is on screen, so its rows can be pressed"];
+        AKSelfTestLogVerdict(recorder, AKSelfTestRenderProfile);
+        return;
+    }
+
+    // What the press must not change. Read before, compared after.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    id scaleBefore = [defaults objectForKey:@"WolkaraForeverBackingScale"];
+    NSString *directory = AKSelfTestForeverDirectory();
+    NSString *configBefore = directory ? AKSelfTestReadText(AKSelfTestConfigPath(directory)) : nil;
+
+    [page chooseRenderProfile];
+
+    UIViewController *presented = page.presentedViewController;
+    UIAlertController *sheet = [presented isKindOfClass:UIAlertController.class] ? (UIAlertController *)presented : nil;
+    if (!sheet && attempts > 0) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            AKSelfTestRenderProfilePress(recorder, attempts - 1);
+        });
+        return;
+    }
+    [recorder check:sheet != nil
+                 _:@"pressing Render profile opens a sheet instead of ending the app"];
+    if (!sheet) {
+        recorder.detail = @"the row presented nothing; the page was still busy";
+        AKSelfTestLogVerdict(recorder, AKSelfTestRenderProfile);
+        return;
+    }
+
+    NSUInteger cancels = 0, profiles = 0;
+    for (UIAlertAction *action in sheet.actions) {
+        if (action.style == UIAlertActionStyleCancel) cancels++;
+        else if (action.style == UIAlertActionStyleDefault && action.title.length) profiles++;
+    }
+    AKSelfTestRecorder *checks = recorder;
+    [checks check:cancels == 1 _:@"the sheet has exactly one cancel action, which is what UIKit requires"];
+    [checks check:profiles == 3 _:@"it offers all three profiles"];
+    [checks check:sheet.title.length > 0 _:@"and it is titled, rather than blank"];
+
+    // UIKit clears presentedViewController on the turn after the dismissal, so this and the two
+    // checks that follow are read from the completion rather than straight after the call -
+    // which is what the first version did, and it failed this one check on the device while
+    // every other one passed.
+    [page dismissViewControllerAnimated:NO completion:^{
+        [checks check:page.presentedViewController == nil _:@"the sheet closes again"];
+
+        id scaleAfter = [defaults objectForKey:@"WolkaraForeverBackingScale"];
+        [checks check:(scaleBefore == nil && scaleAfter == nil) || [scaleBefore isEqual:scaleAfter]
+                     _:@"pressing the row writes no render scale of its own"];
+        if (configBefore.length)
+            [checks check:[AKSelfTestReadText(AKSelfTestConfigPath(directory)) isEqual:configBefore]
+                         _:@"and Config.wtf is byte for byte as it was"];
+
+        recorder.detail = [NSString stringWithFormat:
+            @"the Render profile row opened a sheet with %lu profiles and one cancel action, wrote "
+            @"nothing, and the app is still running", (unsigned long)profiles];
+        AKSelfTestLogVerdict(recorder, AKSelfTestRenderProfile);
+    }];
+}
+
 void AKRunSelfTest(NSString *name) {
     AKSelfTestRecorder *recorder = [AKSelfTestRecorder new];
     recorder.detail = @"";
     WKLog("selftest", @"selftest: %@ starting", name);
+    if ([name isEqualToString:AKSelfTestRenderProfile]) {
+        // On the main queue: it presents, reads back what was presented and dismisses, all of
+        // which is main-queue work, and none of it waits. The attempts cover the automatic
+        // check that runs the moment the home page appears, during which the row declines.
+        AKSelfTestRenderProfilePress(recorder, 150);
+        return;
+    }
     if ([name isEqualToString:AKSelfTestInput]) {
         // On the main queue: the router asserts it, and these checks are synchronous, so there
         // is nothing to wait for and nothing is held up while they run.

@@ -533,9 +533,15 @@ static NSString *AKAudioStateDescription(void) {
     // shows the WoW home. Any other launch is a development run from
     // tools/: keep its plain status screen and behaviour.
     BOOL plain=YES, previewAddons=[arguments containsObject:@"--addons-preview"];
+    // The Render profile self-test presses a row on the home page, so the home page has to be
+    // the page the app shows; every other non-plain argument keeps the plain status screen and
+    // the development behaviour. It is the one self-test that needs the real UI, and it needs
+    // nothing else - see wolkaraforever/Shell/SelfTest.h.
+    BOOL homeSelfTest=[arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestRenderProfile]];
     for(NSUInteger i=1;i<arguments.count;i++) if(![arguments[i] hasPrefix:TKExecutionModeArgumentPrefix] &&
         ![arguments[i] isEqualToString:TKExecutionModeSaveArgument] &&
-        ![arguments[i] isEqualToString:@"--addons-preview"]) plain=NO;
+        ![arguments[i] isEqualToString:@"--addons-preview"] &&
+        !(homeSelfTest && [arguments[i] hasPrefix:@"--selftest"])) plain=NO;
     if (plain) {
         self.uiSession=YES;
         self.libraryController=[[TKLibraryViewController alloc] initWithLibrary:self.library];

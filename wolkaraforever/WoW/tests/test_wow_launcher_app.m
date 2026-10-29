@@ -10,6 +10,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "../launcher/WoW/Client.h"
 #import "../launcher/WoW/ForeverUI.h"
+#import "../launcher/WoW/Manifest.h"
 #import "../launcher/WoW/Updater.h"
 #import "../launcher/App/LaunchProgressView.h"
 #import "../launcher/App/WKLocalization.h"
@@ -76,6 +77,33 @@ static UIView *Find(UIView *view, NSString *identifier) {
     if ([view.accessibilityIdentifier isEqual:identifier]) return view;
     for (UIView *child in view.subviews) { UIView *match=Find(child,identifier); if (match) return match; }
     return nil;
+}
+// Let the run loop work for a while. Every one of these rows answers on the main
+// queue, so turning the wheel here is the same as the tap a person makes; sleeping
+// instead would assert against a page that had not drawn yet, which has already
+// produced one completely false failure in this file.
+static void Pump(double seconds) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:seconds];
+    while ([deadline timeIntervalSinceNow] > 0)
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+}
+// One way out, and only one. UIKit raises on the second one - that is the crash that
+// made Render Profile a dead row - so every sheet this page opens is asked.
+static NSUInteger CancelActions(UIAlertController *sheet) {
+    NSUInteger count = 0;
+    for (UIAlertAction *action in sheet.actions) if (action.style == UIAlertActionStyleCancel) count++;
+    return count;
+}
+// Run an action the way a tap on it does: UIKit dismisses, then calls the block the
+// action holds. A fixture cannot tap a sheet row, so it takes the block.
+static void RunAction(UIAlertAction *action) {
+    void (^handler)(UIAlertAction *) = [action valueForKey:@"handler"];
+    if (handler) handler(action);
+}
+// A navigation item has no control event; this is the route UIKit itself uses.
+static void TapBarItem(UIBarButtonItem *item) {
+    [UIApplication.sharedApplication sendAction:item.action to:item.target from:item forEvent:nil];
 }
 // What the store does, without a network and without the unzipper.
 //
@@ -563,7 +591,9 @@ static void TestAddons(void) {
     // launch, so opening a page over the home page and closing it must not send the
     // launcher back to the network - which is what it used to do, every time.
     requestsBeforePopup=atomic_load(&requests);
-    [self.controller manageAddons];
+    // Pressed, not called: the row is what the page offers, and a target/action that
+    // was never wired is exactly the failure that calling the method hides.
+    [[self row:@"wow.addons.manage"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     [self performSelector:@selector(checkAddonsPopupSettled) withObject:nil afterDelay:0.6];
 }
 - (void)checkAddonsPopupSettled {
@@ -613,7 +643,7 @@ static void TestAddons(void) {
 // the voice page.
 - (void)checkVoiceSettingsPage {
     assert(self.controller.presentedViewController==nil);
-    [self.controller manageVoice];
+    [[self row:@"wow.voice"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     assert(self.controller.presentedViewController!=nil);
     [self performSelector:@selector(captureVoiceSettings) withObject:nil afterDelay:0.7];
 }
@@ -627,7 +657,7 @@ static void TestAddons(void) {
 }
 - (void)checkVoiceTestPage {
     assert(self.controller.presentedViewController==nil);
-    [self.controller testVoice];
+    [[self row:@"wow.voice.test"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     assert(self.controller.presentedViewController!=nil);
     [self performSelector:@selector(captureVoiceTest) withObject:nil afterDelay:0.7];
 }
@@ -1140,7 +1170,7 @@ static NSString *configBeforeReset;
     WKLocalization.shared.language = WKAppLanguageEnglish;
 
     // --- a sheet opened from another sheet's action is not lost to the dismissal
-    [self.controller preferences];
+    [[self row:@"wow.preferences"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     [self performSelector:@selector(checkNestedSheet) withObject:nil afterDelay:0.4];
 }
 
@@ -1150,10 +1180,17 @@ static NSString *configBeforeReset;
     UIAlertController *preferences = (id)self.controller.presentedViewController;
     assert([preferences isKindOfClass:UIAlertController.class]);
     assert([preferences.title isEqual:@"Download preferences"]);
-    // Exactly what the sheet's own "Language" action does: the sheet starts its animated
-    // dismissal, and the handler opens the picker in the same turn.
+    assert(CancelActions(preferences) == 1);
+    assert([[preferences.actions valueForKey:@"title"]
+        isEqualToArray:(@[@"Region", @"Language", @"Cancel"])]);
+    // Exactly what the sheet's own "Language" action does: the sheet starts its
+    // animated dismissal, and the handler opens the picker in the same turn. The
+    // action is the sheet's own, not a method called behind it.
+    UIAlertAction *language = nil;
+    for (UIAlertAction *action in preferences.actions) if ([action.title isEqual:@"Language"]) language = action;
+    assert(language != nil);
     [self.controller dismissViewControllerAnimated:YES completion:nil];
-    [self.controller choosePreference:NO];
+    RunAction(language);
     [self performSelector:@selector(checkNestedSheetOpened) withObject:nil afterDelay:1.0];
 }
 
@@ -1170,7 +1207,7 @@ static NSString *configBeforeReset;
 }
 
 - (void)openLanguageSheet {
-    [self.controller chooseAppLanguage];
+    [[self row:@"wow.language"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     [self performSelector:@selector(checkLanguageSheet) withObject:nil afterDelay:0.6];
 }
 
@@ -1437,7 +1474,186 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
 - (void)finishLanguageTests {
     [NSUserDefaults.standardUserDefaults setObject:@"en" forKey:WKAppLanguageDefaultsKey];
     assert(WKLocalization.shared.resolvedLanguage == WKAppLanguageEnglish);
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; render profile sheet and applied preset; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size).");
+    [self performSelector:@selector(startEveryHomeControl) withObject:nil afterDelay:0.4];
+}
+
+#pragma mark - Every control on the home page
+
+// The page is what a person touches, and most of its rows had only ever been proven
+// by calling the controller's method behind them - which proves the method, not that
+// the button is wired to it. Two controls had no coverage at all (the two navigation
+// items) and two could not be reached from a fixture (the add-on folder row and the
+// Settings page row). This presses each one in turn and follows what it does.
+- (void)startEveryHomeControl {
+    // Back to English through the app's own route, so what the sheets say is what the
+    // assertions below expect: the language section leaves the page drawn in whatever
+    // its last step asked for.
+    [self.controller applyAppLanguage:WKAppLanguageEnglish];
+    Pump(0.6);
+    assert(self.controller.presentedViewController == nil);
+    unsigned beforeCheck = 0;
+
+    // --- Edition: a sheet naming every edition it offers, and exactly one way out
+    assert([self row:@"wow.edition"].enabled);
+    [[self row:@"wow.edition"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    Pump(0.6);
+    UIAlertController *edition = (id)self.controller.presentedViewController;
+    assert([edition isKindOfClass:UIAlertController.class]);
+    assert([edition.title isEqual:@"Choose your edition"]);
+    assert(CancelActions(edition) == 1);
+    assert(edition.actions.count == TKWoWProducts().count + 1);
+    NSArray *editionTitles = [edition.actions valueForKey:@"title"];
+    for (NSDictionary *product in TKWoWProducts())
+        assert([editionTitles containsObject:product[@"name"]]);
+    // Selecting one asks for one check. The edition already selected is chosen, so
+    // nothing else about the page moves; that a choice switches edition and survives a
+    // relaunch is covered by the edition-race section above.
+    UIAlertAction *forever = nil;
+    for (UIAlertAction *action in edition.actions) if ([action.title isEqual:@"Forever"]) forever = action;
+    assert(forever != nil);
+    beforeCheck = atomic_load(&requests);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(forever);
+    Pump(1.2);
+    assert(atomic_load(&requests) == beforeCheck + 1);
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWProduct"] isEqual:@"wowf"]);
+    assert(self.controller.presentedViewController == nil);
+    assert([[self row:@"wow.edition"].configuration.title hasPrefix:@"Forever"]);
+
+    // --- Preferences: Region, through the sub-sheet the row opens and the action it holds
+    assert([self row:@"wow.preferences"].enabled);
+    [[self row:@"wow.preferences"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    Pump(0.6);
+    UIAlertController *preferences = (id)self.controller.presentedViewController;
+    assert([preferences isKindOfClass:UIAlertController.class]);
+    assert([preferences.title isEqual:@"Download preferences"]);
+    assert(CancelActions(preferences) == 1);
+    UIAlertAction *region = nil;
+    for (UIAlertAction *action in preferences.actions) if ([action.title isEqual:@"Region"]) region = action;
+    assert(region != nil);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(region);
+    Pump(0.7);
+    UIAlertController *regions = (id)self.controller.presentedViewController;
+    assert([regions isKindOfClass:UIAlertController.class]);
+    assert([regions.title isEqual:@"Region"]);
+    assert(CancelActions(regions) == 1);
+    assert([[regions.actions valueForKey:@"title"]
+        isEqualToArray:(@[@"Europe", @"Americas", @"Korea", @"Taiwan", @"Cancel"])]);
+    UIAlertAction *americas = nil;
+    for (UIAlertAction *action in regions.actions) if ([action.title isEqual:@"Americas"]) americas = action;
+    assert(americas != nil);
+    beforeCheck = atomic_load(&requests);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(americas);
+    Pump(1.2);
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWRegion"] isEqual:@"us"]);
+    assert([[self row:@"wow.preferences"].configuration.title hasPrefix:@"US"]);
+    assert(atomic_load(&requests) == beforeCheck + 1);
+    // Back to Europe through the same two sheets, so every later step runs where the
+    // page started. The row's title follows the change both ways.
+    [[self row:@"wow.preferences"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    Pump(0.6);
+    preferences = (id)self.controller.presentedViewController;
+    region = nil;
+    for (UIAlertAction *action in preferences.actions) if ([action.title isEqual:@"Region"]) region = action;
+    assert(region != nil);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(region);
+    Pump(0.7);
+    regions = (id)self.controller.presentedViewController;
+    UIAlertAction *europe = nil;
+    for (UIAlertAction *action in regions.actions) if ([action.title isEqual:@"Europe"]) europe = action;
+    assert(europe != nil);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(europe);
+    Pump(1.2);
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWRegion"] isEqual:@"eu"]);
+    assert([[self row:@"wow.preferences"].configuration.title hasPrefix:@"EU"]);
+
+    // --- Open Add-on Directory: the file browser opens on the game's Interface/AddOns
+    assert([self row:@"wow.addons.directory"].enabled);
+    __block NSURL *addonFolder = nil;
+    self.controller.openAddonDirectoryURL = ^(NSURL *url) { addonFolder = url; };
+    [[self row:@"wow.addons.directory"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    assert(addonFolder != nil);
+    assert([addonFolder.lastPathComponent isEqual:@"AddOns"]);
+    assert([addonFolder.path hasPrefix:fixture.directory]);
+    // The game makes this folder on its first run; before that the row makes it rather
+    // than refusing, so the destination it just opened has to exist.
+    assert([NSFileManager.defaultManager fileExistsAtPath:addonFolder.path]);
+    self.controller.openAddonDirectoryURL = nil;
+
+    // --- Toggle Permissions: this app's own page in Settings, and the system is not asked
+    assert([self row:@"wow.permissions"].enabled);
+    __block NSURL *settingsPage = nil;
+    self.controller.openAppSettingsURL = ^(NSURL *url) { settingsPage = url; };
+    [[self row:@"wow.permissions"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    assert([settingsPage.absoluteString isEqual:UIApplicationOpenSettingsURLString]);
+    self.controller.openAppSettingsURL = nil;
+
+    // --- Refresh, the left navigation item: one check, exactly, and nothing else
+    UIBarButtonItem *refresh = self.controller.navigationItem.leftBarButtonItem;
+    assert([refresh.accessibilityIdentifier isEqual:@"wow.refresh"]);
+    assert(refresh.enabled);
+    beforeCheck = atomic_load(&requests);
+    TapBarItem(refresh);
+    Pump(1.2);
+    assert(atomic_load(&requests) == beforeCheck + 1);
+
+    // --- Settings, the right navigation item, and the actions it offers
+    UIBarButtonItem *gear = self.controller.navigationItem.rightBarButtonItem;
+    assert([gear.accessibilityIdentifier isEqual:@"wow.settings"]);
+    assert(gear.enabled);
+    TapBarItem(gear);
+    Pump(0.7);
+    UIAlertController *settings = (id)self.controller.presentedViewController;
+    assert([settings isKindOfClass:UIAlertController.class]);
+    assert([settings.title isEqual:@"Settings"]);
+    assert(CancelActions(settings) == 1);
+    assert([[settings.actions valueForKey:@"title"] isEqualToArray:
+        (@[@"Manage add-ons", @"Verify and repair game files", @"Diagnostics and logs",
+           @"About and open-source licenses", @"Cancel"])]);
+    // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
+    __block NSInteger diagnostics = 0;
+    self.controller.showDiagnostics = ^{ diagnostics++; };
+    UIAlertAction *diagnosticsAction = nil;
+    for (UIAlertAction *action in settings.actions) if ([action.title isEqual:@"Diagnostics and logs"]) diagnosticsAction = action;
+    assert(diagnosticsAction != nil);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(diagnosticsAction);
+    Pump(0.4);
+    assert(diagnostics == 1);
+    self.controller.showDiagnostics = nil;
+    // ... and About, which pushes its page onto the launcher's own stack.
+    TapBarItem(gear);
+    Pump(0.7);
+    settings = (id)self.controller.presentedViewController;
+    assert([settings isKindOfClass:UIAlertController.class]);
+    UIAlertAction *about = nil;
+    for (UIAlertAction *action in settings.actions) if ([action.title isEqual:@"About and open-source licenses"]) about = action;
+    assert(about != nil);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(about);
+    Pump(0.8);
+    assert([self.controller.navigationController.topViewController.title isEqual:@"About"]);
+    [self.controller.navigationController popToRootViewControllerAnimated:NO];
+    assert(self.controller.navigationController.topViewController == self.controller);
+
+    // --- and no control on the page is dead: every one has a target and an action
+    for (NSString *identifier in @[@"wow.edition", @"wow.preferences", @"wow.language",
+                                   @"wow.addons.manage", @"wow.addons.macEver", @"wow.addons.directory",
+                                   @"wow.permissions", @"wow.voice", @"wow.voice.test",
+                                   @"wow.performance.renderProfile", @"wow.performance.backup",
+                                   @"wow.performance.reset", @"wow.performance.restore",
+                                   @"wow.performance.settingsFolder", @"wow.primary", @"wow.diagnostics"])
+        assert([[self row:identifier] allTargets].count > 0);
+    for (NSString *identifier in @[@"wow.performance.gamepad", @"wow.performance.overlay"])
+        assert([self toggle:identifier].allTargets.count > 0);
+    for (UIBarButtonItem *item in @[gear, refresh])
+        assert(item.target != nil && item.action != NULL);
+
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; render profile sheet and applied preset; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all seven Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.
@@ -1504,6 +1720,14 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.controller finishStartupWithMessage:@"Synthetic startup failure" failed:YES];
     assert([[self status] isEqual:@"Could not start"] && [self primary].enabled);
     assert([[self primary].currentTitle isEqual:@"Close WolkaraForever"]);
+    // The Diagnostics button is on screen only after a start failed, which is the one
+    // state that can reach it; it had no coverage at all.
+    assert(!self.controller.diagnosticsButton.hidden);
+    __block NSInteger diagnosticsTaps = 0;
+    self.controller.showDiagnostics = ^{ diagnosticsTaps++; };
+    [self.controller.diagnosticsButton sendActionsForControlEvents:UIControlEventTouchUpInside];
+    assert(diagnosticsTaps == 1);
+    self.controller.showDiagnostics = nil;
     [self capture:@"wow-startup-failed.png"];
     // A recoverable preflight error, with no session used, must leave another
     // attempt possible.

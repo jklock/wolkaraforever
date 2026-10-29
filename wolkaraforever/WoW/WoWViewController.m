@@ -986,8 +986,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 // in Settings, so the launcher takes them to that exact page instead of describing where it is.
 - (void)openPermissions {
     NSURL *url=[NSURL URLWithString:UIApplicationOpenSettingsURLString];
+    if(!url) { WKLog("host", @"permissions: this system has no app settings page"); return; }
+    if(self.openAppSettingsURL) { self.openAppSettingsURL(url); return; }
     UIApplication *app=UIApplication.sharedApplication;
-    if(!url || ![app canOpenURL:url]) {
+    if(![app canOpenURL:url]) {
         WKLog("host", @"permissions: this system will not open the app's settings page");
         return;
     }
@@ -1010,9 +1012,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [files createDirectoryAtPath:addons withIntermediateDirectories:YES attributes:nil error:&error];
         if (![files fileExistsAtPath:addons]) { [self presentAddonsUnavailable:error]; return; }
     }
+    NSURL *folder=[NSURL fileURLWithPath:addons isDirectory:YES];
+    if (self.openAddonDirectoryURL) { self.openAddonDirectoryURL(folder); return; }
     UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc]
         initForOpeningContentTypes:@[UTTypeFolder]];
-    picker.directoryURL=[NSURL fileURLWithPath:addons isDirectory:YES];
+    picker.directoryURL=folder;
     picker.allowsMultipleSelection=NO;
     picker.delegate=self;
     [self presentViewController:picker animated:YES completion:nil];

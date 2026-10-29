@@ -415,3 +415,61 @@ compressing a roughly 27.5-point line and clipping descenders in “Ready to pla
 The row now centers its arranged views and labels resist vertical compression.
 The UIKit fixture checks text bounds at default and maximum accessibility sizes;
 large content remains scrollable. This changes neither update nor launch logic.
+
+## The Render Profile crash, and every control on the home page (2026-10-29)
+
+Selecting **Render profile** terminated the app. It was not the profile code: the
+row built an action sheet that already ended with its own `Cancel`, then handed it
+to `-presentSheet:anchor:`, which adds the shared `Cancel` to every sheet. UIKit
+allows exactly one action with `UIAlertActionStyleCancel` and raises on the second
+from inside `-addAction:` — synchronously, on the tap, before anything was
+presented. The exception is
+`NSInternalInconsistencyException: UIAlertController can only have one action with
+a style of UIAlertActionStyleCancel`, and it was reproduced on iPadOS 27 Simulator
+with a throwaway app that added two cancel actions to one sheet and nothing else.
+
+`-presentSheet:anchor:` now keeps a sheet's own way out and adds one only when the
+sheet has none, so a caller cannot reintroduce it and a sheet that wants its own
+wording keeps it. The fixture never tapped the row, which is why this shipped: it
+asserted that `wow.performance.renderProfile` existed, sat in the right box and was
+enabled, and every other Performance row was pressed.
+
+`tools/test_wow_launcher_ui.sh` now presses **every** control on the home page and
+follows what each one does, and asserts that every sheet it opens has exactly one
+cancel action. Rows that had only ever been exercised by calling the controller's
+method behind them are now pressed instead — a target/action that was never wired
+is precisely what calling the method hides — and a final invariant fails if any
+button on the page has no target. Two controls had no coverage at all (the
+Settings and Refresh navigation items) and two could not be reached from a fixture
+at all, so they gained injectable destinations in the style of the three that
+already had them: `openAppSettingsURL` (Toggle Permissions, which otherwise leaves
+the app for Settings) and `openAddonDirectoryURL` (Open Add-on Directory, whose
+file browser a fixture cannot present).
+
+Results, Xcode 27.0, iPad Pro 13-inch (M5) / iPadOS 27 Simulator, twice in a row:
+- `tools/test_wow_launcher_ui.sh`: PASS, including the new pass.
+- Removing the guard and rerunning reproduces the uncaught exception, so the check
+  that found the fault is the check that passes afterwards.
+- `tools/test_wow_launcher.sh`, `tools/test_forever_ui.sh`, `tools/check_layers.sh`
+  and `tools/check_docs.sh`: PASS.
+
+## On the device (2026-10-29)
+
+A fixture presses rows through `sendActionsForControlEvents:`. A script on this Mac
+cannot press a row on the iPad at all, which is what `--selftest=` is for, so the
+row is now pressed by the app itself: `--selftest=render-profile` opens the sheet,
+reads back what was presented, dismisses it, and checks the user's settings are
+unchanged. It needs the real home page to exist, so that one argument is treated as
+a plain launch in `main.m`; every other self-test keeps the status screen.
+
+On Dadpad (iPad Pro, iPadOS 27.0.1), installed build:
+`selftest: render-profile PASS 7/7 checks (the Render profile row opened a sheet
+with 3 profiles and one cancel action, wrote nothing, and the app is still
+running)`. No new crash report, and the app was left on its home screen.
+
+The first run of it failed on the device and was right to: it read
+`presentedViewController` straight after `-dismissViewControllerAnimated:`, which
+UIKit clears on the following turn. The check now reads it from the dismissal's
+completion. A second run earlier failed to find the home page at all, because every
+`--selftest=` launch was classified as a development run - both were the harness
+being wrong, not the app, and both are recorded here rather than quietly fixed.

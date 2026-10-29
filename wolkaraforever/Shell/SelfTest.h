@@ -36,6 +36,12 @@ extern NSString *const AKSelfTestDictationTarget;
 /// overlay so the in-game HUD can be seen; `forever-ui-clean` turns that back off.
 extern NSString *const AKSelfTestForeverUI;
 extern NSString *const AKSelfTestForeverUIClean;
+/// The home page's own Render profile row, pressed on the installed build. It opens the sheet
+/// and stops there: choosing a profile writes the user's graphics settings, which is what
+/// `forever-ui` covers. What this proves is the thing no other check could - that pressing the
+/// row does not terminate the app. It used to: the row built a sheet with its own Cancel and
+/// handed it to a presenter that adds another, and UIKit raises on the second one.
+extern NSString *const AKSelfTestRenderProfile;
 /// The CurseForge key in this device's Keychain and the page it feeds: the key's shape, and
 /// that the authenticated search answers with artwork, author, category and a file for the
 /// game version the browser asks for. It reads nothing from the game and changes nothing.

@@ -259,7 +259,7 @@ step "7. the app's own self-tests, run on the installed build"
 # dictation session - the same code the simulator fixtures drive with stand-ins - and writes a
 # verdict to its own log. Running them against the installed build is the difference between "a
 # fixture says the mapper works" and "the app on this iPad says so". See wolkaraforever/Shell/SelfTest.h.
-for name in input voice; do
+for name in input voice render-profile; do
     wolkaraforever/tools/pilot.sh selftest "$name" > "$work/selftest-$name.log" 2>&1 && rc=0 || rc=1
     check "$rc" "the app's own $name self-test passes on the installed build"
     grep -oE "selftest: $name (PASS|FAIL)[^\"]*" "$work/selftest-$name.log" | tail -1 | sed 's/^/  /'
