@@ -523,10 +523,15 @@ Evidence, Xcode 27.0:
   in the app. They now wait for the state they need (`PumpUntil`, `WaitForAlert`) instead of
   guessing how fast the machine is. That is a finding about the tests, and it is written down
   here rather than quietly repaired.
-- Physical iPad (Dadpad, iPadOS 27.0.1, installed build): **`selftest: render-profile PASS
-  11/11`** — the Render profile row opened a sheet with **3 measured qualities**, the Device
-  profile row a sheet with **9 choices**, both with exactly one cancel action, no render scale
-  written, and `Config.wtf` byte for byte unchanged. No new crash report.
+- Physical iPad (Dadpad, iPad13,9 — the one device this project measured — iPadOS 27.0.1,
+  installed build): **`selftest: render-profile PASS 11/11`** — the Render profile row opened a
+  sheet with **3 measured qualities**, the Device profile row a sheet with **9 choices**, both
+  with exactly one cancel action, no render scale written, and `Config.wtf` byte for byte
+  unchanged. No new crash report.
+- The page on that hardware, captured with `devicectl device capture screenshot`, reads
+  `Device profile: Automatic — iPad Pro 12.9-inch (M1)` and `Render profile: Balanced — 1366 ×
+  1024`. That is the table resolving a real `hw.machine` rather than a simulator falling back to
+  the unrecognised record, and it is the same page the user guide shows.
 - The first device runs of that self-test failed twice, and both times it was the check, not the
   page: it pressed the second row while an automatic check still had the page busy (the row's
   own log then said "declined while the page is busy"), and it read a sheet in the same turn it

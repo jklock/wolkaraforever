@@ -94,7 +94,9 @@ These two rows change **only WolkaraForever's own render scale**. They never wri
 `Config.wtf`. The rows in the last card are the ones that touch game files, and each says so.
 
 - **Restore performance defaults** returns to **Automatic** for the device in use and removes
-  only WolkaraForever's own profile keys. It does not reset game, account, or UI settings.
+  only WolkaraForever's own profile keys. It does not reset game, account, or UI settings, and
+  it stays dimmed until you have made a performance choice of your own — with nothing
+  customised there is nothing to restore.
 - **Performance Overlay** shows frame rate, frame time, thermal state, battery, memory, and
   Low Power Mode in the game. It is off by default and applies immediately.
 
