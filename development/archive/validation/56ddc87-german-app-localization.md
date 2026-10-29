@@ -8,8 +8,8 @@
 > game's own text and audio are the game's, not ours, and are not in scope here.
 >
 > It is not current guidance for later builds. See
-> [docs/README.md](../../docs/README.md) for the live documents and
-> [localization](../guides/LOCALIZATION.md) for how the feature is built.
+> [docs/README.md](../../../docs/README.md) for the live documents and
+> [localization](../../guides/LOCALIZATION.md) for how the feature is built.
 
 - Code revision: `2014c7e` *feat: translate the startup progress view*, on top of `0f44553`
   (the presentation fix), `a0d3510`, `8eb56bb` (this record's first version) and `1bf95d0`

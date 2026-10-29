@@ -14,7 +14,7 @@ This changelog records release history. It is not a compatibility guarantee: rea
   keyboard. Game language and app language stay independent, and the first German selection
   offers once — never silently — to put the game into German through the existing validated
   writer and update gate. The German launcher was checked on an iPad (iPadOS 27.0.1) at `56ddc87`;
-  see [the record](development/validation/56ddc87-german-app-localization.md) and
+  see [the record](development/archive/validation/56ddc87-german-app-localization.md) and
   [the localization guide](development/guides/LOCALIZATION.md).
 - Rebuilt the public documentation around the current source tree.
 - Moved development-only layer, profile, contribution, and adapter material under
