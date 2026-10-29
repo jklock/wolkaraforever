@@ -1,0 +1,31 @@
+# WolkaraForever layer patch 0041 - the launch-progress fixture links the app's language
+#
+# Why: `launcher/App/LaunchProgressView.m` is a layer replacement now (see
+# wolkaraforever/Shell/LaunchProgressView.m). It draws "Elapsed" and speaks the elapsed time, and
+# both were English on a screen a person watches for minutes before any game runs. The platform's
+# own visual fixture compiles that file without the app's localization service, so with the
+# replacement in place the fixture would fail to link.
+#
+# What changes: the fixture's compile line gains `launcher/App/WKLocalization.m`, and the tables
+# are copied into the probe's bundle so the caption it screenshots is the real one.
+#
+# Applies to: tools/test_launch_progress.sh.
+# Upstream: not a candidate - upstream has no second language.
+#
+--- a/tools/test_launch_progress.sh
++++ b/tools/test_launch_progress.sh
+@@ -10,7 +10,14 @@
+     -isysroot "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+     -fobjc-arc -Wall -Wextra -Werror -Ilauncher/App -framework UIKit -framework QuartzCore \
+     launcher/App/LaunchProgressView.m launcher/App/StartupActivity.m launcher/App/StartupActivityText.m tests/launch_progress_probe.m \
++    launcher/App/WKLocalization.m \
+     -o build/LaunchProgressProbe.app/LaunchProgressProbe
++# The app's own language tables, as the app has them: the progress caption and its accessibility
++# value come from them now, and a fixture without them would draw the service's last resort.
++for language in en de; do
++    mkdir -p "build/LaunchProgressProbe.app/$language.lproj"
++    cp "launcher/App/$language.lproj/Localizable.strings" "build/LaunchProgressProbe.app/$language.lproj/"
++done
+ python3 - <<'PY'
+ import plistlib
+ from pathlib import Path

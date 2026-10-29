@@ -209,6 +209,13 @@
 "shell.settingUpMemory" = "Setting up %.0f MiB of execution memory. Keep this app open.";
 "shell.mobileData.off" = "\nIf you turned off mobile data, wait until this step finishes before turning it back on.";
 "shell.mobileData.on" = "\nYou can now turn mobile data back on.";
+"shell.elapsed" = "Elapsed";
+"shell.elapsed.a11y" = "Startup elapsed time";
+"shell.elapsed.minutes.one" = "%u minute";
+"shell.elapsed.minutes.other" = "%u minutes";
+"shell.elapsed.seconds.one" = "%u second";
+"shell.elapsed.seconds.other" = "%u seconds";
+"shell.elapsed.value" = "%@, %@";
 "shell.preparationComplete" = "Preparation complete. Loading the game…";
 "shell.waitingForLocal" = "Waiting for the local connection…\nIf using mobile data, temporarily turn it off in Control Centre and return here. We will retry for two minutes without closing the app.\nAfter preparation finishes, turn mobile data back on to connect to the game.";
 "shell.cloudSync" = "Synchronizing Steam Cloud saves…";

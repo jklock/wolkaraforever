@@ -1,0 +1,112 @@
+// WolkaraForever: the startup progress view, with its three words in the app's language.
+//
+// A replacement of the platform's own launcher/App/LaunchProgressView.m, for one reason: it draws
+// a caption ("Elapsed") and says how long the wait has been through its accessibility value, and
+// neither was translated. A person watches this view for minutes on every startup, before any
+// game runs, so it is part of the surface the app language covers.
+//
+// Everything else is the platform's file, unchanged: the ring, the pre-rendered digit layers, the
+// animation and the reduce-motion behaviour are all as they were. The platform's own
+// tools/test_launch_progress.sh links against this file; patch 0041 adds the localization service
+// to that fixture so the platform suite still builds.
+
+#import "LaunchProgressView.h"
+#import "WKLocalization.h"
+#import <QuartzCore/QuartzCore.h>
+#include <math.h>
+
+@implementation TKLaunchProgressView {
+    CAShapeLayer *_ring;
+    NSArray<CALayer *> *_digits;
+    NSArray *_glyphs;
+    CFTimeInterval _started;
+}
+- (instancetype)initWithFrame:(CGRect)frame {
+    if (!(self = [super initWithFrame:frame])) return nil;
+    self.hidden = YES;
+    self.isAccessibilityElement = YES;
+    self.accessibilityLabel = WKLocalized(@"shell.elapsed.a11y");
+    _ring = [CAShapeLayer layer];
+    _ring.frame = CGRectMake(0, 7, 24, 24);
+    _ring.path = [UIBezierPath bezierPathWithArcCenter:CGPointMake(12, 12) radius:10
+        startAngle:0 endAngle:1.5 * M_PI clockwise:YES].CGPath;
+    _ring.fillColor = UIColor.clearColor.CGColor;
+    _ring.strokeColor = UIColor.grayColor.CGColor;
+    _ring.lineWidth = 2;
+    _ring.lineCap = kCALineCapRound;
+    [self.layer addSublayer:_ring];
+    UILabel *caption = [[UILabel alloc] initWithFrame:CGRectMake(38, 0, 70, 38)];
+    caption.text = WKLocalized(@"shell.elapsed");
+    caption.font = [UIFont systemFontOfSize:17];
+    caption.textColor = UIColor.secondaryLabelColor;
+    [self addSubview:caption];
+    UIFont *font = [UIFont monospacedDigitSystemFontOfSize:24 weight:UIFontWeightMedium];
+    NSMutableArray *glyphs = [NSMutableArray array];
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(20, 38)];
+    for (unsigned i = 0; i < 10; ++i) {
+        UIImage *image = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+            (void)context;
+            [[NSString stringWithFormat:@"%u", i] drawAtPoint:CGPointMake(2, 4)
+                // An opaque middle gray remains legible in both appearances;
+                // the pre-rendered glyphs outlive the app's paused UI thread.
+                withAttributes:@{NSFontAttributeName:font, NSForegroundColorAttributeName:UIColor.grayColor}];
+        }];
+        [glyphs addObject:(__bridge id)image.CGImage];
+    }
+    _glyphs = glyphs;
+    NSMutableArray *digits = [NSMutableArray array];
+    for (unsigned i = 0; i < 4; ++i) {
+        CALayer *digit = [CALayer layer];
+        digit.frame = CGRectMake(112 + i * 20 + (i >= 2 ? 8 : 0), 0, 20, 38);
+        digit.contents = _glyphs[0];
+        digit.contentsScale = ((UIGraphicsImageRendererFormat *)renderer.format).scale;
+        [self.layer addSublayer:digit];
+        [digits addObject:digit];
+    }
+    _digits = digits;
+    UILabel *colon = [[UILabel alloc] initWithFrame:CGRectMake(152, 0, 8, 38)];
+    colon.text = @":"; colon.font = font; colon.textColor = UIColor.secondaryLabelColor;
+    [self addSubview:colon];
+    return self;
+}
+- (CGSize)intrinsicContentSize { return CGSizeMake(200, 38); }
+- (void)start {
+    if (!self.hidden) return;
+    self.hidden = NO;
+    _started = CACurrentMediaTime();
+    // These animate elapsed wall time only, never a completion percentage.
+    const unsigned counts[] = {10, 10, 6, 10};
+    const double periods[] = {6000, 600, 60, 10};
+    for (unsigned i = 0; i < 4; ++i) {
+        CAKeyframeAnimation *animation = [CAKeyframeAnimation animationWithKeyPath:@"contents"];
+        animation.values = [_glyphs subarrayWithRange:NSMakeRange(0, counts[i])];
+        NSMutableArray *times = [NSMutableArray array];
+        for (unsigned j = 0; j < counts[i]; ++j) [times addObject:@((double)j / counts[i])];
+        animation.keyTimes = times;
+        animation.calculationMode = kCAAnimationDiscrete;
+        animation.duration = periods[i];
+        animation.repeatCount = HUGE_VALF;
+        animation.beginTime = [_digits[i] convertTime:_started fromLayer:nil];
+        [_digits[i] addAnimation:animation forKey:@"elapsed"];
+    }
+    if (!UIAccessibilityIsReduceMotionEnabled()) {
+        CABasicAnimation *spin = [CABasicAnimation animationWithKeyPath:@"transform.rotation.z"];
+        spin.fromValue = @0; spin.toValue = @(2 * M_PI);
+        spin.duration = 1.2; spin.repeatCount = HUGE_VALF;
+        [_ring addAnimation:spin forKey:@"activity"];
+    }
+}
+- (NSString *)accessibilityValue {
+    unsigned elapsed = (unsigned)MAX(0, CACurrentMediaTime() - _started);
+    // Counted, not concatenated from a template: a one-minute wait is "1 minute", not
+    // "1 minutes", and German needs the same care.
+    NSString *minutes = WKLocalizedCountFormat(@"shell.elapsed.minutes", (NSInteger)(elapsed / 60), elapsed / 60);
+    NSString *seconds = WKLocalizedCountFormat(@"shell.elapsed.seconds", (NSInteger)(elapsed % 60), elapsed % 60);
+    return WKLocalizedFormat(@"shell.elapsed.value", minutes, seconds);
+}
+- (void)stop {
+    self.hidden = YES;
+    [_ring removeAllAnimations];
+    for (CALayer *digit in _digits) [digit removeAllAnimations];
+}
+@end

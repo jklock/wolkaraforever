@@ -18,6 +18,7 @@ wolkaraforever/Shell/ExecutionMode.h launcher/App/ExecutionMode.h replace
 wolkaraforever/Shell/ExecutionMode.m launcher/App/ExecutionMode.m replace
 wolkaraforever/Shell/Info.plist launcher/Info.plist replace
 wolkaraforever/Shell/Integrated-Info.plist authorization/App/Integrated-Info.plist replace
+wolkaraforever/Shell/LaunchProgressView.m launcher/App/LaunchProgressView.m replace
 wolkaraforever/Shell/SelfTest.h launcher/App/SelfTest.h add
 wolkaraforever/Shell/SelfTest.m launcher/App/SelfTest.m add
 wolkaraforever/Shell/WKLocalization.h launcher/App/WKLocalization.h add

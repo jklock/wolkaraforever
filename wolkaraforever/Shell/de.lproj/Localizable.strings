@@ -209,6 +209,13 @@
 "shell.settingUpMemory" = "%.0f MiB Ausführungsspeicher werden eingerichtet. Lassen Sie diese App geöffnet.";
 "shell.mobileData.off" = "\nWenn Sie mobile Daten ausgeschaltet haben, warten Sie das Ende dieses Schritts ab, bevor Sie sie wieder einschalten.";
 "shell.mobileData.on" = "\nSie können mobile Daten jetzt wieder einschalten.";
+"shell.elapsed" = "Dauer";
+"shell.elapsed.a11y" = "Dauer des Starts";
+"shell.elapsed.minutes.one" = "%u Minute";
+"shell.elapsed.minutes.other" = "%u Minuten";
+"shell.elapsed.seconds.one" = "%u Sekunde";
+"shell.elapsed.seconds.other" = "%u Sekunden";
+"shell.elapsed.value" = "%@, %@";
 "shell.preparationComplete" = "Vorbereitung abgeschlossen. Das Spiel wird geladen …";
 "shell.waitingForLocal" = "Warten auf die lokale Verbindung …\nWenn Sie mobile Daten nutzen, schalten Sie sie im Kontrollzentrum vorübergehend aus und kehren Sie hierher zurück. Wir versuchen es zwei Minuten lang erneut, ohne die App zu schließen.\nSchalten Sie mobile Daten wieder ein, wenn die Vorbereitung abgeschlossen ist, um sich mit dem Spiel zu verbinden.";
 "shell.cloudSync" = "Steam-Cloud-Spielstände werden abgeglichen …";
