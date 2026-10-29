@@ -63,22 +63,56 @@ Choose **Install Addons (Curse & Direct)** to manage add-ons for the selected ed
 
 Do not change add-ons while a download, update, or game startup is active.
 
-## UI recovery and performance
+## Performance, device profile and UI recovery
 
-The **Performance & UI Manager** operates on a ready Forever installation when no update,
-launch preparation, or session is active.
+The home screen groups its controls into five cards — **Game Edition**, **Add-On Manager**,
+**Voice & Input Manager**, **Performance Manager**, and **UI Manager**. Each card is one job.
+They sit two across on an iPad and stack into one column on an iPhone or at the largest text
+sizes; a phone scrolls down, and no card ever hangs off the side.
+
+### Device profile
+
+**Device profile** shows the model WolkaraForever detects — for example
+`Device profile: Automatic — iPad Pro 13-inch (M5)` — and the render profile it recommends for
+that hardware. The sheet offers **Automatic (recommended)** for the device actually in use, and
+the other profiles the app knows about, so two devices can be compared.
+
+Choosing another profile is a preview: the row then reads `Preview — …`, and a note says which
+device it belongs to. Rendering follows that profile's safe scale, and **Automatic** is the way
+back. A device the app has no record for is named as unrecognised and falls back to a
+conservative profile rather than a guess.
+
+### Render profile
+
+**Render profile** offers only the levels that hardware was measured at — Performance, Balanced
+and Quality where each was measured, fewer where they were not. A level that could not hold its
+frame budget on that device is not offered at all. Raising the load above the recommendation
+asks first, and says the size it will render at. The choice takes effect the next time the game
+starts.
+
+These two rows change **only WolkaraForever's own render scale**. They never write the game's
+`Config.wtf`. The rows in the last card are the ones that touch game files, and each says so.
+
+- **Restore performance defaults** returns to **Automatic** for the device in use and removes
+  only WolkaraForever's own profile keys. It does not reset game, account, or UI settings.
+- **Performance Overlay** shows frame rate, frame time, thermal state, battery, memory, and
+  Low Power Mode in the game. It is off by default and applies immediately.
+
+### UI recovery
+
+The **UI Manager** card operates on a ready Forever installation when no update, launch
+preparation, or session is active.
 
 - **Backup WoW UI Configuration** creates a verified ZIP of `WTF` (excluding its `Backups`
   folder) and `Interface` in `WTF/Backups`.
+- **Restore WoW UI Configuration** restores a chosen `WoW-UI-…zip` from Files. It snapshots
+  the current state first, so the restore itself can be reversed.
 - **Reset to Default Graphical Settings** makes a backup, then removes only graphics and
   display settings from `WTF/Config.wtf`. Account data, locale, audio, input, gamepad
   configuration, bindings, SavedVariables, and unknown settings remain unchanged.
-- **Restore WoW UI Configuration** restores a chosen `WoW-UI-…zip` from Files. It snapshots
-  the current state first, so the restore itself can be reversed.
+- **Open Settings Folder** opens `WTF` in Files.
 - **Gamepad UI** writes only `GamePadEnable` and takes effect when Forever next starts. It
   does not create or replace bindings.
-- **Performance Overlay** shows frame rate, frame time, thermal state, battery, memory, and
-  Low Power Mode in the game. It is off by default and applies immediately.
 
 The app also uses background-aware frame pacing: when it loses the foreground it limits its
 Metal frame loop to 5 fps and restores normal pacing when foregrounded. This reduces active

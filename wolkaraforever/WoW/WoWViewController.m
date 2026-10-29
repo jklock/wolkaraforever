@@ -7,6 +7,7 @@
 #import "../App/WolkaraForeverTheme.h"
 #import "../App/WKLocalization.h"
 #import "Installation.h"
+#import "DeviceProfile.h"
 #import "ForeverUI.h"
 #import "Updater.h"
 #import "../App/LaunchProgressView.h"
@@ -147,12 +148,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     CAGradientLayer *_background;
     UIStackView *_columns;
     NSLayoutConstraint *_markWidth;
-    UIStackView *_gridRow1, *_gridRow2;
+    UIStackView *_gridRow1, *_gridRow2, *_gridRow3, *_topRow;
+    UIView *_gridSpacer;
     UILabel *_stateLabel, *_detailLabel, *_versionLabel, *_startupLabel, *_compatibilityLabel;
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_voiceTestButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
-        *_renderProfileButton;
+        *_renderProfileButton, *_deviceProfileButton, *_restoreDefaultsButton;
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
@@ -233,6 +235,14 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     row.alignment=UIStackViewAlignmentFill;
     row.spacing=16;
     return row;
+}
+// The cell beside a card that has no neighbour: nothing, but the same width, so the page keeps
+// its grid instead of stretching one card across the column and reading as a footer.
+- (UIView *)emptyBox {
+    UIView *view=[UIView new];
+    view.accessibilityIdentifier=@"wow.grid.spacer";
+    view.userInteractionEnabled=NO;
+    return view;
 }
 // The layer's mark, where the wordmark used to sit. It is drawn at the top
 // row's width, so it grows and shrinks with the window, with one cap: it may
@@ -323,20 +333,28 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _overlayRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.overlay"
         target:self action:@selector(overlayChanged:)];
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
+    _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
+    _restoreDefaultsButton=[self button:@"wow.performance.restoreDefaults" action:@selector(restorePerformanceDefaults)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
 
-    // The four sections, as boxes. Their order is the order they are read in.
-    // The compatibility note belongs to the edition it is about, so it lives in
-    // that box rather than loose on the page. Every word in them comes from
-    // -localize, below, which is also what a language change runs.
+    // Five sections, as boxes, in the order they are read. The compatibility note belongs to
+    // the edition it is about, so it lives in that box rather than loose on the page. The
+    // render and overlay choices are their own card, beside the game-file tools rather than
+    // mixed into them: one group changes how this app draws, the other edits the game's own
+    // files, and keeping them apart is what makes either safe to press. Every word in them
+    // comes from -localize, below, which is also what a language change runs.
     UIView *editionBox=[self sectionBoxWithIdentifier:@"wow.box.edition"
         rows:@[_editionButton,_preferencesButton,_languageButton,_compatibilityLabel]];
     UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
         rows:@[_addonsButton,_macEverButton,_addonsDirectoryButton]];
     UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
         rows:@[_permissionsButton,_voiceButton,_voiceTestButton]];
+    UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
+        rows:@[_deviceProfileButton,_renderProfileButton,_restoreDefaultsButton,_overlayRow]];
+    // The retained card, narrower: Backup, Restore, Reset, Settings Folder, Gamepad - in the
+    // order a person needs them when something has gone wrong.
     UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
-        rows:@[_renderProfileButton,_backupButton,_resetButton,_restoreButton,_settingsFolderButton,_gamepadRow,_overlayRow]];
+        rows:@[_backupButton,_restoreButton,_resetButton,_settingsFolderButton,_gamepadRow]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _activity.color=Gold(); _activity.hidesWhenStopped=YES;
@@ -370,11 +388,17 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIStackView *top=[[UIStackView alloc] initWithArrangedSubviews:@[_markView,right]];
     top.axis=UILayoutConstraintAxisHorizontal; top.spacing=28; top.alignment=UIStackViewAlignmentTop;
     top.accessibilityIdentifier=@"wow.top";
+    _topRow=top;
     _markWidth=[_markView.widthAnchor constraintEqualToAnchor:top.widthAnchor multiplier:0.30];
     _markWidth.active=YES;
     _gridRow1=[self boxRow:@[editionBox,addonsBox]];
-    _gridRow2=[self boxRow:@[voiceBox,performanceBox]];
-    UIStackView *grid=Stack(@[_gridRow1,_gridRow2],16);
+    _gridRow2=[self boxRow:@[voiceBox,profileBox]];
+    // The fifth card sits on its own row beside an empty cell of the same width, so it keeps
+    // the column width it would have had next to a neighbour instead of stretching across the
+    // page and reading as a footer.
+    _gridSpacer=[self emptyBox];
+    _gridRow3=[self boxRow:@[performanceBox,_gridSpacer]];
+    UIStackView *grid=Stack(@[_gridRow1,_gridRow2,_gridRow3],16);
     grid.accessibilityIdentifier=@"wow.grid";
     _columns=Stack(@[top,grid],20); _columns.accessibilityIdentifier=@"wow.columns";
     _columns.alignment=UIStackViewAlignmentFill;
@@ -425,12 +449,20 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // switched on; once only, because switching it on lays out again.
     if (_markCap && !_markCap.active) _markCap.active=YES;
     BOOL horizontal=self.view.bounds.size.width>=700 && !UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
-    // Two boxes side by side when there is room, one column otherwise. The page
-    // itself is always a single vertical column, and the boxes keep their order.
-    _gridRow1.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
-    _gridRow2.axis=_gridRow1.axis;
-    _gridRow1.distribution=horizontal?UIStackViewDistributionFillEqually:UIStackViewDistributionFill;
-    _gridRow2.distribution=_gridRow1.distribution;
+    // Two boxes side by side when there is room, one column otherwise - which is the iPhone in
+    // portrait, and an iPad at the largest text sizes. The page itself is always a single
+    // vertical column, and the boxes keep their order however they are laid out.
+    for (UIStackView *row in @[_gridRow1,_gridRow2,_gridRow3]) {
+        row.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
+        row.distribution=horizontal?UIStackViewDistributionFillEqually:UIStackViewDistributionFill;
+    }
+    // The empty cell beside the fifth card exists to keep the columns equal; stacked, it would
+    // be an empty box at the foot of the page.
+    _gridSpacer.hidden=!horizontal;
+    // The mark sits beside the status when there are two columns to fill. Stacked, the status
+    // takes the full width and the mark goes above it, so the Play button is never squeezed.
+    _topRow.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
+    _markWidth.active=horizontal;
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
@@ -613,6 +645,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _headings[@"wow.box.edition"].text=WKLocalized(@"home.box.edition").uppercaseString;
     _headings[@"wow.box.addons"].text=WKLocalized(@"home.box.addons").uppercaseString;
     _headings[@"wow.box.voice"].text=WKLocalized(@"home.box.voice").uppercaseString;
+    _headings[@"wow.box.profile"].text=WKLocalized(@"home.box.profile").uppercaseString;
     _headings[@"wow.box.performance"].text=WKLocalized(@"home.box.performance").uppercaseString;
     [_gamepadRow applyTitle:WKLocalized(@"home.performance.gamepad")];
     [_overlayRow applyTitle:WKLocalized(@"home.performance.overlay")];
@@ -737,13 +770,23 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _gamepadRow.toggle.on=_gamepadEnabled;
     _overlayRow.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _overlayRow.toggle.on=_overlayEnabled;
-    NSNumber *scale=[NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverBackingScale"];
-    CGFloat renderScale=scale ? scale.doubleValue : 1.0;
-    NSString *profile=renderScale<=0.75 ? WKLocalized(@"home.render.performance")
-        : renderScale>=2.0 ? WKLocalized(@"home.render.quality") : WKLocalized(@"home.render.balanced");
-    [self configureButton:_renderProfileButton title:WKLocalizedFormat(@"home.performance.renderProfile",profile) filled:NO];
+    // The profile card. None of these rows read or write the game's files: they are Forever's
+    // own render scale, which is why they are their own card beside the game-file tools.
+    BOOL preferencesIdle=!_busy && !_starting && !_running && !_sessionUsed;
+    NSString *deviceValue=[self deviceProfileIsThisDevice]
+        ? WKLocalizedFormat(@"home.profile.automaticRow",[self deviceProfileName])
+        : WKLocalizedFormat(@"home.profile.overrideRow",[self deviceProfileName]);
+    [self configureButton:_deviceProfileButton title:WKLocalizedFormat(@"home.performance.deviceProfile",deviceValue) filled:NO];
+    _deviceProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _deviceProfileButton.enabled=preferencesIdle;
+    [self configureButton:_renderProfileButton title:WKLocalizedFormat(@"home.performance.renderProfile",[self renderProfileDescription]) filled:NO];
     _renderProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _renderProfileButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
+    _renderProfileButton.enabled=preferencesIdle;
+    [self configureButton:_restoreDefaultsButton title:WKLocalized(@"home.performance.restoreDefaults") filled:NO];
+    _restoreDefaultsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    // Only offered when there is something to put back, so it cannot look like a reset for a
+    // page that is already at its defaults.
+    _restoreDefaultsButton.enabled=preferencesIdle && [self performanceSettingsAreCustomised];
     _compatibilityLabel.text=([_product[@"id"] isEqual:@"wow"] || [_product[@"id"] isEqual:@"wow_beta"] || [_product[@"id"] isEqual:@"wow_classic"])?
         WKLocalized(@"home.compatibility.unverified"):
         @"";
@@ -1237,48 +1280,212 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 // This is selected before starting Forever. The guest backing scale is fixed
 // when its display bridge loads, so changing it never tears down a live game.
+#pragma mark - Device profile and render profile
+
+// The two keys this page owns, and the one the runtime reads. The runtime's key is kept as the
+// single source of what the guest is scaled by - AppKit reads it at display-bridge load - so the
+// page writes it, derived, rather than having the runtime learn about profiles.
+static NSString *const TKDeviceProfileDefaultsKey=@"WolkaraForeverDeviceProfile";
+static NSString *const TKRenderProfileDefaultsKey=@"WolkaraForeverRenderProfile";
+static NSString *const TKBackingScaleDefaultsKey=@"WolkaraForeverBackingScale";
+
+// "1024 × 768": what a quality renders at on a profile, in the same shape the old fixed labels
+// used, so nobody has to learn a new unit to read the row.
+static NSString *TKRenderSize(TKDeviceProfile *profile, TKRenderQuality quality) {
+    CGFloat scale=[profile backingScaleForQuality:quality];
+    if (scale<=0 || profile.nativeWidth<=0 || profile.nativeHeight<=0) return @"";
+    return [NSString stringWithFormat:@"%.0f × %.0f", profile.nativeWidth*scale, profile.nativeHeight*scale];
+}
+static NSString *TKRenderQualityName(TKRenderQuality quality) {
+    switch (quality) {
+        case TKRenderQualityPerformance: return WKLocalized(@"home.render.performance");
+        case TKRenderQualityQuality: return WKLocalized(@"home.render.quality");
+        case TKRenderQualityBalanced: break;
+    }
+    return WKLocalized(@"home.render.balanced");
+}
+static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality quality) {
+    NSString *size=TKRenderSize(profile,quality);
+    return size.length?[NSString stringWithFormat:@"%@ — %@",TKRenderQualityName(quality),size]
+                      :TKRenderQualityName(quality);
+}
+
+// The profile chosen by hand, or nil for automatic. Kept as a separate key from the render
+// quality: they are two decisions, and a quality chosen on one device is clamped, not silently
+// rewritten, when an override points at another.
+- (nullable NSString *)deviceProfileOverrideIdentifier {
+    NSString *stored=[NSUserDefaults.standardUserDefaults stringForKey:TKDeviceProfileDefaultsKey];
+    return stored.length?stored:nil;
+}
+- (TKDeviceProfile *)selectedDeviceProfile {
+    return [TKDeviceProfile resolvedProfileWithOverride:[self deviceProfileOverrideIdentifier]];
+}
+- (TKDeviceProfile *)thisDeviceProfile {
+    return [TKDeviceProfile profileForModelIdentifier:TKDeviceProfile.currentModelIdentifier];
+}
+- (BOOL)deviceProfileIsThisDevice {
+    return [[self selectedDeviceProfile].identifier isEqual:[self thisDeviceProfile].identifier];
+}
+- (NSString *)deviceProfileName {
+    TKDeviceProfile *profile=[self selectedDeviceProfile];
+    return profile.displayName.length?profile.displayName:WKLocalized(@"home.profile.unknown");
+}
+// The quality the runtime will render at. Read through the migration: a build before this table
+// stored a bare backing scale, and that is what everybody already has set.
+- (TKRenderQuality)effectiveRenderQuality {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    TKDeviceProfile *device=[self selectedDeviceProfile];
+    NSNumber *stored=[TKDeviceProfile qualityForName:[defaults stringForKey:TKRenderProfileDefaultsKey]];
+    TKRenderQuality wanted=0;
+    if (stored) wanted=stored.integerValue;
+    else if ([defaults objectForKey:TKBackingScaleDefaultsKey])
+        wanted=[TKDeviceProfile qualityForBackingScale:[defaults doubleForKey:TKBackingScaleDefaultsKey]];
+    else wanted=device.recommendedQuality;
+    // A stored Quality on hardware that does not offer it - an override, or a device that has
+    // since changed - is clamped rather than used or quietly rewritten.
+    if (wanted>device.highestQuality) wanted=device.highestQuality;
+    if ([device backingScaleForQuality:wanted]<=0) wanted=device.recommendedQuality;
+    return wanted;
+}
+- (NSString *)renderProfileDescription {
+    return TKRenderQualityTitle([self selectedDeviceProfile],[self effectiveRenderQuality]);
+}
+// Everything this page owns, in one write, so the three cannot disagree: the override, the
+// quality behind it, and the scale the runtime actually reads.
+- (void)writeDeviceProfileOverride:(nullable NSString *)identifier quality:(TKRenderQuality)quality {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    if (identifier.length) [defaults setObject:identifier forKey:TKDeviceProfileDefaultsKey];
+    else [defaults removeObjectForKey:TKDeviceProfileDefaultsKey];
+    TKDeviceProfile *device=[self selectedDeviceProfile];
+    if (quality>device.highestQuality || [device backingScaleForQuality:quality]<=0)
+        quality=device.recommendedQuality;
+    [defaults setObject:[TKDeviceProfile nameForQuality:quality] forKey:TKRenderProfileDefaultsKey];
+    CGFloat scale=[device backingScaleForQuality:quality];
+    [defaults setObject:@(scale) forKey:TKBackingScaleDefaultsKey];
+    // Redacted diagnostics: which profile, which hardware, which scale. The device's own
+    // identifier is the model, never the user's UDID, account or signing team.
+    WKLog("ui", @"render profile: profile=%@ model=%@ quality=%@ scale=%.2f",
+          device.identifier, [TKDeviceProfile currentModelIdentifier]?:@"unknown",
+          [TKDeviceProfile nameForQuality:quality], scale);
+}
+- (BOOL)performanceSettingsAreCustomised {
+    if ([self deviceProfileOverrideIdentifier]) return YES;
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    TKDeviceProfile *device=[self selectedDeviceProfile];
+    NSNumber *stored=[TKDeviceProfile qualityForName:[defaults stringForKey:TKRenderProfileDefaultsKey]];
+    if (stored) return stored.integerValue!=[device recommendedQuality];
+    if ([defaults objectForKey:TKBackingScaleDefaultsKey])
+        return [TKDeviceProfile qualityForBackingScale:[defaults doubleForKey:TKBackingScaleDefaultsKey]]
+            !=[device recommendedQuality];
+    return NO;
+}
+// Which device this is, and which profile it is rendering with. An override is named as one on
+// every surface it appears on, because it is a comparison and not a claim about this iPad.
+- (void)chooseDeviceProfile {
+    if (_busy || _starting || _running || _sessionUsed) { WKLog("ui", @"device profile: declined while the page is busy"); return; }
+    TKDeviceProfile *actual=[self thisDeviceProfile];
+    NSString *actualName=actual.displayName.length?actual.displayName:WKLocalized(@"home.profile.unknown");
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.profile.title")
+        message:WKLocalizedFormat(@"home.profile.message",actualName)
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    NSString *override=[self deviceProfileOverrideIdentifier];
+    // Automatic first: it is the recommendation and the way back from an override.
+    NSString *automaticTitle=WKLocalizedFormat(@"home.profile.automatic",actualName);
+    [sheet addAction:[UIAlertAction actionWithTitle:override?automaticTitle
+        :[@"✓ " stringByAppendingString:automaticTitle] style:UIAlertActionStyleDefault
+        handler:^(__unused UIAlertAction *action) {
+        [self writeDeviceProfileOverride:nil quality:[self effectiveRenderQuality]];
+        [self render];
+    }]];
+    for (TKDeviceProfile *profile in TKDeviceProfile.profiles) {
+        // The device we are on is the Automatic action above, not a choice of its own.
+        if ([profile.identifier isEqual:actual.identifier]) continue;
+        BOOL chosen=[profile.identifier isEqual:override];
+        NSString *title=[NSString stringWithFormat:@"%@ — %@",profile.displayName,TKDeviceProfileSizeDescription(profile)];
+        if (chosen) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            [self writeDeviceProfileOverride:profile.identifier quality:[self effectiveRenderQuality]];
+            [self render];
+            [self presentMessage:WKLocalized(@"home.profile.override.title")
+                message:WKLocalizedFormat(@"home.profile.override.message",profile.displayName,actualName)];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_deviceProfileButton];
+}
+// The render profile is Forever's own scale and nothing else. It used to write the game's
+// Config.wtf and take a UI backup on the way; the plan this page follows says a performance
+// choice never edits the game's files, so that part is gone. Reset to Default Graphical
+// Settings is the row that touches those, and it says so.
 - (void)chooseRenderProfile {
     if (_busy || _starting || _running || _sessionUsed) return;
+    TKDeviceProfile *device=[self selectedDeviceProfile];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.render.title")
-        message:WKLocalized(@"home.render.message") preferredStyle:UIAlertControllerStyleActionSheet];
-    __weak TKWoWViewController *weakSelf=self;
-    void (^choose)(CGFloat,NSString *,NSString *)=^(CGFloat scale,NSString *name,NSString *shown) {
-        TKWoWViewController *self=weakSelf; if (!self) return;
-        [NSUserDefaults.standardUserDefaults setObject:@(scale) forKey:@"WolkaraForeverBackingScale"];
-        WKLog("ui", @"render profile: %@", name);
-        NSString *directory=[self foreverWorkingDirectory];
-        if (!directory) { [self render]; return; }
-        // The old implementation exposed a performance preset but never called
-        // it. Keep the virtual-display choice and the game's own render scale in
-        // one explicit, reversible profile change. Every profile retains a 60 Hz
-        // foreground cap and a low background cap; only Performance uses 0.75.
-        NSDictionary *settings=scale<=0.75?TKForeverUI.performancePreset:@{
-            @"renderScale": @"1.0", @"gxForegroundFPS": @"60",
-            @"gxBackgroundFPS": @"30", @"vsync": @"1",
-        };
-        self->_uiOperation=YES; [self render];
-        dispatch_async(TKForeverUIQueue(), ^{
-            NSError *error=nil;
-            NSString *backup=[TKForeverUI createUIBackupInWorkingDirectory:directory edition:TKForeverUIEdition error:&error];
-            BOOL applied=backup && [TKForeverUI setCVars:settings inWorkingDirectory:directory error:&error];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                TKWoWViewController *self=weakSelf; if (!self) return;
-                self->_uiOperation=NO; [self render];
-                if (applied) {
-                    WKLog("ui", @"render profile settings: %@", name);
-                    [self presentMessage:WKLocalized(@"home.render.ready.title") message:WKLocalizedFormat(@"home.render.ready.message",shown,backup)];
-                } else {
-                    WKLog("ui", @"render profile settings not changed: %@", error.localizedDescription?:@"unknown reason");
-                    [self presentMessage:WKLocalized(@"home.render.failed.title") message:WKLocalizedFormat(@"home.render.failed.message",error.localizedDescription?:@"")];
-                }
-            });
-        });
-    };
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.render.performance.action") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(.75,@"performance",WKLocalized(@"home.render.performance")); }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.render.balanced.action") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(1.0,@"balanced",WKLocalized(@"home.render.balanced")); }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.render.quality.action") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { choose(2.0,@"quality",WKLocalized(@"home.render.quality")); }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+        message:WKLocalizedFormat(@"home.render.message",[self deviceProfileName])
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    TKRenderQuality current=[self effectiveRenderQuality];
+    for (NSNumber *each in @[@(TKRenderQualityPerformance),@(TKRenderQualityBalanced),@(TKRenderQualityQuality)]) {
+        TKRenderQuality quality=each.integerValue;
+        // Never offer a quality this hardware has not been measured at. Hiding it is the honest
+        // answer: a level that is offered and then cannot hold its frame budget is worse than
+        // one that is not there.
+        if (quality>device.highestQuality || [device backingScaleForQuality:quality]<=0) continue;
+        NSString *title=TKRenderQualityTitle(device,quality);
+        if (quality==current) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            [self applyRenderQuality:quality];
+        }]];
+    }
     [self presentSheet:sheet anchor:_renderProfileButton];
+}
+- (void)applyRenderQuality:(TKRenderQuality)quality {
+    TKDeviceProfile *device=[self selectedDeviceProfile];
+    // Raising the load above the recommendation asks first. The recommendation is what this
+    // hardware was measured at; going past it is a choice a person makes knowingly.
+    if (quality>device.recommendedQuality) {
+        [self confirmRenderQuality:quality];
+        return;
+    }
+    [self writeDeviceProfileOverride:[self deviceProfileOverrideIdentifier] quality:quality];
+    [self render];
+    [self presentMessage:WKLocalized(@"home.render.ready.title")
+        message:WKLocalizedFormat(@"home.render.ready.message",TKRenderQualityTitle(device,quality))];
+}
+- (void)confirmRenderQuality:(TKRenderQuality)quality {
+    TKDeviceProfile *device=[self selectedDeviceProfile];
+    NSString *title=TKRenderQualityTitle(device,quality);
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.render.confirm.title")
+        message:WKLocalizedFormat(@"home.render.confirm.message",TKRenderQualityName(quality),
+                                  TKRenderSize(device,quality),[self deviceProfileName])
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalizedFormat(@"home.render.confirm.yes",TKRenderQualityName(quality))
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [self writeDeviceProfileOverride:[self deviceProfileOverrideIdentifier] quality:quality];
+        [self render];
+        [self presentMessage:WKLocalized(@"home.render.ready.title")
+            message:WKLocalizedFormat(@"home.render.ready.message",title)];
+    }]];
+    [self presentSheet:sheet anchor:_renderProfileButton];
+}
+// The way back, and the only one that is not a choice between values: automatic for the device
+// we are actually on, with the quality that device was measured at. It removes this page's own
+// keys and writes the derived scale; the game's settings are not in its reach.
+- (void)restorePerformanceDefaults {
+    if (_busy || _starting || _running || _sessionUsed) return;
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:TKDeviceProfileDefaultsKey];
+    [defaults removeObjectForKey:TKRenderProfileDefaultsKey];
+    TKDeviceProfile *device=[self thisDeviceProfile];
+    TKRenderQuality quality=device.recommendedQuality;
+    [defaults setObject:@([device backingScaleForQuality:quality]) forKey:TKBackingScaleDefaultsKey];
+    WKLog("ui", @"performance defaults: profile=%@ model=%@ quality=%@ scale=%.2f",
+          device.identifier, [TKDeviceProfile currentModelIdentifier]?:@"unknown",
+          [TKDeviceProfile nameForQuality:quality], [device backingScaleForQuality:quality]);
+    [self render];
+    [self presentMessage:WKLocalized(@"home.performance.restoreDefaults.title")
+        message:WKLocalizedFormat(@"home.performance.restoreDefaults.message",
+                                  TKRenderQualityTitle(device,quality))];
 }
 // Navigation only: the Files browser opens at Forever's WTF folder. The folder is
 // created only here, only for a ready Forever installation, and nothing else is.

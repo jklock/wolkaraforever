@@ -9,6 +9,7 @@
 #import <Security/Security.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "../launcher/WoW/Client.h"
+#import "../launcher/WoW/DeviceProfile.h"
 #import "../launcher/WoW/ForeverUI.h"
 #import "../launcher/WoW/Manifest.h"
 #import "../launcher/WoW/Updater.h"
@@ -87,6 +88,29 @@ static void Pump(double seconds) {
     while ([deadline timeIntervalSinceNow] > 0)
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
                                  beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+}
+// Wait for the page to reach a state, rather than for a fixed time and hoping. The update and
+// repair steps below used to wait three tenths of a second, which is a guess about how fast the
+// machine is: the guess was right on a warm simulator and wrong on a freshly erased one, and it
+// failed a step that had nothing wrong with it. The ceiling is only here so a genuine hang ends
+// the test with the assertion below instead of sitting in it forever.
+static BOOL PumpUntil(BOOL (^condition)(void), NSTimeInterval limit) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:limit];
+    while ([deadline timeIntervalSinceNow] > 0) {
+        if (condition()) return YES;
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                 beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    return condition();
+}
+// An alert that a row raises only after its work on another queue finishes. Every one of these
+// used to be read after a fixed delay, which is a guess about how fast the machine is - and one
+// of those guesses has already failed on a freshly erased simulator with nothing wrong in the
+// app. This waits for the alert to be there.
+static UIAlertController *WaitForAlert(UIViewController *presenter, NSTimeInterval limit) {
+    PumpUntil(^{ return (BOOL)[presenter.presentedViewController isKindOfClass:UIAlertController.class]; }, limit);
+    UIViewController *presented = presenter.presentedViewController;
+    return [presented isKindOfClass:UIAlertController.class] ? (UIAlertController *)presented : nil;
 }
 // One way out, and only one. UIKit raises on the second one - that is the crash that
 // made Render Profile a dead row - so every sheet this page opens is asked.
@@ -549,7 +573,17 @@ static void TestAddons(void) {
     assert(search!=nil && search.frame.size.height>0);
     [search layoutIfNeeded];
     CGPoint centre=[search convertPoint:CGPointMake(CGRectGetMidX(search.bounds),CGRectGetMidY(search.bounds)) toView:probe];
-    UIView *hit=[probe hitTest:centre withEvent:nil];
+    // Measured until it is stable, not once. A sheet is placed over more than one turn, and this
+    // simulator answered during the move on one run out of three and had the check report a
+    // broken search field that was working. The assertion is unchanged; only the question is
+    // asked again.
+    UIView *hit=nil;
+    for (NSInteger attempt=0; attempt<40; attempt++) {
+        [probe layoutIfNeeded];
+        hit=[probe hitTest:centre withEvent:nil];
+        if (hit && ([hit isDescendantOfView:search] || hit==search)) break;
+        Pump(0.05);
+    }
     NSLog(@"ADDONS_SEARCH bar=%@ centre=%@ hit=%@",
           NSStringFromCGRect(search.frame),NSStringFromCGPoint(centre),NSStringFromClass(hit.class));
     assert(hit!=nil && ([hit isDescendantOfView:search] || hit==search));
@@ -583,6 +617,7 @@ static void TestAddons(void) {
     [self performSelector:@selector(checkPopupClosed) withObject:nil afterDelay:0.6];
 }
 - (void)checkPopupClosed {
+    PumpUntil(^{ return (BOOL)(self.probeHost.presentedViewController == nil); }, 20.0);
     assert(self.probeHost.presentedViewController==nil);
     self.probeWindow.hidden=YES; self.probeWindow.rootViewController=nil;
     self.probeWindow=nil; self.probeSearch=nil; self.probeManager=nil; self.probeHost=nil;
@@ -642,6 +677,7 @@ static void TestAddons(void) {
 // page that cannot be closed - which is how this fixture spent an hour lying about
 // the voice page.
 - (void)checkVoiceSettingsPage {
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
     assert(self.controller.presentedViewController==nil);
     [[self row:@"wow.voice"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     assert(self.controller.presentedViewController!=nil);
@@ -656,6 +692,7 @@ static void TestAddons(void) {
     [self performSelector:@selector(checkVoiceTestPage) withObject:nil afterDelay:0.9];
 }
 - (void)checkVoiceTestPage {
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
     assert(self.controller.presentedViewController==nil);
     [[self row:@"wow.voice.test"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     assert(self.controller.presentedViewController!=nil);
@@ -670,6 +707,7 @@ static void TestAddons(void) {
     [self performSelector:@selector(checkNoRecheck) withObject:nil afterDelay:0.9];
 }
 - (void)checkNoRecheck {
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
     assert(self.controller.presentedViewController==nil);
     assert(atomic_load(&requests)==requestsBeforePopup);
     // And appearing again cannot either. This is the rule itself, called directly
@@ -684,24 +722,28 @@ static void TestAddons(void) {
     [self performSelector:@selector(checkOutdated) withObject:nil afterDelay:0.3];
 }
 - (void)checkOutdated {
+    PumpUntil(^{ return (BOOL)([self primary].enabled && atomic_load(&updates) == 1); }, 30.0);
     assert([self primary].enabled && self.launches==0 && atomic_load(&updates)==1);
     assert(atomic_load(&repairs)==0);
     atomic_store(&interruptRepair,true);[self.controller repairInstallation];
     [self performSelector:@selector(checkRepairPaused) withObject:nil afterDelay:0.3];
 }
 - (void)checkRepairPaused {
+    PumpUntil(^{ return (BOOL)(atomic_load(&repairs) == 1); }, 30.0);
     assert(atomic_load(&repairs)==1);
     assert([NSUserDefaults.standardUserDefaults boolForKey:@"WoWRepairRequested.wowf"]);
     [self.controller refresh];
     [self performSelector:@selector(checkRepairComplete) withObject:nil afterDelay:0.3];
 }
 - (void)checkRepairComplete {
+    PumpUntil(^{ return (BOOL)(atomic_load(&repairs) == 2 && [self primary].enabled); }, 30.0);
     assert(atomic_load(&repairs)==2 && [self primary].enabled && self.launches==0);
     assert(![NSUserDefaults.standardUserDefaults boolForKey:@"WoWRepairRequested.wowf"]);
     atomic_store(&failure,true); [self.controller refresh];
     [self performSelector:@selector(checkOffline) withObject:nil afterDelay:0.3];
 }
 - (void)checkOffline {
+    PumpUntil(^{ return [self primary].enabled; }, 30.0);
     assert([self primary].enabled && self.launches==0);
     atomic_store(&failure,false); [self tap];
     [self performSelector:@selector(startThenBackground) withObject:nil afterDelay:0.3];
@@ -736,7 +778,15 @@ static void TestAddons(void) {
     assert(CGRectGetMaxY([label textRectForBounds:label.bounds limitedToNumberOfLines:label.numberOfLines]) <= label.bounds.size.height + 0.5);
     UIScrollView *scroll=(id)Find(self.controller.view,@"wow.scroll");
     [scroll scrollRectToVisible:[label convertRect:label.bounds toView:scroll] animated:NO];
+    // The largest text sizes stack the cards whatever the width - which is the same layout a
+    // phone in portrait uses, so this is the only place that arrangement is exercised on an
+    // iPad. The empty cell beside the fifth card goes with it: stacked, it would be a blank box.
+    UIStackView *grid=(id)Find(self.controller.view,@"wow.grid");
+    for (UIStackView *row in grid.arrangedSubviews)
+        assert(row.axis==UILayoutConstraintAxisVertical);
+    assert(Find(self.controller.view,@"wow.grid.spacer").hidden);
     [self capture:@"wow-home-large-text.png"];
+    NSLog(@"PAGE_STACKED: five cards in one column at the largest text size");
     self.controller.traitOverrides.preferredContentSizeCategory=UIContentSizeCategoryLarge;
     [self performSelector:@selector(captureDefaultText) withObject:nil afterDelay:0.3];
 }
@@ -815,12 +865,13 @@ static void TestAddons(void) {
     NSArray *headings = @[@[@"wow.heading.edition", @"GAME EDITION"],
                           @[@"wow.heading.addons", @"ADD-ON MANAGER"],
                           @[@"wow.heading.voice", @"VOICE & INPUT MANAGER"],
-                          @[@"wow.heading.performance", @"PERFORMANCE & UI MANAGER"]];
+                          @[@"wow.heading.profile", @"PERFORMANCE MANAGER"],
+                          @[@"wow.heading.performance", @"UI MANAGER"]];
     for (NSArray *pair in headings) {
         UILabel *label = (id)Find(self.controller.view, pair[0]);
         assert(label != nil && [label.text isEqual:pair[1]]);
     }
-    // --- the page: identity and status on top, then the four boxes in order
+    // --- the page: identity and status on top, then the five boxes in order
     UIStackView *columns = (id)[self.controller valueForKey:@"_columns"];
     assert(columns != nil && columns.axis == UILayoutConstraintAxisVertical);
     assert(columns.arrangedSubviews.count == 2);
@@ -828,20 +879,32 @@ static void TestAddons(void) {
     NSString *mark = Find(self.controller.view, @"wow.logo") ? @"wow.logo" : @"wow.title";
     assert([top.arrangedSubviews.firstObject.accessibilityIdentifier isEqual:mark]);
     UIStackView *grid = columns.arrangedSubviews[1];
-    assert([grid.accessibilityIdentifier isEqual:@"wow.grid"] && grid.arrangedSubviews.count == 2);
-    NSMutableArray *boxes = [NSMutableArray new];
+    assert([grid.accessibilityIdentifier isEqual:@"wow.grid"] && grid.arrangedSubviews.count == 3);
+    // The fifth card sits beside an empty cell. The cell is part of the grid and is named as a
+    // spacer rather than skipped silently, but it is not a card and has no rows.
+    NSMutableArray *cells = [NSMutableArray new], *boxes = [NSMutableArray new];
+    UIScrollView *measure = (id)Find(self.controller.view, @"wow.scroll");
+    [measure layoutIfNeeded];
+    BOOL wide = measure.bounds.size.width >= 700;
+    NSLog(@"PAGE_WIDTH: %.0f so %@", measure.bounds.size.width, wide ? @"two columns" : @"one column");
     for (UIStackView *row in grid.arrangedSubviews) {
-        assert(row.axis == UILayoutConstraintAxisHorizontal);
-        for (UIView *box in row.arrangedSubviews) {
-            assert([box.accessibilityIdentifier hasPrefix:@"wow.box."]);
-            [boxes addObject:box];
+        // Two columns where there is room, one where there is not. The order of the cards does
+        // not change with the axis, which is the whole point of laying them out this way.
+        assert(row.axis == (wide ? UILayoutConstraintAxisHorizontal : UILayoutConstraintAxisVertical));
+        for (UIView *cell in row.arrangedSubviews) {
+            assert([cell.accessibilityIdentifier hasPrefix:@"wow.box."] ||
+                   [cell.accessibilityIdentifier isEqual:@"wow.grid.spacer"]);
+            [cells addObject:cell];
+            if ([cell.accessibilityIdentifier hasPrefix:@"wow.box."]) [boxes addObject:cell];
         }
     }
-    NSMutableArray *boxOrder = [NSMutableArray new];
-    for (UIView *box in boxes) [boxOrder addObject:box.accessibilityIdentifier];
+    NSArray *expectedCells = @[@"wow.box.edition", @"wow.box.addons",
+                               @"wow.box.voice", @"wow.box.profile",
+                               @"wow.box.performance", @"wow.grid.spacer"];
+    assert([[cells valueForKey:@"accessibilityIdentifier"] isEqualToArray:expectedCells]);
     NSArray *expectedBoxes = @[@"wow.box.edition", @"wow.box.addons",
-                               @"wow.box.voice", @"wow.box.performance"];
-    assert([boxOrder isEqualToArray:expectedBoxes]);
+                               @"wow.box.voice", @"wow.box.profile", @"wow.box.performance"];
+    assert([[boxes valueForKey:@"accessibilityIdentifier"] isEqualToArray:expectedBoxes]);
     // --- each box's heading and rows, exactly
     NSDictionary *expectedRows = @{
         // The Game Edition card: the edition, the *game's* language, the *app's* language, and
@@ -851,11 +914,15 @@ static void TestAddons(void) {
         @"wow.box.addons": @[@"wow.heading.addons", @"wow.addons.manage", @"wow.addons.macEver",
                              @"wow.addons.directory"],
         @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.voice.test"],
-        @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.renderProfile",
-                                  @"wow.performance.backup",
-                                  @"wow.performance.reset", @"wow.performance.restore",
-                                  @"wow.performance.settingsFolder", @"wow.performance.gamepad",
-                                  @"wow.performance.overlay"],
+        // The profile card: which device, which render scale, the way back, and the overlay.
+        // Nothing here reads or writes the game's files.
+        @"wow.box.profile": @[@"wow.heading.profile", @"wow.performance.deviceProfile",
+                              @"wow.performance.renderProfile", @"wow.performance.restoreDefaults",
+                              @"wow.performance.overlay"],
+        // The retained card, narrower and in the order someone with a broken UI needs it.
+        @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.backup",
+                                  @"wow.performance.restore", @"wow.performance.reset",
+                                  @"wow.performance.settingsFolder", @"wow.performance.gamepad"],
     };
     for (UIView *box in boxes) {
         UIStackView *stack = box.subviews.firstObject;
@@ -867,11 +934,28 @@ static void TestAddons(void) {
         }
         assert([rowOrder isEqualToArray:expectedRows[box.accessibilityIdentifier]]);
     }
-    // --- and the whole page fits without scrolling on this iPad
+    // --- the page never needs to be dragged sideways, and on a wide page it still fits whole.
     UIScrollView *scroll = (id)Find(self.controller.view, @"wow.scroll");
     [scroll layoutIfNeeded];
-    NSLog(@"PAGE_FIT: content=%.0f bounds=%.0f", scroll.contentSize.height, scroll.bounds.size.height);
-    assert(scroll.contentSize.height <= scroll.bounds.size.height + 1);
+    NSLog(@"PAGE_FIT: content=%.0f×%.0f bounds=%.0f×%.0f", scroll.contentSize.width,
+          scroll.contentSize.height, scroll.bounds.size.width, scroll.bounds.size.height);
+    // Scrolling down is allowed - a phone is a narrow page with five cards on it - and scrolling
+    // across is not: a card that hangs past the right edge is one nobody can reach.
+    assert(scroll.contentSize.width <= scroll.bounds.size.width + 1);
+    for (UIView *box in boxes) {
+        CGRect frame = [box convertRect:box.bounds toView:scroll];
+        assert(CGRectGetMinX(frame) >= -0.5);
+        assert(CGRectGetMaxX(frame) <= scroll.bounds.size.width + 0.5);
+    }
+    // The two-column layout was made so that an iPad shows the whole page at once, and that still
+    // holds. A phone is allowed to scroll: landscape is 750 points across and 304 down, and no
+    // arrangement of five cards fits that. What a phone is not allowed is a card out of reach,
+    // which the checks above cover.
+    if (self.controller.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad)
+        assert(scroll.contentSize.height <= scroll.bounds.size.height + 1);
+    // The Play button is at the top whatever the width, so it is never something to scroll to.
+    CGRect play = [[self primary] convertRect:[self primary].bounds toView:scroll];
+    assert(CGRectGetMinY(play) >= -0.5 && CGRectGetMaxY(play) <= scroll.bounds.size.height + 0.5);
     // --- labels, exactly
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.manage") configuration].title isEqual:@"Install Addons (Curse & Direct)"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.directory") configuration].title isEqual:@"Open Add-on Directory"]);
@@ -940,7 +1024,7 @@ static void TestAddons(void) {
     [self performSelector:@selector(checkNoBackupYet) withObject:nil afterDelay:0.9];
 }
 - (void)checkNoBackupYet {
-    UIAlertController *alert = (id)self.controller.presentedViewController;
+    UIAlertController *alert = WaitForAlert(self.controller, 30.0);
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"No backup to restore"]);
     assert([alert.message containsString:@"Backup"]);
@@ -950,8 +1034,10 @@ static void TestAddons(void) {
     [self performSelector:@selector(checkBackup) withObject:nil afterDelay:0.9];
 }
 static NSString *configBeforeReset;
+static NSString *configBeforePerformance;
+static int backupsBeforePerformance;
 - (void)checkBackup {
-    UIAlertController *alert = (id)self.controller.presentedViewController;
+    UIAlertController *alert = WaitForAlert(self.controller, 30.0);
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Backup complete"]);
     assert([alert.message containsString:@"WTF/Backups"]);
@@ -982,7 +1068,7 @@ static NSString *configBeforeReset;
     [self performSelector:@selector(checkReset) withObject:nil afterDelay:0.6];
 }
 - (void)checkReset {
-    UIAlertController *alert = (id)self.controller.presentedViewController;
+    UIAlertController *alert = WaitForAlert(self.controller, 30.0);
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Graphics reset"]);
     assert([alert.message containsString:@"when Forever next launches"]);
@@ -1005,7 +1091,7 @@ static NSString *configBeforeReset;
     [self performSelector:@selector(checkGamepad) withObject:nil afterDelay:0.5];
 }
 - (void)checkGamepad {
-    UIAlertController *alert = (id)self.controller.presentedViewController;
+    UIAlertController *alert = WaitForAlert(self.controller, 30.0);
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Gamepad UI enabled"]);
     [self dismissPresented];
@@ -1020,7 +1106,7 @@ static NSString *configBeforeReset;
     [self performSelector:@selector(checkGamepadOff) withObject:nil afterDelay:0.5];
 }
 - (void)checkGamepadOff {
-    UIAlertController *alert = (id)self.controller.presentedViewController;
+    UIAlertController *alert = WaitForAlert(self.controller, 30.0);
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Gamepad UI disabled"]);
     [self dismissPresented];
@@ -1049,7 +1135,7 @@ static NSString *configBeforeReset;
     [self performSelector:@selector(checkRestore) withObject:nil afterDelay:0.8];
 }
 - (void)checkRestore {
-    UIAlertController *alert = (id)self.controller.presentedViewController;
+    UIAlertController *alert = WaitForAlert(self.controller, 30.0);
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Restore complete"]);
     assert([alert.message containsString:stubLastRestored]);
@@ -1059,52 +1145,155 @@ static NSString *configBeforeReset;
     [self performSelector:@selector(tapRenderProfile) withObject:nil afterDelay:0.4];
 }
 - (void)tapRenderProfile {
-    // Opening the row is what crashed: the sheet carried two Cancel actions,
-    // the row's own and the one -presentSheet:anchor: adds for every action
-    // sheet, and UIKit raises on the second.
+    // Opening the row is what crashed: the sheet carried two Cancel actions, the row's own and
+    // the one -presentSheet:anchor: adds for every action sheet, and UIKit raises on the second.
+    // On this simulator the Mac's own model is not in the table, so the page is in its fallback
+    // state - which is the first thing checked, because that is what an unrecognised device gets.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:@"WolkaraForeverDeviceProfile"];
+    [defaults removeObjectForKey:@"WolkaraForeverRenderProfile"];
+    [defaults removeObjectForKey:@"WolkaraForeverBackingScale"];
+    [self.controller render];
+    NSString *deviceRow = [(UIButton *)Find(self.controller.view, @"wow.performance.deviceProfile") configuration].title;
+    assert([deviceRow isEqual:@"Device profile: Automatic — this device (unrecognised)"]);
+    NSString *renderRow = [(UIButton *)Find(self.controller.view, @"wow.performance.renderProfile") configuration].title;
+    assert([renderRow isEqual:@"Render profile: Performance"]);
+    // Nothing to put back yet, so the row is offered and greyed rather than hidden.
+    assert([self row:@"wow.performance.restoreDefaults"].enabled == NO);
     [[self row:@"wow.performance.renderProfile"] sendActionsForControlEvents:UIControlEventTouchUpInside];
-    [self performSelector:@selector(checkRenderProfileSheet) withObject:nil afterDelay:0.6];
+    [self performSelector:@selector(checkFallbackRenderSheet) withObject:nil afterDelay:0.6];
 }
-- (void)checkRenderProfileSheet {
+- (void)checkFallbackRenderSheet {
     UIAlertController *sheet = (id)self.controller.presentedViewController;
     assert([sheet isKindOfClass:UIAlertController.class]);
     assert([sheet.title isEqual:@"Render profile"]);
-    assert(sheet.actions.count == 4);
-    NSUInteger cancels = 0;
-    for (UIAlertAction *action in sheet.actions) if (action.style == UIAlertActionStyleCancel) cancels++;
-    assert(cancels == 1);
-    assert([sheet.actions[0].title isEqual:@"Performance — 1024 × 768"]);
-    assert([sheet.actions[1].title isEqual:@"Balanced — 1366 × 1024"]);
-    assert([sheet.actions[2].title isEqual:@"Quality — 2732 × 2048"]);
-    assert([sheet.actions[3].title isEqual:@"Cancel"]);
-    // Choosing a profile is the whole point of the row, so run the action the
-    // way a tap would: through the handler UIKit holds.
-    void (^handler)(UIAlertAction *) = [sheet.actions[0] valueForKey:@"handler"];
-    assert(handler != nil);
+    assert(CancelActions(sheet) == 1);
+    // A device that was never measured is offered Performance and nothing above it. An offered
+    // level that cannot hold its budget is worse than one that is not there.
+    assert([[sheet.actions valueForKey:@"title"] isEqualToArray:(@[@"✓ Performance", @"Cancel"])]);
     [self dismissPresented];
-    handler(sheet.actions[0]);
-    [self performSelector:@selector(checkRenderProfileApplied) withObject:nil afterDelay:1.2];
+    [self performSelector:@selector(tapDeviceProfile) withObject:nil afterDelay:0.4];
 }
-- (void)checkRenderProfileApplied {
+- (void)tapDeviceProfile {
+    [[self row:@"wow.performance.deviceProfile"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    [self performSelector:@selector(checkDeviceProfileSheet) withObject:nil afterDelay:0.6];
+}
+- (void)checkDeviceProfileSheet {
+    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    assert([sheet isKindOfClass:UIAlertController.class]);
+    assert([sheet.title isEqual:@"Device profile"]);
+    assert(CancelActions(sheet) == 1);
+    NSArray *titles = [sheet.actions valueForKey:@"title"];
+    // Automatic is the recommendation and comes first; the profile of this device is not
+    // offered again among the choices, and every record in the table is offered.
+    assert([titles.firstObject isEqual:@"✓ Automatic (recommended) — this device (unrecognised)"]);
+    assert([titles containsObject:@"iPad Pro 12.9-inch (M1) — 1366 × 1024"]);
+    assert([titles containsObject:@"iPad Pro 13-inch (M4) — 1376 × 1032"]);
+    assert(titles.count == TKDeviceProfile.profiles.count + 2);   // + Automatic + Cancel
+    // Choosing another device is a preview, and the sheet says so before the row changes.
+    UIAlertAction *measured = nil;
+    for (UIAlertAction *action in sheet.actions) if ([action.title isEqual:@"iPad Pro 12.9-inch (M1) — 1366 × 1024"]) measured = action;
+    assert(measured != nil);
+    [self dismissPresented];
+    RunAction(measured);
+    Pump(0.6);
+    UIAlertController *alert = (id)self.controller.presentedViewController;
+    assert([alert isKindOfClass:UIAlertController.class]);
+    assert([alert.title isEqual:@"Preview profile"]);
+    assert([alert.message containsString:@"is not this iPad"]);
+    [self dismissPresented];
+    Pump(0.4);
+    // The row now says Preview, everywhere it appears, and keeps the stored choice.
+    NSString *deviceRow = [(UIButton *)Find(self.controller.view, @"wow.performance.deviceProfile") configuration].title;
+    assert([deviceRow isEqual:@"Device profile: Preview — iPad Pro 12.9-inch (M1)"]);
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverDeviceProfile"]
+            isEqual:@"ipad-pro-12.9-m1"]);
+    // Choosing a device keeps the quality that was already chosen, clamped to what the new
+    // profile may be asked for: it is a change of hardware, not a silent quality change. That
+    // profile was measured, so Quality is now available as well.
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.renderProfile") configuration].title
+            isEqual:@"Render profile: Performance — 1024 × 768"]);
+    assert([self row:@"wow.performance.restoreDefaults"].enabled);
+    [self performSelector:@selector(tapRenderProfileOnMeasuredDevice) withObject:nil afterDelay:0.4];
+}
+- (void)tapRenderProfileOnMeasuredDevice {
+    [[self row:@"wow.performance.renderProfile"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    [self performSelector:@selector(checkMeasuredRenderSheet) withObject:nil afterDelay:0.6];
+}
+- (void)checkMeasuredRenderSheet {
+    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    assert([sheet isKindOfClass:UIAlertController.class]);
+    assert(CancelActions(sheet) == 1);
+    assert([[sheet.actions valueForKey:@"title"] isEqualToArray:
+        (@[@"✓ Performance — 1024 × 768", @"Balanced — 1366 × 1024", @"Quality — 2732 × 2048", @"Cancel"])]);
+    // Quality is a choice, not a default: it asks first, and the default is untouched.
+    UIAlertAction *quality = nil;
+    for (UIAlertAction *action in sheet.actions) if ([action.title isEqual:@"Quality — 2732 × 2048"]) quality = action;
+    assert(quality != nil);
+    [self dismissPresented];
+    RunAction(quality);
+    Pump(0.6);
+    UIAlertController *confirm = (id)self.controller.presentedViewController;
+    assert([confirm isKindOfClass:UIAlertController.class]);
+    assert([confirm.title isEqual:@"Above the recommendation"]);
+    assert([confirm.message containsString:@"more than this profile recommends"]);
+    [self dismissPresented];
+    Pump(0.4);
+    // Declining the confirmation leaves the quality exactly where it was.
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverRenderProfile"]
+            isEqual:@"performance"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.renderProfile") configuration].title
+            isEqual:@"Render profile: Performance — 1024 × 768"]);
+    [self performSelector:@selector(chooseBalanced) withObject:nil afterDelay:0.4];
+}
+- (void)chooseBalanced {
+    // Every backup this page makes is counted, so "a render profile never writes the game's
+    // files" is a check and not a sentence in a document.
+    configBeforePerformance = [self configText];
+    backupsBeforePerformance = stubBackups;
+    [[self row:@"wow.performance.renderProfile"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    [self performSelector:@selector(applyBalanced) withObject:nil afterDelay:0.6];
+}
+- (void)applyBalanced {
+    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    assert([sheet isKindOfClass:UIAlertController.class]);
+    [self dismissPresented];
+    RunAction(sheet.actions[1]);   // Balanced
+    Pump(0.6);
     UIAlertController *alert = (id)self.controller.presentedViewController;
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Render profile ready"]);
-    assert([alert.message containsString:stubNewest]);
+    assert([alert.message containsString:@"Nothing in the game's own settings was changed"]);
+    assert([alert.message containsString:@"Balanced — 1366 × 1024"]);
     [self dismissPresented];
-    assert(stubBackups == 4);   // the profile saved its own rollback point
-    assert([NSUserDefaults.standardUserDefaults doubleForKey:@"WolkaraForeverBackingScale"] == 0.75);
-    NSString *config = [self configText];
-    assert([config containsString:@"SET renderScale \"0.75\""]);
-    assert([config containsString:@"SET gxForegroundFPS \"60\""]);
-    assert([config containsString:@"SET gxBackgroundFPS \"30\""]);
-    assert([config containsString:@"SET vsync \"1\""]);
-    // Everything the profile does not own is still there, byte for byte.
-    assert([config containsString:@"SET accountName \"TESTACCOUNT\""]);
-    assert([config containsString:@"SET unknownSetting \"keep\""]);
-    assert([config containsString:@"SET cameraDistance \"1.5\""]);
-    // And the row now says which profile is selected.
-    NSString *title = [(UIButton *)Find(self.controller.view, @"wow.performance.renderProfile") configuration].title;
-    assert([title isEqual:@"Render profile: Performance (1024 × 768)"]);
+    Pump(0.4);
+    assert(stubBackups == backupsBeforePerformance);          // no UI snapshot was taken
+    assert([[self configText] isEqual:configBeforePerformance]);  // and Config.wtf is untouched
+    assert([NSUserDefaults.standardUserDefaults doubleForKey:@"WolkaraForeverBackingScale"] == 1.0);
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverRenderProfile"] isEqual:@"balanced"]);
+    [self performSelector:@selector(restorePerformanceDefaults) withObject:nil afterDelay:0.4];
+}
+- (void)restorePerformanceDefaults {
+    assert([self row:@"wow.performance.restoreDefaults"].enabled);
+    [[self row:@"wow.performance.restoreDefaults"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    Pump(0.6);
+    UIAlertController *alert = (id)self.controller.presentedViewController;
+    assert([alert isKindOfClass:UIAlertController.class]);
+    assert([alert.title isEqual:@"Performance defaults restored"]);
+    [self dismissPresented];
+    Pump(0.4);
+    // Automatic for the device we are actually on, with nothing of this page's left behind -
+    // and the game's settings still exactly where they were.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    assert([defaults stringForKey:@"WolkaraForeverDeviceProfile"] == nil);
+    assert([defaults stringForKey:@"WolkaraForeverRenderProfile"] == nil);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.deviceProfile") configuration].title
+            isEqual:@"Device profile: Automatic — this device (unrecognised)"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.renderProfile") configuration].title
+            isEqual:@"Render profile: Performance"]);
+    assert(stubBackups == backupsBeforePerformance);
+    assert([[self configText] isEqual:configBeforePerformance]);
+    assert([self row:@"wow.performance.restoreDefaults"].enabled == NO);
     // Finally the app's own language: the setting, the German page, the one-time offer to put
     // the game into German too, and the switch back.
     [self performSelector:@selector(startLanguageTests) withObject:nil afterDelay:0.3];
@@ -1249,7 +1438,8 @@ static NSString *configBeforeReset;
         isEqual:@"Gamepad-Oberfläche"]);
     // Section headings, which were made before this language existed.
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"SPIELEDITION"]);
-    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.performance") text] isEqual:@"LEISTUNG & OBERFLÄCHE"]);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.profile") text] isEqual:@"LEISTUNGSVERWALTUNG"]);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.performance") text] isEqual:@"OBERFLÄCHENVERWALTUNG"]);
     // The row that made the change, and the accessibility labels VoiceOver reads.
     assert([[(UIButton *)Find(self.controller.view, @"wow.language") configuration].title
         isEqual:@"App-Sprache: Deutsch"]);
@@ -1644,7 +1834,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     for (NSString *identifier in @[@"wow.edition", @"wow.preferences", @"wow.language",
                                    @"wow.addons.manage", @"wow.addons.macEver", @"wow.addons.directory",
                                    @"wow.permissions", @"wow.voice", @"wow.voice.test",
-                                   @"wow.performance.renderProfile", @"wow.performance.backup",
+                                   @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
+                                   @"wow.performance.restoreDefaults", @"wow.performance.backup",
                                    @"wow.performance.reset", @"wow.performance.restore",
                                    @"wow.performance.settingsFolder", @"wow.primary", @"wow.diagnostics"])
         assert([[self row:identifier] allTargets].count > 0);
@@ -1653,7 +1844,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     for (UIBarButtonItem *item in @[gear, refresh])
         assert(item.target != nil && item.action != NULL);
 
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; render profile sheet and applied preset; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all seven Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.
@@ -1684,7 +1875,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // The Forever file rows are disabled while a start is in progress; every
     // handler rechecks the same guard.
     for (NSString *identifier in @[@"wow.performance.backup", @"wow.performance.reset",
-                                   @"wow.performance.restore", @"wow.performance.settingsFolder"])
+                                   @"wow.performance.restore", @"wow.performance.settingsFolder",
+                                   @"wow.performance.deviceProfile", @"wow.performance.renderProfile"])
         assert(![self row:identifier].enabled);
     // All text is grey while starting, including the two navigation rows that
     // used to stay gold.

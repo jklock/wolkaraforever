@@ -31,7 +31,7 @@ These features operate on files in the game's working directory. They never insp
 | Graphics reset and preset | Removes only an explicit graphics/display CVar allowlist, or writes the documented performance preset. | Account, portal, locale, sound, bindings, gamepad, and unknown settings survive. `ForeverUI.m`; `test_forever_ui.sh`. |
 | Gamepad UI | Normalizes exactly one `SET GamePadEnable` line. | It changes the game's native switch only; no bindings, controller profile, or touch layout is rewritten. `ForeverUI.m`; `test_forever_ui.sh`. |
 
-See [the user guide](../../docs/USING_WOLKARAFOREVER.md#ui-recovery-and-performance). The [add-on plan](../plans/ADDON_MANAGER_PLAN.md) is historical design context; code and tests above define current behavior.
+See [the user guide](../../docs/USING_WOLKARAFOREVER.md#performance-device-profile-and-ui-recovery). The [add-on plan](../plans/ADDON_MANAGER_PLAN.md) is historical design context; code and tests above define current behavior.
 
 ## Input, controls, and voice
 
@@ -55,6 +55,7 @@ The device scope for voice and controller behavior is deliberately bounded in [C
 | Performance HUD | Shows renderer-sourced FPS/frame time, GPU information, thermal state, memory, battery, and low-power state; users can move and expand it. | It reads host metrics only and never changes graphics because a threshold was observed. `Touch/AKPerformanceOverlay.*`; `test_wow_launcher_ui.sh`. |
 | Renderer timing | Attributes frames at the presentation boundary only when the marker proves a guest frame. | A display link is a scheduling signal, not proof of a submitted game frame. patches `0018`, `0019`, `0035`; [performance lanes](PERFORMANCE_LANES.md). |
 | Backing scale and budget | Supplies backing scale and offers a measured performance preset. | It makes no universal frame-rate claim without matching device/build/scene evidence. patches `0023`–`0025`; [performance and thermal](PERFORMANCE_THERMAL.md). |
+| Device profile and render profile | Resolves the running model against a versioned table of measured devices, offers **Automatic** for that device plus preview overrides, and offers only the render qualities that device was measured at. **Restore performance defaults** removes only this app's own keys. | It writes the app's own render scale and never the game's `Config.wtf`; the game-file rows are separate on the page and say so. An unrecognised device gets a conservative fallback, not a guess. `WoW/DeviceProfile.*`; `test_device_profile.m`; `test_wow_launcher_ui.sh`. |
 | Measurement tools | `perf_sweep.py` samples controlled variants; `capture_gameplay_log.sh` labels baseline/candidate evidence. | They refuse unsafe session state and write ignored artifacts under `logs/`. [tools reference](../guides/TOOLING.md). |
 | Background pacing | Limits the Metal frame loop to 5 fps while the app is inactive or backgrounded, then restores normal pacing on foreground. | It reduces active work but does not override iPadOS background scheduling. `Bridge/BackgroundPacing.m`. |
 

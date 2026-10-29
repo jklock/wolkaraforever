@@ -473,3 +473,63 @@ UIKit clears on the following turn. The check now reads it from the dismissal's
 completion. A second run earlier failed to find the home page at all, because every
 `--selftest=` launch was classified as a development run - both were the harness
 being wrong, not the app, and both are recorded here rather than quietly fixed.
+
+## The home page as five cards, and a device profile (2026-10-29)
+
+The page followed
+[the launcher reorganization plan](../uichanges/LAUNCHER_REORGANIZATION_PLAN.md): five cards,
+each one job, in the order the page is read — **Game Edition**, **Add-On Manager**,
+**Voice & Input Manager**, **Performance Manager**, and **UI Manager**. Two across on an iPad;
+one column on an iPhone or at the largest text sizes, where the page scrolls down and no card
+may hang past the right edge. The empty cell beside the fifth card exists only to keep the
+columns equal on a wide page, and is hidden when they stack.
+
+The split that matters is between **Performance Manager** and **UI Manager**. The first changes
+how this app draws: **Device profile**, **Render profile**, **Restore performance defaults**,
+**Performance Overlay**. The second edits the game's own files: **Backup**, **Restore**, **Reset
+to Default
+Graphical Settings**, **Open Settings Folder**, **Gamepad UI**. Neither can do the other's job,
+and the render rows no longer write `Config.wtf` at all — the row that does says so in its own
+name. That is a behaviour change from the previous page, where choosing a render profile also
+rewrote the client's CVars and took a UI backup; see the S2 update in
+[performance and thermal](PERFORMANCE_THERMAL.md) for what that leaves unmeasured.
+
+`WoW/DeviceProfile.*` is the device table the plan asks for: versioned, data only, one record
+per `hw.machine` value, with the panel size, the highest quality that hardware may be offered,
+its notes and whether it was measured here or assumed. `Automatic` resolves to the device in
+use; choosing another is a labelled preview with a way back; an unrecognised device gets a
+conservative fallback rather than a guess. **Quality is only offered where someone measured
+it** and is never the default: on the one measured device, native rendering is what the
+sessions found missing the frame budget, and the confirmation says exactly that. Every record
+also carries F9 — that the 0.75 backing scale measured no GPU saving on that device — so the
+table cannot be read as a frame-rate promise.
+
+Settings written before this table existed still mean what they meant: `qualityForBackingScale`
+maps a stored 0.75/1.0/2.0 onto Performance/Balanced/Quality, so an existing install keeps the
+scale it chose.
+
+Evidence, Xcode 27.0:
+- `tools/test_device_profile.m` (via `tools/test_wow_launcher.sh`): **DEVICE_PROFILE_PASS, 174
+  checks** — every model resolves to its own record, an unknown device falls back, Quality is
+  only offered where measured, an override is honoured, a stale override falls back to the
+  running device, the stored names round-trip, and older settings still mean what they meant.
+- `tools/test_wow_launcher_ui.sh`: **PASS** on iPad Pro 13-inch (M5) and on iPhone 18 Pro
+  (iPadOS 27 simulators). The phone run is the compact-page evidence: content 750×1142 in a
+  750×304 viewport, no horizontal overflow, every card inside the page, and Play still in the
+  first screenful. The same pass presses every control, checks each sheet has exactly one
+  cancel action, and confirms neither render row writes a game file.
+- **The fixture's own timing was wrong, twice, before the page was.** Steps that waited 0.3 s
+  and 0.8 s for work on another queue failed on a freshly erased simulator with nothing wrong
+  in the app. They now wait for the state they need (`PumpUntil`, `WaitForAlert`) instead of
+  guessing how fast the machine is. That is a finding about the tests, and it is written down
+  here rather than quietly repaired.
+- Physical iPad (Dadpad, iPadOS 27.0.1, installed build): **`selftest: render-profile PASS
+  11/11`** — the Render profile row opened a sheet with **3 measured qualities**, the Device
+  profile row a sheet with **9 choices**, both with exactly one cancel action, no render scale
+  written, and `Config.wtf` byte for byte unchanged. No new crash report.
+- The first device runs of that self-test failed twice, and both times it was the check, not the
+  page: it pressed the second row while an automatic check still had the page busy (the row's
+  own log then said "declined while the page is busy"), and it read a sheet in the same turn it
+  was asked for, when the page defers a presentation until the previous one has gone. It now
+  waits for the page to be idle and awaits each sheet. Recorded because a self-test that lies
+  costs more than no self-test.

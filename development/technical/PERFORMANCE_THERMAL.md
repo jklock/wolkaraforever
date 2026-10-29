@@ -294,6 +294,19 @@ So: one control writes the client's `renderScale` (and the wiki-named caps
 only for what it demonstrably does — the drawable's size — and its label stops claiming a
 pixel reduction the scene does not get.
 
+**Update, 2026-10-29 — the first half of S2 was decided against; that is not a fix.**
+The [launcher reorganization](../uichanges/LAUNCHER_REORGANIZATION_PLAN.md) settles how the
+two levers are separated, not that the saving was found. The page's **Render profile** row
+writes only `WolkaraForeverBackingScale` and says so, and the rows that write the game's
+`Config.wtf` are a different card with different names, so nothing on the page mixes "how this
+app draws" with "what the game is told". `performancePreset` still has no caller. The shipped
+control is therefore an honest smaller-drawable switch, and the measured 7.8-7.9 ms saving
+from the client's own `renderScale` is still **unused**. S2 remains open and is now narrower:
+if the game's CVars are ever written from the page, it has to be a separately named,
+separately explained control — not this row quietly changing meaning. Until then every profile
+record in `WoW/DeviceProfile.m` carries F9 in its own notes, so a reader of the table cannot
+mistake Performance for a faster frame.
+
 *Expected effect:* the measured 9.3 → 7.8 ms GPU (F2), and the measured return from
 *serious* to *nominal* (F3).
 
