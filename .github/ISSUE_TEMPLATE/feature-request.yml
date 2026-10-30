@@ -1,0 +1,18 @@
+name: Feature request
+description: Propose a scoped improvement that respects the project safety boundary.
+title: "[Feature]: "
+labels: [feature]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and intended outcome
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Safety and compatibility considerations
+      description: This project does not accept game automation, integrity workarounds, or game-data redistribution.
+    validations:
+      required: true

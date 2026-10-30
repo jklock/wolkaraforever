@@ -1,6 +1,6 @@
 # Changelog
 
-> **Documentation index current as of 2026-10-29 · branch `main`.**
+> **Documentation index current as of 2026-10-30 · branch `main`.**
 
 This page names no source revision on purpose: it describes whatever commit you are
 reading, and a pinned hash here would be stale by the next commit. Physical results are

@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a reproducible WolkaraForever defect.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: Include the exact command or in-app action.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Evidence scope
+      description: Include source SHA, iPad model, iPadOS, client build, and execution mode when applicable. Redact credentials and identifiers.
+    validations:
+      required: true

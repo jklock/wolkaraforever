@@ -1,6 +1,6 @@
 # WolkaraForever project map
 
-> **Current as of 2026-10-29 · branch `main`.**
+> **Current as of 2026-10-30 · branch `main`.**
 
 WolkaraForever is a WoW-focused product layer over Tolkara. Tolkara supplies the runtime,
 translation adapters, authorization, and generic launcher foundation; WolkaraForever supplies

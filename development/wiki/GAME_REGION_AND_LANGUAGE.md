@@ -1,7 +1,7 @@
 # Game region and language
 
 > **Source of truth:** [`docs/USING_WOLKARAFOREVER.md`](../../docs/USING_WOLKARAFOREVER.md)
-> **Last reviewed:** 2026-10-29
+> **Last reviewed:** 2026-10-30
 
 WolkaraForever has four settings that are easy to confuse. Two of them are the CDN region and the
 game's language; the other two are the app's own language and your account.

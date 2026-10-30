@@ -1,18 +1,31 @@
 # Professional repository-management plan
 
+## Status
+
+> **Applied on 2026-10-30 for `main`; repository-owned templates and Dependabot configuration
+> are on branch `prostatus` pending review.**
+
+The active `Protect main` ruleset requires a pull request, one approval, code-owner review,
+resolved conversations, linear history, and blocks force-pushes and branch deletion. The
+repository owner has the selected normal bypass. Repository metadata, Wiki, Discussions, Issues,
+Projects, automatic head-branch deletion, vulnerability alerts, Dependabot security updates,
+secret scanning, push protection, private vulnerability reporting, and read-only default Actions
+permissions are enabled. The remaining visual social-preview upload and first Wiki page need the
+GitHub web UI because GitHub exposes neither through the repository REST API.
+
 ## Goal
 
 Keep `main` continuously buildable and reviewable without making normal work burdensome for a
-small team. This plan is a configuration checklist, not a statement that the settings have been
-applied. Configure it through GitHub after review, then record the completion date and settings
-in the repository workflow guide.
+small team. This plan records the configuration target and applied status. Re-verify the GitHub
+settings after an ownership or team change.
 
 ## Target operating model
 
 - `main` is the one release-ready integration branch. It contains reviewed, passing work only.
 - Contributors work in short-lived `feature/`, `fix/`, `docs/`, or `chore/` branches and merge
   through pull requests.
-- One owner/admin may use a documented emergency bypass. Contributors cannot bypass safeguards.
+- The repository owner has the selected normal bypass. Contributors without repository ownership
+  cannot bypass safeguards; every bypass remains subject to PR evidence and audit history.
 - Checks are proportional: all PRs run the two fast repository checks; source changes carry the
   focused test named by `development/guides/REPOSITORY_WORKFLOW.md`; device validation is
   required only when the claim depends on a physical device.
@@ -38,7 +51,7 @@ Create one active ruleset targeting the default branch `main`.
 
 | Rule | Setting | Why / low-friction exception |
 | --- | --- | --- |
-| Pull request required | Yes; require **one** approval | Gives the new contributor a real review boundary. Repository admins may bypass only for documented emergency recovery. |
+| Pull request required | Yes; require **one** approval | Gives the new contributor a real review boundary. The repository owner has the selected normal bypass. |
 | Dismiss stale approval | Yes | A reviewed diff must remain the merged diff. |
 | Require conversation resolution | Yes | Prevents acknowledged issues from being silently merged. |
 | Require branch up to date | No by default | Avoids needless rebases for low-risk docs work. Enable temporarily during a release cut or a sensitive upstream ingest. |
@@ -47,7 +60,7 @@ Create one active ruleset targeting the default branch `main`.
 | Block branch deletion | Yes | `main` must always exist. |
 | Require linear history | Yes | Keeps review/revert history readable. |
 | Require signed commits | No initially | Revisit after every contributor has a stable signing setup; do not create avoidable onboarding failures. |
-| CODEOWNERS review | No until owners/teams are real | `.github/CODEOWNERS` currently contains a placeholder. Replace it with actual handles/teams, then enable this rule for `wolkaraforever/`, `.github/`, security, runtime, authorization, and docs ownership paths. |
+| CODEOWNERS review | Yes | `.github/CODEOWNERS` names the current owner and is enforced for its protected paths. Update it before an ownership change. |
 
 Do not require a merge queue, deployment approval, mandatory status checks for unavailable macOS
 hardware, or a second approval while the project has one active maintainer. Those controls can
@@ -69,8 +82,8 @@ be added when team size or release frequency makes them useful.
 
 ## Phase 4 — contributor experience
 
-1. Replace the placeholder in `.github/CODEOWNERS` with the owner and the iPhone contributor's
-   accepted GitHub identity/team. Limit ownership to paths they genuinely maintain.
+1. Keep `.github/CODEOWNERS` aligned with the owner and accepted contributor identities. Limit
+   ownership to paths they genuinely maintain.
 2. Add GitHub issue forms for bug reports, device compatibility reports, feature requests, and
    security-sensitive reports. Device reports must collect app SHA, device model, iPadOS, game
    build, execution mode, expected/actual result, and logs redacted of credentials.
@@ -95,11 +108,11 @@ be added when team size or release frequency makes them useful.
 
 ## Administration sequence
 
-1. Confirm the owner and contributor GitHub handles and whether owner bypass is desired.
-2. Apply Phase 1 settings and the Phase 2 ruleset through repository Settings.
+1. Reconfirm owner and contributor GitHub handles before changing the ruleset or CODEOWNERS.
+2. Re-verify Phase 1 settings and the Phase 2 ruleset through repository Settings.
 3. Run `wolkaraforever/tools/check_docs.sh` and `wolkaraforever/tools/check_layers.sh` on the
    candidate branch and put both results in the PR: there is no hosted CI to do it.
-4. Replace CODEOWNERS placeholders, then enable CODEOWNERS enforcement in a follow-up PR.
-5. Add labels/templates/security configuration and create the initial Wiki structure.
+4. Keep `@jklock` current in CODEOWNERS, then re-verify CODEOWNERS enforcement after every owner change.
+5. Keep labels/templates/security configuration current and publish the initial Wiki structure.
 6. Open a test PR from the contributor account to prove review, checks, merge, and branch cleanup
    work as intended. Record the result in the repository workflow guide.

@@ -5,6 +5,9 @@ Every script that builds, installs, runs, tests or pilots WolkaraForever lives i
 first prepares the tree, then runs the platform's own script against it - so you rarely
 call `build/platform/tools/*` yourself.
 
+[`TOOL_AUDIT.md`](TOOL_AUDIT.md) is the complete, machine-checked inventory. It records every
+layer-owned executable's inputs, side effects, safety boundary, owning test, and this reference.
+
 > **Paths.** Layer scripts are written here as `wolkaraforever/tools/<script>`, relative
 > to the repository root, and are run from there. The platform's own tools are written as
 > `platform/tools/<script>` in the source tree, or `build/platform/tools/<script>` once
@@ -27,6 +30,8 @@ end of this page.
 | `apply.sh <tree>` | Applies the patches, then the overlay, to any tolkara tree - the prepared build tree or someone else's checkout. |
 | `adopt.sh <path/to/tolkara>` | Turns someone's own tolkara checkout into WolkaraForever by running `apply.sh` on it, in place. Run it on a copy if you want to keep the original. |
 | `check_docs.sh` | Verifies that every relative markdown link and image in the fork's documentation resolves. The vendored `platform/` is skipped. |
+| `check_localization.py` | Checks the English and German string tables for matching keys and formats, source coverage, and accidental untranslated German values. It is read-only and runs from any directory. |
+| `check_origin.sh [--fetch] [--strict]` | Compares this fork with the original Wolkara history without merging or cherry-picking. It may add or fetch the named read-only remote only when `--fetch` is supplied. |
 | `install_prerequisites.sh [--check] [--install-homebrew]` | Checks (and, when safe, installs) the Mac prerequisites: full Xcode, `devicectl`, iOS SDK, Homebrew, `xcodegen`, `git` with subtree, Python 3.9+, disk space. Never uses sudo; never installs Xcode or Homebrew silently. |
 | `setup_simulators.sh --apply` | **Destructive simulator reset.** Requires Xcode's iOS 27.0 and 27.1 runtimes. It creates a sparse APFS bundle at `/Volumes/Storage/Simulators.sparsebundle`, mounts it at CoreSimulator's required local path, and installs a user Login LaunchAgent to reattach it. Simulator device data therefore lives physically on Storage without an unsupported symlink or direct external `simctl --set` path. It creates and boot-checks the M5 iPad and iPhone 18 Pro on iOS 27.0 plus iPhone Duo on iOS 27.1. Xcode's sealed simulator runtimes remain Apple-managed; see [Building: Storage-backed simulator devices](BUILDING.md#storage-backed-simulator-devices). |
 | `device_variables.sh [--write] [--export] [--json] [--device X]` | Finds a physical iPad over USB or paired network and prints `DEVICE`, name, model, OS, link and bundle id. `--write` updates `DEVICE` in `local.env`; `--force` allows replacing a different value. |
@@ -45,6 +50,7 @@ end of this page.
 | `run.sh [sim|device ...]` | `prepare.sh`, then the platform's run script. `run.sh sim` runs the loader diagnostics in the simulator. |
 | `package_ipa.sh [args]` | Builds the unsigned generic `Tolkara-unsigned.ipa` for External JIT (the `TolkaraDiagnostics` target), by preparing the tree and running the platform's packaging script. Only our own code goes in - never application code. |
 | `package_altstore_ipa.sh [output.ipa]` | Clean-tree local AltStore Classic lane: packages with `TOLKARA_SYSTEM_ROOTS=NO`, then runs `verify_ipa.sh`. It refuses a dirty source tree because its report binds the package to the current source revision. |
+| `make_wolkaraforever_icon.py` | Re-renders the three committed 1024px app-icon appearances from the approved source artwork. It needs Google Chrome and writes only the icon set plus ignored preview output. |
 | `verify_ipa.sh <ipa> [report-path]` | Read-only IPA gate: validates archive structure, unsigned/ad-hoc team state, no profile or extension, External-JIT preselection, generic runtime, required memory entitlements, no Mac root certificates, SHA-256, and current source revision. |
 | `verify_external_jit.sh [--bundle-id id] [--require-runtime]` | Reads the physical iPad state only. It confirms the AltStore-installed app is present; `--require-runtime` additionally requires the app log to show a detached executable arena and ready native arena, with no blocked-entry verdict. |
 | `after_install.sh <mode>` | The post-install step, decided by the execution mode. Split out of `install.sh` so it can be tested without building; run from inside `build/platform`. |
@@ -73,6 +79,7 @@ refusing is the feature.
 | `launch.sh [--restart] [args]` | Launches on the iPad after checking live state; never kills a session. |
 | `running_app.sh` | Prints the pid of a process running *this* bundle's installed executable. |
 | `device_log.sh [lines] [pattern]` | Reads the app's log from the iPad without touching the running app. |
+| `capture_gameplay_log.sh [options]` | Captures and redacts the app log around a coordinated gameplay observation. It never automates the game; its output stays under ignored `logs/`. |
 | `device_matrix.sh` | The Mac-drivable part of the physical-iPad matrix (fresh install, config import/refusal, notices, backgrounding, self-tests, no new crashes or error files). Person-only checks are listed as deferred at the end. |
 | `xcrun_device_timeout.sh` | Sourced helper: runs a CoreDevice operation with a bounded wait, so a locked iPad cannot hang a script. |
 

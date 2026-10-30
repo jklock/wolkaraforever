@@ -4,7 +4,7 @@
 
 # WolkaraForever
 
-> **Current as of 2026-10-29 · branch `main`.**
+> **Current as of 2026-10-30 · branch `main`.**
 
 **World of Warcraft Forever on iPad, running locally through Tolkara.**
 
@@ -169,9 +169,7 @@ The public user guide is under [docs/](docs/README.md). Engineering material is 
 - [Contributing](development/guides/CONTRIBUTING.md) — code and data boundaries.
 
 `platform/` must remain byte-identical to Tolkara upstream. Product changes belong in
-`wolkaraforever/` through a layer file, patch, and/or `overlay.map` entry. Use the repository
-skill at [`.codex/skills/wolkaraforever-maintenance/`](.codex/skills/wolkaraforever-maintenance/)
-for Codex work in this checkout.
+`wolkaraforever/` through a layer file, patch, and/or `overlay.map` entry.
 
 ## Legal
 

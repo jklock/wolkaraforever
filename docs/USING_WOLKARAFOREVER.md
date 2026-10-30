@@ -1,13 +1,13 @@
 # Using WolkaraForever
 
-> **Current as of 2026-10-29**
+> **Current as of 2026-10-30 · branch `main`.**
 
 Use this guide after [installing the app](INSTALLATION.md). Labels may differ slightly as
 the selected client, download state, and iPad permissions change.
 
 ## Home and game installation
 
-![WolkaraForever home screen](screenshots/launcher-home.jpg)
+![Current WolkaraForever home screen in the simulator](screenshots/launcher-home.jpg)
 
 On the home screen, choose **Forever**, then select a region and game language. Regions are
 Europe, Americas, Korea, and Taiwan; game languages are English, Spanish, and German. The
@@ -46,7 +46,7 @@ German game text, and playing the German game does not change the launcher's lan
 
 ## Add-ons
 
-![Add-on Manager installed list](screenshots/addon-manager.jpg)
+![Add-on Manager with no recorded installed add-ons in the simulator](screenshots/addon-manager.jpg)
 
 Choose **Install Addons (Curse & Direct)** to manage add-ons for the selected edition.
 
@@ -122,7 +122,7 @@ work while another app is in front; iPadOS still controls background execution.
 
 ## Controls and voice
 
-![Key and button configuration](screenshots/voice-configuration.jpg)
+![Current Key / Button Configuration screen in the simulator](screenshots/voice-configuration.jpg)
 
 The in-game toolbar exposes the cursor, keyboard, gamepad, settings, and leave-game controls.
 The touch trackpad supports pointer movement, two-finger scrolling, and drag gestures. The
