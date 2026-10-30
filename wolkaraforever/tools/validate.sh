@@ -84,9 +84,14 @@ details=$(mktemp)
 device_description() {
     xcrun devicectl device info details --device "$DEVICE" > "$details" 2>/dev/null || true
     local model os
-    model=$(sed -n 's/.*[Mm]odel[^:]*: *//p' "$details" | head -1 | cut -c1-60)
+    # `devicectl` prints "Marketing Name", not "Model", so the first version of this
+    # line never matched and every record said "an iPad" - a device result has to name
+    # the device, or it is not a device result. Keep the Model fallback for a future
+    # output change, and never fall back to anything that identifies the unit.
+    model=$(sed -n 's/.*Marketing Name: *//p' "$details" | head -1 | cut -c1-60)
+    [ -n "$model" ] || model=$(sed -n 's/.*[Mm]odel[^:]*: *//p' "$details" | head -1 | cut -c1-60)
     os=$(sed -n 's/.*OS [Vv]ersion[^:]*: *//p' "$details" | head -1 | cut -c1-40)
-    [ -n "$model" ] || model="an iPad"
+    [ -n "$model" ] || model="an unnamed iPad"
     [ -n "$os" ] || os="OS unknown"
     printf '%s, %s' "$model" "$os"
 }
