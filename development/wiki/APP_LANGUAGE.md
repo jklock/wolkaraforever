@@ -2,7 +2,7 @@
 
 > **Source of truth:** [`docs/USING_WOLKARAFOREVER.md` → App language](../../docs/USING_WOLKARAFOREVER.md#app-language)
 > and [`development/guides/LOCALIZATION.md`](../../development/guides/LOCALIZATION.md)
-> **Last reviewed:** 2026-10-29
+> **Last reviewed:** 2026-10-30
 
 WolkaraForever can be read in **English** or **German**, or follow your iPad.
 

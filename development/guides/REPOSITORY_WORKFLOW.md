@@ -1,6 +1,6 @@
 # Repository workflow and GitHub settings
 
-> **Current as of 2026-10-29 · branch `main`.**
+> **Current as of 2026-10-30 · branch `main`.**
 
 This is the durable contributor workflow for WolkaraForever. It protects the pinned upstream
 engine and evidence that must remain tied to the exact build that ran.
@@ -24,7 +24,8 @@ repository; this page is the authoritative configuration record.
   the checks that run on Linux.
 - Require linear history; allow squash merges for ordinary PRs. Reserve merge commits for
   intentional integration branches.
-- Block force-pushes and branch deletion. Do not grant bypass permission to contributors.
+- Block force-pushes and branch deletion. The repository owner has the intentionally selected
+  normal bypass; every bypassed merge must still carry the PR's verification and risk record.
 - Enforce `.github/CODEOWNERS` for protected paths.
 - Enable GitHub secret scanning, push protection, Dependabot alerts, and private
   vulnerability reporting.

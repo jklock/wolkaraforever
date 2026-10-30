@@ -66,7 +66,7 @@ frame timing seconds=5.01 fps=60.0 gap_avg_ms=16.67 max_gap_ms=25.0
   device needs to cool down"
   ([_ProcessInfo.ThermalState_](https://developer.apple.com/documentation/foundation/processinfo/thermalstate-swift.enum)).
 
-`tools/perf_sweep.py` (new) writes one `Config.wtf` per variant, launches the client with
+`wolkaraforever/tools/perf_sweep.py` writes one `Config.wtf` per variant, launches the client with
 `--local-game-startup --measure-native`, waits for the login screen, samples, stops the
 client, and prints the table below. Every row can be reproduced with one command; the raw
 windows and the exact `Config.wtf` used are kept under `logs/perf/<timestamp>/`.

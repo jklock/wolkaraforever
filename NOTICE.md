@@ -1,6 +1,6 @@
 # Notices
 
-> **Reviewed 2026-10-29.**
+> **Reviewed 2026-10-30.**
 
 WolkaraForever is a WoW-focused continuation of Wolkara by fJavierLasso, itself built on
 Tolkara by Vasilii Kharitonov and the Tolkara contributors. The original runtime, translation

@@ -27,7 +27,7 @@
 - `development/architecture/PROJECT_MAP.md`: canonical map of engine, layer modules, patches,
   overlays, scripts, tests, and WolkaraForever enhancements. Read it before a cross-cutting change.
 - `development/guides/REPOSITORY_WORKFLOW.md`: durable branching, review, CI, release, and
-  evidence policy. `.codex/skills/wolkaraforever-maintenance/` packages the same rules for Codex.
+  evidence policy.
 
 ## Build, Test, and Development Commands
 

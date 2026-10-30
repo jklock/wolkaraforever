@@ -1,6 +1,6 @@
 # WolkaraForever user guide
 
-> **Current as of 2026-10-29 · branch `main`.**
+> **Current as of 2026-10-30 · branch `main`.**
 
 These guides are for using WolkaraForever. They describe the supported source install and
 the features exposed by the current app; engineering notes and historical records are kept

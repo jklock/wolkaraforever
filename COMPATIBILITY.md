@@ -1,6 +1,6 @@
 # Compatibility
 
-> **Current source review: 2026-10-29 · branch `main`.**
+> **Current source review: 2026-10-30 · branch `main`.**
 
 Compatibility is specific to an iPad model, iPadOS version, WoW build, execution mode,
 account state, and the exact source revision. This page deliberately does not turn a past
