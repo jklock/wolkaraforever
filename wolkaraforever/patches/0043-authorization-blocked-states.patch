@@ -191,15 +191,20 @@ diff --git a/authorization/App/LocalAuthorization.m b/authorization/App/LocalAut
              self.serviceRetry=[[TKLocalServiceRetry alloc] initWithTimeout:mode==3?120:60 interval:2 attempt:^(TKLocalServiceReply reply) {
                  TKLocalAuthorization *self=weakSelf;
                  if(!self) {reply(TKLocalServiceFailed,@"Local authorization owner unavailable.");return;}
-@@ -99,6 +105,7 @@
+@@ -99,6 +105,12 @@
                          // Only the helper can classify a failed initial TCP
                          // connection. Never infer retryability from report text.
                          BOOL retry=mode==3 && valid && !ready && [state[@"serviceUnavailable"] isEqual:@YES];
-+                        blockedState=ready?nil:WKAuthorizationBlockedState(valid?state[@"blockedState"]:nil);
++                        // The response handler runs off the main queue and the completion below
++                        // runs on it, so the hand-off goes through that queue rather than a bare
++                        // assignment. Enqueued before the reply, so the completion always reads
++                        // the cause this attempt produced.
++                        NSString *cause=ready?nil:WKAuthorizationBlockedState(valid?state[@"blockedState"]:nil);
++                        dispatch_async(dispatch_get_main_queue(),^{ blockedState=cause; });
                          reply(ready || (mode!=3 && valid)?TKLocalServiceReady:retry?TKLocalServiceUnavailable:TKLocalServiceFailed,report);
                      }];
                      if(!sent)reply(TKLocalServiceFailed,[result stringByAppendingString:@" Provider status unavailable."]);
-@@ -111,6 +118,7 @@
+@@ -111,6 +123,7 @@
                  TKLocalAuthorization *self=weakSelf;
                  if(!self)return;
                  self.localSessionReady=mode==3 && ready;
