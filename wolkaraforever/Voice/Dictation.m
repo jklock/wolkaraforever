@@ -620,12 +620,10 @@ static __weak UIView *AKGameTextTarget = nil;
     if (_session != session || _abandoned) return;
     if (transcript.length) [_transcript setString:transcript];
     if (error) {
-        if (_state == AKDictationStateFinalizing) {
-            WKLog("voice", @"dictation: the recogniser failed while finishing: %@", error.localizedDescription);
-            [self finishWithTranscript:transcript];
-        } else {
-            [self fail:[NSString stringWithFormat:@"Recognition stopped: %@", error.localizedDescription]];
-        }
+        // An error is not a final result. In particular, a recogniser can report an error after
+        // producing a partial transcript; delivering the cached partial here would violate the
+        // final-only rule and could auto-submit an incomplete chat message.
+        [self fail:[NSString stringWithFormat:@"Recognition stopped: %@", error.localizedDescription]];
         return;
     }
     // A final result is the only thing that ends a session early. Anything else is a

@@ -68,6 +68,8 @@ static UIView *Find(UIView *view, NSString *identifier) {
 @property (nonatomic, copy) void (^handler)(NSString *, BOOL, NSError *);
 @property (nonatomic) NSUInteger starts, finishes, cancels;
 @property (nonatomic, copy) NSArray<NSString *> *words;
+- (void)say:(NSString *)text final:(BOOL)isFinal;
+- (void)failAfterPartial:(NSString *)text;
 @end
 
 @implementation FakeSpeech
@@ -87,6 +89,11 @@ static UIView *Find(UIView *view, NSString *identifier) {
 - (void)say:(NSString *)text final:(BOOL)isFinal {
     void (^handler)(NSString *, BOOL, NSError *) = self.handler;
     if (handler) handler(text, isFinal, nil);
+}
+- (void)failAfterPartial:(NSString *)text {
+    void (^handler)(NSString *, BOOL, NSError *) = self.handler;
+    if (handler) handler(text, NO, [NSError errorWithDomain:@"test" code:3 userInfo:@{
+        NSLocalizedDescriptionKey: @"the recogniser stopped"}]);
 }
 @end
 
@@ -805,6 +812,20 @@ static void TestDictation(void) {
     CHECK((problem.length > 0), @"and the user is told why nothing happened");
     CHECK((dictation.state == AKDictationStateIdle), @"and the session ends");
     CHECK((audio.restores > restoresBefore), @"with the audio session given back");
+
+    // An error while finalizing is not a final transcript. The cached partial must stay out of
+    // the target just as it does when the final-result timeout expires.
+    [heard removeAllObjects];
+    problem = nil;
+    restoresBefore = audio.restores;
+    [dictation begin];
+    [speech say:@"partial words" final:NO];
+    [dictation end];
+    [speech failAfterPartial:@"partial words"];
+    CHECK((heard.count == 0), @"a recogniser error after a partial must not deliver text, got %@", heard);
+    CHECK((problem.length > 0), @"and reports the recogniser failure");
+    CHECK((dictation.state == AKDictationStateIdle), @"and ends the session");
+    CHECK((audio.restores > restoresBefore), @"with the audio session given back after an error");
 
     // Something else taking the audio ends the session rather than leaving the microphone
     // open behind a session we no longer own.

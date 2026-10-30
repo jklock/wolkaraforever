@@ -46,7 +46,7 @@ made them the one part of the launcher that did not look like the launcher.
   to a server.
 - **It will not deliver twice, or deliver half.** The audio ends, the recogniser is asked
   for its final result, and the text goes to the game once, when that result arrives. If
-  it never arrives - the recogniser is unavailable, or nothing was said - nothing is typed
+  it never arrives, or the recogniser errors after a partial result, nothing is typed
   and the user is told, because what is in hand at that point is a partial result, and half
   a sentence in a chat box is worse than an empty one.
 - **It will not stop the game seeing the button.** The press reaches the game as well as
