@@ -325,6 +325,11 @@ cat <<'DEFERRED'
                              synthetic press, which proves the mapper, the modes and the
                              published key set. What it cannot prove is what iPadOS reports
                              for a particular pad's buttons, which needs the pad.
+  a dictation target         a running guest: `selftest dictation-target` asks the game's
+                             own text field whether it takes words and keys, and with no
+                             guest it correctly reports 0/1 checks. Launching the game is
+                             outside this work, so it is deferred here and not counted as a
+                             pass - run it once a game is up.
   the game itself            a live session touches the client's own store; the CASC and
                              in-game checks stay in COMPATIBILITY.md and are done by hand.
   a real add-on import       the extractor is the Swift/ZIPFoundation path the fixture
