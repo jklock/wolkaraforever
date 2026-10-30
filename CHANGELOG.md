@@ -13,6 +13,13 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- A launch through the iPad Developer service that cannot be prepared now says **which
+  step refused**, in the app's language, instead of reporting a dead helper: not enrolled,
+  pairing identity did not verify, no usable debugger service, local service unreachable,
+  or memory preparation finished without a confirmed detach. A launch on an iPad that holds
+  no enrolment is stopped before the route is even started, rather than after a timeout.
+  Nothing gains a fallback and no check is weakened — every path still refuses and the game
+  is not started.
 - Added a separate **App language** setting for everything WolkaraForever draws: English, German,
   or the iPad's preferred language. It takes effect without a relaunch and covers rows, alerts,
   menus, status and progress lines, accessibility strings, the performance overlay and the touch

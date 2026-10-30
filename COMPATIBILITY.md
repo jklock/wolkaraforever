@@ -20,16 +20,41 @@ a general consumer-install promise.
 
 ## Evidence currently available
 
-| Area | Evidence | Scope |
-| --- | --- | --- |
-| Layer integrity and documentation links | Repository checks | Source structure and documentation only; not an on-device result. |
-| Forever configuration operations | Focused source tests | Backup/restore, graphics reset, gamepad setting, locale writes, and path safety. |
-| Earlier device work | Historical records | Dated results, with their device/build/revision boundaries retained in `development/validation/`. |
+Every result is at one of four levels (see
+[the user guide](docs/README.md#how-much-a-statement-here-proves)): source, simulator,
+device script, or human full-game. A result never moves up a level without a new run at that
+level.
 
-No statement here certifies that the current branch has been physically exercised on a
-particular device after this documentation review: the source is what was reviewed. Treat a
-device result as valid only when it names the device, iPadOS version, client build, execution
-mode, and source revision.
+| Level | What ran | What it proves |
+| --- | --- | --- |
+| Source | The layer gate, the documentation links, the per-module suites, the platform emulation suite, and the developer-service handoff against a synthetic local peer | That the code and its contracts do what the tests assert on a Mac. Nothing about an iPad. |
+| Simulator | The launcher pages, touch controls, the on-screen gamepad, input/voice/config rules, the app language, and the UIKit-backed adapters | That our screens and adapters work against stand-ins. Nothing about physical Metal, the tunnel, or memory preparation. |
+| Device script | The on-device matrix on an **iPad Pro (12.9-inch, 5th generation), iPadOS 27.0.1, Developer service mode**, at source revision `b8cebe7`: fresh install with the user's file preserved, config import, malformed config refused and kept, notices, background/foreground, the app's own input and render-profile self-tests, no new crash report, no new game error file | That this build behaved that way on that iPad. Nothing about the game. |
+
+The dated record for that run is
+[development/validation/b8cebe7.md](development/validation/b8cebe7.md), which names the
+commit, host, Xcode, device and every command with its exit status. Twenty-three steps ran
+and every one passed, including the install, the launch and the on-device matrix.
+
+### Not run, and deliberately not claimed
+
+- **Human full-game.** No launch, login, in-world session, performance measurement, or
+  gameplay check was part of this work. Nothing here says the game works.
+- **External JIT.** Not exercised at all. The unsigned generic `.ipa` exists for sideloading;
+  that is not a compatibility result.
+- **A spoken word through the microphone.** The app's own voice self-test opens a real
+  dictation session and hands it back, and passed everything a script can drive, but measured
+  **-120.0 dBFS** — digital silence rather than a quiet room — on every one of three runs.
+  Until someone speaks into the iPad, whether the microphone reaches the app is unproven, and
+  it is listed as deferred in the matrix rather than counted as a pass.
+- **The game's own text field.** `selftest dictation-target` asks a *running* guest whether it
+  takes words and keys; with no game launched it correctly reports 0/1 checks. Launching the
+  game is outside this work, so it is deferred with that reason.
+- **A real controller button in a hand.** The on-device input self-test drives the router with
+  a synthetic press, which proves the mapper, both modes and the published key set, not what
+  iPadOS reports for a particular pad's buttons.
+- **The store and the account.** No install, update or repair was performed against the
+  client's own files.
 
 ## Before you rely on it
 
