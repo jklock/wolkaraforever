@@ -98,10 +98,14 @@ change.
 
 ## Completion checklist
 
-- [ ] General documentation no longer claims an obsolete source SHA.
-- [ ] Developer-service implementation and failure paths are source-tested.
-- [ ] All app-owned source and simulator suites pass on the candidate SHA.
-- [ ] Layer and documentation gates pass.
-- [ ] Clean validation record exists for the candidate SHA.
-- [ ] Non-game device results, if run, name the device, iPadOS, mode, and SHA.
-- [ ] Compatibility documentation makes no JIT or full-game claim.
+Status 2026-10-30: executed on branch `app-updates`; the candidate is `b8cebe7` and its
+record is [validation/b8cebe7.md](validation/b8cebe7.md). The two deferred rows are
+deferred for reasons outside this plan's boundary, not overlooked — see COMPATIBILITY.md.
+
+- [x] General documentation no longer claims an obsolete source SHA.
+- [x] Developer-service implementation and failure paths are source-tested.
+- [x] All app-owned source and simulator suites pass on the candidate SHA.
+- [x] Layer and documentation gates pass.
+- [x] Clean validation record exists for the candidate SHA.
+- [x] Non-game device results, if run, name the device, iPadOS, mode, and SHA.
+- [x] Compatibility documentation makes no JIT or full-game claim.
