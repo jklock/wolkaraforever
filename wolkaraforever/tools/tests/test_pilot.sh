@@ -341,6 +341,30 @@ if grep -qE "launching|stopped" "$work/out.txt"; then
     check 1 "and must not have touched the app"
     echo "--- blind guest install printed: ---"; sed 's/^/    /' "$work/out.txt"; echo "--- end ---"
 fi
+
+# Fifth: the log this tool wrote itself when it ended a session. A killed guest never writes its
+# return line, so without the marker every later run takes that ended session for a live one and
+# refuses - which is how the guard would teach people to reach for --force-live instead.
+export WOLKAREFOREVER_FAKE_GUESTLOG=$'[host] execution mode=developer-service source=--local-game-startup\n[host] app=World of Warcraft Forever sha256=00\n[pilot] no guest session\n'
+run_pilot "$work/sessions/ended" state
+check $? "state should succeed after this tool ended the session itself"
+grep -q "a game session is live" "$work/out.txt" && check 1 "a session this tool ended must not read as live"
+grep -q "COULD NOT BE READ" "$work/out.txt" && check 1 "and it is a readable log, not an unknown one"
+
+# Sixth: a fresh install, where no guest has ever started and there is no guest log at all. That is a
+# fact, not an unknown one; reading it as unknown made a fresh install uninstallable, because the
+# very next stop could not be judged.
+export WOLKAREFOREVER_FAKE_GUESTLOG=""
+export WOLKAREFOREVER_FAKE_LISTING="$(listing_without_errors)"
+run_pilot "$work/sessions/fresh" state
+check $? "state should succeed on a fresh install with no guest log"
+grep -q "COULD NOT BE READ" "$work/out.txt" && check 1 "a log that does not exist is not an unreadable one"
+grep -q "a game session is live" "$work/out.txt" && check 1 "and it is not a live session either"
+# The same empty content, but the file does exist: that is the ambiguous case and must still refuse.
+export WOLKAREFOREVER_FAKE_LISTING="$(listing_with_error)"
+run_pilot "$work/sessions/emptylog" install
+[ $? -ne 0 ]
+check $? "install must still refuse a guest log that exists but yields nothing"
 unset WOLKAREFOREVER_FAKE_GUESTLOG
 export WOLKAREFOREVER_FAKE_LISTING="$(listing_without_errors)"
 

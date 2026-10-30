@@ -237,17 +237,30 @@ last = starts[-1].split("startup_return=", 1)[-1].strip() if starts else "none"
 # app is gone. There is deliberately no age bound: a suspended app still holds the session in
 # memory, and taking that away is what this guard exists to prevent.
 running = 1 if (guest_index is not None and not returned) else 0
+# This tool writes this line when it ends a session itself (see
+# clear_ended_guest_session). A killed guest never writes startup_return, so
+# without it the ended session would read as live forever. Only as the last line:
+# a later launch appends after it.
+ended = bool(guest_lines) and guest_lines[-1].strip() == '[pilot] no guest session'
+if ended:
+    running = 0
 log_age = None
+log_present = False
 for entry in files:
     if (entry.get("relativePath") or "").endswith("native-guest.log"):
+        log_present = True
         log_age = age_of(entry)
 live = 1 if (app and running) else 0
 # Fail closed. A `copy from` that fails leaves an empty file, and an empty file reads exactly
 # like "no session" - which is how a guard would wave an install through over a running game it
 # simply could not see. The copy does fail: on 2026-10-27 it reported "socket was closed
-# unexpectedly" twice while a game was live. If the app is up and the log is missing, empty, or
-# has no launch line at all, the answer is unknown, and unknown is not permission.
-unknown = 1 if (app and not running and (not guest_ok or launch_index is None)) else 0
+# unexpectedly" twice while a game was live. So a failed copy, or a log that exists but yields no
+# launch line, is unknown, and unknown is not permission.
+#
+# A log that is not there at all is a different fact: no guest has ever started in this
+# container, which is the normal state of a fresh install and exactly when step 2 of the matrix
+# has to work. Reading that as unknown made a fresh install uninstallable.
+unknown = 0 if ended else (1 if (app and not running and (not guest_ok or (log_present and launch_index is None))) else 0)
 
 # The system crash log. `.cpu_resource` reports are periodic microstackshots, not
 # failures, and the dash in `Tolkara-<date>` is what keeps them out of this count.
@@ -382,11 +395,54 @@ cmd_state() {
 # Stopping. Ask first, wait for the answer, and never send a signal the client
 # cannot act on unless the user asks for it in so many words.
 # ---------------------------------------------------------------------------
+# A guest session this run ended is not a session any more.
+#
+# native-guest.log is append-only and carries no timestamps. A guest that is killed
+# never writes its "[native] result startup_return=" line, so the log of a session
+# this script itself stopped goes on reading as "a game session is live" forever -
+# and then every later install refuses, which is how the guard teaches people to
+# reach for --force-live. Rewriting it is bookkeeping on a log this tool already
+# owns: it writes nothing into the game's store and nothing into the app's data
+# beyond that one file.
+#
+# The replacement is one explicit marker rather than an empty file, because an empty
+# log is exactly what a failed copy looks like and the state parser deliberately
+# treats that as unknown. A later launch appends after the marker, so it only means
+# "no session" while it is the last line.
+#
+# Only when the log is what claimed the session. A session that returned normally
+# left its startup_return line, never reads as live, and is left alone.
+PILOT_NO_SESSION='[pilot] no guest session'
+clear_ended_guest_session() {
+    [ "${1:-}" = "1" ] || return 0
+    # Still gone, checked now rather than trusted from a moment ago: a new instance that
+    # started in between could be running a guest, and its log is the one this would
+    # overwrite. Rewriting a live session's log as "no session" is the one mistake this
+    # marker must never make.
+    if [ -n "$(app_pid)" ]; then
+        say "a new instance is running, so the ended session's guest log is left alone"
+        return 0
+    fi
+    local marker="$SESSION/no-guest-session"
+    printf '%s\n' "$PILOT_NO_SESSION" > "$marker"
+    if xcrun devicectl device copy to --device "$DEVICE" --domain-type appDataContainer \
+        --domain-identifier "$BUNDLE" --source "$marker" --destination "Documents/native-guest.log" \
+        >/dev/null 2>&1; then
+        say "marked the guest log of the session this run ended, so it cannot read as live again"
+    else
+        say "could not mark the ended session's guest log: a later state will still call it live"
+    fi
+}
+
 stop_app() {
     local force=${1:-}
+    # Read before anything is stopped: once the process is gone, nothing on the
+    # device can say what it was holding.
+    local was_live; was_live=$(state_value session_live)
     local pid; pid=$(app_pid)
     if [ -z "$pid" ]; then
         say "not running"
+        clear_ended_guest_session "$was_live"
         return 0
     fi
     say "asking pid $pid to stop (SIGTERM, so the client can close its stores)"
@@ -404,6 +460,7 @@ stop_app() {
     done
     if [ -z "$(app_pid)" ]; then
         say "gone after ${waited}s"
+        clear_ended_guest_session "$was_live"
         return 0
     fi
     # Still there: say what it is doing before deciding anything. A relaunched instance has a
@@ -427,6 +484,7 @@ stop_app() {
         done
         if [ -z "$(app_pid)" ]; then
             say "gone after another ${waited}s"
+            clear_ended_guest_session "$was_live"
             return 0
         fi
     fi
@@ -445,6 +503,7 @@ stop_app() {
     done
     [ -z "$(app_pid)" ] || die "it would not stop even with SIGKILL; nothing was installed"
     say "gone"
+    clear_ended_guest_session "$was_live"
 }
 
 cmd_stop() {
@@ -738,11 +797,16 @@ cmd_view() {
         step "state"
         return 0
     fi
-    local baseline; baseline=$(cat "$BASELINE" 2>/dev/null || echo none)
+    # "none" is a baseline, not the absence of one: it records that there was no error
+    # file when this run started, which is the normal case. Comparing the content to
+    # "none" instead of asking whether the file exists made "no new error file"
+    # impossible to report on a clean device, so the check it feeds could never pass.
+    local baseline=none have_baseline=0
+    if [ -f "$BASELINE" ]; then have_baseline=1; baseline=$(cat "$BASELINE"); fi
     local newest; newest=$(state_value newest_error)
     say "baseline: $baseline"
     say "newest:   $newest"
-    if [ "$baseline" = "none" ]; then
+    if [ "$have_baseline" != 1 ]; then
         # Nothing was launched by this script, so "new" cannot be judged. Saying otherwise
         # would turn an old assert into a fresh alarm every time.
         say "no baseline: this script has not launched anything, so 'new' cannot be judged"
@@ -757,11 +821,12 @@ cmd_view() {
         say "it could not be fetched - read it on the device before going any further"
     fi
     step "did it crash?"
-    local crash_baseline; crash_baseline=$(cat "$CRASH_BASELINE" 2>/dev/null || echo none)
+    local crash_baseline=none have_crash_baseline=0
+    if [ -f "$CRASH_BASELINE" ]; then have_crash_baseline=1; crash_baseline=$(cat "$CRASH_BASELINE"); fi
     local crash; crash=$(state_value crash_newest)
     say "baseline: $crash_baseline"
     say "newest:   $crash ($(state_value crash_newest_age)s ago)"
-    if [ "$crash_baseline" = "none" ]; then
+    if [ "$have_crash_baseline" != 1 ]; then
         say "no baseline: this script has not launched anything, so 'new' cannot be judged"
     elif [ "$crash" = "$crash_baseline" ]; then
         say "no new crash report"
