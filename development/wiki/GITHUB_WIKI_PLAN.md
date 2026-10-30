@@ -1,9 +1,5 @@
 # GitHub Wiki implementation plan
 
-> **Publishing status: 2026-10-30.** GitHub Wiki is enabled. Its first page must be created
-> through the GitHub web UI before the Git-backed Wiki repository exists; publish this tree only
-> after the canonical sources on `prostatus` merge.
-
 ## Purpose and boundary
 
 The GitHub Wiki should be a readable, task-oriented front door for users and contributors. It

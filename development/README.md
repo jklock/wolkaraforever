@@ -17,10 +17,6 @@ and historical records. It is not part of the end-user guide.
 
 For installation and everyday use, start with the [user guide](../docs/README.md).
 
-The [documentation audit](DOCUMENTATION_AUDIT_2026-10-30.md) records the current-review scope;
-the [layer tool audit](guides/TOOL_AUDIT.md) maps every layer executable to its safety boundary,
-documentation, and automated evidence.
-
 ## Evidence levels
 
 Every result is recorded at one of four levels, and it never moves up without a

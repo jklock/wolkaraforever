@@ -2,8 +2,7 @@
 
 ## Status
 
-> **Applied on 2026-10-30 for `main`; repository-owned templates and Dependabot configuration
-> are on branch `prostatus` pending review.**
+> **Applied on 2026-10-30 for `main`.**
 
 The active `Protect main` ruleset requires a pull request, one approval, code-owner review,
 resolved conversations, linear history, and blocks force-pushes and branch deletion. The

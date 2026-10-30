@@ -5,9 +5,6 @@ Every script that builds, installs, runs, tests or pilots WolkaraForever lives i
 first prepares the tree, then runs the platform's own script against it - so you rarely
 call `build/platform/tools/*` yourself.
 
-[`TOOL_AUDIT.md`](TOOL_AUDIT.md) is the complete, machine-checked inventory. It records every
-layer-owned executable's inputs, side effects, safety boundary, owning test, and this reference.
-
 > **Paths.** Layer scripts are written here as `wolkaraforever/tools/<script>`, relative
 > to the repository root, and are run from there. The platform's own tools are written as
 > `platform/tools/<script>` in the source tree, or `build/platform/tools/<script>` once
