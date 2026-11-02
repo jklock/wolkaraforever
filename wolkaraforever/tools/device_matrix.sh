@@ -110,6 +110,49 @@ stop_when_quiet() {
     done
 }
 
+# A self-test first stops the launcher, then restores its normal home screen. That restore can
+# start the launcher's own update check, so asking the next self-test immediately may correctly
+# be refused by pilot.sh's "an update is writing" guard. The matrix waits out only that explicit,
+# safe-to-retry condition; any launch, transport, or test failure remains the test's result.
+selftest_when_quiet() {
+    local name=$1 logfile=$2
+    local deadline=$(( $(date +%s) + 300 )) waited=0
+    while :; do
+        if wolkaraforever/tools/pilot.sh selftest "$name" > "$logfile" 2>&1; then
+            [ "$waited" -gt 0 ] && printf '  (waited %ss for the launcher update before %s)\n' "$waited" "$name"
+            return 0
+        fi
+        if ! grep -q "an update is writing" "$logfile"; then
+            return 1
+        fi
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            printf '  (the launcher was still updating after %ss; not retrying %s)\n' "$waited" "$name" >> "$logfile"
+            return 1
+        fi
+        sleep 5
+        waited=$((waited + 5))
+    done
+}
+
+# Network devicectl installs occasionally lose their transport after the device has accepted a
+# request. Retrying the project wrapper is safe: it preserves app data, restores the launcher,
+# and leaves its final diagnostic in this log. A build or signing failure still fails all tries.
+install_with_retry() {
+    local logfile=$1 attempt=1
+    while [ "$attempt" -le 3 ]; do
+        if wolkaraforever/tools/pilot.sh install > "$logfile" 2>&1; then
+            [ "$attempt" -gt 1 ] && printf '  (install succeeded on attempt %s/3)\n' "$attempt"
+            return 0
+        fi
+        if [ "$attempt" -lt 3 ]; then
+            printf '  (install attempt %s/3 failed; retrying the project wrapper)\n' "$attempt"
+            sleep 5
+        fi
+        attempt=$((attempt + 1))
+    done
+    return 1
+}
+
 app_value() {
     # The value of one key in the file the app has written, or "missing".
     python3 - "$1" "$2" <<'PY'
@@ -144,7 +187,7 @@ else
     sed 's/^/  /' "$work/stop.log" | tail -5
     exit 1
 fi
-if wolkaraforever/tools/pilot.sh install > "$work/install.log" 2>&1; then
+if install_with_retry "$work/install.log"; then
     check 0 "the app installs"
 else
     check 1 "the app installs (see $work/install.log)"
@@ -276,7 +319,7 @@ step "7. the app's own self-tests, run on the installed build"
 # verdict to its own log. Running them against the installed build is the difference between "a
 # fixture says the mapper works" and "the app on this iPad says so". See wolkaraforever/Shell/SelfTest.h.
 for name in input voice render-profile; do
-    wolkaraforever/tools/pilot.sh selftest "$name" > "$work/selftest-$name.log" 2>&1 && rc=0 || rc=1
+    selftest_when_quiet "$name" "$work/selftest-$name.log" && rc=0 || rc=1
     verdict=$(grep -oE "selftest: $name (PASS|FAIL)[^\"]*" "$work/selftest-$name.log" | tail -1)
     # A microphone cannot be proved without sound, and this Mac has no way to make one.
     # The self-test's own verdict stays FAIL in its log - the measurement is evidence, not a

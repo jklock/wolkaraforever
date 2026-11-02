@@ -24,10 +24,17 @@ if [ ! -d "$package/.git" ]; then
 fi
 [ "$(git -C "$package" rev-parse HEAD)" = "$revision" ] || { echo 'ZIPFoundation revision differs from the app'; exit 1; }
 [ -z "$(git -C "$package" status --porcelain)" ] || { echo 'ZIPFoundation checkout is dirty'; exit 1; }
-if [ ! -f "$build/libZIPFoundation.dylib" ]; then
+swiftc_fingerprint=$(xcrun swiftc -version)
+fingerprint_file="$build/ZIPFoundation.swiftc-version"
+if [ ! -f "$build/libZIPFoundation.dylib" ] || \
+   [ ! -f "$build/ZIPFoundation.swiftmodule" ] || \
+   [ ! -f "$fingerprint_file" ] || \
+   [ "$(cat "$fingerprint_file")" != "$swiftc_fingerprint" ]; then
+    rm -f "$build/libZIPFoundation.dylib" "$build/ZIPFoundation.swiftmodule" "$fingerprint_file"
     xcrun swiftc -O -emit-library -emit-module -module-name ZIPFoundation \
         "$package"/Sources/ZIPFoundation/*.swift -o "$build/libZIPFoundation.dylib" \
         -emit-module-path "$build/ZIPFoundation.swiftmodule"
+    printf '%s\n' "$swiftc_fingerprint" > "$fingerprint_file"
 fi
 
 wolkaraforever/tools/prepare.sh
