@@ -90,7 +90,16 @@ codesign --force --sign - "$APP" > /dev/null
 xcrun simctl install "$SIM_ID" "$APP"
 LOG=$(mktemp)
 trap 'rm -f "$LOG"' EXIT
-xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.wow-launcher "$@" 2>&1 | tee "$LOG"
+# The fixture exits after its assertions, but simctl can leave the console stream open after
+# the process exits. Watch the fixture's explicit verdict so this automated wrapper cannot hang.
+xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.wow-launcher "$@" 2>&1 | tee "$LOG" &
+LAUNCH=$!
+for _ in $(seq 1 75); do
+    if grep -qE 'WoW UIKit (PASS:|TIMEOUT)' "$LOG"; then break; fi
+    sleep 1
+done
+kill "$LAUNCH" 2>/dev/null || true
+wait "$LAUNCH" 2>/dev/null || true
 # simctl can report success even if an assertion terminated the fixture.
 grep -q 'WoW UIKit PASS:' "$LOG"
 # The images the fixture drew are in its container, which is where anyone wanting to
