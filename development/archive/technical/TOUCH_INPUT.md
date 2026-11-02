@@ -49,7 +49,7 @@ the game`) and the next tap on WolkaraForever is a fresh launch.
 The gamepad button enables automatic touch controls when no physical controller
 is connected, or turns them off. The custom layout provides two sticks, D-pad,
 ABXY, LB/LT/RB/RT and `+`; it hides and releases held input while the keyboard is
-open. See [touch controller details and validation](TOUCH_CONTROLLER_PROPOSAL.md).
+open. Current coverage is the touch-controller simulator fixture.
 
 The pointer button toggles trackpad mode and appears cyan when enabled. The
 initial default is on for iPhone, off for iPad; a user's choice is saved
@@ -139,7 +139,7 @@ discarded when the keyboard closes or the app enters the background.
 
 There are two dictation paths and they stay separate. The one above is the system
 keyboard's microphone writing into the draft, with Replace as the user's decision. The other
-is the **Voice & Input Manager**'s mapped trigger ([`VOICE.md`](VOICE.md)): it records through the
+is the **Voice & Input Manager**'s mapped trigger ([`VOICE.md`](../../technical/VOICE.md)): it records through the
 app's own session and types the transcript straight into the field the guest has focused,
 through the controls' `touchInsertText:`, with no draft and no Replace. The draft editor is
 never announced as the game's text input - that mistake aborted the app the first time a

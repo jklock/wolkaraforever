@@ -35,8 +35,8 @@ ASan and UBSan where configured. A failing layer suite fails the run.
 | Adapter simulator suite (`test_translation_sim.sh`) | The UIKit-backed adapters: touch controls, gamepad, haptics and fonts, exercised in the simulator with the layer overlaid. |
 | Launcher (`test_wow_launcher.sh`) | The WoW launcher's suites: editions, download, verification, resume, updates. |
 | Launcher UI (`test_wow_launcher_ui.sh`) | Our own synthetic launcher fixture - no game files, accounts or network. Set `SIMULATOR`. |
-| Touch controls UI (`test_touch_controls_ui.sh`) | The toolbar, trackpad and layout fixture. |
-| Gamepad UI (`test_touch_gamepad_ui.sh`) | The on-screen controller fixture. |
+| Touch controls UI (`test_touch_controls_ui.sh`) | Automated toolbar, trackpad and layout fixture; `--stay` opens it for visual inspection. |
+| Gamepad UI (`test_touch_gamepad_ui.sh`) | Automated on-screen controller fixture; `--stay` opens it for visual inspection. |
 | Voice (`test_voice.sh`) | Input, dictation and configuration rules, as a tiny app in the simulator. |
 | Forever UI (`test_forever_ui.sh`) | The `Config.wtf` rules and the Forever UI archive (backup/reset/restore). |
 | Localization (`test_localization.sh`) | The app language: resolution, stored values, both tables, fallback, formatting, plurals and the change notice. |

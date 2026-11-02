@@ -33,5 +33,4 @@ Conventions used throughout:
 | [Core.md](Core.md) | `translation/CoreGraphics/`, `translation/CoreServices/`, `translation/Carbon/`, `translation/IOKit/` |
 | [Security.md](Security.md) | `translation/Security/` — keychain, legacy CDSA crypto, session |
 | [Security.md](Security.md) | `translation/Security/` and the experimental `translation/GameController/` adapter |
-| [CASE_FILE.md](CASE_FILE.md) | Authoritative gameplay-performance evidence, safe changes, and required device proof |
-| [Performance.md](Performance.md) | Historical hypotheses about the per-frame path; not an implementation authority |
+| [Performance.md](Performance.md) | Adapter implementation notes; it makes no gameplay-performance claim |

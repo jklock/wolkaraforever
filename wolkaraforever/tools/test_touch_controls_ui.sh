@@ -1,6 +1,6 @@
 #!/bin/bash
-# Builds/opens our own input fixture, never an imported application.
-# Optional --self-test checks keyboard layout, text delivery and focus.
+# Builds/tests our own input fixture, never an imported application.
+# The default is automated; pass --stay for visual inspection.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
@@ -49,13 +49,15 @@ cat > "$APP/Info.plist" <<'PLIST'
 PLIST
 codesign --force --sign - "$APP" > /dev/null
 xcrun simctl install "$SIM_ID" "$APP"
-if [[ " $* " == *" --self-test "* ]]; then
+if [[ " $* " == *" --stay "* ]]; then
+    # Visual inspection is explicit so the documented test command cannot hang.
+    xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls "$@"
+else
+    if [[ " $* " != *" --self-test "* ]]; then
+        set -- --self-test "$@"
+    fi
     # simctl may report success even when the app aborts an assertion.
     LOG=build/touch-controls-fixture/self-test.log
     xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls "$@" 2>&1 | tee "$LOG"
     grep -q 'TOUCH_UI_SELF_TEST_PASS:' "$LOG"
-else
-    # Looking at it by hand: keep it open. Without --stay the fixture closes itself
-    # after a minute, so an unattended run cannot sit on the console for ever.
-    xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls --stay "$@"
 fi

@@ -295,7 +295,7 @@ only for what it demonstrably does — the drawable's size — and its label sto
 pixel reduction the scene does not get.
 
 **Update, 2026-10-29 — the first half of S2 was decided against; that is not a fix.**
-The [launcher reorganization](../uichanges/LAUNCHER_REORGANIZATION_PLAN.md) settles how the
+The [launcher reorganization](../plans/LAUNCHER_REORGANIZATION_PLAN.md) settles how the
 two levers are separated, not that the saving was found. The page's **Render profile** row
 writes only `WolkaraForeverBackingScale` and says so, and the rows that write the game's
 `Config.wtf` are a different card with different names, so nothing on the page mixes "how this

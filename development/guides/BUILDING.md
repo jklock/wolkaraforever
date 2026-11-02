@@ -143,7 +143,8 @@ Metal debug wrapper is the suspected cause; an ordinary icon launch worked.
 The shared scheme now explicitly disables this option; regenerate it with
 `tools/generate.sh` after updating an older checkout. This changes Xcode's
 launch diagnostics, not the game's files or the memory-preparation route.
-The [compatibility report](../../COMPATIBILITY.md) tracks the pending device retest.
+The [compatibility report](../../COMPATIBILITY.md) records physical-device evidence separately
+from this source and simulator workflow.
 Direct Xcode builds include the generic compatibility
 libraries by default. `tools/install.sh` retains its application-specific
 default; pass `NATIVE_GUEST_SHIMS=GENERIC` to that script to build without a
@@ -306,8 +307,8 @@ wolkaraforever/tools/verify_external_jit.sh --bundle-id YOUR_INSTALLED_BUNDLE_ID
 
 The first command proves only that the app is installed. The second requires the runtime's own
 evidence that the debugger detached and executable memory survived; neither command proves game
-login or gameplay. This lane remains unvalidated until the physical-device sequence in
-[distribution guidance](WOLKARAFOREVER_DISTRIBUTION.md) passes.
+login or gameplay. Physical-device evidence is recorded separately in
+[COMPATIBILITY.md](../../COMPATIBILITY.md).
 
 A generic build also works with the other modes where they are available:
 `NATIVE_GUEST_SHIMS=GENERIC tools/install.sh` needs no `GUEST_EXE` (with Local

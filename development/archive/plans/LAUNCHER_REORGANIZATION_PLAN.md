@@ -21,8 +21,8 @@ Keep this as the first card. Its rows become:
 3. **App language:** `English`, `German`, or `System Default`. It controls WolkaraForever's
    interface only. **Implemented** as `wow.language` — its own identifier, as this plan asks —
    with the German alignment confirmation described in
-   [the localization guide](../guides/LOCALIZATION.md); the review of that work is in
-   [the record](../archive/validation/56ddc87-german-app-localization.md).
+   [the localization guide](../../guides/LOCALIZATION.md); the review of that work is in
+   [the record](../validation/56ddc87-german-app-localization.md).
 
 The card must state English names clearly enough that a user knows whether a choice changes the
 app, the game content, or the CDN region. Preserve accessibility identifiers with new stable

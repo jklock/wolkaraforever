@@ -8,6 +8,8 @@ directories.
 | Area | Contents |
 | --- | --- |
 | [plans/](plans/) | Completed implementation plans, retained with their original scope and evidence links. |
+| [technical/](technical/) | Superseded diagnostics, investigations, and implementation proposals. |
+| [architecture/](architecture/) | Superseded layer-baseline records retained for provenance. |
 | [validation/](validation/) | Completed, dated validation evidence retained outside the live validation output directory. |
 
 Validation records intentionally remain in

@@ -1,6 +1,7 @@
 # Performance: historical hypotheses, not an implementation authority
 
-> **Superseded for performance decisions by [CASE_FILE.md](CASE_FILE.md).**
+> **Historical adapter explanation.** It documents implementation mechanics only;
+> it is not performance evidence and makes no gameplay-performance claim.
 > The numerical in-world samples in this document do not have a retained raw
 > gameplay log in this checkout. The retained 60 fps log is the login screen.
 > Treat the analysis below as hypotheses only; do not implement its proposed

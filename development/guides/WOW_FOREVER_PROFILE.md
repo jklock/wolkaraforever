@@ -9,7 +9,7 @@ of gameplay without problems at 60 FPS, 50% render scale and graphics quality
 2. That session used a Bluetooth keyboard and AssistiveTouch. See the
 [setup guide](../../docs/INSTALLATION.md) for the supported installation,
 public certificate resource and mouse/controller setup. Experimental
-[on-screen keyboard and trackpad controls](../../development/technical/TOUCH_INPUT.md) are now
+[on-screen keyboard and trackpad controls](../../development/technical/FEATURES.md#input-controls-and-voice) are now
 implemented in this branch; the user subsequently confirmed them working
 correctly in Forever on the same iPad (2026-10-02).
 

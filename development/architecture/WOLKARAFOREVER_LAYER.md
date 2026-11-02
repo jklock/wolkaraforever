@@ -15,7 +15,7 @@ platform file, or as an **overlay** of one of our files.
 | `Shell/` | The app's own shell: entry point, library home, execution-mode glue, branding plist, icon art, the assets catalog, its test. |
 | `WoW/` | The launcher for WoW Forever: Client, CASC, Updater, Installation, Manifest, UpdateLock, WoWViewController, the add-on manager, their tests and their tools. |
 | `Touch/` | On-screen controls: the toolbar, trackpad and gamepad, layout and haptics, the drafts and dictation path, and the adapter's fonts. |
-| `Bridge/` | What the patched platform files and the public APIs call into: the background pacing install, the local-service retry engine, and the source of the pending AppKit patch. |
+| `Bridge/` | What patched platform files and public APIs call into: background pacing and the local-service retry engine. |
 
 ## How the layer reaches the build
 
@@ -61,14 +61,10 @@ Settings come from the repository root's ignored `local.env` (`wolkaraforever/to
 none of them are committed. The bundle ID is deliberately unchanged, so an install
 replaces the app in place and the device keeps its data.
 
-## Open items
-
-- The two touch fixtures still block headless unless run with `--self-test`.
-- Documentation: the fork's docs are current. The front door is [README.md](../../README.md),
-  the full index is [docs/README.md](../../docs/README.md), and the testing and scripts
-  references are [development/testing/TESTING.md](../testing/TESTING.md) and
-  [development/guides/TOOLING.md](../guides/TOOLING.md). `platform/` still carries upstream's own docs,
-  unchanged.
+The front door is [README.md](../../README.md), the full index is
+[docs/README.md](../../docs/README.md), and testing/scripts are documented in
+[Testing](../testing/TESTING.md) and [Tooling](../guides/TOOLING.md). `platform/`
+continues to carry upstream documentation unchanged.
 
 The adapter needs no file of ours any more. What it does for us is patch 0009: the
 Control+Option+D dictation trigger, the occlusion a guest window is told about, and the

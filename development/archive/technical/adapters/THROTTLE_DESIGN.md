@@ -2,7 +2,7 @@
 
 > **Not an approved implementation plan.** The 43 fps, GPU-time, and thermal
 > premises below lack a retained raw in-world capture. The retained 60 fps log
-> is the login screen. [CASE_FILE.md](CASE_FILE.md) is authoritative: measure
+> is the login screen. [CASE_FILE.md](CASE_FILE.md) is the contemporaneous record: measure
 > actual gameplay before changing QoS, refresh reporting, or rendering behavior.
 
 The premise is stated as a constraint, not a hope: **assume `ProcessInfo.thermalState ==

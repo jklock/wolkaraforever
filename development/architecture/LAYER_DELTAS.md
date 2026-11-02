@@ -87,7 +87,7 @@ authorization/Tunnel/PacketServiceProbe.swift
 docs/ARCHITECTURE.md
 docs/BUILDING.md
 docs/BUILDING.md
-docs/TOUCH_INPUT.md
+technical/TOUCH_INPUT.md (archived historical record)
 launcher/App/AppLibrary.h
 launcher/App/AppLibrary.m
 launcher/App/ExecutionMode.h
@@ -206,7 +206,7 @@ same as differing now - see "The measured delta set" below for what actually dif
 | `tests/test_appkit_views.m`, `tests/test_touch_controls_app.m` | platform-owned + new layer tests | Upstream's assert the platform's two-button layout; the layer ships its own fixtures for its toolbar, drafts and dictation |
 | `tests/test_execution_mode.m` | platform-owned + new layer test | Mode machinery is platform; the layer tests its own glue |
 | `tools/test_emulation.sh` | patch | Add the layer's suites to the run |
-| `README.md`, `COMPATIBILITY.md`, `NOTICE.md`, `docs/BUILDING.md`, `docs/TOUCH_INPUT.md`, `profiles/wow-forever/README.md`, `local.env.example`, `.github/workflows/release.yml` | layer | Root-level documents, profiles, settings contract and CI belong to the repository we own; upstream's live untouched under `platform/` and are merged in by hand when their content matters |
+| `README.md`, `COMPATIBILITY.md`, `NOTICE.md`, user/developer documentation, profiles, settings contract and CI | layer | Root-level documents, profiles, settings contract and CI belong to the repository we own; upstream's live untouched under `platform/` and are merged in by hand when their content matters |
 
 ## Ours only: 16 platform files we modified (upstream never touched)
 
@@ -226,8 +226,8 @@ same as differing now - see "The measured delta set" below for what actually dif
 
 | Module | Files |
 | --- | --- |
-| `wolkaraforever/WoW` (launcher, updates, add-ons) | 17 files under `launcher/WoW/`, plus `tools/wow_cdn.m`, `profiles/wow-forever/sync_addons.sh`, `tests/test_wow_{client,installation,manifest,update,verification}.m`, `tests/wow_installation_fixture.h`, `tests/test_wow_launcher_app.m`, `tools/test_wow_launcher.sh`, `tools/test_wow_launcher_ui.sh`, `docs/WOW_LAUNCHER.md`, `docs/ADDON_MANAGER_PLAN.md` |
-| `wolkaraforever/Touch` | `translation/AppKit/{Fonts.h,Fonts.m,TouchGamepad*,TouchGamepadLayout*,TouchHaptics*}`, `translation/Metal/BackgroundPacing.m`, `tests/test_touch_gamepad_app.m`, `tools/test_touch_gamepad_ui.sh`, `docs/TOUCH_CONTROLLER_PROPOSAL.md`, `docs/TOUCH_INPUT.md` |
+| `wolkaraforever/WoW` (launcher, updates, add-ons) | 17 files under `launcher/WoW/`, plus `tools/wow_cdn.m`, `profiles/wow-forever/sync_addons.sh`, `tests/test_wow_{client,installation,manifest,update,verification}.m`, `tests/wow_installation_fixture.h`, `tests/test_wow_launcher_app.m`, `tools/test_wow_launcher.sh`, and `tools/test_wow_launcher_ui.sh` |
+| `wolkaraforever/Touch` | `translation/AppKit/{Fonts.h,Fonts.m,TouchGamepad*,TouchGamepadLayout*,TouchHaptics*}`, `translation/Metal/BackgroundPacing.m`, `tests/test_touch_gamepad_app.m`, and `tools/test_touch_gamepad_ui.sh` |
 | `wolkaraforever/Shell` | `launcher/Assets.xcassets/WolkaraForever.appiconset/*`, `artwork/wolkaraforever/*`, `tools/make_wolkaraforever_icon.py`, `docs/{GETTING_STARTED,WOLKAREFOREVER_DISTRIBUTION,FRESH_INSTALL_TEST}.md` |
 | `wolkaraforever/Bridge` | `authorization/App/LocalServiceRetry.{h,m}`, `tests/test_local_service_retry.m`, `tools/test_local_service_retry.sh`, `tests/test_packet_service_retry.swift` |
 

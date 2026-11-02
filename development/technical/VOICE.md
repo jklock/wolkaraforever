@@ -65,7 +65,7 @@ draft editor is **not** the game's input: it is a `UITextView` that holds words 
 keyboard's Replace button and cannot reach the game at all.
 
 The two channels stay separate on purpose. The system keyboard's own microphone writes into
-the draft and the user decides when Replace puts it into the field (`TOUCH_INPUT.md`). A
+the draft and the user decides when Replace puts it into the field. A
 mapped voice trigger writes straight into the field and presses Return only when auto-submit
 is on; nothing of ours appears for it.
 
@@ -154,7 +154,7 @@ Handy's own behaviour, and where we stand:
 | Tap to toggle on and off | press once on, once off | **same** |
 | Hold-only / toggle-only | either forced | same two modes offered; the variants are the same code path |
 | Auto-submit | send after inserting | **same**, off by default |
-| Direct typing vs clipboard paste | how the text is inserted | typing, which is what the game already accepts. Clipboard paste needs the guest's pasteboard, which does not exist — see `CONTROLLER_INPUT.md` |
+| Direct typing vs clipboard paste | how the text is inserted | typing, which is what the game already accepts. Clipboard paste needs a guest pasteboard, which this layer does not provide. |
 | Dictionary | custom words, biased at recognition | **same**, through the recogniser's `contextualStrings` |
 | Post-processing | an optional pass over the transcript | not yet; it needs a model, and is a separate decision |
 | History | browse past transcripts | not yet; trivially added, and the log already holds them |

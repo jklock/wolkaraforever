@@ -99,7 +99,7 @@ change.
 ## Completion checklist
 
 Status 2026-10-30: executed on branch `app-updates`; the candidate is `b8cebe7` and its
-record is [validation/b8cebe7.md](validation/b8cebe7.md). The two deferred rows are
+record is [validation/b8cebe7.md](../../validation/b8cebe7.md). The two deferred rows are
 deferred for reasons outside this plan's boundary, not overlooked — see COMPATIBILITY.md.
 
 - [x] General documentation no longer claims an obsolete source SHA.

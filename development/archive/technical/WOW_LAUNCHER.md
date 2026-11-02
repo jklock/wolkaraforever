@@ -36,7 +36,7 @@ External JIT in the diagnostics/sideload target, before memory reservation.
 An old saved Local signing selection cannot accidentally block an ordinary
 launch. Explicit development arguments retain the previous resolver and can
 still select another mode. Hiding the selector does not remove enrolment, JIT
-or memory requirements; see [the distribution plan](../guides/WOLKARAFOREVER_DISTRIBUTION.md).
+or memory requirements; see [the distribution plan](../plans/WOLKARAFOREVER_DISTRIBUTION.md).
 
 - Remembers Forever, Classic Era, Classic, Retail or Retail Beta, region
   and game language. The picker offers English, Spanish and German; for an installed
@@ -405,7 +405,7 @@ that passes while the wrong file is under that name is worth less than no check 
 all, which is why the evidence now comes from the app.
 
 The follow-up on `feature/touch-controller` adds an automatic virtual gamepad;
-see [its layout, implementation and validation](TOUCH_CONTROLLER_PROPOSAL.md).
+see the current feature map and touch-controller simulator coverage.
 
 
 ## Status text correction (2026-10-06)
@@ -477,7 +477,7 @@ being wrong, not the app, and both are recorded here rather than quietly fixed.
 ## The home page as five cards, and a device profile (2026-10-29)
 
 The page followed
-[the launcher reorganization plan](../uichanges/LAUNCHER_REORGANIZATION_PLAN.md): five cards,
+the implemented launcher layout: five cards,
 each one job, in the order the page is read — **Game Edition**, **Add-On Manager**,
 **Voice & Input Manager**, **Performance Manager**, and **UI Manager**. Two across on an iPad;
 one column on an iPhone or at the largest text sizes, where the page scrolls down and no card
@@ -492,7 +492,7 @@ Graphical Settings**, **Open Settings Folder**, **Gamepad UI**. Neither can do t
 and the render rows no longer write `Config.wtf` at all — the row that does says so in its own
 name. That is a behaviour change from the previous page, where choosing a render profile also
 rewrote the client's CVars and took a UI backup; see the S2 update in
-[performance and thermal](PERFORMANCE_THERMAL.md) for what that leaves unmeasured.
+the simulator and source suite boundaries for what this does not prove.
 
 `WoW/DeviceProfile.*` is the device table the plan asks for: versioned, data only, one record
 per `hw.machine` value, with the panel size, the highest quality that hardware may be offered,

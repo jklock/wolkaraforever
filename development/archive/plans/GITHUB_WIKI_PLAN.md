@@ -45,7 +45,7 @@ Home
 ## Page specifications
 
 Two pages of this tree are already written and only need publishing from the files named here:
-[App language](APP_LANGUAGE.md) and [Game region and language](GAME_REGION_AND_LANGUAGE.md). Both
+[App language](../../wiki/APP_LANGUAGE.md) and [Game region and language](../../wiki/GAME_REGION_AND_LANGUAGE.md). Both
 carry their canonical source and a review date, which is what the rollout checklist asks for.
 
 | Wiki page | Content | Canonical repository sources |

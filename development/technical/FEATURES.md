@@ -16,7 +16,8 @@ The branded launcher is the normal entry point. It keeps state in the app contai
 | Play and leave | Starts the selected client through the chosen execution mode. The in-game toolbar's Leave control returns to the normal launcher state after guest exit. | The app must not leave a user trapped on an unusable guest screen. `Shell/`, `Touch/`; launcher and touch simulator fixtures. |
 | Logging and diagnostics | Stores a redacted app log in the app container; device tools retrieve it without touching game files or manipulating an active session. | Reports need evidence without credentials, pairing data, teams, or device identifiers. `Shell/WolkaraForeverLog.*`, `pilot.sh log`, `device_log.sh`. |
 
-See [the launcher reference](WOW_LAUNCHER.md) for the update state machine and [the user guide](../../docs/USING_WOLKARAFOREVER.md) for visible controls.
+See [the user guide](../../docs/USING_WOLKARAFOREVER.md) for visible controls and
+[Testing](../testing/TESTING.md) for the authoritative automated coverage map.
 
 ## Add-ons and the user's UI
 
@@ -41,7 +42,7 @@ Input travels through the layer's UIKit-facing code. This is user-initiated inpu
 | --- | --- | --- |
 | Touch toolbar and trackpad | Provides pointer, keyboard, gamepad, settings, and Leave controls; maps touch gestures to host input. | iPad has no native macOS pointer model, but the toolbar remains usable while the guest renders. `Touch/TouchControls.*`; `test_touch_controls_ui.sh`. |
 | On-screen gamepad | Appears automatically without a physical controller; its layout, size, opacity, grid, rings, and haptics are configurable. | A usable default should not prevent per-device adjustment. `TouchGamepad.*`, `TouchGamepadLayout.*`, `TouchHaptics.*`; `test_touch_gamepad_ui.sh`. |
-| Physical controller | Routes standard and extended GameController elements and includes an inspector for what a connected pad actually sends. | iPadOS reserves some buttons; the inspector prevents a false promise that every hardware control can be mapped. `Controller/`, `Input/`; [controller input](CONTROLLER_INPUT.md). |
+| Physical controller | Routes standard and extended GameController elements and includes an inspector for what a connected pad actually sends. | iPadOS reserves some buttons; the inspector prevents a false promise that every hardware control can be mapped. `Controller/`, `Input/`; simulator coverage is in `test_voice.sh` and the controller/input fixtures. |
 | Dictation | Opens iPad speech recognition only after the user enables and triggers it; finalized text uses the same insertion path as typed text and targets the focused game field. | Recognition stays on device and never uses a cloud transcription service. `Voice/`, `Input/`; `test_voice.sh`. |
 | Trigger ownership | Learns a key/controller element, supports Hold and Toggle, suppresses repeated presses, and can leave a controller button visible to the game. | Input cannot be assumed exclusive; the UI warns about collision risk until game mapping is measured. `Input/Trigger.*`, `InputRouter.*`; [input triggers](INPUT_TRIGGERS.md). |
 | Test Voice and permissions | Verifies mapping and recognition before a game starts, and links to the system permission page. | A configured microphone is not proof that speech reaches the app. `VoiceTestViewController.*`; [voice](VOICE.md). |
@@ -53,8 +54,8 @@ The device scope for voice and controller behavior is deliberately bounded in [C
 | Capability | Behavior and reason | Boundary and proof |
 | --- | --- | --- |
 | Performance HUD | Shows renderer-sourced FPS/frame time, GPU information, thermal state, memory, battery, and low-power state; users can move and expand it. | It reads host metrics only and never changes graphics because a threshold was observed. `Touch/AKPerformanceOverlay.*`; `test_wow_launcher_ui.sh`. |
-| Renderer timing | Attributes frames at the presentation boundary only when the marker proves a guest frame. | A display link is a scheduling signal, not proof of a submitted game frame. patches `0018`, `0019`, `0035`; [performance lanes](PERFORMANCE_LANES.md). |
-| Backing scale and budget | Supplies backing scale and offers a measured performance preset. | It makes no universal frame-rate claim without matching device/build/scene evidence. patches `0023`–`0025`; [performance and thermal](PERFORMANCE_THERMAL.md). |
+| Renderer timing | Attributes frames at the presentation boundary only when the marker proves a guest frame. | A display link is a scheduling signal, not proof of a submitted game frame. patches `0018`, `0019`, `0035`. |
+| Backing scale and budget | Supplies backing scale and offers a measured performance preset. | It makes no universal frame-rate claim without matching device/build/scene evidence. patches `0023`–`0025`. |
 | Device profile and render profile | Resolves the running model against a versioned table of measured devices, offers **Automatic** for that device plus preview overrides, and offers only the render qualities that device was measured at. **Restore performance defaults** removes only this app's own keys. | It writes the app's own render scale and never the game's `Config.wtf`; the game-file rows are separate on the page and say so. An unrecognised device gets a conservative fallback, not a guess. `WoW/DeviceProfile.*`; `test_device_profile.m`; `test_wow_launcher_ui.sh`. |
 | Measurement tools | `perf_sweep.py` samples controlled variants; `capture_gameplay_log.sh` labels baseline/candidate evidence. | They refuse unsafe session state and write ignored artifacts under `logs/`. [tools reference](../guides/TOOLING.md). |
 | Background pacing | Limits the Metal frame loop to 5 fps while the app is inactive or backgrounded, then restores normal pacing on foreground. | It reduces active work but does not override iPadOS background scheduling. `Bridge/BackgroundPacing.m`. |

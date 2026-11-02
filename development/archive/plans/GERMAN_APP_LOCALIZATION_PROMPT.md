@@ -48,7 +48,7 @@ game language to German rather than silently changing it.
 
 2. **Language settings UX**
    - Add **App language** to the Game Edition area specified in
-     `development/uichanges/LAUNCHER_REORGANIZATION_PLAN.md`. It displays the current resolved
+     `development/archive/plans/LAUNCHER_REORGANIZATION_PLAN.md`. It displays the current resolved
      language and opens English, German, and System Default choices.
    - Changing app language applies immediately to the launcher without restarting the app.
      Preserve the current screen when possible; a controlled rebuild of the root controller is

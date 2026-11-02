@@ -3,8 +3,8 @@
 Assessment: 2026-10-06. WolkaraForever is a WoW-focused fork of Tolkara. Changing its
 name, home screen or distribution channel does not change iOS code-execution
 requirements. The public fork is distributed as source for personal Xcode builds. No tested
-public WolkaraForever IPA or notarized build is provided. See [Install WolkaraForever](../../docs/INSTALLATION.md)
-and the [fresh-install checklist](../testing/FRESH_INSTALL_TEST.md).
+public WolkaraForever IPA or notarized build is provided. See [Install WolkaraForever](../../../docs/INSTALLATION.md)
+and the [fresh-install checklist](../../testing/FRESH_INSTALL_TEST.md).
 
 ## What is currently demonstrated
 
@@ -13,7 +13,7 @@ target, Developer Mode and one-time device enrolment. Forever gameplay and
 Mac-disconnected reboot/launch were reported on an iPad Pro M5; no record of that
 session is retained here, so neither is demonstrated at the current revision.
 Those reports do not prove network startup, the latest updater revision, or a
-fresh install using another user's signing identity. See [COMPATIBILITY.md](../../COMPATIBILITY.md).
+fresh install using another user's signing identity. See [COMPATIBILITY.md](../../../COMPATIBILITY.md).
 
 The updater checks editions and installs patches while open. A first full
 real-game download has been performed end to end, as has a clean install. The

@@ -34,6 +34,12 @@ for LANGUAGE in en de; do
     mkdir -p "$APP/$LANGUAGE.lproj"
     cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$APP/$LANGUAGE.lproj/"
 done
+# Keep the fixture's bundle contract identical to the app target. The voice suite uses the
+# shared host logger, which validates the notices that the packaged app exposes.
+cp "$ROOT/LICENSE" "$APP/WolkaraForever-LICENSE"
+cp "$ROOT/NOTICE.md" "$APP/WolkaraForever-NOTICE.md"
+cp "$ROOT/platform/LICENSE" "$APP/LICENSE"
+cp "$ROOT/platform/NOTICE.md" "$APP/NOTICE.md"
 # The sources under test, and only those: the view controllers are exercised by the
 # launcher fixture instead, and pulling them in would drag WolkaraForeverTheme along for
 # nothing.
