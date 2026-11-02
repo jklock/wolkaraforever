@@ -251,7 +251,13 @@ run_step "game file verification and repair (CASC)" wolkaraforever/tools/test_wo
 # Backup, restore, the CVar rules and the gamepad setting are the operations a user
 # cannot redo if they go wrong, and this suite was only ever run by hand.
 run_step "config, gamepad and UI backup/restore" wolkaraforever/tools/test_forever_ui.sh || failures=$((failures+1))
-run_step "the app builds for the device" wolkaraforever/tools/install.sh --build-only || failures=$((failures+1))
+if [ -n "${DEVELOPMENT_TEAM:-}" ]; then
+    run_step "the signed app builds for the device" wolkaraforever/tools/install.sh --build-only || failures=$((failures+1))
+else
+    step_names+=("signed device app build")
+    step_results+=("NOT RUN (DEVELOPMENT_TEAM unset)")
+    step_bodies+=("Not run: local.env has no DEVELOPMENT_TEAM. This source/simulator validation does not claim a signed device build.")
+fi
 if [ "$full" = 1 ]; then
     # The platform's suites, with its known failures told apart from ours. A failure the
     # layer causes must fail the run; a failure that reproduces in a pristine checkout of
