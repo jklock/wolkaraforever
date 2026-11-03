@@ -27,7 +27,9 @@ cd "$(dirname "$0")/../.." || exit 2
 
 facade=wolkaraforever/Bridge/GameControllerFacade.m
 
-exe=${1:-}
+# Argument, then the environment, then local.env - the same precedence env.sh gives the
+# rest of the tools, so `GUEST_EXE=… install.sh` checks the application it is about to build.
+exe=${1:-${GUEST_EXE:-}}
 if [ -z "$exe" ]; then
     exe=$(set -a; . ./local.env 2>/dev/null; printf '%s' "${GUEST_EXE:-}")
 fi

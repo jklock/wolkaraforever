@@ -1623,6 +1623,14 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     return directory?[directory stringByAppendingPathComponent:@"Interface/AddOns"]:nil;
 }
 
+// Same reason as -previewAddonBrowser: the Controller Manager row lives at the bottom of a
+// box that is below the fold on an iPad, so a device check needs a way to open the page
+// without a person scrolling and tapping to get there.
+- (void)previewControllerManager {
+    [self loadViewIfNeeded];
+    [self presentPage:[TKWoWControllerManagerViewController new]];
+}
+
 - (void)previewAddonBrowser {
     [self loadViewIfNeeded];
     NSError *error=nil;

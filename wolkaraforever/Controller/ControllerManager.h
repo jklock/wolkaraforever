@@ -138,8 +138,12 @@ FOUNDATION_EXPORT NSString *const AKControllerGuestViewRoutingKey;      // @YES 
 @property (nonatomic, readonly) NSArray<GCController *> *physicalControllers;
 @property (nonatomic, readonly) BOOL physicalControllerConnected;
 /// Whether this build's guest has a GameController façade that can hide a physical pad.
-/// False in a build that does not include the adapter, which is every build unless it is
-/// asked for; routing then refuses to run at all.
+/// True when the adapter announced itself, or when the bundle carries it - the latter is
+/// what lets the launcher say "starts with the game" instead of claiming the build cannot
+/// do it, because the adapter only loads when a guest session needs it.
+@property (nonatomic, readonly) BOOL guestFacadeAvailable;
+/// Whether it has actually announced itself in this process. Only then can a virtual pad be
+/// asked for, because until then there is nothing to ask.
 @property (nonatomic, readonly) BOOL guestFacadePresent;
 
 /// Every model connected now, sorted by display name. Empty when no pad is connected.

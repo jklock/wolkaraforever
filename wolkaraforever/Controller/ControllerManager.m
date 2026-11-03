@@ -314,13 +314,28 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 - (AKControllerRoutingState)state {
     if (!_enabled) return AKControllerRoutingStateDisabled;
     // Refused rather than degraded: without the façade the guest sees both pads.
-    if (!_guestFacadePresent) return AKControllerRoutingStateFailed;
+    if (!self.guestFacadeAvailable) return AKControllerRoutingStateFailed;
     if (_virtualFailed) return AKControllerRoutingStateFailed;
     if (!self.physicalControllerConnected) return AKControllerRoutingStateWaiting;
     return _virtualController ? AKControllerRoutingStateRouting : AKControllerRoutingStateWaiting;
 }
 
 - (BOOL)guestFacadePresent { return _guestFacadePresent; }
+
+- (BOOL)guestFacadeAvailable {
+    if (_guestFacadePresent) return YES;
+    // The adapter is a dylib the runtime loads for a guest session, so in the launcher it has
+    // not announced itself yet even in a build that carries it. The bundle is the honest
+    // answer to "can this build do it at all".
+    static BOOL carried;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *dylib = [NSBundle.mainBundle.bundlePath
+            stringByAppendingPathComponent:@"Frameworks/akGameController.dylib"];
+        carried = [NSFileManager.defaultManager fileExistsAtPath:dylib];
+    });
+    return carried;
+}
 
 - (void)noteGuestFacadePresent {
     if (_guestFacadePresent) return;
@@ -335,6 +350,8 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         case AKControllerRoutingStateDisabled:
             return @"routing is off; physical controllers reach the game directly";
         case AKControllerRoutingStateWaiting:
+            if (!_guestFacadePresent)
+                return @"routing is on; it starts when a guest session loads the guest controller facade";
             return self.physicalControllerConnected
                 ? @"waiting for the virtual controller to connect"
                 : @"routing is on; no physical controller is connected";
@@ -344,7 +361,7 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
                    (unsigned long)[AKControllerProfile sourceElements].count]
                 : @"routing";
         case AKControllerRoutingStateFailed:
-            if (!_guestFacadePresent)
+            if (!self.guestFacadeAvailable)
                 return @"this build has no guest GameController facade, so a physical pad "
                         "would reach the game as well as its virtual replacement";
             return _virtualError.length ? _virtualError : @"the virtual controller could not connect";

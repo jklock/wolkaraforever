@@ -50,6 +50,11 @@ extern NSString *const AKSelfTestCurseForge;
 /// exact request the app uses, on device. This is the only check that proves words come back
 /// without a person speaking into the microphone.
 extern NSString *const AKSelfTestSpeechFile;
+/// The Controller Manager page, driven on the installed build: the switch's off default, that
+/// switching it writes WolkaraForever's own key and nothing else, what the page says while
+/// routing waits for a game session, and that switching it back undoes all of it. It presses
+/// no pad and touches no game file; the routing itself still needs a controller in a hand.
+extern NSString *const AKSelfTestControllerManager;
 
 // Runs one self-test and logs the verdict the matrix greps:
 //   selftest: <name> PASS <passed>/<total> checks (<what was exercised>)
