@@ -506,7 +506,11 @@ static NSString *AKAudioStateDescription(void) {
     // written to the app's own log, which is where the device matrix reads it, and nothing in
     // the UI can reach this. See SelfTest.h for why it exists.
     NSString *selfTest=AKSelfTestRequestedFromArguments(arguments);
-    if (selfTest) dispatch_async(dispatch_get_main_queue(), ^{ AKRunSelfTest(selfTest); });
+    if (selfTest) dispatch_async(dispatch_get_main_queue(), ^{
+        // The home page is handed over by the time this block runs: a plain launch creates it
+        // later in this method, and the checks that drive its controls need it.
+        AKRunSelfTestInHomePage(selfTest, self.wowController);
+    });
     // Normal WolkaraForever launches use the route included in this build. Development
     // arguments retain the original explicit mode selection.
     NSString *source=nil;

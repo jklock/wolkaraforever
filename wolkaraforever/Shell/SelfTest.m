@@ -1095,7 +1095,7 @@ static UIView *AKSelfTestFind(UIView *view, NSString *identifier) {
 // prove by tapping: the switch starts off, switching it writes this app's key and no other,
 // the page says routing waits for a game session, and switching it back leaves nothing set.
 // It presses no pad, so the routing itself is still the device matrix's business.
-static void AKSelfTestRunControllerManager(AKSelfTestRecorder *recorder) {
+static void AKSelfTestRunControllerManager(AKSelfTestRecorder *recorder, UIViewController *home) {
     static NSString *const routingKey = @"WolkaraForeverControllerRouting";
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     id saved = [defaults objectForKey:routingKey];
@@ -1138,13 +1138,48 @@ static void AKSelfTestRunControllerManager(AKSelfTestRecorder *recorder) {
     [recorder check:![(UIControl *)AKSelfTestFind(page.view, @"controllerManager.learn") isEnabled]
                  _:@"reassigning is unavailable with no controller connected"];
 
+    // The sixth card on the home page, which is where a person finds the feature at all. It is a
+    // section of its own, and its switch is the same setting as the page's - so this drives it
+    // too rather than trusting that the two controls agree.
+    if (!home) {
+        recorder.detail = @"the home page was not in hand; the card was not driven";
+    } else {
+        UIView *cardSwitch = AKSelfTestFind(home.view, @"wow.controllerManager.routing.switch");
+        UIView *cardStatus = AKSelfTestFind(home.view, @"wow.controllerManager.status");
+        UIView *cardOpen = AKSelfTestFind(home.view, @"wow.controllerManager.open");
+        [recorder check:AKSelfTestFind(home.view, @"wow.box.controllerManager") != nil
+                     _:@"the home page carries a Controller Manager card of its own"];
+        [recorder check:cardSwitch != nil && !((UISwitch *)cardSwitch).on
+                     _:@"the card's switch is off until the user asks"];
+        [recorder check:[((UILabel *)cardStatus).text isEqual:WKLocalized(@"controller.status.disabled")]
+                     _:@"the card says the direct path is in use"];
+        [recorder check:cardOpen != nil && ((UIControl *)cardOpen).isEnabled
+                     _:@"the card offers the way into the mappings"];
+        ((UISwitch *)cardSwitch).on = YES;
+        [(UISwitch *)cardSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+        [recorder check:[defaults boolForKey:routingKey] && manager.enabled
+                     _:@"the card's switch is the same setting as the page's"];
+        [recorder check:[((UILabel *)cardStatus).text isEqual:WKLocalized(@"controller.status.pending")]
+                     _:@"the card says routing starts with the game session"];
+        ((UISwitch *)cardSwitch).on = NO;
+        [(UISwitch *)cardSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+        [recorder check:![defaults boolForKey:routingKey] && !manager.enabled
+                     _:@"the card's switch clears the same setting"];
+    }
+
     // The user's own choice goes back exactly as it was.
     if (saved) [defaults setObject:saved forKey:routingKey];
     else [defaults removeObjectForKey:routingKey];
     manager.enabled = saved ? [saved boolValue] : NO;
 }
 
-void AKRunSelfTest(NSString *name) {    AKSelfTestRecorder *recorder = [AKSelfTestRecorder new];
+void AKRunSelfTest(NSString *name) {
+    AKRunSelfTestInHomePage(name, nil);
+}
+
+void AKRunSelfTestInHomePage(NSString *name, id home) {
+    UIViewController *homePage = [home isKindOfClass:UIViewController.class] ? home : nil;
+    AKSelfTestRecorder *recorder = [AKSelfTestRecorder new];
     recorder.detail = @"";
     WKLog("selftest", @"selftest: %@ starting", name);
     if ([name isEqualToString:AKSelfTestRenderProfile]) {
@@ -1157,7 +1192,7 @@ void AKRunSelfTest(NSString *name) {    AKSelfTestRecorder *recorder = [AKSelfTe
     if ([name isEqualToString:AKSelfTestControllerManager]) {
         // On the main queue, synchronously: the page is UIKit, the switch is a control, and
         // every check is an immediate read-back. Nothing waits, so nothing is blocked.
-        AKSelfTestOnMain(^{ AKSelfTestRunControllerManager(recorder); });
+        AKSelfTestOnMain(^{ AKSelfTestRunControllerManager(recorder, homePage); });
         AKSelfTestLogVerdict(recorder, name);
         return;
     }
