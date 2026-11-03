@@ -45,7 +45,7 @@ xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-a
     launcher/WoW/*.m launcher/App/LaunchProgressView.m launcher/App/WolkaraForeverTheme.m \
     launcher/App/WolkaraForeverLog.m launcher/App/WKLocalization.m launcher/App/WolkaraForeverConfig.m \
     launcher/Voice/*.m launcher/Input/*.m \
-    launcher/Controller/ControllerInspector.m tests/test_wow_launcher_app.m \
+    launcher/Controller/*.m tests/test_wow_launcher_app.m \
     -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics \
     -framework Security -framework UniformTypeIdentifiers -framework GameController \
     -framework AVFAudio -framework Speech -lz \

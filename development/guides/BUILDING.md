@@ -122,10 +122,24 @@ xcrun devicectl list devices
   selects Developer service without a picker.
 - `TOLKARA_EXPERIMENTAL_ADAPTERS` (optional, experimental): adapters marked
   `experimental` under `translation/` take part only when named here, separated
-  by `:`. Today `GameController` (reports no controllers, real gamepads
-  included) and `MetalFX` (presented as absent), both written for one game's
-  crashes and not yet validated on a device. They affect every application in
-  the build.
+  by `:`. Today `GameController` (our WolkaraForever façade, see below) and
+  `MetalFX` (presented as absent). They affect every application in the build.
+- **The Controller Manager needs the `GameController` adapter.** Its whole
+  promise is that a physical pad does not reach the game while routing is on,
+  and the only lever for that is the guest-facing façade in
+  `translation/GameController/` — a separate binary, not app code. A build
+  without it still has the page, but routing refuses to start and says so
+  instead of sending every press twice. So a build that should offer routing is:
+
+  ```sh
+  TOLKARA_EXPERIMENTAL_ADAPTERS=GameController wolkaraforever/tools/install.sh
+  ```
+
+  `install.sh` runs `wolkaraforever/tools/check_gamecontroller_facade.sh` first
+  and **fails** if the application imports a GameController symbol the façade
+  does not define — an uncovered import becomes a stub that shadows Apple's
+  class, which reads to the game as "the pad does nothing". See
+  [the Controller Manager note](../technical/CONTROLLER_MANAGER.md).
 
 Xcode signs automatically (`CODE_SIGN_STYLE: Automatic`). The first build
 registers the bundle IDs and the iPad with your team and creates the profiles.

@@ -1,28 +1,31 @@
 // WolkaraForever layer: what a controller reports to us, and every change to it.
 //
-// Reading only. It attaches observers to the pads, keyboards and pointing devices the
-// system reports, names everything it finds, and logs every change as it happens. It
-// never consumes an input, and it never changes a pad's behaviour on its own: a
-// reserved system gesture is released only when the user has mapped that exact
-// element, through -releaseSystemGestureForElement:device:, which the input router
-// calls. Before 2026-10-16 it disabled Share's gesture at startup for every pad that
-// declared one, which changed how the controller behaved before the user had chosen
-// anything - see development/STABILITY_AUDIT_2026-10-16.md.
+// Reading only. It reports every change the pads, keyboards and pointing devices make,
+// names everything it finds, and logs it. It never consumes an input, and it never changes
+// a pad's behaviour on its own: a reserved system gesture is released only when the user
+// has mapped that exact element for dictation, through -releaseSystemGestureForElement:
+// device:, which the input router calls. Before 2026-10-16 it disabled Share's gesture at
+// startup for every pad that declared one, which changed how the controller behaved before
+// the user had chosen anything - see development/STABILITY_AUDIT_2026-10-16.md.
+//
+// As of the Controller Manager it no longer installs handlers. AKControllerManager owns
+// discovery and every GameController handler, because routing a physical pad through a
+// virtual one needs exactly one owner of "which control is down". This file subscribes to
+// that stream and keeps doing what it always did with it: name, log, and hand the event to
+// the voice router through -onInput. The gesture methods below are forwarded to the same
+// owner, tagged by reason, so a voice mapping and a routing profile cannot undo each
+// other's release.
 //
 // Output goes to the platform's own log channel and to Documents/wolkaraforever.log.
 
 #import <Foundation/Foundation.h>
 #import <GameController/GameController.h>
 
-NS_ASSUME_NONNULL_BEGIN
+// The model identity a mapping is remembered against. Declared and implemented once, so
+// the inspector and the manager cannot disagree about what a pad is called.
+#import "ControllerIdentity.h"
 
-/// A controller's *model* identity: vendor and product category. This is what a mapping is
-/// remembered against, and it is deliberately not claimed to be per-device. GameController
-/// exposes no serial number, so two identical pads are indistinguishable to this app and
-/// share one mapping; the log says so when that happens, and `development/technical/INPUT_TRIGGERS.md` says
-/// so to the reader. It is never the display name (a mapping key should not be), and never
-/// the player index, which moves as pads come and go.
-FOUNDATION_EXPORT NSString *AKControllerIdentity(GCController *pad);
+NS_ASSUME_NONNULL_BEGIN
 
 @interface AKControllerInspector : NSObject
 

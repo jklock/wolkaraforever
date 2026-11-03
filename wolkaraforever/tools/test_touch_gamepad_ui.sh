@@ -57,5 +57,5 @@ else
     # simctl may report success even when the app aborts an assertion.
     LOG=build/touch-gamepad-fixture/self-test.log
     xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-gamepad "$@" 2>&1 | tee "$LOG"
-    grep -Eq 'TOUCH_GAMEPAD_(LIFECYCLE|INPUT)_PASS:' "$LOG"
+    grep -Eq 'TOUCH_GAMEPAD_(LIFECYCLE|INPUT|ROUTING)_PASS:' "$LOG"
 fi

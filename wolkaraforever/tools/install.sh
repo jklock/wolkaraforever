@@ -132,6 +132,17 @@ fi
 step "1/$total prepare build/platform"
 wolkaraforever/tools/prepare.sh
 
+# The guest-facing GameController façade is a standalone adapter: any import it does not
+# define becomes a generated stub that shadows Apple's class or constant for the guest, so
+# a pad would silently report nothing. Refuse to build with the adapter enabled until its
+# coverage has been measured against the application actually being built. See
+# wolkaraforever/tools/check_gamecontroller_facade.sh and, for why the check exists,
+# development/technical/CONTROLLER_PROFILES.md.
+if printf '%s' "${TOLKARA_EXPERIMENTAL_ADAPTERS:-}" | tr ':, ' '\n' | grep -qx GameController; then
+    step "1/$total the guest GameController façade: import coverage"
+    wolkaraforever/tools/check_gamecontroller_facade.sh
+fi
+
 cd build/platform
 
 # The platform installer and enrollment helper invoke xcrun themselves. Put a
