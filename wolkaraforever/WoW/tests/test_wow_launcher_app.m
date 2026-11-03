@@ -882,13 +882,12 @@ static void TestPhoneDisplayDefaults(void) {
     [scroll scrollRectToVisible:[label convertRect:label.bounds toView:scroll] animated:NO];
     // The largest text sizes stack the cards whatever the width - which is the same layout a
     // phone in portrait uses, so this is the only place that arrangement is exercised on an
-    // iPad. The empty cell beside the fifth card goes with it: stacked, it would be a blank box.
+    // iPad. All six cards stack, and there is no empty cell to hide any more.
     UIStackView *grid=(id)Find(self.controller.view,@"wow.grid");
     for (UIStackView *row in grid.arrangedSubviews)
         assert(row.axis==UILayoutConstraintAxisVertical);
-    assert(Find(self.controller.view,@"wow.grid.spacer").hidden);
     [self capture:@"wow-home-large-text.png"];
-    NSLog(@"PAGE_STACKED: five cards in one column at the largest text size");
+    NSLog(@"PAGE_STACKED: six cards in one column at the largest text size");
     self.controller.traitOverrides.preferredContentSizeCategory=UIContentSizeCategoryLarge;
     [self performSelector:@selector(captureDefaultText) withObject:nil afterDelay:0.3];
 }
@@ -982,8 +981,8 @@ static void TestPhoneDisplayDefaults(void) {
     assert([top.arrangedSubviews.firstObject.accessibilityIdentifier isEqual:mark]);
     UIStackView *grid = columns.arrangedSubviews[1];
     assert([grid.accessibilityIdentifier isEqual:@"wow.grid"] && grid.arrangedSubviews.count == 3);
-    // The fifth card sits beside an empty cell. The cell is part of the grid and is named as a
-    // spacer rather than skipped silently, but it is not a card and has no rows.
+    // Six cards, three rows of two. There is no empty cell any more: the sixth card took the
+    // place the spacer used to keep, and the grid checks below hold the order.
     NSMutableArray *cells = [NSMutableArray new], *boxes = [NSMutableArray new];
     UIScrollView *measure = (id)Find(self.controller.view, @"wow.scroll");
     [measure layoutIfNeeded];
@@ -994,18 +993,18 @@ static void TestPhoneDisplayDefaults(void) {
         // not change with the axis, which is the whole point of laying them out this way.
         assert(row.axis == (wide ? UILayoutConstraintAxisHorizontal : UILayoutConstraintAxisVertical));
         for (UIView *cell in row.arrangedSubviews) {
-            assert([cell.accessibilityIdentifier hasPrefix:@"wow.box."] ||
-                   [cell.accessibilityIdentifier isEqual:@"wow.grid.spacer"]);
+            assert([cell.accessibilityIdentifier hasPrefix:@"wow.box."]);
             [cells addObject:cell];
             if ([cell.accessibilityIdentifier hasPrefix:@"wow.box."]) [boxes addObject:cell];
         }
     }
     NSArray *expectedCells = @[@"wow.box.edition", @"wow.box.addons",
                                @"wow.box.voice", @"wow.box.profile",
-                               @"wow.box.performance", @"wow.grid.spacer"];
+                               @"wow.box.performance", @"wow.box.controllerManager"];
     assert([[cells valueForKey:@"accessibilityIdentifier"] isEqualToArray:expectedCells]);
     NSArray *expectedBoxes = @[@"wow.box.edition", @"wow.box.addons",
-                               @"wow.box.voice", @"wow.box.profile", @"wow.box.performance"];
+                               @"wow.box.voice", @"wow.box.profile", @"wow.box.performance",
+                               @"wow.box.controllerManager"];
     assert([[boxes valueForKey:@"accessibilityIdentifier"] isEqualToArray:expectedBoxes]);
     // --- each box's heading and rows, exactly
     NSDictionary *expectedRows = @{
@@ -1022,12 +1021,15 @@ static void TestPhoneDisplayDefaults(void) {
                               @"wow.performance.renderProfile", @"wow.performance.restoreDefaults",
                               @"wow.performance.overlay"],
         // The retained card, narrower and in the order someone with a broken UI needs it.
-        // The Controller Manager sits beside the game's own gamepad switch and writes a
-        // different thing: WolkaraForever's preferences, never Config.wtf.
         @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.backup",
                                   @"wow.performance.restore", @"wow.performance.reset",
-                                  @"wow.performance.settingsFolder", @"wow.performance.gamepad",
-                                  @"wow.performance.controllerManager"],
+                                  @"wow.performance.settingsFolder", @"wow.performance.gamepad"],
+        // The Controller Manager card: the switch, what routing is doing now, and the way into
+        // the per-controller mappings. A card of its own because routing a pad, one profile per
+        // model, reassignment and a reset are a group as large as any other card's - a row inside
+        // somebody else's card put it below the fold on the 4:3 front page.
+        @"wow.box.controllerManager": @[@"wow.heading.controllerManager", @"wow.controllerManager.routing",
+                                        @"wow.controllerManager.status", @"wow.controllerManager.open"],
     };
     for (UIView *box in boxes) {
         UIStackView *stack = box.subviews.firstObject;
@@ -1947,14 +1949,15 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
                                    @"wow.performance.restoreDefaults", @"wow.performance.backup",
                                    @"wow.performance.reset", @"wow.performance.restore",
                                    @"wow.performance.settingsFolder", @"wow.primary", @"wow.diagnostics",
-                                   @"wow.performance.controllerManager"])
+                                   @"wow.controllerManager.open"])
         assert([[self row:identifier] allTargets].count > 0);
-    for (NSString *identifier in @[@"wow.performance.gamepad", @"wow.performance.overlay"])
+    for (NSString *identifier in @[@"wow.performance.gamepad", @"wow.performance.overlay",
+                                   @"wow.controllerManager.routing"])
         assert([self toggle:identifier].allTargets.count > 0);
     for (UIBarButtonItem *item in @[gear, refresh])
         assert(item.target != nil && item.action != NULL);
 
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all ten Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items; and the Controller Manager page - its row, the off default, the switch's own persistence, the learn/cancel flow, German without reopening it, and no game file touched.");
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items; the sixth card of its own, the Controller Manager - its switch, its status sentence, its row, and that the card's switch and the page's are one setting - and the page it opens - off default, persistence, the learn/cancel flow, German without reopening it, and no game file touched.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.
@@ -1983,7 +1986,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
 // that the learn flow can be armed and cancelled, that it follows the app language, and that
 // none of it writes a game file. The routing itself is proven by test_controller_manager.sh.
 - (void)checkControllerManagerPage {
-    UIButton *row = [self row:@"wow.performance.controllerManager"];
+    UIButton *row = [self row:@"wow.controllerManager.open"];
     assert(row != nil && row.enabled);
     NSString *configBefore = [self configText];
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -1996,6 +1999,35 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // interlock itself is proven by test_controller_manager.sh, which refuses without it.
     [manager noteGuestFacadePresent];
     manager.enabled = NO;
+
+    // The sixth card, on the front page: its own section, with the switch, what routing is
+    // doing now, and the way into the mappings. Re-rendered here because the page is the next
+    // thing checked and the card must not be left in a stale state.
+    [self.controller render];
+    UISwitch *cardSwitch = [self toggle:@"wow.controllerManager.routing"];
+    assert(cardSwitch != nil && !cardSwitch.on);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.controllerManager.routing.label") text]
+            isEqual:WKLocalized(@"home.controllerManager.routing")]);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.controllerManager.status") text]
+            isEqual:WKLocalized(@"controller.status.disabled")]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.controllerManager.open")
+             titleForState:UIControlStateNormal] isEqual:WKLocalized(@"home.controllerManager.open")]);
+    // The card's switch is the same setting, not a second one: it writes the manager, the
+    // manager's key, and the card's own status sentence follows.
+    cardSwitch.on = YES;
+    [cardSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+    Pump(0.2);
+    assert([defaults boolForKey:@"WolkaraForeverControllerRouting"] && manager.enabled);
+    // This fixture announced the façade, so the manager is past "waiting for the session" and
+    // the card says there is no controller connected. The "starts when the game starts"
+    // wording is the state where the build carries the adapter but the session has not loaded
+    // it, which is what the device self-test asserts on the installed build.
+    assert([[(UILabel *)Find(self.controller.view, @"wow.controllerManager.status") text]
+            isEqual:WKLocalized(@"controller.status.nocontroller")]);
+    cardSwitch.on = NO;
+    [cardSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+    Pump(0.2);
+    assert(![defaults boolForKey:@"WolkaraForeverControllerRouting"] && !manager.enabled);
 
     TKWoWControllerManagerViewController *page = [TKWoWControllerManagerViewController new];
     [page loadViewIfNeeded];
@@ -2078,6 +2110,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(![self row:@"wow.permissions"].enabled);
     assert(![self toggle:@"wow.performance.gamepad"].enabled);
     assert(![self toggle:@"wow.performance.overlay"].enabled);
+    assert(![self toggle:@"wow.controllerManager.routing"].enabled);
     // ...and their labels are the same grey as the rows beside them, rather than
     // keeping the white they use when they are usable.
     assert(CGColorEqualToColor([(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") textColor].CGColor,

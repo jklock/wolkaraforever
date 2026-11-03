@@ -50,7 +50,9 @@
 "home.performance.settingsFolder" = "Open Settings Folder";
 "home.performance.gamepad" = "Gamepad UI";
 "home.performance.overlay" = "Performance Overlay";
-"home.performance.controllerManager" = "Controller Manager";
+"home.box.controllerManager" = "Controller Manager";
+"home.controllerManager.routing" = "Route physical controllers through virtual controller";
+"home.controllerManager.open" = "Controller mappings and reassignment";
 "controller.title" = "Controller Manager";
 "controller.enabled" = "Route physical controllers through virtual controller";
 "controller.section.routing" = "Routing";

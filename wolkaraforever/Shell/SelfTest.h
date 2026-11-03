@@ -64,6 +64,11 @@ extern NSString *const AKSelfTestControllerManager;
 // line, not the return.
 void AKRunSelfTest(NSString *name);
 
+/// The same, with the launcher's home page in hand, for the checks that have to drive a control
+/// on it rather than a page of their own. A plain launch passes its home controller here; the
+/// device matrix, which only has a name, passes nil and those controls are reported as not run.
+void AKRunSelfTestInHomePage(NSString *name, id _Nullable home);
+
 // The name asked for on the command line, or nil. `--selftest=input` and `--selftest input`
 // are both accepted.
 NSString *_Nullable AKSelfTestRequestedFromArguments(NSArray<NSString *> *arguments);

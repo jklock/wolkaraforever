@@ -50,7 +50,9 @@
 "home.performance.settingsFolder" = "Einstellungsordner öffnen";
 "home.performance.gamepad" = "Gamepad-Oberfläche";
 "home.performance.overlay" = "Leistungsanzeige";
-"home.performance.controllerManager" = "Controller-Verwaltung";
+"home.box.controllerManager" = "Controller-Verwaltung";
+"home.controllerManager.routing" = "Physische Controller über den virtuellen Controller leiten";
+"home.controllerManager.open" = "Zuordnungen und Neubelegung";
 "controller.title" = "Controller-Verwaltung";
 "controller.enabled" = "Physische Controller über den virtuellen Controller leiten";
 "controller.section.routing" = "Weiterleitung";

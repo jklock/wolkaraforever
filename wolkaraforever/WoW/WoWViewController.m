@@ -152,7 +152,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIStackView *_columns;
     NSLayoutConstraint *_markWidth;
     UIStackView *_gridRow1, *_gridRow2, *_gridRow3, *_topRow;
-    UIView *_gridSpacer;
     UILabel *_stateLabel, *_detailLabel, *_versionLabel, *_startupLabel, *_compatibilityLabel;
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_voiceTestButton, *_permissionsButton, *_primaryButton,
@@ -161,7 +160,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
-    TKWoWSwitchRow *_gamepadRow, *_overlayRow;
+    TKWoWSwitchRow *_gamepadRow, *_overlayRow, *_controllerManagerRow;
+    UILabel *_controllerManagerStatusLabel;
     NSString *_backupsDirectory;
     UIView *_markView;
     NSLayoutConstraint *_markCap;
@@ -238,14 +238,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     row.alignment=UIStackViewAlignmentFill;
     row.spacing=16;
     return row;
-}
-// The cell beside a card that has no neighbour: nothing, but the same width, so the page keeps
-// its grid instead of stretching one card across the column and reading as a footer.
-- (UIView *)emptyBox {
-    UIView *view=[UIView new];
-    view.accessibilityIdentifier=@"wow.grid.spacer";
-    view.userInteractionEnabled=NO;
-    return view;
 }
 // The layer's mark, where the wordmark used to sit. It is drawn at the top
 // row's width, so it grows and shrinks with the window, with one cap: it may
@@ -328,10 +320,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _permissionsButton=[self button:@"wow.permissions" action:@selector(openPermissions)];
     _voiceButton=[self button:@"wow.voice" action:@selector(manageVoice)];
     _voiceTestButton=[self button:@"wow.voice.test" action:@selector(testVoice)];
-    // A page of its own rather than more rows here: the Controller Manager has a switch, a
-    // status line, one list per controller model and a learn flow, which is more than a
-    // card in a grid can hold legibly.
-    _controllerManagerButton=[self button:@"wow.performance.controllerManager" action:@selector(manageControllers)];
+    // A card of its own: the switch, what routing is doing right now, and the way into the
+    // per-controller mappings. The page it opens still owns the full list.
+    _controllerManagerButton=[self button:@"wow.controllerManager.open" action:@selector(manageControllers)];
     _compatibilityLabel=Label(17,UIFontWeightRegular,Muted());
     _backupButton=[self button:@"wow.performance.backup" action:@selector(backupUI)];
     _resetButton=[self button:@"wow.performance.reset" action:@selector(resetGraphics)];
@@ -340,17 +331,28 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         target:self action:@selector(gamepadChanged:)];
     _overlayRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.overlay"
         target:self action:@selector(overlayChanged:)];
+    _controllerManagerRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.controllerManager.routing"
+        target:self action:@selector(controllerRoutingChanged:)];
+    _controllerManagerStatusLabel=Label(17,UIFontWeightRegular,Muted());
+    _controllerManagerStatusLabel.accessibilityIdentifier=@"wow.controllerManager.status";
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
     _restoreDefaultsButton=[self button:@"wow.performance.restoreDefaults" action:@selector(restorePerformanceDefaults)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
 
-    // Five sections, as boxes, in the order they are read. The compatibility note belongs to
+    // Six sections, as boxes, in the order they are read. The compatibility note belongs to
     // the edition it is about, so it lives in that box rather than loose on the page. The
     // render and overlay choices are their own card, beside the game-file tools rather than
     // mixed into them: one group changes how this app draws, the other edits the game's own
     // files, and keeping them apart is what makes either safe to press. Every word in them
     // comes from -localize, below, which is also what a language change runs.
+    //
+    // Controller Manager has a card of its own, and the last one is not a courtesy: routing a
+    // pad, one profile per model, reassignment and a reset are a group of settings as large as
+    // any of the others, and burying them as a row inside somebody else's card is how the
+    // feature ended up below the fold on the 4:3 front page when it was first written. Measured
+    // on the device, 2026-11-03: the game-file card it was in was cut off at "Reset to Default
+    // Graphical Settings".
     UIView *editionBox=[self sectionBoxWithIdentifier:@"wow.box.edition"
         rows:@[_editionButton,_preferencesButton,_languageButton,_compatibilityLabel]];
     UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
@@ -359,12 +361,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         rows:@[_permissionsButton,_voiceButton,_voiceTestButton]];
     UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
         rows:@[_deviceProfileButton,_renderProfileButton,_restoreDefaultsButton,_overlayRow]];
+    UIView *controllerBox=[self sectionBoxWithIdentifier:@"wow.box.controllerManager"
+        rows:@[_controllerManagerRow,_controllerManagerStatusLabel,_controllerManagerButton]];
     // The retained card, narrower: Backup, Restore, Reset, Settings Folder, Gamepad - in the
-    // order a person needs them when something has gone wrong. The Controller Manager sits
-    // beside the game's own gamepad switch but does not change it: that switch writes
-    // Config.wtf, this page writes only WolkaraForever's own preferences.
+    // order a person needs them when something has gone wrong.
     UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
-        rows:@[_backupButton,_restoreButton,_resetButton,_settingsFolderButton,_gamepadRow,_controllerManagerButton]];
+        rows:@[_backupButton,_restoreButton,_resetButton,_settingsFolderButton,_gamepadRow]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _activity.color=Gold(); _activity.hidesWhenStopped=YES;
@@ -403,11 +405,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _markWidth.active=YES;
     _gridRow1=[self boxRow:@[editionBox,addonsBox]];
     _gridRow2=[self boxRow:@[voiceBox,profileBox]];
-    // The fifth card sits on its own row beside an empty cell of the same width, so it keeps
-    // the column width it would have had next to a neighbour instead of stretching across the
-    // page and reading as a footer.
-    _gridSpacer=[self emptyBox];
-    _gridRow3=[self boxRow:@[performanceBox,_gridSpacer]];
+    // Six cards, three rows of two: the last row is a pair, not a card stretched across the
+    // page beside an empty cell.
+    _gridRow3=[self boxRow:@[performanceBox,controllerBox]];
     UIStackView *grid=Stack(@[_gridRow1,_gridRow2,_gridRow3],16);
     grid.accessibilityIdentifier=@"wow.grid";
     _columns=Stack(@[top,grid],20); _columns.accessibilityIdentifier=@"wow.columns";
@@ -438,6 +438,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // the installation it is showing stay exactly as they were.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appLanguageChanged:)
         name:WKLocalizationDidChangeNotification object:nil];
+    // The page can change the same switch, so the card follows the manager rather than
+    // trusting the state it last drew.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controllerManagerChanged:)
+        name:AKControllerManagerDidChangeNotification object:nil];
     [self localize];
 
     [self render];
@@ -469,9 +473,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         row.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
         row.distribution=horizontal?UIStackViewDistributionFillEqually:UIStackViewDistributionFill;
     }
-    // The empty cell beside the fifth card exists to keep the columns equal; stacked, it would
-    // be an empty box at the foot of the page.
-    _gridSpacer.hidden=!horizontal;
     // The mark sits beside the status when there are two columns to fill. Stacked, the status
     // takes the full width and the mark goes above it, so the Play button is never squeezed.
     _topRow.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
@@ -703,9 +704,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _headings[@"wow.box.voice"].text=WKLocalized(@"home.box.voice").uppercaseString;
     _headings[@"wow.box.profile"].text=WKLocalized(@"home.box.profile").uppercaseString;
     _headings[@"wow.box.performance"].text=WKLocalized(@"home.box.performance").uppercaseString;
+    _headings[@"wow.box.controllerManager"].text=WKLocalized(@"home.box.controllerManager").uppercaseString;
     [_gamepadRow applyTitle:WKLocalized(@"home.performance.gamepad")];
     [_overlayRow applyTitle:WKLocalized(@"home.performance.overlay")];
-    [_controllerManagerButton setTitle:WKLocalized(@"home.performance.controllerManager") forState:UIControlStateNormal];
+    [_controllerManagerRow applyTitle:WKLocalized(@"home.controllerManager.routing")];
+    [_controllerManagerButton setTitle:WKLocalized(@"home.controllerManager.open") forState:UIControlStateNormal];
     [_diagnosticsButton setTitle:WKLocalized(@"home.diagnostics") forState:UIControlStateNormal];
     _updatesLabel.text=WKLocalized(@"home.updates.note");
     // A VoiceOver reader is told the language of the words it is about to read, so a German
@@ -828,10 +831,14 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _overlayRow.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _overlayRow.toggle.on=_overlayEnabled;
     // A WolkaraForever preference, not a game-file operation: usable before the game is
-    // installed and independent of the Forever rows above it.
-    [self configureButton:_controllerManagerButton title:WKLocalized(@"home.performance.controllerManager") filled:NO];
+    // installed and independent of the Forever rows above it. One owner (the manager), two
+    // controls: this switch and the page's have the same state and the same effect.
+    [self configureButton:_controllerManagerButton title:WKLocalized(@"home.controllerManager.open") filled:NO];
     _controllerManagerButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _controllerManagerButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
+    _controllerManagerRow.enabled=_controllerManagerButton.enabled;
+    _controllerManagerRow.toggle.on=AKControllerManager.shared.enabled;
+    _controllerManagerStatusLabel.text=[self controllerManagerStatusText];
     // The profile card. None of these rows read or write the game's files: they are Forever's
     // own render scale, which is why they are their own card beside the game-file tools.
     BOOL preferencesIdle=!_busy && !_starting && !_running && !_sessionUsed;
@@ -1092,6 +1099,40 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 // it writes only WolkaraForever's preferences, never the game's bindings.
 - (void)manageControllers {
     [self presentPage:[TKWoWControllerManagerViewController new]];
+}
+
+// The card's own switch. The manager is the owner; this only asks it, and -render is what
+// puts both controls back in step if the change was refused.
+- (void)controllerRoutingChanged:(UISwitch *)sender {
+    AKControllerManager.shared.enabled = sender.on;
+    WKLog("ui", @"controller manager: routing %@ from the home page", sender.on ? @"on" : @"off");
+    [self render];
+}
+
+- (void)controllerManagerChanged:(NSNotification *)note {
+    (void)note;
+    [self render];
+}
+
+// One sentence for the four states, so the card says what is happening rather than only
+// whether the switch is on.
+- (NSString *)controllerManagerStatusText {
+    AKControllerManager *manager = AKControllerManager.shared;
+    switch (manager.state) {
+        case AKControllerRoutingStateDisabled:
+            return WKLocalized(@"controller.status.disabled");
+        case AKControllerRoutingStateWaiting:
+            if (manager.enabled && !manager.guestFacadePresent)
+                return WKLocalized(@"controller.status.pending");
+            return manager.physicalControllerConnected ? WKLocalized(@"controller.status.connecting")
+                                                       : WKLocalized(@"controller.status.nocontroller");
+        case AKControllerRoutingStateRouting:
+            return WKLocalized(@"controller.status.routing");
+        case AKControllerRoutingStateFailed:
+            return manager.guestFacadeAvailable ? WKLocalized(@"controller.status.failed")
+                                                : WKLocalized(@"controller.status.nofacade");
+    }
+    return @"";
 }
 
 // This app's own page in Settings: the Microphone and Speech Recognition switches for WolkaraForever.
