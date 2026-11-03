@@ -23,6 +23,8 @@
 #   wolkaraforever/tools/pilot.sh return            bring it back to the front
 #   wolkaraforever/tools/pilot.sh restore           start again whatever an install found running
 #   wolkaraforever/tools/pilot.sh selftest <name>   run the app's own device self-test and read it
+#   wolkaraforever/tools/pilot.sh preview <page>    open one page directly (controller-manager, addons),
+#                                                   for a row that is below the fold on the home screen
 #   wolkaraforever/tools/pilot.sh cycle             state, install, launch, wait, view
 #
 # Every command that launches records the newest error file and the newest crash report
