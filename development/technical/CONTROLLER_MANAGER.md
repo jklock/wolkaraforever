@@ -146,6 +146,15 @@ an uncovered import.
 The check refuses to pass with no application to inspect: an unproven façade is a leaked
 pad waiting to happen. It is also the first thing to run when a new client build is tried.
 
+Measured against `build/guest-probe/WorldOfWarcraft` on 2026-11-03: **32 GameController
+imports, 0 uncovered**. The client imports four classes — `GCController`,
+`GCControllerButtonInput`, `GCControllerAxisInput`, `GCColor` — and the last three need
+special care: a standalone adapter shadows Apple's class of the same name, so a plain stub
+would answer NO to the guest's `-isKindOfClass:` about objects that *are* Apple's, and the
+game would stop recognising its own buttons. Each of the three answers `+class` with the
+real framework's class, found by `dlsym` rather than by name, because a name lookup returns
+whichever image registered first. The façade fixture asserts that equality at runtime.
+
 ## What is verified, and what is not
 
 Verified in the simulator, by the suite that owns each claim:
