@@ -17,6 +17,7 @@
 #import <Foundation/Foundation.h>
 
 #import "../translation/AKSupport/AKSupport.h"
+#include <dlfcn.h>
 
 #include <assert.h>
 
@@ -108,9 +109,37 @@ static NSString *GuestName(id object) {
 + (id)current;
 @end
 
+// Declared exactly as the adapter declares them, so this fixture can ask what the guest's
+// -isKindOfClass: will compare against.
+@interface GCControllerButtonInput : AKStubObject
+@end
+@interface GCControllerAxisInput : AKStubObject
+@end
+@interface GCColor : AKStubObject
+@end
+
+// A standalone adapter shadows Apple's class of the same name, so a plain stub would answer NO
+// to the guest's -isKindOfClass: about objects the manager hands over. These three answer
+// +class with Apple's real class; this proves it, because the guest's own comparisons go
+// through exactly that call.
+static void CheckClassIdentity(void) {
+    void *framework = dlopen("/System/Library/Frameworks/GameController.framework/GameController", RTLD_LAZY);
+    GUEST_CHECK(framework != NULL, "the real GameController framework is present");
+    NSArray<NSString *> *symbols = @[@"OBJC_CLASS_$_GCControllerButtonInput",
+                                     @"OBJC_CLASS_$_GCControllerAxisInput",
+                                     @"OBJC_CLASS_$_GCColor"];
+    NSArray<Class> *bound = @[[GCControllerButtonInput class], [GCControllerAxisInput class], [GCColor class]];
+    for (NSUInteger index = 0; index < symbols.count; index++) {
+        Class real = (__bridge Class)dlsym(framework, symbols[index].UTF8String);
+        GUEST_CHECK(real != Nil, "the real element class is exported by the framework");
+        GUEST_CHECK(bound[index] == real, "the bound element class is Apple's, not the adapter's stub");
+    }
+}
+
 #pragma mark - Checks
 
 static void RunChecks(GuestHost *host) {
+    CheckClassIdentity();
     GuestFakePad *bluetooth = [GuestFakePad new];
     bluetooth.name = @"Bluetooth";
     bluetooth.isAttachedToDevice = NO;

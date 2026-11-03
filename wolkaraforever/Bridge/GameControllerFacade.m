@@ -33,6 +33,7 @@
 // wolkaraforever/tools/check_gamecontroller_facade.sh compares this file's definitions
 // with what the application imports and fails the build when anything is uncovered.
 #import "AKSupport.h"
+#include <dlfcn.h>
 
 // --- The Controller Manager's channel, by value --------------------------------------
 // Declared in wolkaraforever/Controller/ControllerManager.h; spelled out here because the
@@ -181,6 +182,46 @@ static NSArray *AKGuestControllers(void) {
 @interface GCDualShockGamepad : AKStubObject
 @end
 @implementation GCDualShockGamepad
+@end
+
+// --- Class identity for the element classes a guest imports --------------------------
+//
+// A standalone adapter shadows Apple's class of the same name for the guest. For the three
+// classes measured in World of Warcraft's import list that would be worse than useless: the
+// guest asks -isKindOfClass: about objects the manager hands over, those objects are Apple's,
+// and a shadow answer of NO would make the game stop recognising its own buttons.
+//
+// So each of these answers +class with the class the *real* framework defines, found by
+// symbol rather than by name - a name lookup would return whichever of the two images was
+// registered first, which is exactly the ambiguity this file exists to avoid. The real
+// framework is already in the process (the AppKit adapter links it), so this adds nothing.
+// Measured against build/guest-probe/WorldOfWarcraft on 2026-11-03; these were the only three
+// uncovered imports.
+static Class AKGuestRealClass(const char *symbol) {
+    static void *framework;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        framework = dlopen("/System/Library/Frameworks/GameController.framework/GameController", RTLD_LAZY);
+    });
+    return framework ? (__bridge Class)dlsym(framework, symbol) : Nil;
+}
+
+@interface GCControllerButtonInput : AKStubObject
+@end
+@implementation GCControllerButtonInput
++ (Class)class { return AKGuestRealClass("OBJC_CLASS_$_GCControllerButtonInput") ?: self; }
+@end
+
+@interface GCControllerAxisInput : AKStubObject
+@end
+@implementation GCControllerAxisInput
++ (Class)class { return AKGuestRealClass("OBJC_CLASS_$_GCControllerAxisInput") ?: self; }
+@end
+
+@interface GCColor : AKStubObject
+@end
+@implementation GCColor
++ (Class)class { return AKGuestRealClass("OBJC_CLASS_$_GCColor") ?: self; }
 @end
 
 // Connect, disconnect and current-controller names are deliberately namespaced:

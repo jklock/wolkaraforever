@@ -43,7 +43,7 @@ fi
 # to catch.
 defined=$(
     {
-        grep -oE '^NSString \*const [A-Za-z0-9_]+' "$facade" | awk '{print "_"$4}'
+        grep -oE '^NSString \*const [A-Za-z0-9_]+' "$facade" | awk '{print "_"$3}'
         grep -oE '^const float [A-Za-z0-9_]+' "$facade" | awk '{print "_"$3}'
         grep -oE '^@implementation [A-Za-z0-9_]+' "$facade" | awk '{print $2}' | while read -r name; do
             printf '_OBJC_CLASS_$_%s\n' "$name"
@@ -52,8 +52,10 @@ defined=$(
     } | sort -u
 )
 
+# dyld_info prints an offset column for some binaries and not for others, so the symbol is
+# taken as the first field of every line that names the library.
 imports=$(dyld_info -arch arm64 -imports "$exe" 2>/dev/null |
-          awk '/\(from GameController\)/ {print $2}' | sort -u)
+          awk '/\(from GameController\)/ {print $1}' | sort -u)
 if [ -z "$imports" ]; then
     # No arm64 slice, or no GameController imports at all. The second is a real answer
     # (the application does not use controllers) and the first is not; say which.
