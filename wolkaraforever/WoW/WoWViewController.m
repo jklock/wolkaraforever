@@ -1,6 +1,8 @@
 #import "WoWViewController.h"
 #import "Client.h"
 #import "AddonManager.h"
+#import "ControllerManagerViewController.h"
+#import "../Controller/ControllerManager.h"
 #import "../Voice/VoiceViewController.h"
 #import "../Voice/VoiceTestViewController.h"
 #import "../App/WolkaraForeverLog.h"
@@ -155,7 +157,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_voiceTestButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
-        *_renderProfileButton, *_deviceProfileButton, *_restoreDefaultsButton;
+        *_renderProfileButton, *_deviceProfileButton, *_restoreDefaultsButton, *_controllerManagerButton;
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
@@ -326,6 +328,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _permissionsButton=[self button:@"wow.permissions" action:@selector(openPermissions)];
     _voiceButton=[self button:@"wow.voice" action:@selector(manageVoice)];
     _voiceTestButton=[self button:@"wow.voice.test" action:@selector(testVoice)];
+    // A page of its own rather than more rows here: the Controller Manager has a switch, a
+    // status line, one list per controller model and a learn flow, which is more than a
+    // card in a grid can hold legibly.
+    _controllerManagerButton=[self button:@"wow.performance.controllerManager" action:@selector(manageControllers)];
     _compatibilityLabel=Label(17,UIFontWeightRegular,Muted());
     _backupButton=[self button:@"wow.performance.backup" action:@selector(backupUI)];
     _resetButton=[self button:@"wow.performance.reset" action:@selector(resetGraphics)];
@@ -354,9 +360,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
         rows:@[_deviceProfileButton,_renderProfileButton,_restoreDefaultsButton,_overlayRow]];
     // The retained card, narrower: Backup, Restore, Reset, Settings Folder, Gamepad - in the
-    // order a person needs them when something has gone wrong.
+    // order a person needs them when something has gone wrong. The Controller Manager sits
+    // beside the game's own gamepad switch but does not change it: that switch writes
+    // Config.wtf, this page writes only WolkaraForever's own preferences.
     UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
-        rows:@[_backupButton,_restoreButton,_resetButton,_settingsFolderButton,_gamepadRow]];
+        rows:@[_backupButton,_restoreButton,_resetButton,_settingsFolderButton,_gamepadRow,_controllerManagerButton]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _activity.color=Gold(); _activity.hidesWhenStopped=YES;
@@ -697,6 +705,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _headings[@"wow.box.performance"].text=WKLocalized(@"home.box.performance").uppercaseString;
     [_gamepadRow applyTitle:WKLocalized(@"home.performance.gamepad")];
     [_overlayRow applyTitle:WKLocalized(@"home.performance.overlay")];
+    [_controllerManagerButton setTitle:WKLocalized(@"home.performance.controllerManager") forState:UIControlStateNormal];
     [_diagnosticsButton setTitle:WKLocalized(@"home.diagnostics") forState:UIControlStateNormal];
     _updatesLabel.text=WKLocalized(@"home.updates.note");
     // A VoiceOver reader is told the language of the words it is about to read, so a German
@@ -818,6 +827,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _gamepadRow.toggle.on=_gamepadEnabled;
     _overlayRow.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _overlayRow.toggle.on=_overlayEnabled;
+    // A WolkaraForever preference, not a game-file operation: usable before the game is
+    // installed and independent of the Forever rows above it.
+    [self configureButton:_controllerManagerButton title:WKLocalized(@"home.performance.controllerManager") filled:NO];
+    _controllerManagerButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _controllerManagerButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     // The profile card. None of these rows read or write the game's files: they are Forever's
     // own render scale, which is why they are their own card beside the game-file tools.
     BOOL preferencesIdle=!_busy && !_starting && !_running && !_sessionUsed;
@@ -1071,6 +1085,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 // button the user mapped, so it can be tried without starting the game.
 - (void)testVoice {
     [self presentPage:[AKVoiceTestViewController new]];
+}
+
+// Controller Manager: physical-controller routing through the hidden virtual controller,
+// and the per-model remap profile. Its own page because it owns a list and a learn flow;
+// it writes only WolkaraForever's preferences, never the game's bindings.
+- (void)manageControllers {
+    [self presentPage:[TKWoWControllerManagerViewController new]];
 }
 
 // This app's own page in Settings: the Microphone and Speech Recognition switches for WolkaraForever.

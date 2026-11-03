@@ -13,6 +13,18 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- Added a **Controller Manager** under Performance & UI Manager on the launcher, off by
+  default. When it is on, a physical Bluetooth or USB pad is routed through the one hidden
+  `GCVirtualController` the app already had, using a per-controller-model remap profile, and
+  World of Warcraft is offered only that virtual controller. Profiles start as a one-to-one
+  extended-gamepad layout and can be reassigned control by control. Switching it off leaves
+  the direct physical-controller path exactly as it was. It writes only WolkaraForever's own
+  preferences: no game binding, `GamePadConfig_*.json` or `Config.wtf` value is touched, and
+  the game's own `GamePadEnable` row keeps its separate owner. Design, limits and what is
+  proven where: [the Controller Manager note](development/technical/CONTROLLER_MANAGER.md).
+  Physical pads are the part that needs the device, and the result is recorded under
+  [development/validation/](development/validation/).
+
 - A launch through the iPad Developer service that cannot be prepared now says **which
   step refused**, in the app's language, instead of reporting a dead helper: not enrolled,
   pairing identity did not verify, no usable debugger service, local service unreachable,

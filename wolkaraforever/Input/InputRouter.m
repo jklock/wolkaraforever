@@ -13,6 +13,7 @@
 #endif
 
 #import "../Controller/ControllerInspector.h"
+#import "../Controller/ControllerManager.h"
 #import "../Voice/VoiceSettings.h"
 #import "InputElement.h"
 
@@ -143,11 +144,18 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
     AKControllerInspector *inspector = AKControllerInspector.shared;
     // Start from the system's own behaviour every time, then hand over only what the
     // user actually asked for. Any other order leaves a gesture released for a mapping
-    // that no longer exists, or for a feature that is switched off.
+    // that no longer exists, or for a feature that is switched off. The inspector
+    // forwards this to the manager, which gives back only the gestures it released for a
+    // *voice* mapping - routing's own releases are its business and are not undone here.
     [inspector restoreAllSystemGestures];
     if (!AKVoiceSettings.shared.enabled) return;
 
-    for (GCController *pad in GCController.controllers) {
+    // The manager is the one owner of what is connected, so it is also what decides which
+    // pads exist. Iterating GCController.controllers here would see the hidden virtual
+    // controller as well, and would have this router releasing gestures on a pad nobody
+    // can press.
+    NSArray<GCController *> *pads = AKControllerManager.shared.physicalControllers;
+    for (GCController *pad in pads) {
         NSString *device = AKControllerIdentity(pad);
         [AKVoiceSettings.shared adoptLegacyMappingForDevice:device vendor:pad.vendorName];
         AKTrigger *trigger = [AKVoiceSettings.shared triggerForDevice:device];
@@ -163,7 +171,7 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
     // where someone will see it, because the alternative is a user wondering why the spare
     // pad starts dictation too.
     NSMutableDictionary<NSString *, NSNumber *> *models = [NSMutableDictionary dictionary];
-    for (GCController *pad in GCController.controllers) {
+    for (GCController *pad in pads) {
         NSString *device = AKControllerIdentity(pad);
         models[device] = @([models[device] integerValue] + 1);
     }

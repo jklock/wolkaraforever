@@ -53,6 +53,8 @@ wolkaraforever/WoW/CASC.h launcher/WoW/CASC.h add
 wolkaraforever/WoW/CASC.m launcher/WoW/CASC.m add
 wolkaraforever/WoW/Client.h launcher/WoW/Client.h add
 wolkaraforever/WoW/Client.m launcher/WoW/Client.m add
+wolkaraforever/WoW/ControllerManagerViewController.h launcher/WoW/ControllerManagerViewController.h add
+wolkaraforever/WoW/ControllerManagerViewController.m launcher/WoW/ControllerManagerViewController.m add
 wolkaraforever/WoW/CurseForgeClient.h launcher/WoW/CurseForgeClient.h add
 wolkaraforever/WoW/CurseForgeClient.m launcher/WoW/CurseForgeClient.m add
 wolkaraforever/WoW/DeviceProfile.h launcher/WoW/DeviceProfile.h add
@@ -109,6 +111,7 @@ wolkaraforever/Bridge/AuthorizationBlockedState.h authorization/App/Authorizatio
 wolkaraforever/Bridge/AuthorizationBlockedState.m authorization/App/AuthorizationBlockedState.m add
 wolkaraforever/Bridge/BackgroundPacing.m translation/Metal/BackgroundPacing.m add
 wolkaraforever/Bridge/DisplayRate.m translation/Metal/DisplayRate.m add
+wolkaraforever/Bridge/GameControllerFacade.m translation/GameController/GameController.m replace
 wolkaraforever/Bridge/LocalServiceRetry.h authorization/App/LocalServiceRetry.h add
 wolkaraforever/Bridge/LocalServiceRetry.m authorization/App/LocalServiceRetry.m add
 wolkaraforever/Bridge/tests/test_authorization_blocked_state.m tests/test_authorization_blocked_state.m add
@@ -116,11 +119,19 @@ wolkaraforever/Bridge/tests/test_local_service_retry.m tests/test_local_service_
 wolkaraforever/Bridge/tests/test_packet_service_blocked.swift tests/test_packet_service_blocked.swift add
 wolkaraforever/Bridge/tests/test_packet_service_retry.swift tests/test_packet_service_retry.swift add
 #
-# Controller: what the pad reports, and every change to it (diagnostic)
+# Controller: what the pad reports, every change to it, and the manager that owns it
+wolkaraforever/Controller/ControllerIdentity.h launcher/Controller/ControllerIdentity.h add
+wolkaraforever/Controller/ControllerIdentity.m launcher/Controller/ControllerIdentity.m add
 wolkaraforever/Controller/ControllerInspector.h launcher/Controller/ControllerInspector.h add
 wolkaraforever/Controller/ControllerInspector.m launcher/Controller/ControllerInspector.m add
+wolkaraforever/Controller/ControllerManager.h launcher/Controller/ControllerManager.h add
+wolkaraforever/Controller/ControllerManager.m launcher/Controller/ControllerManager.m add
+wolkaraforever/Controller/ControllerProfile.h launcher/Controller/ControllerProfile.h add
+wolkaraforever/Controller/ControllerProfile.m launcher/Controller/ControllerProfile.m add
 wolkaraforever/Controller/ControllerWindow.h launcher/Controller/ControllerWindow.h add
 wolkaraforever/Controller/ControllerWindow.m launcher/Controller/ControllerWindow.m add
+wolkaraforever/Controller/tests/test_controller_manager_app.m tests/test_controller_manager_app.m add
+wolkaraforever/Controller/tests/test_gamecontroller_facade_app.m tests/test_gamecontroller_facade_app.m add
 #
 # Voice: what you say, turned into text in the game, and its tests
 wolkaraforever/Voice/AudioSessionCoordinator.h launcher/Voice/AudioSessionCoordinator.h add

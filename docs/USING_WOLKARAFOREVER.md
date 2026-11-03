@@ -127,6 +127,32 @@ The app also uses background-aware frame pacing: when it loses the foreground it
 Metal frame loop to 5 fps and restores normal pacing when foregrounded. This reduces active
 work while another app is in front; iPadOS still controls background execution.
 
+## Controller Manager
+
+**Performance & UI Manager → Controller Manager** routes a physical Bluetooth or USB
+controller through the one virtual controller this app already owns. The switch
+**Route physical controllers through virtual controller** is off by default; with it off,
+a physical controller reaches the game directly, exactly as before.
+
+With it on, the game is offered that single virtual controller and the physical pad is used
+as its input. Each controller **model** has its own mapping, starting as a standard
+extended-gamepad layout — every button, trigger, stick and the D-pad drives the same control
+it always did. **Reassign a control** asks you to press or move the control you want to
+change, then choose what it should drive. **Reset** puts the model back to the standard
+layout.
+
+Two things worth knowing before you switch it on:
+
+- **Identical controllers share a mapping.** iPadOS does not identify individual pads, so
+  two of the same model connected at once follow one profile. The page says so.
+- **Some controls cannot be reassigned.** Options, Home, Share, the stick clicks and the
+  paddles have no equivalent on the virtual controller, so they show as not available; that
+  is a limit of Apple's virtual controller rather than a setting.
+
+The page only ever changes WolkaraForever's own preferences. It never edits the game's
+bindings, `GamePadConfig_*.json` or `Config.wtf`, and the **Gamepad UI** switch beside it is
+a different setting with its own owner.
+
 ## Controls and voice
 
 ![Current Key / Button Configuration screen in the simulator](screenshots/voice-configuration.jpg)

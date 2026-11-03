@@ -1,5 +1,15 @@
 # Game controller profiles, and why the game sees a button we mapped
 
+> **Update, 2026-11-03.** The ranking below is what was true when this note was written: a
+> pad button could not be kept from the guest, and the only hard guarantee was the keyboard
+> key path. The **Controller Manager** now provides the missing lever for a *whole pad* by
+> giving the guest its own GameController façade, so physical pads are no longer enumerated
+> into World of Warcraft while routing is on. The constraint this note measured has not
+> changed — one process, one GameController, no public per-consumer suppression — and the
+> new note says which levers are used instead:
+> [`CONTROLLER_MANAGER.md`](CONTROLLER_MANAGER.md). Read that first if you are here to change
+> controller behaviour rather than to understand the constraint.
+
 Research note, 2026-10-23. Written because a controller button mapped for dictation
 also reaches World of Warcraft, and the question was what can be done about it. Every
 claim below is marked **measured** (on Dadpad, from a log or an API read) or

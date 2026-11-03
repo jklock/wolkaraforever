@@ -67,15 +67,22 @@ intent() {
             wolkaraforever/Bridge/tests/*) dst=tests/${f#wolkaraforever/Bridge/tests/};;
             wolkaraforever/Bridge/BackgroundPacing.m) dst=translation/Metal/BackgroundPacing.m;;
             wolkaraforever/Bridge/DisplayRate.m) dst=translation/Metal/DisplayRate.m;;
+            # The guest-facing GameController façade replaces the platform's stub. It stays
+            # a 'replace' of a platform file, so an upstream rewrite of the stub shows up
+            # as a diff here rather than as a silently stale copy.
+            wolkaraforever/Bridge/GameControllerFacade.m) dst=translation/GameController/GameController.m;;
             wolkaraforever/Bridge/LocalServiceRetry.*|wolkaraforever/Bridge/AuthorizationBlockedState.*) dst=authorization/App/${f#wolkaraforever/Bridge/};;
             *) echo "# not overlaid yet (source of a pending patch): $f"; continue;;
         esac
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
-    echo "# Controller: what the pad reports, and every change to it (diagnostic)"
+    echo "# Controller: what the pad reports, every change to it, and the manager that owns it"
     git ls-files wolkaraforever/Controller | while read -r f; do
-        dst=launcher/Controller/${f#wolkaraforever/Controller/}
+        case "$f" in
+            wolkaraforever/Controller/tests/*) dst=tests/${f#wolkaraforever/Controller/tests/};;
+            *) dst=launcher/Controller/${f#wolkaraforever/Controller/};;
+        esac
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
