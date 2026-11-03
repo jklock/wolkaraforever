@@ -106,7 +106,14 @@ this adapter rather than re-exporting Apple's). Two modes:
 
 The guest asks once (`AKControllerGuestViewRequest`) and is answered synchronously, so a
 session started while routing was already on is not left without input.
-
+**The interlock.** Without the façade the guest would see the physical pad *and* its virtual
+replacement, and every press would arrive twice. So the manager will not ask for a virtual
+pad until the adapter has announced itself, and it tells two situations apart: whether the
+*build* carries the adapter (the bundle has `Frameworks/akGameController.dylib`) and whether
+it is *loaded* now (the adapter posts when it loads, and answers when asked). In the launcher
+the adapter is never loaded, so the page says “it starts when the game starts” rather than
+claiming the build cannot do it; a build without the adapter says exactly that and routes
+nothing.
 ## The state machine
 
 | State | When | What is routed |
@@ -170,9 +177,17 @@ Verified in the simulator, by the suite that owns each claim:
   its events crossing.
 * `wolkaraforever/tools/test_touch_gamepad_ui.sh` — routed values reaching the virtual
   controller's own elements, clamping, release on mode change, and routing with no physical
-  pad present.
+  pad present. Its `--self-test-input` run uses Apple's **real** `GCVirtualController` and reads
+  the routed values back off the `GCController` a guest would enumerate, so the last link in the
+  chain is proven against the framework and not against a stand-in.
 * `wolkaraforever/tools/test_wow_launcher_ui.sh` — the page's row, off default,
   persistence, learn/cancel, German without reopening, and no game file written.
+* `--selftest=controller-manager`, run on the installed build with
+  `wolkaraforever/tools/pilot.sh selftest controller-manager` — the same page driven by the app
+  itself on the iPad, because a device matrix cannot tap: 11/11 checks, and it restores the
+  user's own value.
+* `wolkaraforever/tools/pilot.sh preview controller-manager` — the page opened directly and
+  photographed on the iPad, for a row that is below the fold on the home screen.
 * `test_voice.sh`, `test_translation_sim.sh`, `check_layers.sh`, `check_docs.sh` — that
   moving the handlers out of the inspector did not change the voice trigger, and that the
   shared event/render loop is untouched.
