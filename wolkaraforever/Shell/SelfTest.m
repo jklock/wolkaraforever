@@ -7,8 +7,11 @@
 
 #import "SelfTest.h"
 #import "WolkaraForeverLog.h"
+#import "WKLocalization.h"
 #import "../WoW/ForeverUI.h"
 #import "../WoW/WoWViewController.h"
+#import "../WoW/ControllerManagerViewController.h"
+#import "../Controller/ControllerManager.h"
 #import "../WoW/AddonCredentialStore.h"
 #import "../WoW/CurseForgeClient.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -30,6 +33,7 @@ NSString *const AKSelfTestForeverUIClean = @"forever-ui-clean";
 NSString *const AKSelfTestRenderProfile = @"render-profile";
 NSString *const AKSelfTestCurseForge = @"curseforge";
 NSString *const AKSelfTestSpeechFile = @"speech-file";
+NSString *const AKSelfTestControllerManager = @"controller-manager";
 
 #pragma mark - Recording what happened
 
@@ -166,7 +170,6 @@ static BOOL AKSelfTestIsRecordingCategory(NSString *category) {
 // be adopted by accident, and so that everything these checks write is removed again - which
 // the last two checks are about.
 static NSString *const AKSelfTestDevice = @"selftest.pad";
-
 static void AKSelfTestRunInput(AKSelfTestRecorder *recorder) {
     // --- The matching rule, which the router fires on and ownership is decided by ---
     [recorder check:([AKTrigger element:@"controller.button.a" covers:@"controller.button.a"]) _:@"an exact element id is covered"];
@@ -1076,8 +1079,72 @@ static void AKSelfTestRenderProfilePress(AKSelfTestRecorder *recorder, NSInteger
     AKSelfTestRenderProfileStage(recorder, page, defaults, scaleBefore, directory, configBefore);
 }
 
-void AKRunSelfTest(NSString *name) {
-    AKSelfTestRecorder *recorder = [AKSelfTestRecorder new];
+#pragma mark - The Controller Manager page
+
+static UIView *AKSelfTestFind(UIView *view, NSString *identifier) {
+    if ([view.accessibilityIdentifier isEqual:identifier]) return view;
+    for (UIView *child in view.subviews) {
+        UIView *match = AKSelfTestFind(child, identifier);
+        if (match) return match;
+    }
+    return nil;
+}
+
+// Drives the page the home screen reaches by scrolling, on the installed build, and puts the
+// user's own setting back afterwards. What it proves is what a person would otherwise have to
+// prove by tapping: the switch starts off, switching it writes this app's key and no other,
+// the page says routing waits for a game session, and switching it back leaves nothing set.
+// It presses no pad, so the routing itself is still the device matrix's business.
+static void AKSelfTestRunControllerManager(AKSelfTestRecorder *recorder) {
+    static NSString *const routingKey = @"WolkaraForeverControllerRouting";
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    id saved = [defaults objectForKey:routingKey];
+    AKControllerManager *manager = AKControllerManager.shared;
+    manager.enabled = NO;
+    [defaults removeObjectForKey:routingKey];
+
+    // The adapter is a dylib the runtime loads for a guest session. A build that carries it
+    // may promise the pending state; one that does not must say so instead.
+    [recorder check:manager.guestFacadeAvailable _:@"this build carries the guest GameController adapter"];
+
+    TKWoWControllerManagerViewController *page = [TKWoWControllerManagerViewController new];
+    [page loadViewIfNeeded];
+    [page.view layoutIfNeeded];
+
+    UISwitch *routing = (id)AKSelfTestFind(page.view, @"controllerManager.enabled");
+    UILabel *status = (id)AKSelfTestFind(page.view, @"controllerManager.status");
+    [recorder check:routing != nil _:@"the page draws the routing switch"];
+    [recorder check:routing != nil && !routing.on _:@"the switch is off until the user asks for it"];
+    [recorder check:[status.text isEqual:WKLocalized(@"controller.status.disabled")]
+                 _:@"the page says a physical controller reaches the game directly"];
+
+    routing.on = YES;
+    [routing sendActionsForControlEvents:UIControlEventValueChanged];
+    [recorder check:[defaults boolForKey:routingKey] _:@"switching on stores WolkaraForever's own key"];
+    [recorder check:manager.enabled _:@"the manager follows the switch"];
+    [recorder check:[status.text isEqual:WKLocalized(@"controller.status.pending")]
+                 _:@"the page says routing starts with the game session"];
+
+    routing.on = NO;
+    [routing sendActionsForControlEvents:UIControlEventValueChanged];
+    [recorder check:![defaults boolForKey:routingKey] && !manager.enabled
+                 _:@"switching off clears the key and the manager"];
+    [recorder check:[status.text isEqual:WKLocalized(@"controller.status.disabled")]
+                 _:@"the page says the direct path is back"];
+
+    // The page's other parts exist and stay inert with no controller connected.
+    [recorder check:AKSelfTestFind(page.view, @"controllerManager.disclosure") != nil
+                 _:@"the page carries the shared-mapping disclosure"];
+    [recorder check:![(UIControl *)AKSelfTestFind(page.view, @"controllerManager.learn") isEnabled]
+                 _:@"reassigning is unavailable with no controller connected"];
+
+    // The user's own choice goes back exactly as it was.
+    if (saved) [defaults setObject:saved forKey:routingKey];
+    else [defaults removeObjectForKey:routingKey];
+    manager.enabled = saved ? [saved boolValue] : NO;
+}
+
+void AKRunSelfTest(NSString *name) {    AKSelfTestRecorder *recorder = [AKSelfTestRecorder new];
     recorder.detail = @"";
     WKLog("selftest", @"selftest: %@ starting", name);
     if ([name isEqualToString:AKSelfTestRenderProfile]) {
@@ -1085,6 +1152,13 @@ void AKRunSelfTest(NSString *name) {
         // which is main-queue work, and none of it waits. The attempts cover the automatic
         // check that runs the moment the home page appears, during which the row declines.
         AKSelfTestRenderProfilePress(recorder, 150);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestControllerManager]) {
+        // On the main queue, synchronously: the page is UIKit, the switch is a control, and
+        // every check is an immediate read-back. Nothing waits, so nothing is blocked.
+        AKSelfTestOnMain(^{ AKSelfTestRunControllerManager(recorder); });
+        AKSelfTestLogVerdict(recorder, name);
         return;
     }
     if ([name isEqualToString:AKSelfTestInput]) {

@@ -537,14 +537,21 @@ static NSString *AKAudioStateDescription(void) {
     // shows the WoW home. Any other launch is a development run from
     // tools/: keep its plain status screen and behaviour.
     BOOL plain=YES, previewAddons=[arguments containsObject:@"--addons-preview"];
+    // A development run that opens one page directly, for a device check of a page the home
+    // screen reaches by scrolling. Same rule as --addons-preview: it is still the home page,
+    // with one page pushed on top of it.
+    BOOL previewControllers=[arguments containsObject:@"--controller-manager-preview"];
     // The Render profile self-test presses a row on the home page, so the home page has to be
     // the page the app shows; every other non-plain argument keeps the plain status screen and
     // the development behaviour. It is the one self-test that needs the real UI, and it needs
-    // nothing else - see wolkaraforever/Shell/SelfTest.h.
-    BOOL homeSelfTest=[arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestRenderProfile]];
+    // nothing else - see wolkaraforever/Shell/SelfTest.h. The Controller Manager test is the
+    // same shape: it drives a page the home screen reaches by scrolling.
+    BOOL homeSelfTest=[arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestRenderProfile]] ||
+                      [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestControllerManager]];
     for(NSUInteger i=1;i<arguments.count;i++) if(![arguments[i] hasPrefix:TKExecutionModeArgumentPrefix] &&
         ![arguments[i] isEqualToString:TKExecutionModeSaveArgument] &&
         ![arguments[i] isEqualToString:@"--addons-preview"] &&
+        ![arguments[i] isEqualToString:@"--controller-manager-preview"] &&
         !(homeSelfTest && [arguments[i] hasPrefix:@"--selftest"])) plain=NO;
     if (plain) {
         self.uiSession=YES;
@@ -566,6 +573,8 @@ static NSString *AKAudioStateDescription(void) {
         [self.window makeKeyAndVisible];
         if (previewAddons) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)),
                                           dispatch_get_main_queue(), ^{ [weakSelf.wowController previewAddonBrowser]; });
+        if (previewControllers) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)),
+                                               dispatch_get_main_queue(), ^{ [weakSelf.wowController previewControllerManager]; });
         WKLog("ui", @"home: the launcher is up (mode=%s source=%@)",
               ModeIdentifier(self.executionMode), self.executionModeSource ?: @"none");
         // The public home has one startup route and no execution-mode chooser.

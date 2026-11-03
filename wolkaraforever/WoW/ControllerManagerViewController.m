@@ -240,15 +240,20 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
             _statusLabel.text = WKLocalized(@"controller.status.disabled");
             break;
         case AKControllerRoutingStateWaiting:
-            _statusLabel.text = manager.physicalControllerConnected
-                ? WKLocalized(@"controller.status.connecting")
-                : WKLocalized(@"controller.status.nocontroller");
+            // On, but the guest adapter only loads when a session starts: say that rather
+            // than "no controller", which would be true and useless.
+            if (manager.enabled && !manager.guestFacadePresent)
+                _statusLabel.text = WKLocalized(@"controller.status.pending");
+            else if (manager.physicalControllerConnected)
+                _statusLabel.text = WKLocalized(@"controller.status.connecting");
+            else
+                _statusLabel.text = WKLocalized(@"controller.status.nocontroller");
             break;
         case AKControllerRoutingStateRouting:
             _statusLabel.text = WKLocalized(@"controller.status.routing");
             break;
         case AKControllerRoutingStateFailed:
-            _statusLabel.text = manager.guestFacadePresent
+            _statusLabel.text = manager.guestFacadeAvailable
                 ? WKLocalized(@"controller.status.failed")
                 : WKLocalized(@"controller.status.nofacade");
             break;

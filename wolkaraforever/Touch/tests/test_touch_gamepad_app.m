@@ -339,6 +339,39 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(fabs(cluster.frame.size.width-216)<.01);
     assert(CGRectGetMidX(Button(host,GCInputLeftTrigger).frame)>CGRectGetMidX(Button(host,GCInputLeftShoulder).frame));
     assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)<CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
+    // The physical producer, driven through the same *real* GCVirtualController the overlay
+    // drives: what the Controller Manager posts is what a guest reading GCController.controllers
+    // would see. This is the one link the manager fixture cannot cover, because it has no
+    // GameController framework at all.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteState" object:nil
+        userInfo:@{@"enabled":@YES}]; Drain();
+    assert(manager.visible);
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteValue" object:nil
+        userInfo:@{@"element":@"virtual.button.b", @"value":@1}];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteValue" object:nil
+        userInfo:@{@"element":@"virtual.button.left.trigger", @"value":@0.6}];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRoutePosition" object:nil
+        userInfo:@{@"element":@"virtual.stick.left", @"x":@0.5, @"y":@-0.25}];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRoutePosition" object:nil
+        userInfo:@{@"element":@"virtual.dpad", @"x":@0, @"y":@1}]; Drain();
+    assert(pad.buttonB.pressed && pad.buttonB.value==1);
+    assert(fabs(pad.leftTrigger.value-0.6)<.01);
+    assert(fabs(pad.leftThumbstick.xAxis.value-0.5)<.01 && fabs(pad.leftThumbstick.yAxis.value+0.25)<.01);
+    assert(pad.dpad.yAxis.value==1);
+    // A touch while routing must not overwrite a routed value: one element, one owner.
+    [Button(host,GCInputButtonB) sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert(pad.buttonB.value==1);
+    [Button(host,GCInputButtonB) sendActionsForControlEvents:UIControlEventTouchUpInside];
+    // Releasing gives every element back.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteRelease" object:nil]; Drain();
+    assert(!pad.buttonB.pressed && pad.leftTrigger.value==0);
+    assert(pad.leftThumbstick.xAxis.value==0 && pad.dpad.yAxis.value==0);
+    // Switching routing off hands the elements back to the overlay.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteState" object:nil
+        userInfo:@{@"enabled":@NO}]; Drain();
+    [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert(pad.buttonA.pressed);
+    [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchUpInside];
     TestPreferences();
     manager.keyboardVisible=YES; Drain();
     assert(!manager.visible && !pad.leftShoulder.pressed && !pad.buttonA.pressed);

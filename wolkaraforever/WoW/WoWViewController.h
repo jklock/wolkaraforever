@@ -39,5 +39,8 @@ NS_ASSUME_NONNULL_BEGIN
 // Development preview: the Add-on Manager, already on Browse. Used by
 // tools, never by a normal launch.
 - (void)previewAddonBrowser;
+// Opens the Controller Manager page, the way --addons-preview opens the add-on page: a
+// development run that has to see a page the home screen reaches by scrolling.
+- (void)previewControllerManager;
 @end
 NS_ASSUME_NONNULL_END

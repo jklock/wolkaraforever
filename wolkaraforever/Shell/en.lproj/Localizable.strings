@@ -59,6 +59,7 @@
 "controller.status.disabled" = "Off. A physical controller reaches the game directly.";
 "controller.status.nocontroller" = "On, but no controller is connected. Connect one by Bluetooth or USB.";
 "controller.status.connecting" = "Starting the virtual controller…";
+"controller.status.pending" = "On. It starts when the game starts.";
 "controller.status.routing" = "On. One virtual controller is offered to the game.";
 "controller.status.failed" = "The virtual controller could not start, so nothing is being routed.";
 "controller.status.nofacade" = "This build cannot hide a physical controller from the game, so routing is refused rather than doubling every press.";

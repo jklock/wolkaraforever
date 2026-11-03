@@ -1030,12 +1030,43 @@ cmd_selftest() {
     return 1
 }
 
+# A guarded launch that opens one page of the launcher directly, for a device check of
+# something the home screen reaches by scrolling. It is a development affordance of our own
+# app, not input automation: the page is ours, and it opens itself.
+#
+#   pilot.sh preview controller-manager     the Controller Manager page
+#   pilot.sh preview addons                 the add-on browser
+cmd_preview() {
+    local page=${1:-}
+    local argument
+    case "$page" in
+        controller-manager) argument=--controller-manager-preview ;;
+        addons)             argument=--addons-preview ;;
+        *) die "unknown preview: ${page:-none}. Try controller-manager or addons." ;;
+    esac
+    if [ -n "$(app_pid)" ]; then
+        die "the app is already running (pid $(app_pid)). Use 'pilot.sh stop' first."
+    fi
+    refresh_state
+    if [ "$(state_value inspection_ok)" != "1" ]; then
+        die "the device could not be inspected. Unlock the iPad and check the cable."
+    fi
+    log_launch_count > "$SESSION/log-launches-before"
+    record_baseline
+    printf 'preview:%s\n' "$page" > "$LAUNCH_MODE"
+    say "opening $page directly ($argument)"
+    local output
+    output=$(xcrun devicectl device process launch --device "$DEVICE" "$BUNDLE" "$argument" 2>&1) \
+        || launch_failed "$output"
+    say "launched"
+}
+
 case "${1:-state}" in
-    state)   cmd_state ;;
-    stop)    cmd_stop "${2:-}" ;;
+    state)   cmd_state ;;    stop)    cmd_stop "${2:-}" ;;
     install) cmd_install "${2:-}" ;;
     launch)  cmd_launch ;;
     game)    cmd_launch --game ;;
+    preview) cmd_preview "${2:-}" ;;
     wait)    cmd_wait "${2:-}" "${3:-}" ;;
     view)    cmd_view ;;
     crash)   cmd_crash ;;
