@@ -129,10 +129,11 @@ work while another app is in front; iPadOS still controls background execution.
 
 ## Controller Manager
 
-**Performance & UI Manager → Controller Manager** routes a physical Bluetooth or USB
-controller through the one virtual controller this app already owns. The switch
-**Route physical controllers through virtual controller** is off by default; with it off,
-a physical controller reaches the game directly, exactly as before.
+**Controller Manager** is its own card on the home screen — the sixth, in the bottom-right of a
+wide page. It holds the switch **Route physical controllers through virtual controller** (off by
+default), a line saying what routing is doing right now, and **Controller mappings and
+reassignment**, which opens the page below. With routing off, a physical controller reaches the
+game directly, exactly as before.
 
 With it on, the game is offered that single virtual controller and the physical pad is used
 as its input. Each controller **model** has its own mapping, starting as a standard

@@ -8,13 +8,19 @@ the file that makes it true. Physical results are recorded in
 
 World of Warcraft on an iPad sees whatever GameController reports. That is fine until a
 pad's buttons need to mean something different from what they say — or until a spare pad
-should not reach the game at all. The Controller Manager is the launcher's answer:
+should not reach the game at all. The Controller Manager is the launcher's answer, and it is
+**the sixth card on the home screen**, not a row inside someone else's card:
 
 * a switch, **Route physical controllers through virtual controller**, off by default;
 * one remap profile per controller *model*, starting as a one-to-one extended-gamepad
   layout;
 * a “press or move the source, then choose the virtual target” reassignment flow;
 * a status line that says which of the four states routing is in.
+
+The card and the page it opens drive the same setting, owned by the manager; both follow
+`AKControllerManagerDidChangeNotification`, so whichever one is used, the other is right. The
+card exists because the row it replaced was below the fold on the 4:3 front page — measured
+on the device, where that card was cut off at “Reset to Default Graphical Settings”.
 
 Nothing here changes World of Warcraft's own bindings, `GamePadConfig_*.json` or
 `Config.wtf`. The game's `GamePadEnable` row stays a separate setting with a separate
