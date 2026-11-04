@@ -37,6 +37,7 @@ NSString *const AKSelfTestCurseForge = @"curseforge";
 NSString *const AKSelfTestSpeechFile = @"speech-file";
 NSString *const AKSelfTestControllerManager = @"controller-manager";
 NSString *const AKSelfTestControllerRouting = @"controller-routing";
+NSString *const AKSelfTestControllerSituations = @"controller-situations";
 
 #pragma mark - Recording what happened
 
@@ -1508,6 +1509,91 @@ static void AKSelfTestRunControllerRouting(AKSelfTestRecorder *recorder) {
     (void)applier;
     [pad disconnect];
 }
+// The three situations the feature is defined by. Each is asserted on its own, because each is a
+// separate promise to a different user: no pad at all, a pad being captured, a pad not being
+// captured. The hidden virtual controller stands in for the one the touch controls own, and a
+// read-only stand-in stands in for the physical pad, so what is measured is exactly what the
+// guest would be offered - never Apple's delivery of a value, which is not this code's to prove.
+static void AKSelfTestRunControllerSituations(AKSelfTestRecorder *recorder) {
+    static NSString *const routingKey = @"WolkaraForeverControllerRouting";
+    AKControllerManager *manager = AKControllerManager.shared;
+    __block id savedSetting = nil;
+    AKSelfTestOnMain(^{
+        savedSetting = [NSUserDefaults.standardUserDefaults objectForKey:routingKey];
+        manager.enabled = NO;
+    });
+
+    GCVirtualController *touchPad = AKSelfTestVirtualPad(10.0);
+    [recorder check:touchPad != nil _:@"a hidden virtual controller stands in for Tolkara's gamepad"];
+    if (!touchPad) {
+        AKSelfTestOnMain(^{
+            if (savedSetting) [NSUserDefaults.standardUserDefaults setObject:savedSetting forKey:routingKey];
+            else [NSUserDefaults.standardUserDefaults removeObjectForKey:routingKey];
+        });
+        return;
+    }
+    AKSelfTestReadOnlyPad *physical = [AKSelfTestReadOnlyPad new];
+    __block NSArray<GCController *> *guest = nil;
+
+    // 1. No physical controller. The framework would report Tolkara's own virtual controller and
+    //    nothing else, and capture being on or off must not change that - there is nothing to
+    //    capture.
+    AKSelfTestOnMain(^{
+        manager.controllersProvider = ^NSArray<GCController *> *{ return @[touchPad.controller]; };
+        [manager noteGuestFacadePresent];
+        manager.enabled = NO;
+        [manager noteVirtualPadConnected:touchPad.controller];
+        guest = [manager.guestControllers copy];
+    });
+    [recorder check:guest.count == 1 && guest.firstObject == touchPad.controller
+                 _:@"1 no pad, capture off: the guest has Tolkara's gamepad"];
+    AKSelfTestOnMain(^{
+        manager.enabled = YES;
+        guest = [manager.guestControllers copy];
+    });
+    [recorder check:guest.count == 1 && guest.firstObject == touchPad.controller
+                 _:@"1 no pad, capture on: still just Tolkara's gamepad"];
+    AKSelfTestOnMain(^{
+        manager.enabled = NO;
+        // Now a pad is attached, so the framework reports it beside Tolkara's own gamepad.
+        manager.controllersProvider = ^NSArray<GCController *> *{
+            return @[touchPad.controller, (GCController *)(id)physical];
+        };
+        manager.enabled = YES;
+        [manager noteVirtualPadConnected:touchPad.controller];
+        guest = [manager.guestControllers copy];
+    });
+
+    // 2. A physical controller with capture on. The guest gets the virtual gamepad and nothing
+    //    else; the pad being read is never in the list.
+    [recorder check:guest.count == 1 && guest.firstObject == touchPad.controller
+                 _:@"2 pad, capture on: the guest is offered the virtual gamepad only"];
+    [recorder check:![guest containsObject:(id)physical]
+                 _:@"2 pad, capture on: the physical pad is not in the guest's list"];
+    [recorder check:manager.physicalControllerConnected
+                 _:@"2 pad, capture on: the manager is reading the physical pad"];
+
+    // 3. A physical controller with capture off. Everything is as it was before this feature:
+    //    the guest is offered the real pad, and the manager reads it directly.
+    AKSelfTestOnMain(^{
+        manager.enabled = NO;
+        guest = [manager.guestControllers copy];
+    });
+    [recorder check:[guest containsObject:(GCController *)(id)physical]
+                 _:@"3 pad, capture off: the guest is offered the physical pad, as before"];
+    [recorder check:manager.physicalControllerConnected
+                 _:@"3 pad, capture off: the manager reads it directly, as before"];
+
+    AKSelfTestOnMain(^{
+        manager.controllersProvider = nil;
+        [manager noteVirtualPadDisconnected];
+        if (savedSetting) [NSUserDefaults.standardUserDefaults setObject:savedSetting forKey:routingKey];
+        else [NSUserDefaults.standardUserDefaults removeObjectForKey:routingKey];
+        manager.enabled = savedSetting ? [savedSetting boolValue] : NO;
+    });
+    [touchPad disconnect];
+}
+
 void AKRunSelfTest(NSString *name) {
     AKRunSelfTestInHomePage(name, nil);
 }
@@ -1522,6 +1608,15 @@ void AKRunSelfTestInHomePage(NSString *name, id home) {
         // which is main-queue work, and none of it waits. The attempts cover the automatic
         // check that runs the moment the home page appears, during which the row declines.
         AKSelfTestRenderProfilePress(recorder, 150);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestControllerSituations]) {
+        // Off the main queue, like the routing chain: a virtual controller's callbacks arrive
+        // through libdispatch on main, which must be free to drain.
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            AKSelfTestRunControllerSituations(recorder);
+            AKSelfTestLogVerdict(recorder, name);
+        });
         return;
     }
     if ([name isEqualToString:AKSelfTestControllerRouting]) {
