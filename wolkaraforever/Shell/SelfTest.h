@@ -70,6 +70,10 @@ extern NSString *const AKSelfTestControllerRouting;
 ///   3. physical controller, off      - the guest is offered the physical pad again, exactly as
 ///                                      before this feature existed.
 extern NSString *const AKSelfTestControllerSituations;
+/// What a pass-through press costs: microseconds from the framework entering the handler to the
+/// adapter writing the value. The requirement is that this is what it is today, so it is a number
+/// rather than an opinion.
+extern NSString *const AKSelfTestControllerLatency;
 
 // Runs one self-test and logs the verdict the matrix greps:
 //   selftest: <name> PASS <passed>/<total> checks (<what was exercised>)
