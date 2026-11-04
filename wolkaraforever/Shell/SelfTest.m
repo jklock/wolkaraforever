@@ -1551,11 +1551,16 @@ static void AKSelfTestRunControllerLatency(AKSelfTestRecorder *recorder) {
         AKSelfTestOnMain(^{ [pad setValue:0 forButtonElement:GCInputButtonA]; });
         AKSelfTestWaitUntil(^BOOL{ @synchronized (microseconds) { return microseconds.count >= (i + 1) * 2; } }, 1.0);
     }
-    AKSelfTestWaitUntil(^BOOL{ @synchronized (microseconds) { return microseconds.count >= presses; } }, 2.0);
+    // Both halves of the last pair have to arrive before the count is judged; waiting for
+    // `presses` here and then demanding `presses * 2` was asking for samples that had not been
+    // given time to exist.
+    AKSelfTestWaitUntil(^BOOL{ @synchronized (microseconds) { return microseconds.count >= presses * 2; } }, 5.0);
 
     NSArray<NSNumber *> *samples = nil;
     @synchronized (microseconds) { samples = [microseconds copy]; }
-    [recorder check:samples.count == presses * 2 _:@"every press and release produced a routed value"];
+    [recorder check:samples.count == presses * 2
+                 _:[NSString stringWithFormat:@"every press and release produced a routed value (%lu of %lu)",
+                    (unsigned long)samples.count, (unsigned long)(presses * 2)]];
 
     NSArray<NSNumber *> *sorted = [samples sortedArrayUsingSelector:@selector(compare:)];
     double median = sorted.count ? sorted[sorted.count / 2].doubleValue : -1;
@@ -1566,7 +1571,11 @@ static void AKSelfTestRunControllerLatency(AKSelfTestRecorder *recorder) {
     // The bound is a tripwire, not a target: a value that needed a queue hop measured in the
     // hundreds of microseconds and worse under load. Anything near a millisecond means the hop
     // came back.
-    [recorder check:median >= 0 && worst < 1000.0 _:@"every routed value is under a millisecond"];
+    NSUInteger over = 0;
+    for (NSNumber *sample in samples) if (sample.doubleValue >= 1000.0) over++;
+    [recorder check:median >= 0 && worst < 1000.0
+                 _:[NSString stringWithFormat:@"every routed value is under a millisecond (%lu over, worst %.1f us)",
+                    (unsigned long)over, worst]];
 
     AKSelfTestOnMain(^{
         manager.routeLatencyObserver = nil;

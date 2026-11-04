@@ -6,10 +6,6 @@
 #import "../Input/InputElement.h"
 #import "../Input/Trigger.h"
 
-// When the handler was entered, for the latency measurement. Thread-local because handlers for
-// different pads can run on different threads at the same moment.
-static _Thread_local uint64_t AKCMEntryTicks;
-
 
 #import <GameController/GameController.h>
 #include <mach/mach_time.h>
@@ -634,7 +630,6 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     _currentDeviceName = name;
     _currentSourceName = source;
     [_hot unlock];
-    AKCMEntryTicks = mach_absolute_time();
 
     if ([source isEqualToString:@"controller"]) {
         [self noteButtonValue:value element:element device:device];
@@ -720,6 +715,10 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 #pragma mark - Routing into the virtual pad
 
 - (void)routeButton:(NSString *)element value:(double)value pressed:(BOOL)pressed device:(NSString *)device {
+    // What this feature costs, measured where it is spent: entering the routing step to the
+    // adapter being told. A handler sets no state for it, so a value routed from either handler
+    // gives exactly one sample.
+    uint64_t enteredAt = self.routeLatencyObserver ? mach_absolute_time() : 0;
     NSString *target = nil;
     [_hot lock];
     // Nothing is sent before the virtual controller is connected: a value aimed at a pad that is
@@ -728,11 +727,14 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     if (_enabled && _virtualController) {
         target = _routes[device][element];
         if (target.length && ![target isEqualToString:AKControllerTargetNone]) {
-            // A released button is always sent, even if the value did not change: the one thing
-            // that must never be missed is "this is no longer pressed".
+            // One notification per real change, and no more. A button gets both a
+            // pressedChangedHandler and a valueChangedHandler, so suppressing repeats only while
+            // pressed sent every release twice - double work on the hot path and a duplicate
+            // event for the adapter. A release is still never missed: the value differs from the
+            // one last sent, or there was nothing held to release.
             double out = pressed ? value : 0;
             NSNumber *last = _routedButtons[target];
-            if (last && pressed && fabs(last.doubleValue - out) < 1.0 / 255.0) target = nil;
+            if (last && fabs(last.doubleValue - out) < 1.0 / 255.0) target = nil;
             else _routedButtons[target] = @(out);
             if (target) value = out;
         } else target = nil;
@@ -743,7 +745,7 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
                                                      object:nil
                                                    userInfo:@{AKControllerRouteElementKey: target,
                                                               AKControllerRouteValueKey: @(value)}];
-    if (self.routeLatencyObserver) self.routeLatencyObserver(AKCMEntryTicks);
+    if (enteredAt) self.routeLatencyObserver(enteredAt);
 }
 
 - (void)routeAxis:(NSString *)element position:(CGPoint)position device:(NSString *)device {
