@@ -148,6 +148,11 @@ FOUNDATION_EXPORT NSString *const AKControllerGuestViewRoutingKey;      // @YES 
 
 /// Every model connected now, sorted by display name. Empty when no pad is connected.
 @property (nonatomic, readonly) NSArray<AKControllerModel *> *models;
+/// Exactly what the guest is offered: the devices themselves while routing is off, and the one
+/// virtual controller while it is on. This is the input to the GameController façade, and the
+/// promise of the whole feature is in one sentence - with routing on, nothing in this list is
+/// the hardware the manager is reading.
+@property (nonatomic, readonly) NSArray<GCController *> *guestControllers;
 - (nullable AKControllerProfile *)profileForIdentity:(NSString *)identity;
 - (void)resetProfileForIdentity:(NSString *)identity;
 /// Re-apply a profile the page has just edited: the gestures routing asked for follow the

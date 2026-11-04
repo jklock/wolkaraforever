@@ -153,8 +153,16 @@ static NSArray *AKGuestControllers(void) {
 - (BOOL)isAttachedToDevice;
 @end
 
+// Defined with the other class-identity helpers below; used here first.
+static Class AKGuestRealClass(const char *symbol);
+
 @implementation GCController
 + (NSArray *)controllers { return AKGuestControllers(); }
+// The object this file hands out is Apple's own, so the guest's
+// -isKindOfClass:[GCController class] has to be true of it. Without this the shim's own
+// class would be the thing compared against and every controller - including the virtual
+// one this whole feature exists to deliver - would be rejected as "not a controller".
++ (Class)class { return AKGuestRealClass("OBJC_CLASS_$_GCController") ?: self; }
 + (id)current {
     NSArray *controllers = AKGuestControllers();
     // Prefer the pad the system says is attached to this device, which is what Apple's
