@@ -4,6 +4,28 @@ Engineering note, 2026-11-03. Written with the implementation, so every claim he
 the file that makes it true. Physical results are recorded in
 [`development/validation/`](../validation/) under the revision that ran.
 
+## The guarantee
+
+Two sentences, and everything else in this note serves them.
+
+* **On** — no application running inside WolkaraForever ever sees the connected pad, whatever it
+  is. All it sees is the virtual controller: `-[AKControllerManager guestControllers]` returns
+  exactly that one device, the façade hands the guest exactly that list, and the hardware the
+  manager is reading is never in it.
+* **Off** — nothing changes from before this feature existed: the guest is offered the real
+  controllers, and the manager reads them as it always did.
+
+Both are measured on the device, in `--selftest=controller-routing`: with routing on the guest is
+offered exactly one controller, it is the virtual one, and the pad being read is not in the list;
+with routing off the real controllers are offered again.
+
+Two things had to be true for "on" to mean that, and neither was, until they were measured:
+
+* the controller the guest is handed must pass its own `-isKindOfClass:[GCController class]`, so
+  the façade answers `+class` with Apple's class;
+* the virtual controller must exist whenever routing is on, so routing being on is enough to
+  install the object that owns it — it does not depend on the on-screen controls.
+
 ## What it is for
 
 World of Warcraft on an iPad sees whatever GameController reports. That is fine until a
