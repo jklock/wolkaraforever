@@ -14,7 +14,14 @@ Europe, Americas, Korea, and Taiwan; game languages are English, Spanish, and Ge
 launcher itself can be read in English or German: see [App language](#app-language) below.
 Choose **Install** to download and verify the client, or let the app complete a required
 update before playing. Keep WolkaraForever foregrounded while it downloads, verifies, or
-prepares a launch.
+prepares a launch. The screen stays awake during a file check. Brief interruptions
+such as opening Control Centre do not cancel it. Switching to another app pauses
+unfinished work; returning to the home page resumes it without starting the game.
+
+The first check of an imported installation still reads its game data. Later
+updates reuse checks for unchanged files, and long checks save their progress
+periodically so an unexpected app closure does not discard the whole scan.
+**Verify and repair game files** deliberately performs a full check.
 
 For a ready Forever installation, changing the game language updates both `textLocale` and
 `audioLocale` in the game's configuration. If its installed files belong to another language,

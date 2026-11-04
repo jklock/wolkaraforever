@@ -65,6 +65,11 @@ int main(void) {@autoreleasepool {
     assert(![store verifyKey:ka size:a.length+1]);
     uint8_t key[16];assert(TKWoWUnhex(ka,key));key[15]^=1;
     assert(![store verifyKey:TKWoWHex(key,16) size:a.length]);
+    assert(![store verifyKeyBytes:key size:a.length]);
+    assert(TKWoWUnhex(ka,key));
+    assert([store verifyKeyBytes:key size:a.length]);
+    assert(![store verifyKeyBytes:key size:a.length+1]);
+    assert(![store verifyKeyBytes:key size:256ULL*1024*1024+1]);
     // Fetching bytes (e.g. executable extraction) always verifies the payload.
     assert([[store readKey:ka size:a.length] isEqual:a]);store=nil;
     // A renamed installation reuses only fully validated legacy receipts;
@@ -208,6 +213,18 @@ int main(void) {@autoreleasepool {
     NSTimeInterval warmTime=NSDate.timeIntervalSinceReferenceDate-start;
     assert(store.verificationBytesRead==0 && store.verificationBytesReused==objectCount*objectSize);
     printf("Synthetic 16 MiB: cold read=%llu bytes (%.4fs), warm read=0 bytes (%.4fs).\n",largeRead,coldTime,warmTime);
+    // Match the million-entry manifest's hot path. Both routes preserve full
+    // keys and extents; the binary route avoids per-entry hex allocation.
+    uint8_t warmKey[16];assert(TKWoWUnhex(keys[0],warmKey));
+    start=NSDate.timeIntervalSinceReferenceDate;
+    for(NSUInteger i=0;i<100000;i++) { @autoreleasepool {
+        assert([store verifyKey:TKWoWHex(warmKey,16) size:objectSize]);
+    }}
+    NSTimeInterval formatted=NSDate.timeIntervalSinceReferenceDate-start;
+    start=NSDate.timeIntervalSinceReferenceDate;
+    for(NSUInteger i=0;i<100000;i++)assert([store verifyKeyBytes:warmKey size:objectSize]);
+    assert(store.verificationBytesRead==0);
+    printf("Synthetic 100k warm keys: formatted %.4fs, binary %.4fs; payload reads=0.\n",formatted,NSDate.timeIntervalSinceReferenceDate-start);
     store=nil;
     assert([fm removeItemAtPath:base error:NULL]);
     printf("WoW verification PASS: cold payload reads=%llu; warm payload reads=0; clone rebinding, full keys/extents, repair, changed/deleted/truncated/symlink data, malformed records, metadata-only recovery, append corruption, 64 MiB checkpoint/resume.\n",cold);

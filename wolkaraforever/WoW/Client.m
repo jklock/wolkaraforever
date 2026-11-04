@@ -1,7 +1,7 @@
 #import "Client.h"
 #import "CASC.h"
 
-// A client reuses one connection pool, with serial transfers and bounded buffers. No cookies,
+// A client reuses one connection pool with bounded concurrent transfers. No cookies,
 // credentials, redirects, HTTP fallback, or application-installation writes.
 @interface TKWoWTransfer : NSObject <NSURLSessionDataDelegate>
 @property(nonatomic) NSMutableData *data;
@@ -9,6 +9,7 @@
 @property(nonatomic) NSUInteger limit;
 @property(nonatomic) NSString *range;
 @property(nonatomic) dispatch_semaphore_t done;
+@property(nonatomic) NSURLSessionDataTask *task;
 @end
 @implementation TKWoWTransfer
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task
@@ -18,7 +19,7 @@
     BOOL rangeOK=!self.range || (status==206 && [[(NSHTTPURLResponse *)response valueForHTTPHeaderField:@"Content-Range"] hasPrefix:[self.range stringByAppendingString:@"/"]]);
     if (status!=(self.range?206:200) || !rangeOK || response.expectedContentLength>(int64_t)self.limit) {
         self.error=TKWoWError(status!=200 ? [NSString stringWithFormat:@"Download failed (HTTP %ld).",(long)status] : @"Download exceeds its size limit.");
-        completion(NSURLSessionResponseCancel);
+        completion(NSURLSessionResponseCancel);[task cancel];
     } else completion(NSURLSessionResponseAllow);
 }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data {
@@ -40,15 +41,72 @@
 }
 @end
 
+// NSURLSession owns its delegate until invalidation. Keep the dispatcher separate
+// from the client to avoid a client/session retain cycle. Delegate callbacks are
+// serial, but every task has its own data, bounds, error and completion semaphore.
+@interface TKWoWTransfers : NSObject <NSURLSessionDataDelegate>
+@property(nonatomic) NSLock *lock;
+@property(nonatomic) NSMutableDictionary<NSNumber *,TKWoWTransfer *> *active;
+@end
+@implementation TKWoWTransfers
+- (instancetype)init {
+    if((self=[super init])) { _lock=[NSLock new];_active=[NSMutableDictionary new]; }
+    return self;
+}
+- (void)add:(TKWoWTransfer *)transfer {
+    [_lock lock];_active[@(transfer.task.taskIdentifier)]=transfer;[_lock unlock];
+}
+- (TKWoWTransfer *)transfer:(NSURLSessionTask *)task remove:(BOOL)remove {
+    [_lock lock];TKWoWTransfer *transfer=_active[@(task.taskIdentifier)];
+    if(remove)[_active removeObjectForKey:@(task.taskIdentifier)];[_lock unlock];return transfer;
+}
+- (void)cancel {
+    [_lock lock];NSArray *transfers=_active.allValues;[_lock unlock];
+    for(TKWoWTransfer *transfer in transfers)[transfer.task cancel];
+}
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task
+    didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completion {
+    TKWoWTransfer *transfer=[self transfer:task remove:NO];
+    if(transfer)[transfer URLSession:session dataTask:task didReceiveResponse:response completionHandler:completion];
+    else completion(NSURLSessionResponseCancel);
+}
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data {
+    [[self transfer:task remove:NO] URLSession:session dataTask:task didReceiveData:data];
+}
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
+    willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request
+    completionHandler:(void (^)(NSURLRequest * _Nullable))completion {
+    TKWoWTransfer *transfer=[self transfer:task remove:NO];
+    if(transfer)[transfer URLSession:session task:task willPerformHTTPRedirection:response newRequest:request completionHandler:completion];
+    else completion(nil);
+}
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
+    [[self transfer:task remove:YES] URLSession:session task:task didCompleteWithError:error];
+}
+@end
+
+@interface TKWoWRangeJob : NSObject
+@property(nonatomic) NSUInteger first;
+@property(nonatomic) NSUInteger last;
+@property(nonatomic) uint64_t offset;
+@property(nonatomic) NSUInteger size;
+@property(nonatomic) NSURL *url;
+@property(nonatomic) BOOL ranged;
+@property(nonatomic) NSData *data;
+@property(nonatomic) BOOL complete; // Published under the client's lock.
+@end
+@implementation TKWoWRangeJob
+@end
+
 @implementation TKWoWClient {
     NSLock *_lock;
     BOOL _cancelled;
     NSURLSession *_session;
-    TKWoWTransfer *_transfer;
+    TKWoWTransfers *_transfers;
+    NSError *_downloadFailure;
     NSData *_archiveTable;
     NSArray<NSString *> *_archives;
     NSString *_archiveConfig;
-
 }
 - (instancetype)init {
     if ((self=[super init])) _lock=[NSLock new];
@@ -59,6 +117,18 @@
     [_lock lock]; _cancelled=YES; [_session invalidateAndCancel]; [_lock unlock];
 }
 - (BOOL)cancelled { [_lock lock]; BOOL value=_cancelled; [_lock unlock]; return value; }
+- (void)failDownloads:(NSError *)error {
+    [_lock lock];if(!_downloadFailure)_downloadFailure=error?:TKWoWError(@"Download failed.");
+    [_transfers cancel];[_lock unlock];
+}
+- (NSURLSessionConfiguration *)sessionConfiguration {
+    NSURLSessionConfiguration *config=NSURLSessionConfiguration.ephemeralSessionConfiguration;
+    config.HTTPCookieStorage=nil;config.URLCredentialStorage=nil;config.URLCache=nil;
+    config.requestCachePolicy=NSURLRequestReloadIgnoringLocalCacheData;
+    config.timeoutIntervalForRequest=30;config.timeoutIntervalForResource=300;
+    config.HTTPMaximumConnectionsPerHost=4;
+    config.HTTPAdditionalHeaders=@{@"Accept-Encoding":@"identity"};return config;
+}
 - (NSData *)fetch:(NSURL *)url limit:(NSUInteger)limit error:(NSError **)error {
     return [self transferURL:url offset:0 size:0 limit:limit error:error];
 }
@@ -66,35 +136,30 @@
     return [self transferURL:url offset:offset size:size limit:size error:error];
 }
 - (NSData *)transferURL:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size limit:(NSUInteger)limit error:(NSError **)error {
-    if (![url.scheme isEqualToString:@"https"] || !url.host.length || url.user || url.password) {
-        if (error) *error=TKWoWError(@"A valid HTTPS download URL is required.");
+    if (![url.scheme isEqualToString:@"https"] || !url.host.length || url.user || url.password ||
+        (size && offset>UINT64_MAX-(size-1))) {
+        if (error) *error=TKWoWError(@"A valid HTTPS download URL and range are required.");
         return nil;
     }
     [_lock lock];
-    if(_cancelled) {
-        [_lock unlock];if(error)*error=TKWoWError(@"Download cancelled.");return nil;
+    if(_cancelled || _downloadFailure) {
+        NSError *failure=_downloadFailure?:TKWoWError(@"Download cancelled.");
+        [_lock unlock];if(error)*error=failure;return nil;
     }
     if(!_session) {
-        _transfer=[TKWoWTransfer new];
-        NSURLSessionConfiguration *config=NSURLSessionConfiguration.ephemeralSessionConfiguration;
-        config.HTTPCookieStorage=nil;config.URLCredentialStorage=nil;config.URLCache=nil;
-        config.requestCachePolicy=NSURLRequestReloadIgnoringLocalCacheData;
-        config.timeoutIntervalForRequest=30;config.timeoutIntervalForResource=300;
-        config.HTTPMaximumConnectionsPerHost=1;
-        config.HTTPAdditionalHeaders=@{@"Accept-Encoding":@"identity"};
+        _transfers=[TKWoWTransfers new];
         NSOperationQueue *queue=[NSOperationQueue new];queue.maxConcurrentOperationCount=1;
-        _session=[NSURLSession sessionWithConfiguration:config delegate:_transfer delegateQueue:queue];
+        _session=[NSURLSession sessionWithConfiguration:[self sessionConfiguration] delegate:_transfers delegateQueue:queue];
     }
-    TKWoWTransfer *transfer=_transfer;
-    transfer.data=[NSMutableData new];transfer.error=nil;transfer.range=nil;
-    transfer.limit=limit;transfer.done=dispatch_semaphore_create(0);
+    TKWoWTransfer *transfer=[TKWoWTransfer new];
+    transfer.data=[NSMutableData new];transfer.limit=limit;transfer.done=dispatch_semaphore_create(0);
     NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];
     if(size) {
         NSString *bounds=[NSString stringWithFormat:@"%llu-%llu",offset,offset+size-1];
         [request setValue:[@"bytes=" stringByAppendingString:bounds] forHTTPHeaderField:@"Range"];
         transfer.range=[@"bytes " stringByAppendingString:bounds];
     }
-    [[_session dataTaskWithRequest:request] resume];
+    transfer.task=[_session dataTaskWithRequest:request];[_transfers add:transfer];[transfer.task resume];
     [_lock unlock];
     // Delegate completion is guaranteed by the resource timeout/cancellation.
     dispatch_semaphore_wait(transfer.done,DISPATCH_TIME_FOREVER);
@@ -357,40 +422,86 @@ static int CompareRanges(const void *a,const void *b) {
             if(!requested[i].size || requested[i].size>256*1024*1024) { if(error)*error=TKWoWError(@"Invalid download object size.");return NO; }
         }
     }
-    qsort(entries,count,sizeof(*entries),CompareRanges);NSError *failure=nil;
+    qsort(entries,count,sizeof(*entries),CompareRanges);NSError *failure=nil;BOOL succeeded=NO;
+    // Four independent ranges hide per-request latency, but never queue a whole
+    // installation in memory. Large individual objects run alone; the normal
+    // window is at most 64 MiB, including complete results awaiting the consumer.
+    dispatch_queue_t queue=dispatch_queue_create("app.wolkara.download",DISPATCH_QUEUE_CONCURRENT);
+    dispatch_group_t group=dispatch_group_create();
+    dispatch_semaphore_t completed=dispatch_semaphore_create(0);
+    NSMutableArray<TKWoWRangeJob *> *jobs=[NSMutableArray new];uint64_t buffered=0;
     @try {
-    for(NSUInteger i=0;i<count;) { @autoreleasepool {
+    for(NSUInteger i=0;i<count || jobs.count;) { @autoreleasepool {
         if(self.cancelled) { failure=TKWoWError(@"Download cancelled.");return NO; }
-        TKWoWArchiveEntry first=entries[i];
-        if(first.archive==UINT32_MAX) {
-            NSString *key=TKWoWHex(first.key,16);
-            NSData *raw=[self encodedKey:key size:first.size plan:plan indices:indices error:&failure];
-            if(!raw || !consume(raw,key,&failure))return NO;i++;continue;
+        [_lock lock];failure=_downloadFailure;[_lock unlock];
+        if(failure)return NO;
+        while(i<count && jobs.count<4) {
+            TKWoWArchiveEntry first=entries[i];
+            uint64_t end=(uint64_t)first.offset+first.size,payload=first.size;NSUInteger last=i+1;
+            // Small archive gaps are tolerated, with at most 25% extra transfer
+            // plus 64 KiB and a 16 MiB grouped-request limit.
+            while(first.archive!=UINT32_MAX && last<count && entries[last].archive==first.archive) {
+                uint64_t nextEnd=MAX(end,(uint64_t)entries[last].offset+entries[last].size);
+                if(entries[last].offset>end+65536 || nextEnd-first.offset>16*1024*1024 ||
+                   nextEnd-first.offset>(payload+entries[last].size)*5/4+65536)break;
+                end=nextEnd;payload+=entries[last].size;last++;
+            }
+            NSUInteger size=(NSUInteger)(end-first.offset);
+            if(jobs.count && (buffered>=64*1024*1024 || size>64*1024*1024-buffered))break;
+            TKWoWRangeJob *job=[TKWoWRangeJob new];job.first=i;job.last=last;job.offset=first.offset;job.size=size;
+            job.ranged=first.archive!=UINT32_MAX;
+            NSString *key=job.ranged?_archives[first.archive]:TKWoWHex(first.key,16);
+            job.url=[NSURL URLWithString:[NSString stringWithFormat:@"%@/data/%@/%@/%@",plan[@"cdn"],
+                [key substringToIndex:2],[key substringWithRange:NSMakeRange(2,2)],key]];
+            [jobs addObject:job];buffered+=size;i=last;
+            dispatch_group_async(group,queue,^{
+                @autoreleasepool {
+                    NSError *problem=nil;
+                    job.data=job.ranged?[self range:job.url offset:job.offset size:job.size error:&problem]:
+                        [self fetch:job.url limit:job.size error:&problem];
+                    if(job.data.length!=job.size && !problem)problem=TKWoWError(@"Incomplete download.");
+                    if(problem)[self failDownloads:problem];
+                }
+                [self->_lock lock];job.complete=YES;[self->_lock unlock];
+                dispatch_semaphore_signal(completed);
+            });
+            if(buffered>=64*1024*1024)break;
         }
-        uint64_t end=(uint64_t)first.offset+first.size,payload=first.size;NSUInteger last=i+1;
-        // Up to 16 MiB per grouped request. Small gaps are tolerated, with at
-        // most 25% extra transfer plus 64 KiB. Large single objects stay bounded.
-        while(last<count && entries[last].archive==first.archive) {
-            uint64_t nextEnd=MAX(end,(uint64_t)entries[last].offset+entries[last].size);
-            if(entries[last].offset>end+65536 || nextEnd-first.offset>16*1024*1024 ||
-               nextEnd-first.offset>(payload+entries[last].size)*5/4+65536)break;
-            end=nextEnd;payload+=entries[last].size;last++;
-        }
-        NSString *archive=_archives[first.archive];
-        NSString *url=[NSString stringWithFormat:@"%@/data/%@/%@/%@",plan[@"cdn"],[archive substringToIndex:2],[archive substringWithRange:NSMakeRange(2,2)],archive];
-        NSData *range=[self range:[NSURL URLWithString:url] offset:first.offset size:(NSUInteger)(end-first.offset) error:&failure];
-        if(!range)return NO;
-        for(NSUInteger j=i;j<last;j++) { @autoreleasepool {
+        // Consume whichever range is ready, then refill its slot. A slow range
+        // must not prevent unrelated completed ranges from making progress.
+        // Retain each reservation through the serial consumer, so downloading,
+        // completed and currently consumed buffers all share the same budget.
+        TKWoWRangeJob *ready=nil;
+        [_lock lock];failure=_downloadFailure;
+        for(TKWoWRangeJob *job in jobs)if(job.complete) { ready=job;break; }
+        [_lock unlock];
+        if(failure)return NO;
+        if(!ready) { dispatch_semaphore_wait(completed,DISPATCH_TIME_FOREVER);continue; }
+        TKWoWRangeJob *job=ready;
+        for(NSUInteger j=job.first;j<job.last;j++) { @autoreleasepool {
             if(self.cancelled) { failure=TKWoWError(@"Download cancelled.");return NO; }
             NSString *key=TKWoWHex(entries[j].key,16);
-            NSUInteger offset=entries[j].offset-first.offset;
-            if(offset>range.length || entries[j].size>range.length-offset) { failure=TKWoWError(@"Truncated archive range.");return NO; }
-            NSData *raw=[NSData dataWithBytesNoCopy:(uint8_t *)range.bytes+offset length:entries[j].size freeWhenDone:NO];
-            if(!TKWoWEncodedValid(raw,key,&failure) || !consume(raw,key,&failure))return NO;
+            NSUInteger offset=job.ranged?entries[j].offset-job.offset:0;
+            if(offset>job.data.length || entries[j].size>job.data.length-offset) {
+                failure=TKWoWError(@"Truncated archive range.");return NO;
+            }
+            NSData *raw=[NSData dataWithBytesNoCopy:(uint8_t *)job.data.bytes+offset length:entries[j].size freeWhenDone:NO];
+            if(!TKWoWEncodedValid(raw,key,&failure) || !consume(raw,key,&failure)) {
+                if(!failure)failure=TKWoWError(@"Cannot store downloaded content.");return NO;
+            }
         }}
-        i=last;
+        job.data=nil;
+        buffered-=job.size;[jobs removeObject:job];
     }}
-    } @finally { if(failure && error)*error=failure; }
+    succeeded=YES;
+    } @finally {
+        // Consumer/checksum failures can now happen while siblings are active.
+        // Cancel and drain them before releasing state or allowing a retry.
+        if(!succeeded)[self failDownloads:failure?:TKWoWError(@"Download cancelled.")];
+        dispatch_group_wait(group,DISPATCH_TIME_FOREVER);
+        [_lock lock];_downloadFailure=nil;[_lock unlock];
+        if(failure && error)*error=failure;
+    }
     return YES;
 }
 

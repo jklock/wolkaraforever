@@ -542,3 +542,6 @@
 "forever.error.unsupportedLanguage" = "The selected game language is not supported.";
 "forever.error.noBackupComponent" = "The backup component is not available in this build.";
 "forever.error.backupComponent" = "The backup component cannot be used in this build.";
+
+"home.status.paused" = "Check paused";
+"home.status.paused.detail" = "The check will continue when you return to this page.";

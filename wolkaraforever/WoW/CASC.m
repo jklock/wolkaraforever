@@ -352,7 +352,11 @@ static NSData *LocalIndexEntries(NSData *data, unsigned bucket, NSError **error)
 }
 - (BOOL)verifyKey:(NSString *)key size:(uint64_t)size {
     uint8_t hash[16];if(!TKWoWUnhex(key,hash) || size>256*1024*1024)return NO;
-    const uint8_t *entry=[self entryForKey:key hash:hash];
+    return [self verifyKeyBytes:hash size:size];
+}
+- (BOOL)verifyKeyBytes:(const uint8_t *)hash size:(uint64_t)size {
+    if(!hash || size>256*1024*1024)return NO;
+    const uint8_t *entry=_added.count?[self entryForKey:TKWoWHex(hash,16) hash:hash]:[self indexedEntryForHash:hash];
     if(entry && (!size || LE(entry+14,4)==size+30)) {
         NSData *receipts=_verified[Bucket(hash)];const uint8_t *p=receipts.bytes;NSUInteger lo=0,hi=receipts.length/ReceiptSize;
         while(lo<hi) { NSUInteger mid=lo+(hi-lo)/2;if(memcmp(p+mid*ReceiptSize,hash,16)<0)lo=mid+1;else hi=mid; }
@@ -360,7 +364,7 @@ static NSData *LocalIndexEntries(NSData *data, unsigned bucket, NSError **error)
             _verificationBytesReused+=LE(entry+14,4)-30;return YES;
         }
     }
-    return [self readKey:key size:size]!=nil;
+    return [self readKey:TKWoWHex(hash,16) size:size]!=nil;
 }
 - (NSData *)readKey:(NSString *)key size:(uint64_t)size {
     uint8_t hash[16]; if(!TKWoWUnhex(key,hash) || size>256*1024*1024)return nil;

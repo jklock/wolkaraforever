@@ -41,9 +41,52 @@ static NSData *BuildInfo(NSString *root,NSError **error) {
 static BOOL SameBuild(NSDictionary *a,NSDictionary *b) {
     return [a[@"BuildConfig"] isEqual:b[@"BuildConfig"]] && [a[@"CDNConfig"] isEqual:b[@"CDNConfig"]] && [a[@"VersionsName"] isEqual:b[@"VersionsName"]];
 }
+static BOOL ValidCapacity(NSNumber *capacity) {
+    return [capacity isKindOfClass:NSNumber.class] && capacity.longLongValue>=0;
+}
 @implementation TKWoWUpdater { TKWoWClient *_client; }
 - (instancetype)initWithClient:(TKWoWClient *)client { if((self=[super init]))_client=client;return self; }
+// Persist completed checks during long scans. A
+// process killed without cancellation must not lose all of its verified work.
+- (uint64_t)verificationCheckpointBytes { return 1024ULL*1024*1024; }
 - (BOOL)cancelled:(NSError **)error { return _client.cancelled? !Fail(error,@"Update paused. Reopen the app to resume."):NO; }
+- (NSNumber *)importantStorageAtPath:(NSString *)path error:(NSError **)error {
+    NSURL *url=[NSURL fileURLWithPath:path isDirectory:YES];
+    NSDictionary *values=[url resourceValuesForKeys:@[NSURLVolumeAvailableCapacityForImportantUsageKey] error:error];
+    return values[NSURLVolumeAvailableCapacityForImportantUsageKey];
+}
+- (NSNumber *)freeStorageAtPath:(NSString *)path error:(NSError **)error {
+    return [NSFileManager.defaultManager attributesOfFileSystemForPath:path error:error][NSFileSystemFreeSize];
+}
+- (BOOL)checkStorageAtPath:(NSString *)path missingBytes:(uint64_t)missing looseBytes:(uint64_t)loose error:(NSError **)error {
+    const uint64_t reserve=1024ULL*1024*1024;
+    if(loose>UINT64_MAX-reserve || missing>UINT64_MAX-reserve-loose)
+        return Fail(error,@"The update storage requirement is too large.");
+    uint64_t required=missing+loose+reserve;
+    // User-requested game content can use space iOS will reclaim from caches.
+    // Raw filesystem free blocks alone can be far below Settings' availability.
+    NSError *importantError=nil,*freeError=nil;
+    NSNumber *important=[self importantStorageAtPath:path error:&importantError];
+    NSNumber *free=[self freeStorageAtPath:path error:&freeError];
+    NSNumber *capacity=important;
+    const char *source="important-usage";
+    // The important-usage service can return zero without an error when it is
+    // unavailable. It must never hide blocks the filesystem can already use.
+    if(ValidCapacity(free) && (!ValidCapacity(important) || free.unsignedLongLongValue>important.unsignedLongLongValue)) {
+        capacity=free;source="filesystem";
+    }
+    if(!ValidCapacity(capacity)) {
+        NSError *underlying=freeError?:importantError;
+        NSString *detail=underlying.localizedDescription;
+        return Fail(error,detail.length?[NSString stringWithFormat:@"Could not check available storage: %@",detail]:@"Could not check available storage. Reopen the app to retry.");
+    }
+    uint64_t available=capacity.unsignedLongLongValue;
+    fprintf(stderr,"WoW storage: missing=%llu loose=%llu reserve=%llu available=%llu source=%s\n",
+        (unsigned long long)missing,(unsigned long long)loose,(unsigned long long)reserve,(unsigned long long)available,source);
+    if(available<required)return Fail(error,[NSString stringWithFormat:
+        @"Not enough storage. Need at least %.1f GB free for this update; iOS reports %.1f GB available.",required/1e9,available/1e9]);
+    return YES;
+}
 - (BOOL)cloneRoot:(NSString *)root into:(NSString *)stage progress:(void (^)(NSString *,uint64_t,uint64_t))progress error:(NSError **)error {
     NSFileManager *fm=NSFileManager.defaultManager;
     if(!Directory(stage,error))return NO;
@@ -160,11 +203,15 @@ static BOOL SameBuild(NSDictionary *a,NSDictionary *b) {
         const TKWoWDownloadEntry *entries=records.bytes; NSUInteger count=records.length/sizeof(*entries);
         NSMutableData *missing=[NSMutableData new];uint64_t required=0,processed=0,total=0;
         for(NSUInteger i=0;i<count;i++)total+=entries[i].size;
+        uint64_t savedReadBytes=0;
         for(NSUInteger i=0;i<count;i++) { @autoreleasepool {
             if([self cancelled:&failure])return NO;
-            NSString *key=TKWoWHex(entries[i].key,16);
-            if(![store verifyKey:key size:entries[i].size]) { [missing appendBytes:entries+i length:sizeof(*entries)];required+=entries[i].size+30; }
+            if(![store verifyKeyBytes:entries[i].key size:entries[i].size]) { [missing appendBytes:entries+i length:sizeof(*entries)];required+=entries[i].size+30; }
             processed+=entries[i].size;
+            if(store.verificationBytesRead-savedReadBytes>=[self verificationCheckpointBytes]) {
+                if(![store saveVerification:&failure])return NO;
+                savedReadBytes=store.verificationBytesRead;
+            }
             if(i%500==0 || i+1==count) {
                 if(store.verificationBytesReused)progress(@"reuse",i+1,count);
                 else progress(@"verify",processed,total);
@@ -173,8 +220,7 @@ static BOOL SameBuild(NSDictionary *a,NSDictionary *b) {
         records=nil;
         if(![store saveVerification:&failure])return NO;
         uint64_t loose=[plan[@"installFileBytes"] unsignedLongLongValue];
-        uint64_t free=[[[fm attributesOfFileSystemForPath:stage error:&failure] objectForKey:NSFileSystemFreeSize] unsignedLongLongValue];
-        if(required>UINT64_MAX-loose-1024*1024*1024 || free<required+loose+1024*1024*1024)return Fail(&failure,[NSString stringWithFormat:@"Not enough storage. Need at least %.1f GB free for this update.",(required+loose+1024*1024*1024)/1e9]);
+        if(![self checkStorageAtPath:stage missingBytes:required looseBytes:loose error:&failure])return NO;
         _client.progress=progress;
         uint64_t transferBytes=required-30*(missing.length/sizeof(TKWoWDownloadEntry));
         __block uint64_t downloaded=0,checkpoint=0;__block double lastProgress=0;

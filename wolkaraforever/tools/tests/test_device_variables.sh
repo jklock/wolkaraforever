@@ -37,6 +37,8 @@ simulator='{"identifier":"sim","visibilityClass":"simulators","properties":{"har
 printf '{"result":{"devices":[%s,%s]}}' "$(physical TestPad UDID-1 wired)" "$simulator" > "$work/one.json"
 printf '{"result":{"devices":[%s,%s]}}' "$(physical TestPad UDID-1 wired)" "$(physical OtherPad UDID-2 localNetwork)" > "$work/two.json"
 printf '{"result":{"devices":[%s]}}' "$simulator" > "$work/none.json"
+phone=$(physical TestPhone UDID-PHONE wired | sed 's/"deviceType":"iPad"/"deviceType":"iPhone"/')
+printf '{"result":{"devices":[%s,%s]}}' "$(physical TestPad UDID-1 wired)" "$phone" > "$work/phone.json"
 
 cat > "$work/local.env" <<'ENV'
 DEVICE=OLD-DEVICE
@@ -67,6 +69,12 @@ printf '%s' "$out" | grep -q "Link:.*Network"; check $? "reports Network for a p
 
 out=$(run "$work/none.json" 2>&1); rc=$?
 [ "$rc" -ne 0 ]; check $? "fails when no physical iPad is present"
+
+out=$(run "$work/phone.json" 2>&1); rc=$?
+printf '%s' "$out" | grep -q "Device: TestPad"; check $? "automatic discovery still prefers the iPad"
+
+out=$(run "$work/phone.json" --device UDID-PHONE 2>&1); rc=$?
+[ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q "Device: TestPhone"; check $? "explicit iPhone identifier is supported"
 
 # --write refuses to replace a different DEVICE without --force.
 out=$(run "$work/one.json" --write 2>&1); rc=$?

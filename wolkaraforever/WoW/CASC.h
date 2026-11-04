@@ -30,6 +30,9 @@ NSArray<NSString *> *TKWoWCASCRepairIndexGenerations(NSString *directory);// Wri
 // Uses a receipt only for the same full key, indexed extent and unchanged file.
 // Otherwise reads and checks the original encoded bytes, recording the result.
 - (BOOL)verifyKey:(NSString *)key size:(uint64_t)size;
+// Download manifests already contain 16-byte keys. Keep warm verification in
+// binary form instead of formatting and reparsing a million hexadecimal strings.
+- (BOOL)verifyKeyBytes:(const uint8_t *)key size:(uint64_t)size;
 - (void)discardVerification;
 - (BOOL)saveVerification:(NSError **)error;
 @property(nonatomic, readonly) uint64_t verificationBytesRead;
