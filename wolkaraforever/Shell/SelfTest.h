@@ -55,6 +55,13 @@ extern NSString *const AKSelfTestSpeechFile;
 /// routing waits for a game session, and that switching it back undoes all of it. It presses
 /// no pad and touches no game file; the routing itself still needs a controller in a hand.
 extern NSString *const AKSelfTestControllerManager;
+/// The routing chain itself, on the device and with no hardware: a hidden GCVirtualController
+/// stands in for the physical pad, the manager attaches its real handlers to it, and a second
+/// hidden one stands in for the pad the manager drives. A button, a trigger, a stick and the
+/// D-pad are driven on the first and read back off the second, including a reassignment and
+/// the release. What it cannot cover is a real pad's own hardware and iPadOS handing a reserved
+/// button to this app - those need a pad in a hand.
+extern NSString *const AKSelfTestControllerRouting;
 
 // Runs one self-test and logs the verdict the matrix greps:
 //   selftest: <name> PASS <passed>/<total> checks (<what was exercised>)

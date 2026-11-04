@@ -12,6 +12,7 @@
 #import "../WoW/WoWViewController.h"
 #import "../WoW/ControllerManagerViewController.h"
 #import "../Controller/ControllerManager.h"
+#import "../Controller/ControllerIdentity.h"
 #import "../WoW/AddonCredentialStore.h"
 #import "../WoW/CurseForgeClient.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -22,6 +23,7 @@
 #import "../Voice/AudioSessionCoordinator.h"
 #import "../Voice/VoiceSettings.h"
 #import <AVFoundation/AVFoundation.h>
+#import <GameController/GameController.h>
 #import <Speech/Speech.h>
 
 NSString *const AKSelfTestInput = @"input";
@@ -34,6 +36,7 @@ NSString *const AKSelfTestRenderProfile = @"render-profile";
 NSString *const AKSelfTestCurseForge = @"curseforge";
 NSString *const AKSelfTestSpeechFile = @"speech-file";
 NSString *const AKSelfTestControllerManager = @"controller-manager";
+NSString *const AKSelfTestControllerRouting = @"controller-routing";
 
 #pragma mark - Recording what happened
 
@@ -1173,6 +1176,241 @@ static void AKSelfTestRunControllerManager(AKSelfTestRecorder *recorder, UIViewC
     manager.enabled = saved ? [saved boolValue] : NO;
 }
 
+#pragma mark - The routing chain, with no hardware
+
+// Waits for something that arrives on another thread, while letting the main queue run. It must
+// not be called on the main thread: a GCVirtualController's handlers are delivered through
+// libdispatch to main, and libdispatch will not drain main while a main-queue block is running -
+// the same trap the speech checks document above.
+static BOOL AKSelfTestWaitUntil(BOOL (^condition)(void), NSTimeInterval limit) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:limit];
+    while ([deadline timeIntervalSinceNow] > 0) {
+        dispatch_sync(dispatch_get_main_queue(), ^{ });
+        if (condition()) return YES;
+        [NSThread sleepForTimeInterval:0.05];
+    }
+    return condition();
+}
+
+// A hidden virtual controller, connected, or nil. The same shape AKTouchGamepad creates, because
+// declaring the D-pad together with a thumbstick makes the configuration throw.
+static GCVirtualController *AKSelfTestVirtualPad(NSTimeInterval limit) {
+    GCVirtualControllerConfiguration *configuration = [GCVirtualControllerConfiguration new];
+    configuration.hidden = YES;
+    configuration.elements = [NSSet setWithArray:@[GCInputLeftThumbstick, GCInputRightThumbstick,
+        GCInputButtonA, GCInputButtonB, GCInputButtonX, GCInputButtonY,
+        GCInputLeftShoulder, GCInputRightShoulder, GCInputLeftTrigger, GCInputRightTrigger]];
+    GCVirtualController *pad = [[GCVirtualController alloc] initWithConfiguration:configuration];
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    __block BOOL failed = NO;
+    [pad connectWithReplyHandler:^(NSError *error) {
+        failed = error != nil;
+        dispatch_semaphore_signal(done);
+    }];
+    BOOL answered = NO;
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:limit];
+    while (!answered && [deadline timeIntervalSinceNow] > 0) {
+        dispatch_sync(dispatch_get_main_queue(), ^{ });
+        answered = dispatch_semaphore_wait(done, DISPATCH_TIME_NOW) == 0;
+        if (!answered) [NSThread sleepForTimeInterval:0.05];
+    }
+    if (!answered || failed || !pad.controller) { [pad disconnect]; return nil; }
+    return pad;
+}
+
+// The three handlers AKTouchGamepad has for the manager's channel, and nothing else. They are
+// repeated here so the device can show that these two framework calls - the ones the adapter
+// makes - really do move a connected GCController. Anything more clever would stop being a test
+// of the adapter's contract.
+@interface AKSelfTestRouteApplier : NSObject
+@property (nonatomic, strong) GCVirtualController *pad;
+@end
+
+@implementation AKSelfTestRouteApplier
+- (instancetype)initWithPad:(GCVirtualController *)pad {
+    if ((self = [super init])) {
+        _pad = pad;
+        NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+        [center addObserver:self selector:@selector(value:) name:@"AKControllerRouteValue" object:nil];
+        [center addObserver:self selector:@selector(position:) name:@"AKControllerRoutePosition" object:nil];
+        [center addObserver:self selector:@selector(release:) name:@"AKControllerRouteRelease" object:nil];
+    }
+    return self;
+}
+- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
+- (void)value:(NSNotification *)note {
+    NSString *target = note.userInfo[@"element"];
+    if (![target isKindOfClass:NSString.class]) return;
+    NSString *element = @{@"virtual.button.a": GCInputButtonA, @"virtual.button.b": GCInputButtonB,
+                          @"virtual.button.x": GCInputButtonX, @"virtual.button.y": GCInputButtonY,
+                          @"virtual.button.left.shoulder": GCInputLeftShoulder,
+                          @"virtual.button.right.shoulder": GCInputRightShoulder,
+                          @"virtual.button.left.trigger": GCInputLeftTrigger,
+                          @"virtual.button.right.trigger": GCInputRightTrigger,
+                          @"virtual.button.menu": GCInputButtonMenu}[target];
+    if (element) [_pad setValue:[note.userInfo[@"value"] doubleValue] forButtonElement:element];
+}
+- (void)position:(NSNotification *)note {
+    NSString *target = note.userInfo[@"element"];
+    NSString *element = @{@"virtual.stick.left": GCInputLeftThumbstick,
+                          @"virtual.stick.right": GCInputRightThumbstick,
+                          @"virtual.dpad": GCInputDirectionPad}[target];
+    if (element) [_pad setPosition:CGPointMake([note.userInfo[@"x"] doubleValue],
+                                               [note.userInfo[@"y"] doubleValue])
+           forDirectionPadElement:element];
+}
+- (void)release:(NSNotification *)note {
+    (void)note;
+    for (NSString *element in @[GCInputButtonA, GCInputButtonB, GCInputButtonX, GCInputButtonY,
+                                GCInputLeftShoulder, GCInputRightShoulder,
+                                GCInputLeftTrigger, GCInputRightTrigger, GCInputButtonMenu])
+        [_pad setValue:0 forButtonElement:element];
+    for (NSString *element in @[GCInputLeftThumbstick, GCInputRightThumbstick, GCInputDirectionPad])
+        [_pad setPosition:CGPointZero forDirectionPadElement:element];
+}
+@end
+
+static void AKSelfTestRunControllerRouting(AKSelfTestRecorder *recorder) {
+    static NSString *const routingKey = @"WolkaraForeverControllerRouting";
+    AKControllerManager *manager = AKControllerManager.shared;
+    __block id savedSetting = nil;
+    AKSelfTestOnMain(^{
+        savedSetting = [NSUserDefaults.standardUserDefaults objectForKey:routingKey];
+        manager.enabled = NO;
+    });
+
+    // One hidden controller, because the device allows one: a second
+    // connectWithReplyHandler: is refused while the first is up. That is measured here rather
+    // than assumed, and it is why the product owns exactly one virtual controller.
+    GCVirtualController *pad = AKSelfTestVirtualPad(10.0);
+    [recorder check:pad != nil _:@"a hidden virtual controller connects on this device"];
+    GCVirtualController *second = AKSelfTestVirtualPad(5.0);
+    [recorder check:second == nil _:@"a second one is refused, which is why the product owns one"];
+    [second disconnect];
+    if (!pad) {
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:routingKey];
+        return;
+    }
+
+    // What the manager routes, recorded, and applied to the pad the way the adapter does.
+    NSMutableArray<NSString *> *values = [NSMutableArray array];
+    NSMutableArray<NSString *> *positions = [NSMutableArray array];
+    __block NSUInteger releases = 0;
+    [NSNotificationCenter.defaultCenter addObserverForName:@"AKControllerRouteValue" object:nil queue:nil
+        usingBlock:^(NSNotification *note) {
+            @synchronized (values) {
+                [values addObject:[NSString stringWithFormat:@"%@=%.3f",
+                    note.userInfo[@"element"], [note.userInfo[@"value"] doubleValue]]];
+            }
+        }];
+    [NSNotificationCenter.defaultCenter addObserverForName:@"AKControllerRoutePosition" object:nil queue:nil
+        usingBlock:^(NSNotification *note) {
+            @synchronized (positions) {
+                [positions addObject:[NSString stringWithFormat:@"%@=%.3f,%.3f",
+                    note.userInfo[@"element"], [note.userInfo[@"x"] doubleValue],
+                    note.userInfo[@"y"] ? [note.userInfo[@"y"] doubleValue] : 0]];
+            }
+        }];
+    [NSNotificationCenter.defaultCenter addObserverForName:@"AKControllerRouteRelease" object:nil queue:nil
+        usingBlock:^(NSNotification *note) { (void)note; @synchronized (values) { releases++; } }];
+    AKSelfTestRouteApplier *applier = [[AKSelfTestRouteApplier alloc] initWithPad:pad];
+
+    // This one pad is told to the manager as both the hardware and the routed device: the
+    // device only allows one hidden controller, and what that still proves is the whole chain -
+    // a real GCControllerButtonInput handler, the remap, the notification, and the two
+    // framework calls the adapter makes moving a controller the guest would enumerate.
+    NSString *padIdentity = AKControllerIdentity(pad.controller);
+    AKSelfTestOnMain(^{
+        manager.controllersProvider = ^NSArray<GCController *> *{ return @[pad.controller]; };
+        [manager noteGuestFacadePresent];
+        manager.enabled = YES;
+        [manager noteVirtualPadConnected:pad.controller];
+    });
+
+    // The default profile: A drives A.
+    AKSelfTestOnMain(^{ [pad setValue:1 forButtonElement:GCInputButtonA]; });
+    [recorder check:AKSelfTestWaitUntil(^BOOL{
+        @synchronized (values) { return [values containsObject:@"virtual.button.a=1.000"]; }
+    }, 5.0) _:@"a press on a real controller element arrives as the mapped virtual button"];
+    [recorder check:AKSelfTestWaitUntil(^BOOL{
+        return pad.controller.extendedGamepad.buttonA.value == 1;
+    }, 5.0) _:@"and the two adapter calls move the controller the guest would enumerate"];
+
+    // A reassignment: A now drives Y, and no longer drives A.
+    AKSelfTestOnMain(^{
+        @synchronized (values) { [values removeAllObjects]; }
+        [pad setValue:0 forButtonElement:GCInputButtonA];
+    });
+    [NSThread sleepForTimeInterval:0.4];
+    AKSelfTestOnMain(^{
+        // By this pad's own identity: the manager is being told this same controller is also
+        // the routed device, so it does not appear in -models (that list is hardware only).
+        AKControllerProfile *profile = [manager profileForIdentity:padIdentity];
+        [profile bindSource:@"controller.button.a" toTarget:@"virtual.button.y"];
+        [manager applyProfileChangeForIdentity:padIdentity];
+        [pad setValue:1 forButtonElement:GCInputButtonA];
+    });
+    [recorder check:AKSelfTestWaitUntil(^BOOL{
+        @synchronized (values) { return [values containsObject:@"virtual.button.y=1.000"]; }
+    }, 5.0) _:@"after a reassignment the same press arrives as the new virtual button"];
+    [recorder check:AKSelfTestWaitUntil(^BOOL{
+        return pad.controller.extendedGamepad.buttonY.value == 1;
+    }, 5.0) _:@"and the reassigned button is what moves on the pad"];
+    // The old target is not driven any more. It cannot be read off the pad here, because this
+    // one controller is also the input and its A really is held; what shows the mapping is gone
+    // is that the press produced no A notification at all.
+    BOOL oldTargetDriven = NO;
+    @synchronized (values) { oldTargetDriven = [values containsObject:@"virtual.button.a=1.000"]; }
+    [recorder check:!oldTargetDriven _:@"the button it used to drive is no longer driven"];
+
+    // A trigger's analog value, a stick and the D-pad.
+    AKSelfTestOnMain(^{
+        @synchronized (values) { [values removeAllObjects]; [positions removeAllObjects]; }
+        [pad setValue:0.6 forButtonElement:GCInputLeftTrigger];
+        [pad setPosition:CGPointMake(0.5, -0.25) forDirectionPadElement:GCInputLeftThumbstick];
+        [pad setPosition:CGPointMake(0, 1) forDirectionPadElement:GCInputDirectionPad];
+    });
+    [recorder check:AKSelfTestWaitUntil(^BOOL{
+        @synchronized (values) { return [values containsObject:@"virtual.button.left.trigger=0.600"]; }
+    }, 5.0) _:@"a trigger's analog value is carried, not just its press"];
+    [recorder check:AKSelfTestWaitUntil(^BOOL{
+        @synchronized (positions) { return [positions containsObject:@"virtual.stick.left=0.500,-0.250"]; }
+    }, 5.0) _:@"a stick's position is carried"];
+    [recorder check:AKSelfTestWaitUntil(^BOOL{
+        @synchronized (positions) { return [positions containsObject:@"virtual.dpad=0.000,1.000"]; }
+    }, 5.0) _:@"and the D-pad's"];
+    [recorder check:AKSelfTestWaitUntil(^BOOL{
+        GCExtendedGamepad *profile = pad.controller.extendedGamepad;
+        return fabs(profile.leftTrigger.value - 0.6) < 0.02 &&
+               fabs(profile.leftThumbstick.xAxis.value - 0.5) < 0.02 && profile.dpad.yAxis.value == 1;
+    }, 5.0) _:@"all three reach the controller the guest would enumerate"];
+
+    // Switching routing off releases every value, and the pad follows.
+    AKSelfTestOnMain(^{ manager.enabled = NO; });
+    [recorder check:AKSelfTestWaitUntil(^BOOL{
+        @synchronized (values) { return releases > 0; }
+    }, 5.0) _:@"switching routing off releases every routed value"];
+    [recorder check:AKSelfTestWaitUntil(^BOOL{
+        GCExtendedGamepad *profile = pad.controller.extendedGamepad;
+        return !profile.buttonA.pressed && !profile.buttonY.pressed && profile.leftTrigger.value == 0 &&
+               profile.leftThumbstick.xAxis.value == 0 && profile.dpad.yAxis.value == 0;
+    }, 5.0) _:@"and nothing is left held on the controller"];
+
+    // Put everything back.
+    AKSelfTestOnMain(^{
+        manager.controllersProvider = nil;
+        [manager noteVirtualPadDisconnected];
+        [manager resetProfileForIdentity:padIdentity];
+        for (AKControllerModel *model in manager.models)
+            [manager resetProfileForIdentity:model.identity];
+        if (savedSetting) [NSUserDefaults.standardUserDefaults setObject:savedSetting forKey:routingKey];
+        else [NSUserDefaults.standardUserDefaults removeObjectForKey:routingKey];
+        manager.enabled = savedSetting ? [savedSetting boolValue] : NO;
+    });
+    // The applier lives for the whole test: it is an observer, not a value.
+    (void)applier;
+    [pad disconnect];
+}
 void AKRunSelfTest(NSString *name) {
     AKRunSelfTestInHomePage(name, nil);
 }
@@ -1187,6 +1425,16 @@ void AKRunSelfTestInHomePage(NSString *name, id home) {
         // which is main-queue work, and none of it waits. The attempts cover the automatic
         // check that runs the moment the home page appears, during which the row declines.
         AKSelfTestRenderProfilePress(recorder, 150);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestControllerRouting]) {
+        // Off the main queue, necessarily: the virtual controller delivers its element callbacks
+        // through libdispatch on main, and libdispatch will not drain main while a main-queue
+        // block is running. The wait helper pumps main between checks instead.
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            AKSelfTestRunControllerRouting(recorder);
+            AKSelfTestLogVerdict(recorder, name);
+        });
         return;
     }
     if ([name isEqualToString:AKSelfTestControllerManager]) {
