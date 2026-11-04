@@ -1544,7 +1544,7 @@ static void AKSelfTestRunControllerLatency(AKSelfTestRecorder *recorder) {
 
     // A press and a release each time: the release always reaches the pad, so every iteration
     // produces one sample whether or not the press was a value change.
-    const NSUInteger presses = 200;
+    const NSUInteger presses = 300;
     for (NSUInteger i = 0; i < presses; i++) {
         AKSelfTestOnMain(^{ [pad setValue:1 forButtonElement:GCInputButtonA]; });
         AKSelfTestWaitUntil(^BOOL{ @synchronized (microseconds) { return microseconds.count >= (i * 2) + 1; } }, 1.0);
@@ -1555,7 +1555,7 @@ static void AKSelfTestRunControllerLatency(AKSelfTestRecorder *recorder) {
 
     NSArray<NSNumber *> *samples = nil;
     @synchronized (microseconds) { samples = [microseconds copy]; }
-    [recorder check:samples.count >= presses _:@"every press and release produced a routed value"];
+    [recorder check:samples.count == presses * 2 _:@"every press and release produced a routed value"];
 
     NSArray<NSNumber *> *sorted = [samples sortedArrayUsingSelector:@selector(compare:)];
     double median = sorted.count ? sorted[sorted.count / 2].doubleValue : -1;
@@ -1566,7 +1566,7 @@ static void AKSelfTestRunControllerLatency(AKSelfTestRecorder *recorder) {
     // The bound is a tripwire, not a target: a value that needed a queue hop measured in the
     // hundreds of microseconds and worse under load. Anything near a millisecond means the hop
     // came back.
-    [recorder check:median >= 0 && median < 1000.0 _:@"the added work is under a millisecond"];
+    [recorder check:median >= 0 && worst < 1000.0 _:@"every routed value is under a millisecond"];
 
     AKSelfTestOnMain(^{
         manager.routeLatencyObserver = nil;

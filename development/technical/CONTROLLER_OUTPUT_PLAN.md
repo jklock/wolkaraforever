@@ -137,7 +137,7 @@ is `WolkaraForeverControllerActions.<identity>` → `{source: [step...]}`, with 
 
 | Phase | What it adds | How it is proven |
 | --- | --- | --- |
-| **0. The hot path** — DONE | routing runs on the framework's thread, one recursive lock, no profile objects touched, no queue hop | `--selftest=controller-latency`: **median 1.2 us, worst 59.5 us**, 600 samples, on the iPad. Three situations 8/8 and routing 22/22 unchanged |
+| **0. The hot path** — DONE | routing runs on the framework's thread through a prebuilt table, with no profile lookup or main-queue hop | `--selftest=controller-latency`: **median 1.2 us, worst 59.5 us**, 600 samples, on the iPad. The device gate rejects any sample at or above 1 ms. Three situations 8/8 and routing 22/22 unchanged |
 | **1. Claiming** | a control can be claimed by Tolkara instead of passed through, per controller model, reusing the trigger machinery | device: a claimed control starts dictation and produces **no** route notification; an unclaimed one passes through unchanged |
 | **2. The page** | per-model list of physical controls, each showing *pass through* or *Tolkara action*, with learn and reset | launcher fixture: rows, learn, reset, the two states, German, no game-file write; device self-test drives it |
 | **3. More Tolkara actions** | the claim target is a list rather than dictation alone | each action asserted once on the device |
