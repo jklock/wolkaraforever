@@ -74,6 +74,12 @@ extern NSString *const AKSelfTestControllerSituations;
 /// adapter writing the value. The requirement is that this is what it is today, so it is a number
 /// rather than an opinion.
 extern NSString *const AKSelfTestControllerLatency;
+/// The pad that is actually attached, against the rows the page draws for it: which elements
+/// iPadOS reports, that every one of them becomes a row this pad has, and what the guest is
+/// offered with capture on and off. The fixtures above stand in for hardware; this is the only
+/// check that reads hardware. Run it with nothing attached and it fails rather than passes, so a
+/// green line always means a pad was there.
+extern NSString *const AKSelfTestControllerHardware;
 
 // Runs one self-test and logs the verdict the matrix greps:
 //   selftest: <name> PASS <passed>/<total> checks (<what was exercised>)

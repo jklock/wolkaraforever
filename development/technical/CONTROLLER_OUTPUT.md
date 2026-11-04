@@ -68,10 +68,13 @@ whatever the pad turns out to send, and the target side is fixed by what the
 virtual controller offers — twelve targets, checked by
 `check_controller_targets.sh`.
 
-* **From the framework.** The manager enumerates each connected `GCController`'s
-  `physicalInputProfile` — buttons, axes, D-pad directions — and names each one
-  through `AKInputElementForController*`. Anything iOS reports becomes a row,
-  whether or not the default table has heard of it.
+* **From the framework.** `-sourceElementsForPads:` enumerates each connected
+  `GCController`'s `physicalInputProfile` — buttons, axes, D-pad directions — and
+  names each one through `AKInputElementForController*`. The page's row list is
+  the standard layout, then every source that names, so anything iPadOS reports
+  is a row whether or not the default table has heard of it. Measured on an Xbox
+  Bluetooth Gamepad: 25 buttons, 6 axes, 3 D-pads, 34 named controls, 34 enabled
+  rows.
 * **From events.** A control that never appears in the profile but does produce a
   value or a position is discovered the first time it arrives. That is the only
   way some extra buttons can be mapped at all. The first sighting costs one set
@@ -156,6 +159,7 @@ showing the withheld control produces no route notification — not before.
 | an extra button the pad produces becomes a stored, discovered row | same suite |
 | a v1 table still loads as pass-through with nothing discovered | same suite |
 | reset restores the layout and keeps observations | same suite |
+| the pad in the hand: 34 controls reported, each one a row, and the guest offered the virtual pad only | `--selftest=controller-hardware` |
 | the page's row states, its bind handler and both languages | `test_wow_launcher_ui.sh` |
 | every target the page offers can be written by the adapter | `check_controller_targets.sh` |
 | pass-through direct, analog, sticks, D-pad, release, latency | `--selftest=controller-routing`, `--selftest=controller-latency` |

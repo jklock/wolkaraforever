@@ -151,6 +151,10 @@ FOUNDATION_EXPORT NSString *const AKControllerGuestViewRoutingKey;      // @YES 
 
 /// Every model connected now, sorted by display name. Empty when no pad is connected.
 @property (nonatomic, readonly) NSArray<AKControllerModel *> *models;
+/// Every source element these pads can produce, named the way a profile names them. This is the
+/// one place that turns a pad's hardware into ids: the page's availability comes from it, and a
+/// device check compares it with the rows the page would draw for the pad actually attached.
+- (NSArray<NSString *> *)sourceElementsForPads:(NSArray<GCController *> *)pads;
 /// Exactly what the guest is offered: the devices themselves while routing is off, and the one
 /// virtual controller while it is on. This is the input to the GameController façade, and the
 /// promise of the whole feature is in one sentence - with routing on, nothing in this list is

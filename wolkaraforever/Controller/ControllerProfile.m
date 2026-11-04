@@ -271,10 +271,14 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 - (NSArray<AKControllerBinding *> *)bindingsWithAvailability:(NSDictionary<NSString *, NSNumber *> *)available
                                                    reserved:(NSDictionary<NSString *, NSNumber *> *)reserved {
     NSMutableArray<AKControllerBinding *> *rows = [NSMutableArray array];
-    // The standard layout first, in its own order, then whatever this model turned out to have.
-    // A row exists for a discovered control because the pad produced an event for it - which is
-    // the only way a button iOS never lists can be mapped at all.
+    // The standard layout first, in its own order; then every control the attached pad says it
+    // has, because iPadOS is the authority on its own hardware and a row is what makes a control
+    // mappable; then anything this model produced as an event, which is the only way a control
+    // iPadOS never lists can be mapped at all. Reported controls are sorted so the list does not
+    // move about between launches.
     NSMutableArray<NSString *> *order = [[AKControllerProfile sourceElements] mutableCopy];
+    for (NSString *source in [available.allKeys sortedArrayUsingSelector:@selector(compare:)])
+        if (![order containsObject:source]) [order addObject:source];
     for (NSString *source in _observed) if (![order containsObject:source]) [order addObject:source];
     for (NSString *source in order) {
         NSString *target = [self targetForSource:source];
@@ -285,7 +289,10 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
         row.targetDisplay = [AKControllerTarget targetWithIdentifier:target].display ?: @"Not assigned";
         row.available = available[source] ? available[source].boolValue : NO;
         row.reserved = reserved[source] ? reserved[source].boolValue : NO;
-        row.discovered = [_observed containsObject:source];
+        // "Found on this controller" rather than "the standard layout": the row exists because
+        // the pad has that control, whether iPadOS reported it or it only ever arrived as an
+        // event.
+        row.discovered = ![[AKControllerProfile sourceElements] containsObject:source];
         [rows addObject:row];
     }
     return rows;

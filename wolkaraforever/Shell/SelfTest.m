@@ -41,6 +41,7 @@ NSString *const AKSelfTestControllerManager = @"controller-manager";
 NSString *const AKSelfTestControllerRouting = @"controller-routing";
 NSString *const AKSelfTestControllerSituations = @"controller-situations";
 NSString *const AKSelfTestControllerLatency = @"controller-latency";
+NSString *const AKSelfTestControllerHardware = @"controller-hardware";
 
 #pragma mark - Recording what happened
 
@@ -1718,6 +1719,125 @@ static void AKSelfTestRunControllerSituations(AKSelfTestRecorder *recorder) {
     [touchPad disconnect];
 }
 
+// The pad that is really attached. Every other controller check stands a fixture in for hardware,
+// and that is the right tool for the routing chain; what a fixture cannot answer is whether this
+// app reads the pad in someone's hand - which elements iPadOS gives it, whether every one of them
+// becomes a row the page can offer, and what the guest is offered while that pad is captured.
+// Run with nothing attached, this fails on its first check rather than passing quietly.
+static void AKSelfTestRunControllerHardware(AKSelfTestRecorder *recorder) {
+    static NSString *const routingKey = @"WolkaraForeverControllerRouting";
+    AKControllerManager *manager = AKControllerManager.shared;
+    __block id savedSetting = nil;
+    __block NSArray<GCController *> *pads = nil;
+
+    AKSelfTestOnMain(^{
+        savedSetting = [NSUserDefaults.standardUserDefaults objectForKey:routingKey];
+        manager.enabled = NO;
+        manager.controllersProvider = ^NSArray<GCController *> *{ return [GCController.controllers copy]; };
+        [manager noteGuestFacadePresent];
+    });
+    // A Bluetooth pad is delivered to a fresh process well after launch - measured at about 20 s
+    // here, on this iPad, after a reinstall - so the list is waited for rather than sampled once.
+    // Read before this check connects anything, so it is hardware and not a pad this app made.
+    NSDate *waitingSince = [NSDate date];
+    AKSelfTestWaitUntil(^BOOL{ return GCController.controllers.count > 0; }, 30.0);
+    AKSelfTestOnMain(^{ pads = [GCController.controllers copy]; });
+    WKLog("selftest", @"selftest: controller-hardware sees %lu controller(s) after %.1fs",
+          (unsigned long)pads.count, -waitingSince.timeIntervalSinceNow);
+
+    GCVirtualController *touchPad = AKSelfTestVirtualPad(10.0);
+    [recorder check:touchPad != nil _:@"a hidden virtual controller stands in for Tolkara's gamepad"];
+
+    GCController *pad = pads.firstObject;
+    [recorder check:pad != nil _:@"a physical controller is attached"];
+
+    if (!pad || !touchPad) {
+        AKSelfTestOnMain(^{
+            manager.controllersProvider = nil;
+            [manager noteVirtualPadDisconnected];
+            if (savedSetting) [NSUserDefaults.standardUserDefaults setObject:savedSetting forKey:routingKey];
+            else [NSUserDefaults.standardUserDefaults removeObjectForKey:routingKey];
+            manager.enabled = savedSetting ? [savedSetting boolValue] : NO;
+        });
+        [touchPad disconnect];
+        return;
+    }
+
+    NSString *identity = AKControllerIdentity(pad);
+    __block NSArray<NSString *> *sources = @[];
+    __block AKControllerModel *model = nil;
+    AKSelfTestOnMain(^{
+        sources = [[manager sourceElementsForPads:@[pad]] copy];
+        for (AKControllerModel *candidate in manager.models)
+            if ([candidate.identity isEqualToString:identity]) { model = candidate; break; }
+    });
+
+    NSUInteger buttons = pad.physicalInputProfile.buttons.count;
+    NSUInteger axes = pad.physicalInputProfile.axes.count;
+    NSUInteger dpads = pad.physicalInputProfile.dpads.count;
+    WKLog("selftest", @"selftest: controller-hardware pad=%@ vendor=%@ category=%@ buttons=%lu axes=%lu dpads=%lu sourceIds=%lu",
+          pad.vendorName ?: @"?", pad.vendorName ?: @"?", pad.productCategory ?: @"?",
+          (unsigned long)buttons, (unsigned long)axes, (unsigned long)dpads, (unsigned long)sources.count);
+
+    [recorder check:identity.length > 0 _:@"the pad has a model identity"];
+    [recorder check:sources.count > 0 _:@"iPadOS reports controls for it"];
+    [recorder check:model != nil _:@"the manager reports a model for the pad that is attached"];
+
+    // Every control iPadOS lists becomes a row the page draws, and that row says this pad has it -
+    // which is what makes it mappable rather than merely visible.
+    NSUInteger missing = 0;
+    for (NSString *source in sources) {
+        BOOL found = NO;
+        for (AKControllerBinding *row in model.bindings)
+            if ([row.source isEqualToString:source] && row.available) { found = YES; break; }
+        if (!found) missing++;
+    }
+    [recorder check:missing == 0 _:@"every control iPadOS reports is a row this pad has"];
+
+    // What the guest is offered, with the pad captured and released. This is the promise the
+    // feature exists for, read off the real pad rather than a stand-in.
+    __block NSArray<GCController *> *guest = nil;
+    AKSelfTestOnMain(^{
+        manager.enabled = YES;
+        [manager noteVirtualPadConnected:touchPad.controller];
+        guest = [manager.guestControllers copy];
+    });
+    [recorder check:guest.count == 1 && guest.firstObject == touchPad.controller
+                 _:@"capture on: the guest is offered the virtual gamepad only"];
+    [recorder check:![guest containsObject:pad]
+                 _:@"capture on: the pad in the hand is not in the guest's list"];
+    AKSelfTestOnMain(^{
+        manager.enabled = NO;
+        guest = [manager.guestControllers copy];
+    });
+    // With capture off the guest gets the hardware again. The hidden pad this check connected is
+    // still in the framework's list - in production it only exists for a guest session that asked
+    // for the on-screen gamepad - so what is asserted is that the pad is offered and that the
+    // guest is not being handed the virtual-only view.
+    BOOL virtualOnly = guest.count == 1 && guest.firstObject == touchPad.controller;
+    [recorder check:[guest containsObject:pad] && !virtualOnly
+                 _:@"capture off: the guest is offered the pad again, as before"];
+
+    // Which hardware this was, in the verdict line, so the record names the pad rather than "a
+    // controller".
+    NSUInteger enabled = 0;
+    for (AKControllerBinding *row in model.bindings) if (row.available) enabled++;
+    recorder.detail = [NSString stringWithFormat:@"%@ / %@: %lu controls reported, %lu page rows, %lu enabled",
+                       pad.vendorName ?: identity, pad.productCategory ?: @"?",
+                       (unsigned long)sources.count, (unsigned long)model.bindings.count,
+                       (unsigned long)enabled];
+
+    AKSelfTestOnMain(^{
+        manager.enabled = NO;
+        [manager noteVirtualPadDisconnected];
+        manager.controllersProvider = nil;
+        if (savedSetting) [NSUserDefaults.standardUserDefaults setObject:savedSetting forKey:routingKey];
+        else [NSUserDefaults.standardUserDefaults removeObjectForKey:routingKey];
+        manager.enabled = savedSetting ? [savedSetting boolValue] : NO;
+    });
+    [touchPad disconnect];
+}
+
 void AKRunSelfTest(NSString *name) {
     AKRunSelfTestInHomePage(name, nil);
 }
@@ -1748,6 +1868,15 @@ void AKRunSelfTestInHomePage(NSString *name, id home) {
         // through libdispatch on main, which must be free to drain.
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             AKSelfTestRunControllerSituations(recorder);
+            AKSelfTestLogVerdict(recorder, name);
+        });
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestControllerHardware]) {
+        // Off the main queue: it connects a hidden virtual controller, which delivers through
+        // libdispatch to main, and every check that reads the manager hops to main for it.
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            AKSelfTestRunControllerHardware(recorder);
             AKSelfTestLogVerdict(recorder, name);
         });
         return;

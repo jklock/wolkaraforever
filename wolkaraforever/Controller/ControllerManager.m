@@ -481,22 +481,32 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     return models;
 }
 
+- (NSArray<NSString *> *)sourceElementsForPads:(NSArray<GCController *> *)pads {
+    NSMutableOrderedSet<NSString *> *sources = [NSMutableOrderedSet orderedSet];
+    for (GCController *pad in pads) {
+        GCPhysicalInputProfile *profile = pad.physicalInputProfile;
+        for (NSString *name in profile.buttons) {
+            NSString *stable = AKInputElementForControllerButton(name);
+            if (stable.length) [sources addObject:stable];
+        }
+        for (NSString *name in profile.axes) {
+            NSString *stable = AKInputElementForControllerAxis(name);
+            if (stable.length) [sources addObject:stable];
+        }
+        for (NSString *name in profile.dpads) {
+            NSString *stable = [self stableAxisElementForName:name];
+            if (stable.length) [sources addObject:stable];
+        }
+    }
+    return sources.array;
+}
+
 // Which of the profile's sources this pad actually has. A source is available when the
 // pad reports a button with that element id, or when it reports the stick or D-pad the
 // axis source names.
 - (NSDictionary<NSString *, NSNumber *> *)availabilityForPads:(NSArray<GCController *> *)pads {
     NSMutableDictionary<NSString *, NSNumber *> *available = [NSMutableDictionary dictionary];
-    for (GCController *pad in pads) {
-        GCPhysicalInputProfile *profile = pad.physicalInputProfile;
-        for (NSString *name in profile.buttons)
-            available[AKInputElementForControllerButton(name)] = @YES;
-        for (NSString *name in profile.axes)
-            available[AKInputElementForControllerAxis(name)] = @YES;
-        for (NSString *name in profile.dpads) {
-            NSString *stable = [self stableAxisElementForName:name];
-            if (stable.length) available[stable] = @YES;
-        }
-    }
+    for (NSString *source in [self sourceElementsForPads:pads]) available[source] = @YES;
     return available;
 }
 

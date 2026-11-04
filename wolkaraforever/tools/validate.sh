@@ -301,6 +301,13 @@ if [ "$device" = 1 ]; then
         # What routing costs. The requirement is that a pass-through press is as fast as it was
         # before this feature, so the added work is a measured number, not a claim.
         run_step "what routing costs, on the device" wolkaraforever/tools/pilot.sh selftest controller-latency || failures=$((failures+1))
+        # The pad that is actually attached, when one is: which controls iPadOS reports for it,
+        # that each becomes a row, and what the guest is offered while it is captured. It fails
+        # rather than passes when nothing is attached, so it is asked for only when the matrix
+        # was told a pad is in hand.
+        if [ "${PAD_ATTACHED:-NO}" = "YES" ]; then
+            run_step "the attached pad, read and captured, on the device" wolkaraforever/tools/pilot.sh selftest controller-hardware || failures=$((failures+1))
+        fi
     else
         failures=$((failures+1))
         step_names+=("the app's own log, from the launch above")
