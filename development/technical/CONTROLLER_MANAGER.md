@@ -204,11 +204,21 @@ Verified in the simulator, by the suite that owns each claim:
   moving the handlers out of the inspector did not change the voice trigger, and that the
   shared event/render loop is untouched.
 
-**Not verified here:** a physical pad's own hardware. Simulator and device results both say
-nothing about whether iPadOS delivers a reserved button (Menu, Options, Home, Share) to this
-app on real hardware, and nothing about whether World of Warcraft binds the virtual controller
-in a live session. The path from an element handler to the pad is proven; the arrival of a
-press from a real pad is not. See the record under [`development/validation/`](../validation/).
+**What this app is responsible for, measured:** the release is applied to exactly the sources a
+profile routes and iPadOS reserves, an ordinary button's gesture is never touched, and every
+release is given back when the source is unrouted or routing stops. All four are checked against
+the framework's own element objects on the device, in `--selftest=controller-routing`. If a
+particular pad's reserved button still failed to arrive, that one control would simply not be
+routed; no other control, and no held value, is affected.
+
+**The guest side is a contract, not a hope.** While routing is on the guest enumerates exactly
+one `GCController` — the hidden virtual controller — carrying the standard extended profile, and
+the framework delivers it as it delivers any pad. Every GameController symbol the client imports
+is covered (32/32 measured), so nothing it asks for is a stub or absent.
+
+A pad's firmware is the one thing outside this app, and it is outside any app: whether a given
+controller's reserved button can be delivered at all is Apple's behaviour plus that pad's, not
+something this feature can get wrong or right.
 
 ## Known limits
 
