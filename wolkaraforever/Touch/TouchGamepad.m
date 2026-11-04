@@ -137,7 +137,8 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     UIView *_settings;
     UIButton *_editDone;
     UILabel *_hint;
-    UISwitch *_editSwitch, *_hapticsSwitch, *_overlaySwitch;
+    UISwitch *_editSwitch, *_hapticsSwitch, *_overlaySwitch, *_swapShouldersSwitch;
+    UIStackView *_settingsColumns;
     NSArray<UISlider *> *_sliders;
     NSArray<UILabel *> *_values;
     CAShapeLayer *_editGrid, *_editAxes;
@@ -229,8 +230,12 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     return hit;
 }
 - (CGRect)usableBounds { return UIEdgeInsetsInsetRect(self.bounds,self.safeAreaInsets); }
+- (NSString *)positionName:(NSString *)name {
+    if (!_preferences.swapShoulders) return name;
+    return @{@"LT":@"LB",@"LB":@"LT",@"RT":@"RB",@"RB":@"RT"}[name] ?: name;
+}
 - (void)place:(NSString *)name frame:(CGRect)frame baseSize:(CGSize)base safe:(CGRect)safe {
-    UIView *item = _items[name];
+    UIView *item = _items[[self positionName:name]];
     CGRect placed = [_preferences frameForItem:name defaultFrame:frame inBounds:safe];
     item.transform = CGAffineTransformIdentity; item.bounds = (CGRect){CGPointZero,base};
     item.center = CGPointMake(CGRectGetMidX(placed),CGRectGetMidY(placed));
@@ -264,8 +269,13 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     _editDone.frame = CGRectMake(CGRectGetMidX(safe)-70,CGRectGetMinY(safe)+60,140,40);
     _hint.frame = CGRectMake(CGRectGetMidX(safe)-150,CGRectGetMinY(safe)+103,300,22);
     if (_settings) {
-        // Reserve the fixed toolbar's top row; the panel body scrolls.
-        CGFloat width = MIN(390,safe.size.width-24), height = MIN(390,safe.size.height-68);
+        // Keep the fixed toolbar clear. Wide screens use two columns; smaller
+        // windows retain a scrollable single column and a fixed Done button.
+        BOOL wide = safe.size.width >= 620;
+        CGFloat width = MIN(wide ? 700 : 390,safe.size.width-24), height = MIN(wide ? 350 : 470,safe.size.height-68);
+        _settingsColumns.axis = wide ? UILayoutConstraintAxisHorizontal : UILayoutConstraintAxisVertical;
+        _settingsColumns.alignment = wide ? UIStackViewAlignmentTop : UIStackViewAlignmentFill;
+        _settingsColumns.distribution = wide ? UIStackViewDistributionFillEqually : UIStackViewDistributionFill;
         _settings.frame = CGRectMake(CGRectGetMidX(safe)-width/2,CGRectGetMaxY(safe)-height-8,width,height);
     }
 }
@@ -300,11 +310,11 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     }
     CGRect frame = [_dragOrigins[name] CGRectValue];
     if (pan.state == UIGestureRecognizerStateCancelled) {
-        [_preferences moveItem:name toFrame:frame inBounds:[self usableBounds]];
+        [_preferences moveItem:[self positionName:name] toFrame:frame inBounds:[self usableBounds]];
     } else {
         CGPoint delta = [pan translationInView:self];
         frame.origin.x += delta.x; frame.origin.y += delta.y;
-        [_preferences moveItem:name toFrame:frame inBounds:[self usableBounds]];
+        [_preferences moveItem:[self positionName:name] toFrame:frame inBounds:[self usableBounds]];
     }
     [self setNeedsLayout]; [self layoutIfNeeded];
     if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
@@ -330,26 +340,38 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.title")]]];
     stack.axis = UILayoutConstraintAxisVertical; stack.spacing = 6; stack.translatesAutoresizingMaskIntoConstraints = NO;
     [scroll addSubview:stack];
+    UIStackView *sizes = [UIStackView new], *options = [UIStackView new];
+    sizes.axis = options.axis = UILayoutConstraintAxisVertical; sizes.spacing = 6; options.spacing = 8;
+    _settingsColumns = [[UIStackView alloc] initWithArrangedSubviews:@[sizes,options]];
+    _settingsColumns.spacing = 24; _settingsColumns.alignment = UIStackViewAlignmentTop;
+    [stack addArrangedSubview:_settingsColumns];
     NSMutableArray *sliders = [NSMutableArray new], *values = [NSMutableArray new];
     NSArray *names = @[AKHostLocalized(@"touch.settings.transparency"), AKHostLocalized(@"touch.settings.shoulderSize"),
                        AKHostLocalized(@"touch.settings.stickSize")];
     CGFloat initial[] = {1-_preferences.opacity,_preferences.rearScale,_preferences.frontScale};
     CGFloat min[] = {0,0.8,0.65}, max[] = {0.8,1.5,1.4};
     for (NSUInteger i=0; i<3; i++) {
-        UILabel *value = [self label:@""]; [values addObject:value]; [stack addArrangedSubview:value];
+        UILabel *value = [self label:@""]; [values addObject:value]; [sizes addArrangedSubview:value];
         UISlider *slider = [UISlider new]; slider.tag = i; slider.minimumValue = min[i]; slider.maximumValue = max[i]; slider.value = initial[i];
         slider.accessibilityLabel = names[i]; slider.accessibilityIdentifier = [@"wolkaraforever.controls." stringByAppendingString:@[@"transparency",@"rearScale",@"frontScale"][i]];
         [slider addTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
-        [sliders addObject:slider]; [stack addArrangedSubview:slider];
+        [sliders addObject:slider]; [sizes addArrangedSubview:slider];
     }
     _sliders = sliders; _values = values; [self updateValues];
+    _swapShouldersSwitch = [UISwitch new]; _swapShouldersSwitch.on = !_preferences.swapShoulders;
+    _swapShouldersSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.outerTriggers");
+    _swapShouldersSwitch.accessibilityIdentifier = @"wolkaraforever.controls.swapShoulders";
+    [_swapShouldersSwitch addTarget:self action:@selector(swapShouldersChanged:) forControlEvents:UIControlEventValueChanged];
+    UIStackView *shouldersRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.outerTriggers")],_swapShouldersSwitch]];
+    shouldersRow.axis = UILayoutConstraintAxisHorizontal; shouldersRow.alignment = UIStackViewAlignmentCenter;
+    [options addArrangedSubview:shouldersRow];
     _hapticsSwitch = [UISwitch new]; _hapticsSwitch.on = _preferences.hapticsEnabled;
     _hapticsSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.haptics");
     _hapticsSwitch.accessibilityIdentifier = @"wolkaraforever.controls.haptics";
     [_hapticsSwitch addTarget:self action:@selector(hapticsChanged:) forControlEvents:UIControlEventValueChanged];
     UIStackView *hapticsRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.haptics")],_hapticsSwitch]];
     hapticsRow.axis = UILayoutConstraintAxisHorizontal; hapticsRow.alignment = UIStackViewAlignmentCenter;
-    [stack addArrangedSubview:hapticsRow];
+    [options addArrangedSubview:hapticsRow];
     // The optional performance HUD. It is a display preference, not a layout or
     // input one: turning it on does not move, resize or rebind any control.
     _overlaySwitch = [UISwitch new]; _overlaySwitch.on = _preferences.performanceOverlayEnabled;
@@ -358,18 +380,19 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     [_overlaySwitch addTarget:self action:@selector(overlayChanged:) forControlEvents:UIControlEventValueChanged];
     UIStackView *overlayRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.overlay.detail")],_overlaySwitch]];
     overlayRow.axis = UILayoutConstraintAxisHorizontal; overlayRow.alignment = UIStackViewAlignmentCenter;
-    [stack addArrangedSubview:overlayRow];
+    [options addArrangedSubview:overlayRow];
     _editSwitch = [UISwitch new]; _editSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.edit");
     _editSwitch.accessibilityIdentifier = @"wolkaraforever.controls.edit";
     [_editSwitch addTarget:self action:@selector(beginEditing:) forControlEvents:UIControlEventValueChanged];
     UIStackView *editRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.edit")],_editSwitch]];
     editRow.axis = UILayoutConstraintAxisHorizontal; editRow.alignment = UIStackViewAlignmentCenter;
-    [stack addArrangedSubview:editRow];
-    [stack addArrangedSubview:[self label:AKHostLocalized(@"touch.settings.edit.detail")]];
+    [options addArrangedSubview:editRow];
+    [options addArrangedSubview:[self label:AKHostLocalized(@"touch.settings.edit.detail")]];
     UIButton *reset = [UIButton buttonWithType:UIButtonTypeSystem]; [reset setTitle:AKHostLocalized(@"touch.settings.reset") forState:UIControlStateNormal];
     reset.accessibilityIdentifier = @"wolkaraforever.controls.reset";
     [reset addTarget:self action:@selector(resetLayout) forControlEvents:UIControlEventTouchUpInside];
     UIButton *done = [UIButton buttonWithType:UIButtonTypeSystem]; [done setTitle:AKHostLocalized(@"common.done") forState:UIControlStateNormal];
+    done.accessibilityIdentifier = @"wolkaraforever.controls.done";
     [done addTarget:self action:@selector(finishConfiguration) forControlEvents:UIControlEventTouchUpInside];
     UIStackView *footer = [[UIStackView alloc] initWithArrangedSubviews:@[reset,done]];
     footer.axis = UILayoutConstraintAxisHorizontal; footer.distribution = UIStackViewDistributionFillEqually;
@@ -397,6 +420,10 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     else if (slider.tag == 2) _preferences.frontScale = slider.value;
     [_preferences save]; [self updateValues]; [self updateAppearance];
 }
+- (void)swapShouldersChanged:(UISwitch *)sender {
+    [self reset]; _preferences.swapShoulders = !sender.on; [_preferences save];
+    [self updateAppearance];
+}
 - (void)hapticsChanged:(UISwitch *)sender {
     _preferences.hapticsEnabled = sender.on; [_preferences save];
     if (self.configurationChanged) self.configurationChanged();
@@ -408,19 +435,19 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 - (void)beginEditing:(UISwitch *)sender {
     if (!sender.on) return;
     [self reset]; _editing = YES; [_settings removeFromSuperview]; _settings = nil;
-    _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil;
+    _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _settingsColumns = nil;
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
 }
 - (void)resetLayout {
     [self reset]; [_preferences reset];
     _sliders[0].value = 1-_preferences.opacity; _sliders[1].value = _preferences.rearScale; _sliders[2].value = _preferences.frontScale;
-    _hapticsSwitch.on = _preferences.hapticsEnabled;
+    _hapticsSwitch.on = _preferences.hapticsEnabled; _swapShouldersSwitch.on = !_preferences.swapShoulders;
     _overlaySwitch.on = _preferences.performanceOverlayEnabled;
     [self updateValues]; [self updateAppearance];
 }
 - (void)finishConfiguration {
     [self reset]; [_preferences save]; _editing = NO; [_dragOrigins removeAllObjects];
-    [_settings removeFromSuperview]; _settings = nil; _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil;
+    [_settings removeFromSuperview]; _settings = nil; _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _settingsColumns = nil;
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
 }
 - (void)reset {
@@ -528,6 +555,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 }
 - (void)refresh {
     NSAssert(NSThread.isMainThread, @"Touch controller lifecycle belongs on the main thread");
+    if ([self hasPhysicalController] && _overlay.configuring) [_overlay finishConfiguration];
     if (_connecting) {
         // Wait for this attempt's reply before starting another one. A late
         // successful connect must not bring controls back after suspension.

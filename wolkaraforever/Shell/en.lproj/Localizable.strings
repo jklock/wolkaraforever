@@ -362,6 +362,7 @@
 "touch.settings.shoulderSize.value" = "Shoulder button size · %.0f%%";
 "touch.settings.stickSize" = "Sticks and face button size";
 "touch.settings.stickSize.value" = "Sticks and face button size · %.0f%%";
+"touch.settings.outerTriggers" = "Triggers on the outside";
 "touch.settings.haptics" = "Haptic feedback";
 "touch.settings.overlay" = "Performance overlay";
 "touch.settings.overlay.detail" = "Performance overlay (FPS & Thermals)";

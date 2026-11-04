@@ -137,12 +137,13 @@ static void Drain(void) { CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.03,false); 
 static void TestPreferences(void) {
     NSString *suite=[@"org.tolkara.layout-test." stringByAppendingString:NSUUID.UUID.UUIDString];
     NSUserDefaults *defaults=[[NSUserDefaults alloc] initWithSuiteName:suite];
+    assert([[AKGamepadLayout alloc] initWithDefaults:defaults].swapShoulders);
     // Existing installations keep layout, opacity, size and haptic settings.
     [defaults setObject:@{@"opacity":@0.6,@"rearScale":@1.2,@"frontScale":@0.9,
         @"hapticsEnabled":@NO,@"positions":@{@"menu":@[@0.5,@0.5]}} forKey:@"WowkaraTouchLayoutV1"];
     AKGamepadLayout *migrated=[[AKGamepadLayout alloc] initWithDefaults:defaults];
     assert(fabs(migrated.opacity-.6)<.001 && fabs(migrated.rearScale-1.2)<.001 &&
-           fabs(migrated.frontScale-.9)<.001 && !migrated.hapticsEnabled);
+           fabs(migrated.frontScale-.9)<.001 && !migrated.hapticsEnabled && !migrated.swapShoulders);
     assert([defaults dictionaryForKey:@"WolkaraForeverTouchLayoutV1"]);
     CGRect migratedFrame=[migrated frameForItem:@"menu" defaultFrame:CGRectMake(0,0,100,100) inBounds:CGRectMake(0,0,500,300)];
     assert(CGRectEqualToRect(migratedFrame,CGRectMake(200,100,100,100)));
@@ -157,13 +158,15 @@ static void TestPreferences(void) {
     assert(layout.opacity==0.8 && layout.rearScale==1 && layout.frontScale==1);
     CGRect bounds=CGRectMake(20,10,500,300), frame=CGRectMake(200,60,120,120);
     [layout moveItem:@"menu" toFrame:frame inBounds:bounds]; layout.opacity=.4; layout.hapticsEnabled=NO;
-    layout.performanceOverlayEnabled=YES; [layout save];
+    layout.performanceOverlayEnabled=YES; layout.swapShoulders=YES; [layout save];
     layout=[[AKGamepadLayout alloc] initWithDefaults:defaults];
-    assert(layout.opacity==.4 && !layout.hapticsEnabled && layout.performanceOverlayEnabled);
+    assert(layout.opacity==.4 && !layout.hapticsEnabled && layout.performanceOverlayEnabled && layout.swapShoulders);
+    layout.swapShoulders=NO; [layout save];
+    assert(![[AKGamepadLayout alloc] initWithDefaults:defaults].swapShoulders);
     assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:frame inBounds:bounds],frame));
     CGRect small=CGRectMake(0,0,220,120);
     assert(CGRectContainsRect(small,[layout frameForItem:@"menu" defaultFrame:frame inBounds:small]));
-    [layout reset]; assert(layout.opacity==.8 && layout.frontScale==1 && layout.hapticsEnabled && !layout.performanceOverlayEnabled);
+    [layout reset]; assert(layout.opacity==.8 && layout.frontScale==1 && layout.hapticsEnabled && !layout.performanceOverlayEnabled && layout.swapShoulders);
     assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:frame inBounds:bounds],frame));
     [defaults removePersistentDomainForName:suite];
 }
@@ -231,6 +234,23 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     [manager toggleSettings]; [host layoutIfNeeded]; Drain();
     assert(!pad.leftShoulder.pressed && !pad.buttonA.pressed && pad.leftThumbstick.xAxis.value==0);
     assert(Find(host,@"wolkaraforever.controls.settings"));
+    UIView *panel=Find(host,@"wolkaraforever.controls.settings");
+    if (UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets).size.width>=620) assert(panel.bounds.size.width>390);
+    CGRect normalBounds=host.bounds;
+    host.bounds=CGRectMake(0,0,390,600); [host layoutIfNeeded];
+    assert(CGRectContainsRect(host.bounds,[panel convertRect:panel.bounds toView:host]));
+    UIView *done=Find(host,@"wolkaraforever.controls.done");
+    assert(done && CGRectContainsRect(panel.bounds,[done convertRect:done.bounds toView:panel]));
+    host.bounds=normalBounds; [host layoutIfNeeded];
+    UISwitch *outer=(id)Find(host,@"wolkaraforever.controls.swapShoulders");
+    assert(outer && !outer.on);
+    assert(CGRectGetMidX(Button(host,GCInputLeftTrigger).frame)>CGRectGetMidX(Button(host,GCInputLeftShoulder).frame));
+    assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)<CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
+    outer.on=YES; [outer sendActionsForControlEvents:UIControlEventValueChanged]; [host layoutIfNeeded];
+    assert(CGRectGetMidX(Button(host,GCInputLeftTrigger).frame)<CGRectGetMidX(Button(host,GCInputLeftShoulder).frame));
+    assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)>CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
+    assert(![[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults].swapShoulders);
+    outer.on=NO; [outer sendActionsForControlEvents:UIControlEventValueChanged]; [host layoutIfNeeded];
     NSUInteger silentButtons=manager.feedback.buttons, silentLimits=manager.feedback.limits;
     [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
     assert(!pad.buttonA.pressed);
@@ -275,9 +295,21 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     pan.testState=UIGestureRecognizerStateEnded; [cluster.superview drag:pan];
     assert(cluster.frame.origin.x>before.origin.x && cluster.frame.origin.y<before.origin.y);
     [cluster removeGestureRecognizer:pan];
+    // Dragging a swapped trigger updates its visual slot, not the other button.
+    UIControl *trigger=Button(host,GCInputLeftTrigger);
+    CGRect triggerBefore=trigger.frame;
+    AKFixturePan *triggerPan=[AKFixturePan new]; [trigger addGestureRecognizer:triggerPan];
+    triggerPan.testState=UIGestureRecognizerStateBegan; [trigger.superview drag:triggerPan];
+    triggerPan.movement=CGPointMake(30,60); triggerPan.testState=UIGestureRecognizerStateEnded;
+    [trigger.superview drag:triggerPan]; [host layoutIfNeeded];
+    assert(trigger.frame.origin.x>triggerBefore.origin.x && trigger.frame.origin.y>triggerBefore.origin.y);
+    AKGamepadLayout *dragged=[[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+    CGRect safe=UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets);
+    assert(CGRectEqualToRect([dragged frameForItem:@"LB" defaultFrame:trigger.frame inBounds:safe],trigger.frame));
+    [trigger removeGestureRecognizer:triggerPan];
     AKGamepadLayout *saved=[[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
     assert(fabs(saved.frontScale-1.3)<.001 && fabs(saved.opacity-.3)<.001);
-    assert(!saved.hapticsEnabled && saved.performanceOverlayEnabled);
+    assert(!saved.hapticsEnabled && saved.performanceOverlayEnabled && saved.swapShoulders);
     [(UIButton *)Find(host,@"wolkaraforever.layout.done") sendActionsForControlEvents:UIControlEventTouchUpInside];
     [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
     assert(pad.buttonA.pressed && manager.feedback.buttons==silentButtons);
@@ -291,8 +323,8 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchUpInside];
     assert(manager.feedback.buttons==silentButtons+1 && manager.feedback.enabled);
     assert(fabs(cluster.frame.size.width-216)<.01);
-    assert(CGRectGetMidX(Button(host,GCInputLeftTrigger).frame)<CGRectGetMidX(Button(host,GCInputLeftShoulder).frame));
-    assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)>CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
+    assert(CGRectGetMidX(Button(host,GCInputLeftTrigger).frame)>CGRectGetMidX(Button(host,GCInputLeftShoulder).frame));
+    assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)<CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
     TestPreferences();
     manager.keyboardVisible=YES; Drain();
     assert(!manager.visible && !pad.leftShoulder.pressed && !pad.buttonA.pressed);
@@ -341,13 +373,20 @@ static void TestLifecycle(UIView *host) {
     assert(!pad.visible); count=pad.connections;
     [pad refresh]; [pad refresh]; assert(pad.connections==count); // no retry loop
     pad.enabled=NO; pad.enabled=YES; [pad.lastConnection finish:nil]; assert(pad.visible);
-    pad.devices=@[(id)physical]; [pad refresh]; assert(!pad.visible);
+    [pad toggleSettings]; assert(pad.configuring);
+    pad.devices=@[(id)physical]; [pad refresh]; assert(!pad.visible && !pad.configuring);
+    assert(!Find(host,@"wolkaraforever.controls.settings"));
+    pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil]; assert(pad.visible);
+    [pad toggleSettings];
+    UISwitch *edit=(id)Find(host,@"wolkaraforever.controls.edit");
+    edit.on=YES; [edit sendActionsForControlEvents:UIControlEventValueChanged]; assert(pad.configuring);
+    pad.devices=@[(id)physical]; [pad refresh]; assert(!pad.visible && !pad.configuring);
     physical.isSnapshot=YES; [pad refresh]; [pad.lastConnection finish:nil]; assert(pad.visible);
     host.hidden=YES; [pad refresh]; assert(!pad.visible);
     host.hidden=NO; [pad refresh];
     [pad invalidate]; [pad.lastConnection finish:nil]; assert(!pad.visible);
     count=pad.connections; [pad refresh]; assert(pad.connections==count);
-    puts("TOUCH_GAMEPAD_LIFECYCLE_PASS: physical priority, own/snapshot filtering, keyboard/focus cancellation, late replies, failure, retry and teardown.");
+    puts("TOUCH_GAMEPAD_LIFECYCLE_PASS: physical connection closes settings and editing; physical priority, own/snapshot filtering, keyboard/focus cancellation, late replies, failure, retry and teardown.");
 }
 
 @interface AKGamepadFixtureScene : UIResponder <UIWindowSceneDelegate>
