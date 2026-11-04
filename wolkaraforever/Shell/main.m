@@ -551,7 +551,8 @@ static NSString *AKAudioStateDescription(void) {
     // nothing else - see wolkaraforever/Shell/SelfTest.h. The Controller Manager test is the
     // same shape: it drives a page the home screen reaches by scrolling.
     BOOL homeSelfTest=[arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestRenderProfile]] ||
-                      [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestControllerManager]];
+                      [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestControllerManager]] ||
+                      [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestControllerRouting]];
     for(NSUInteger i=1;i<arguments.count;i++) if(![arguments[i] hasPrefix:TKExecutionModeArgumentPrefix] &&
         ![arguments[i] isEqualToString:TKExecutionModeSaveArgument] &&
         ![arguments[i] isEqualToString:@"--addons-preview"] &&
