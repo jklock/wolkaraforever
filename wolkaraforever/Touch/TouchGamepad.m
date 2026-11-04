@@ -517,11 +517,13 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     // releasing it cannot touch a value the touch producer is responsible for.
     BOOL _physicalRouting;
     NSMutableSet<NSString *> *_physicalHeld;
+    NSRecursiveLock *_physicalLock;
 }
 - (instancetype)initWithHostView:(UIView *)host {
     if ((self = [super init])) {
         _host = host; _enabled = YES;
         _physicalHeld = [NSMutableSet set];
+        _physicalLock = [NSRecursiveLock new];
         _haptics = [self makeHaptics];
         _overlay = [[AKGamepadOverlay alloc] initWithFrame:host.bounds];
         _overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
@@ -557,7 +559,10 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     }
     return self;
 }
-- (nullable GCController *)virtualController { return _virtualController.controller; }
+- (nullable GCController *)virtualController {
+    [_physicalLock lock]; GCController *controller=_virtualController.controller; [_physicalLock unlock];
+    return controller;
+}
 - (NSArray<GCController *> *)connectedControllers { return GCController.controllers; }
 - (AKTouchHaptics *)makeHaptics { return [AKTouchHaptics new]; }
 - (void)updateHaptics { _haptics.enabled = _visible && !_overlay.configuring && _overlay.preferences.hapticsEnabled; }
@@ -629,7 +634,8 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 
 - (void)setPhysicalRoutingEnabled:(BOOL)enabled {
     NSAssert(NSThread.isMainThread, @"Routing is a main-thread state change");
-    if (_physicalRouting == enabled) return;
+    [_physicalLock lock];
+    if (_physicalRouting == enabled) { [_physicalLock unlock]; return; }
     _physicalRouting = enabled;
     if (enabled) {
         // The overlay is reset first, so a finger resting on it cannot look to the pad like
@@ -642,30 +648,36 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
         [_overlay reset];
     }
     [self refresh];
+    [_physicalLock unlock];
 }
 
 - (void)setPhysicalValue:(double)value forTarget:(NSString *)target {
     NSString *element = AKElementForTarget(target);
     if (!element || AKTargetIsAxis(target)) return;
-    if (!_physicalRouting || !_virtualController) return;
+    [_physicalLock lock];
+    if (!_physicalRouting || !_virtualController) { [_physicalLock unlock]; return; }
     double clamped = value > 1 ? 1 : (value < 0 ? 0 : value);
     [_virtualController setValue:clamped forButtonElement:element];
     if (clamped > 0) [_physicalHeld addObject:target]; else [_physicalHeld removeObject:target];
+    [_physicalLock unlock];
 }
 
 - (void)setPhysicalPosition:(CGPoint)position forTarget:(NSString *)target {
     NSString *element = AKElementForTarget(target);
     if (!element || !AKTargetIsAxis(target)) return;
-    if (!_physicalRouting || !_virtualController) return;
-    if (!isfinite(position.x) || !isfinite(position.y)) return;
+    [_physicalLock lock];
+    if (!_physicalRouting || !_virtualController) { [_physicalLock unlock]; return; }
+    if (!isfinite(position.x) || !isfinite(position.y)) { [_physicalLock unlock]; return; }
     CGPoint clamped = CGPointMake(MAX(-1, MIN(1, position.x)), MAX(-1, MIN(1, position.y)));
     [_virtualController setPosition:clamped forDirectionPadElement:element];
     if (clamped.x != 0 || clamped.y != 0) [_physicalHeld addObject:target];
     else [_physicalHeld removeObject:target];
+    [_physicalLock unlock];
 }
 
 - (void)releasePhysicalInputs {
-    if (!_physicalHeld.count) return;
+    [_physicalLock lock];
+    if (!_physicalHeld.count) { [_physicalLock unlock]; return; }
     NSUInteger count = _physicalHeld.count;
     for (NSString *target in [_physicalHeld copy]) {
         NSString *element = AKElementForTarget(target);
@@ -676,9 +688,14 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
             [_virtualController setValue:0 forButtonElement:element];
     }
     [_physicalHeld removeAllObjects];
+    [_physicalLock unlock];
     NSLog(@"[TouchGamepad] released %lu routed value(s)", (unsigned long)count);
 }
 - (void)routingStateChanged:(NSNotification *)note {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self routingStateChanged:note]; });
+        return;
+    }
     BOOL enabled = [note.userInfo[AKRouteEnabledKey] boolValue];
     [self setPhysicalRoutingEnabled:enabled];
 }
@@ -705,7 +722,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 - (void)postVirtualPadState:(BOOL)connected error:(nullable NSString *)error {
     NSMutableDictionary *info = [NSMutableDictionary dictionary];
     info[AKVirtualPadConnectedKey] = @(connected);
-    GCController *controller = _virtualController.controller;
+    GCController *controller = self.virtualController;
     if (connected && controller) info[AKVirtualPadControllerKey] = controller;
     if (error.length) info[AKVirtualPadErrorKey] = error;
     [NSNotificationCenter.defaultCenter postNotificationName:AKVirtualPadDidChangeNotification
@@ -713,6 +730,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
                                                    userInfo:info];
 }
 - (void)disconnectController {
+    [_physicalLock lock];
     GCVirtualController *controller = _virtualController;
     BOOL had = controller != nil;
     // Explicitly release our held controls before removing the virtual device.
@@ -721,6 +739,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     [self releasePhysicalInputs];
     _virtualController = nil;
     [controller disconnect];
+    [_physicalLock unlock];
     [self setVisible:NO];
     if (had) [self postVirtualPadState:NO error:nil];
 }

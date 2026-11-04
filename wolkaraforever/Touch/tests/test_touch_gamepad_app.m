@@ -65,11 +65,23 @@ static void TestHaptics(void) {
 @property GCController *controller;
 @property(copy) void (^reply)(NSError *);
 @property NSUInteger disconnects;
+// Captured physical-producer writes. The fixture stands in for the virtual controller,
+// while the separate input fixture covers the framework's real controller objects.
+@property NSMutableDictionary<NSString *, NSNumber *> *buttonValues;
+@property NSMutableDictionary<NSString *, NSValue *> *positions;
 - (void)finish:(NSError *)error;
 @end
 @implementation AKFixtureConnection
 - (void)connectWithReplyHandler:(void (^)(NSError *))reply { self.reply=reply; }
 - (void)disconnect { self.disconnects++; self.controller=nil; }
+- (void)setValue:(CGFloat)value forButtonElement:(NSString *)element {
+    if (!self.buttonValues) self.buttonValues=[NSMutableDictionary dictionary];
+    self.buttonValues[element]=@(value);
+}
+- (void)setPosition:(CGPoint)position forDirectionPadElement:(NSString *)element {
+    if (!self.positions) self.positions=[NSMutableDictionary dictionary];
+    self.positions[element]=[NSValue valueWithCGPoint:position];
+}
 - (void)finish:(NSError *)error {
     if (!error) {
         AKFixtureController *controller=[AKFixtureController new]; controller.extendedGamepad=@YES;

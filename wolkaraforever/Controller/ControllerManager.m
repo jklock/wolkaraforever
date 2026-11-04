@@ -193,9 +193,9 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     return self;
 }
 
-- (NSString *)currentDevice { return _currentDevice; }
-- (NSString *)currentDeviceName { return _currentDeviceName; }
-- (NSString *)currentSourceName { return _currentSourceName; }
+- (NSString *)currentDevice { [_hot lock]; NSString *value=[_currentDevice copy]; [_hot unlock]; return value; }
+- (NSString *)currentDeviceName { [_hot lock]; NSString *value=[_currentDeviceName copy]; [_hot unlock]; return value; }
+- (NSString *)currentSourceName { [_hot lock]; NSString *value=[_currentSourceName copy]; [_hot unlock]; return value; }
 - (BOOL)learning { return _learning; }
 - (NSString *)learningIdentity { return _learningIdentity; }
 
@@ -206,7 +206,9 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     if (_began) { [self refreshRouting]; return; }
     _began = YES;
 
+    [_hot lock];
     _enabled = [NSUserDefaults.standardUserDefaults boolForKey:AKControllerRoutingDefaultsKey];
+    [_hot unlock];
 
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     [center addObserver:self selector:@selector(padsChanged:) name:GCControllerDidConnectNotification object:nil];
@@ -259,8 +261,10 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         else {
             [_voiceReleased removeAllObjects];
             [_routingReleased removeAllObjects];
+            [_hot lock];
             [_buttonValues removeAllObjects];
             [_axisValues removeAllObjects];
+            [_hot unlock];
         }
         // The pad that was being used to learn has gone, so the armed state cannot be
         // satisfied any more. Only an identity-wide disconnect cancels the voicing
@@ -307,11 +311,13 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 
 #pragma mark - The switch
 
-- (BOOL)enabled { return _enabled; }
+- (BOOL)enabled { [_hot lock]; BOOL value=_enabled; [_hot unlock]; return value; }
 
 - (void)setEnabled:(BOOL)enabled {
-    if (_enabled == enabled) return;
+    [_hot lock];
+    if (_enabled == enabled) { [_hot unlock]; return; }
     _enabled = enabled;
+    [_hot unlock];
     [NSUserDefaults.standardUserDefaults setBool:enabled forKey:AKControllerRoutingDefaultsKey];
     AKCMLog(@"manager: routing %@", enabled ? @"on" : @"off");
     if (!enabled) {
@@ -532,8 +538,10 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 - (void)forgetIdentity:(NSString *)identity {
     [_voiceReleased removeObjectForKey:identity];
     [_routingReleased removeObjectForKey:identity];
+    [_hot lock];
     [_buttonValues removeObjectForKey:identity];
     [_axisValues removeObjectForKey:identity];
+    [_hot unlock];
 }
 
 #pragma mark - Learning a source
@@ -582,9 +590,11 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     // Deliberately no main-thread assertion: this is the hot path and it runs where the
     // framework calls it. The parts that need main (learning, the router's own observing, the
     // page's refresh) defer themselves.
+    [_hot lock];
     _currentDevice = device;
     _currentDeviceName = name;
     _currentSourceName = source;
+    [_hot unlock];
     AKCMEntryTicks = mach_absolute_time();
 
     if ([source isEqualToString:@"controller"]) {
@@ -605,9 +615,11 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 
 - (void)reportAxis:(NSString *)stableElement position:(CGPoint)point
             device:(NSString *)device deviceName:(NSString *)name {
+    [_hot lock];
     _currentDevice = device;
     _currentDeviceName = name;
     _currentSourceName = @"controller";
+    [_hot unlock];
     [self noteAxisPosition:point element:stableElement device:device];
     if (hypot(point.x, point.y) > AKControllerLearnAxisThreshold)
         [self learnFromSource:stableElement device:device];
@@ -717,10 +729,12 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 }
 
 - (void)releaseVirtualValues:(NSString *)why {
-    if (!_routedButtons.count && !_routedAxes.count) return;
+    [_hot lock];
+    if (!_routedButtons.count && !_routedAxes.count) { [_hot unlock]; return; }
     NSUInteger count = _routedButtons.count + _routedAxes.count;
     [_routedButtons removeAllObjects];
     [_routedAxes removeAllObjects];
+    [_hot unlock];
     [NSNotificationCenter.defaultCenter postNotificationName:AKControllerRouteReleaseNotification object:nil];
     AKCMLog(@"manager: released %lu virtual value(s) because %@", (unsigned long)count, why);
 }
@@ -729,12 +743,18 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 // when the app comes back, so a stick that is already deflected is not silently ignored
 // until the user moves it.
 - (void)routeCurrentStateAfterProfileChange {
-    if (!_enabled) return;
+    [_hot lock];
+    if (!_enabled) { [_hot unlock]; return; }
     [_routedButtons removeAllObjects];
     [_routedAxes removeAllObjects];
-    for (NSString *device in _buttonValues) {
+    NSMutableDictionary<NSString *, NSDictionary<NSString *, NSNumber *> *> *buttons=[NSMutableDictionary dictionary];
+    for (NSString *device in _buttonValues) buttons[device]=[_buttonValues[device] copy];
+    NSMutableDictionary<NSString *, NSDictionary<NSString *, NSValue *> *> *axes=[NSMutableDictionary dictionary];
+    for (NSString *device in _axisValues) axes[device]=[_axisValues[device] copy];
+    [_hot unlock];
+    for (NSString *device in buttons) {
         AKControllerProfile *profile = [self profileForIdentity:device];
-        NSDictionary *values = _buttonValues[device];
+        NSDictionary *values = buttons[device];
         for (NSString *element in [AKControllerProfile sourceElements]) {
             NSString *target = [profile targetForSource:element];
             if (!target.length || [target isEqualToString:AKControllerTargetNone]) continue;
@@ -742,9 +762,9 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
             if (value) [self routeButton:element value:value.doubleValue pressed:value.doubleValue > 0 device:device];
         }
     }
-    for (NSString *device in _axisValues) {
+    for (NSString *device in axes) {
         AKControllerProfile *profile = [self profileForIdentity:device];
-        NSDictionary *values = _axisValues[device];
+        NSDictionary *values = axes[device];
         for (NSString *element in [AKControllerProfile sourceElements]) {
             NSString *target = [profile targetForSource:element];
             if (!target.length || [target isEqualToString:AKControllerTargetNone]) continue;
@@ -804,7 +824,9 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         [_knownIdentities addObject:AKControllerIdentity(controller)];
         [self rebuildRoutes];
     }
+    [_hot lock];
     _virtualController = controller;
+    [_hot unlock];
     _awaitingVirtualPad = NO;
     _virtualFailed = NO;
     _virtualError = nil;
@@ -815,7 +837,9 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 }
 
 - (void)noteVirtualPadFailed:(NSString *)error {
+    [_hot lock];
     _virtualController = nil;
+    [_hot unlock];
     _awaitingVirtualPad = NO;
     _virtualFailed = YES;
     _virtualError = [error copy];
@@ -828,10 +852,12 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 }
 
 - (void)noteVirtualPadDisconnected {
+    [_hot lock];
     _virtualController = nil;
     _awaitingVirtualPad = NO;
     [_routedButtons removeAllObjects];
     [_routedAxes removeAllObjects];
+    [_hot unlock];
     [self publishGuestView];
     [self postChange];
 }
@@ -1062,10 +1088,8 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
             (void)input; (void)pressed;
             AKControllerManager *strongSelf = weakSelf;
             if (!strongSelf) return;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [strongSelf noteButtonValue:value element:element device:device];
-                [strongSelf routeButton:element value:value pressed:value > 0 device:device];
-            });
+            [strongSelf noteButtonValue:value element:element device:device];
+            [strongSelf routeButton:element value:value pressed:value > 0 device:device];
         };
     }
     for (NSString *name in profile.axes) {
