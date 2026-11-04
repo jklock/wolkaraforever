@@ -246,11 +246,11 @@ controller's reserved button can be delivered at all is Apple's behaviour plus t
 something this feature can get wrong or right.
 
 
-## What comes next
+## What a control can do
 
-This note describes the three situations and how they are held. The output vocabulary - chords,
-keys, layers, and the action model that replaces `source -> target` - is planned separately in
-[`CONTROLLER_OUTPUT_PLAN.md`](CONTROLLER_OUTPUT_PLAN.md), which is not implemented.
+Each physical control either passes through one to one, or is claimed by Tolkara and never reaches
+the guest. The vocabulary, the one action that exists, and why nothing else is in it:
+[`CONTROLLER_OUTPUT.md`](CONTROLLER_OUTPUT.md).
 
 ## Known limits
 * **One hidden virtual controller at a time.** A second `GCVirtualController` is refused while

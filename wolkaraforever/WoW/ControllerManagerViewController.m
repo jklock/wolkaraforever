@@ -300,7 +300,12 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
         // A row the pad cannot produce is shown, not hidden: the choice belongs to the
         // profile, and the next pad of this model may well have the control.
         row.enabled = binding.available;
-        NSString *title = [NSString stringWithFormat:@"%@  →  %@%@", binding.sourceDisplay, binding.targetDisplay,
+        // Two states, named: routed to a virtual control, or claimed by a Tolkara action. A
+        // claimed control has no target, so showing only "→ Not assigned" would hide the point.
+        NSString *destination = binding.action.length
+            ? [NSString stringWithFormat:@"%@: %@", WKLocalized(@"controller.state.action"), binding.targetDisplay]
+            : [NSString stringWithFormat:@"%@: %@", WKLocalized(@"controller.state.passthrough"), binding.targetDisplay];
+        NSString *title = [NSString stringWithFormat:@"%@  ·  %@%@", binding.sourceDisplay, destination,
                            binding.reserved ? WKLocalized(@"controller.reserved") : @""];
         UIButtonConfiguration *configuration = UIButtonConfiguration.plainButtonConfiguration;
         configuration.title = binding.available && model ? title : [title stringByAppendingFormat:@"  (%@)", WKLocalized(@"controller.unavailable")];
@@ -382,6 +387,14 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
             [self bindSource:source toTarget:target.identifier identity:identity];
         }]];
     }
+    // The one Tolkara action there is. Claimed means the guest never sees this control at all;
+    // the action itself is the dictation trigger the voice page already has.
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"controller.action.dictation")
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        (void)action;
+        [self claimSource:source forAction:AKControllerActionDictation identity:identity];
+    }]];
+
     // "Not assigned" is a choice, not a cancellation: a control the user does not want to
     // drive anything is a real answer and has to survive a reload.
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"controller.binding.unassigned")
@@ -400,6 +413,11 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     AKControllerProfile *profile = [AKControllerManager.shared profileForIdentity:identity];
     [profile bindSource:source toTarget:target];
     [AKControllerManager.shared applyProfileChangeForIdentity:identity];
+    [self render];
+}
+
+- (void)claimSource:(NSString *)source forAction:(NSString *)action identity:(NSString *)identity {
+    [AKControllerManager.shared claimSource:source forAction:action device:identity];
     [self render];
 }
 

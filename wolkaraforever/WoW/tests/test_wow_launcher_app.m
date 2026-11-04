@@ -21,6 +21,8 @@
 #import "../launcher/Voice/VoiceTestViewController.h"
 #import "../launcher/WoW/ControllerManagerViewController.h"
 #import "../launcher/Controller/ControllerManager.h"
+#import "../launcher/Controller/ControllerProfile.h"
+#import "../launcher/Input/Trigger.h"
 #import "wow_installation_fixture.h"
 
 @interface TKWoWViewController (Fixture)
@@ -45,6 +47,11 @@
 @end
 @interface TKWoWAddonManagerViewController (Fixture)
 - (void)done;
+@end
+// The page's own handlers, so the claim path a tap goes through is what the fixture drives.
+@interface TKWoWControllerManagerViewController (Fixture)
+- (void)claimSource:(NSString *)source forAction:(NSString *)action identity:(NSString *)identity;
+- (void)bindSource:(NSString *)source toTarget:(NSString *)target identity:(NSString *)identity;
 @end
 @interface AKVoiceViewController (Fixture)
 - (void)done;
@@ -475,10 +482,11 @@ static void TestPhoneDisplayDefaults(void) {
     // German part at the end sets it itself and leaves it back in English.
     [NSUserDefaults.standardUserDefaults removeObjectForKey:WKAppLanguageDefaultsKey];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverGameLanguageOfferShown"];
-    // A hang guard, not a budget: the whole scripted run - including the German pass, the
-    // one-time offer and the largest-text pass - takes about half of this, and a fixture that is
-    // still going after it is stuck rather than slow.
-    if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,60*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
+    // A hang guard, not a budget. Measured 2026-11-04 on this machine: a full pass, including the
+    // German pass, the one-time offer, the largest-text pass and the Controller Manager's page,
+    // takes 76 seconds. The guard is a bit over twice that, so a slow machine still finishes and
+    // something genuinely stuck still fails rather than sitting there.
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,180*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
         fprintf(stderr,"WoW UIKit TIMEOUT\n"); _Exit(1);
     });
     // Watching for the software keyboard tells a shim-level input block apart
@@ -1957,7 +1965,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     for (UIBarButtonItem *item in @[gear, refresh])
         assert(item.target != nil && item.action != NULL);
 
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items; the sixth card of its own, the Controller Manager - its switch, its status sentence, its row, and that the card's switch and the page's are one setting - and the page it opens - off default, persistence, the learn/cancel flow, German without reopening it, and no game file touched.");
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items; the sixth card of its own, the Controller Manager - its switch, its status sentence, its row, and that the card's switch and the page's are one setting - and the page it opens - off default, persistence, the learn/cancel flow, a control claimed for the one Tolkara action and given back to its route, German without reopening it, and no game file touched.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.
@@ -2067,6 +2075,29 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(!AKControllerManager.shared.learning);
     assert([(UIControl *)Find(page.view, @"controllerManager.cancel") isHidden]);
     assert([(UIControl *)Find(page.view, @"controllerManager.hint") isHidden]);
+
+    // Claiming, through the page's own handlers rather than the manager's API, so what is
+    // measured is the wiring a tap goes through. Choosing a Tolkara action takes the control out
+    // of the guest's route table and hands it to the trigger the voice page already stores;
+    // choosing a target again is choosing to route, and the claim goes.
+    TKWoWControllerManagerViewController *claimPage = [TKWoWControllerManagerViewController new];
+    [claimPage loadViewIfNeeded];
+    NSString *claimIdentity = @"fixture.controller.model";
+    [claimPage claimSource:@"controller.button.x" forAction:AKControllerActionDictation identity:claimIdentity];
+    AKControllerProfile *claimed = [manager profileForIdentity:claimIdentity];
+    assert([[claimed actionForSource:@"controller.button.x"] isEqual:AKControllerActionDictation]);
+    assert([[claimed targetForSource:@"controller.button.x"] isEqual:AKControllerTargetNone]);
+    assert([AKTrigger savedTriggerForDevice:claimIdentity defaults:defaults] != nil);
+    [claimPage bindSource:@"controller.button.x" toTarget:@"virtual.button.x" identity:claimIdentity];
+    assert(![[claimed actionForSource:@"controller.button.x"] length]);
+    assert([[claimed targetForSource:@"controller.button.x"] isEqual:@"virtual.button.x"]);
+    assert([AKTrigger savedTriggerForDevice:claimIdentity defaults:defaults] == nil);
+    // Both states have words in both languages: a raw key on this page would be a defect the
+    // string tables are supposed to make impossible.
+    for (NSString *key in @[@"controller.action.dictation", @"controller.state.action",
+                            @"controller.state.passthrough"])
+        assert(![WKLocalized(key) hasPrefix:@"controller."]);
+    [AKControllerProfile forgetIdentity:claimIdentity defaults:defaults];
 
     // The app language, without reopening the page.
     WKAppLanguage previous = WKLocalization.shared.language;

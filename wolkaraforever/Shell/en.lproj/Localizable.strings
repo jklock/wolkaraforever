@@ -67,6 +67,9 @@
 "controller.status.nofacade" = "This build cannot hide a physical controller from the game, so routing is refused rather than doubling every press.";
 "controller.binding.header" = "Physical control → what it drives";
 "controller.binding.unassigned" = "Not assigned";
+"controller.state.passthrough" = "Routes to";
+"controller.state.action" = "Tolkara action";
+"controller.action.dictation" = "Dictation (hold to talk)";
 "controller.unavailable" = "not on this controller";
 "controller.reserved" = "  ·  system button";
 "controller.nomodels" = "No controller is connected.";

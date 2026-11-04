@@ -247,6 +247,8 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 
 - (void)bindSource:(NSString *)source toTarget:(NSString *)target {
     if (!source.length || !_map[source]) return;
+    // A control is either routed or claimed, never both: choosing a target is choosing to route.
+    [_actions removeObjectForKey:source];
     NSString *wanted = target.length ? target : AKControllerTargetNone;
     if (![wanted isEqualToString:AKControllerTargetNone] && ![AKControllerTarget targetWithIdentifier:wanted]) return;
     if ([_map[source] isEqualToString:wanted]) return;
@@ -267,6 +269,8 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 }
 
 - (void)resetToDefault {
+    // The standard layout is the standard layout: no claims either.
+    [_actions removeAllObjects];
     [_map removeAllObjects];
     for (NSArray<NSString *> *pair in AKControllerDefaultPairs()) _map[pair[0]] = pair[1];
     [AKControllerProfile forgetIdentity:_identity defaults:_defaults];

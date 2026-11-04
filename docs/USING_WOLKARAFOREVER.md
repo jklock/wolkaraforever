@@ -138,9 +138,20 @@ game directly, exactly as before.
 With it on, the game is offered that single virtual controller and the physical pad is used
 as its input. Each controller **model** has its own mapping, starting as a standard
 extended-gamepad layout — every button, trigger, stick and the D-pad drives the same control
-it always did. **Reassign a control** asks you to press or move the control you want to
-change, then choose what it should drive. **Reset** puts the model back to the standard
-layout.
+it always did. **Reassign a control** asks you to press or move the control you want to change, then choose what
+it should do. Each control is in one of two states:
+
+- **Routes to** a control of the virtual gamepad — the default, one to one. A button drives a
+  button, a trigger keeps its analog value, a stick or the D-pad keeps its position.
+- **Tolkara action** — the control is taken for WolkaraForever itself and never reaches the game at
+  all. Today the action is **Dictation (hold to talk)**, the same dictation the voice page's trigger
+  starts: holding the control records, releasing it finishes. Because the game is only ever shown
+  the virtual controller, a control taken this way is, as far as the game is concerned, a control
+  that does not exist.
+
+Choosing a virtual control for a claimed control gives it back to routing, and drops the dictation
+mapping, so one control never has two meanings. **Reset** puts the model back to the standard layout
+and removes every claim.
 
 Two things worth knowing before you switch it on:
 

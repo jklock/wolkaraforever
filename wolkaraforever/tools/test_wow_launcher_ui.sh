@@ -94,7 +94,7 @@ trap 'rm -f "$LOG"' EXIT
 # the process exits. Watch the fixture's explicit verdict so this automated wrapper cannot hang.
 xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.wow-launcher "$@" 2>&1 | tee "$LOG" &
 LAUNCH=$!
-for _ in $(seq 1 75); do
+for _ in $(seq 1 240); do
     if grep -qE 'WoW UIKit (PASS:|TIMEOUT)' "$LOG"; then break; fi
     sleep 1
 done

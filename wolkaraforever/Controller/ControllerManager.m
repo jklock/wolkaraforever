@@ -556,6 +556,16 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 }
 
 - (void)applyProfileChangeForIdentity:(NSString *)identity {
+    // A control is either routed or claimed, never both. Binding a source to a target takes the
+    // claim out of the profile, so a dictation trigger on that same element would leave one press
+    // with two meanings: it would route and start dictation. The trigger goes with the claim.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    AKTrigger *trigger = [AKTrigger savedTriggerForDevice:identity defaults:defaults];
+    if (trigger && [trigger.element hasPrefix:@"controller."]) {
+        AKControllerProfile *profile = [self profileForIdentity:identity];
+        if (![[profile actionForSource:trigger.element] length])
+            [AKTrigger forgetTriggerForDevice:identity defaults:defaults];
+    }
     [self rebuildRoutes];
     (void)identity;
     // The gestures routing asked for are a consequence of the profile, so they follow it.

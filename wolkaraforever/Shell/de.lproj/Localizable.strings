@@ -67,6 +67,9 @@
 "controller.status.nofacade" = "Dieser Build kann einen physischen Controller nicht vor dem Spiel verbergen. Die Weiterleitung wird daher abgelehnt, statt jeden Tastendruck doppelt ankommen zu lassen.";
 "controller.binding.header" = "Physische Steuerung → was sie auslöst";
 "controller.binding.unassigned" = "Nicht zugewiesen";
+"controller.state.passthrough" = "Leitet weiter an";
+"controller.state.action" = "Tolkara-Aktion";
+"controller.action.dictation" = "Diktat (zum Sprechen halten)";
 "controller.unavailable" = "auf diesem Controller nicht vorhanden";
 "controller.reserved" = "  ·  Systemtaste";
 "controller.nomodels" = "Es ist kein Controller verbunden.";
