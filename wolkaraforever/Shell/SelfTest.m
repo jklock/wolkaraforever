@@ -24,6 +24,7 @@
 #import "../Voice/VoiceSettings.h"
 #import <AVFoundation/AVFoundation.h>
 #import <GameController/GameController.h>
+#include <mach/mach_time.h>
 #import <Speech/Speech.h>
 
 NSString *const AKSelfTestInput = @"input";
@@ -38,6 +39,7 @@ NSString *const AKSelfTestSpeechFile = @"speech-file";
 NSString *const AKSelfTestControllerManager = @"controller-manager";
 NSString *const AKSelfTestControllerRouting = @"controller-routing";
 NSString *const AKSelfTestControllerSituations = @"controller-situations";
+NSString *const AKSelfTestControllerLatency = @"controller-latency";
 
 #pragma mark - Recording what happened
 
@@ -1509,6 +1511,74 @@ static void AKSelfTestRunControllerRouting(AKSelfTestRecorder *recorder) {
     (void)applier;
     [pad disconnect];
 }
+// What routing costs. The requirement is that a pass-through press is as fast as it is today, so
+// the number that matters is what this feature spends between the framework entering our handler
+// and the adapter being told the value: that used to include a whole main-queue turn.
+static void AKSelfTestRunControllerLatency(AKSelfTestRecorder *recorder) {
+    static NSString *const routingKey = @"WolkaraForeverControllerRouting";
+    AKControllerManager *manager = AKControllerManager.shared;
+    __block id savedSetting = nil;
+    AKSelfTestOnMain(^{
+        savedSetting = [NSUserDefaults.standardUserDefaults objectForKey:routingKey];
+        manager.enabled = NO;
+    });
+
+    GCVirtualController *pad = AKSelfTestVirtualPad(10.0);
+    [recorder check:pad != nil _:@"a hidden virtual controller connects to route through"];
+    if (!pad) return;
+
+    NSMutableArray<NSNumber *> *microseconds = [NSMutableArray array];
+    mach_timebase_info_data_t timebase = {0};
+    mach_timebase_info(&timebase);
+    AKSelfTestOnMain(^{
+        manager.routeLatencyObserver = ^(uint64_t enteredAt) {
+            uint64_t ticks = mach_absolute_time() - enteredAt;
+            double ns = (double)ticks * (double)timebase.numer / (double)timebase.denom;
+            @synchronized (microseconds) { [microseconds addObject:@(ns / 1000.0)]; }
+        };
+        manager.controllersProvider = ^NSArray<GCController *> *{ return @[pad.controller]; };
+        [manager noteGuestFacadePresent];
+        manager.enabled = YES;
+        [manager noteVirtualPadConnected:pad.controller];
+    });
+
+    // A press and a release each time: the release always reaches the pad, so every iteration
+    // produces one sample whether or not the press was a value change.
+    const NSUInteger presses = 200;
+    for (NSUInteger i = 0; i < presses; i++) {
+        AKSelfTestOnMain(^{ [pad setValue:1 forButtonElement:GCInputButtonA]; });
+        AKSelfTestWaitUntil(^BOOL{ @synchronized (microseconds) { return microseconds.count >= (i * 2) + 1; } }, 1.0);
+        AKSelfTestOnMain(^{ [pad setValue:0 forButtonElement:GCInputButtonA]; });
+        AKSelfTestWaitUntil(^BOOL{ @synchronized (microseconds) { return microseconds.count >= (i + 1) * 2; } }, 1.0);
+    }
+    AKSelfTestWaitUntil(^BOOL{ @synchronized (microseconds) { return microseconds.count >= presses; } }, 2.0);
+
+    NSArray<NSNumber *> *samples = nil;
+    @synchronized (microseconds) { samples = [microseconds copy]; }
+    [recorder check:samples.count >= presses _:@"every press and release produced a routed value"];
+
+    NSArray<NSNumber *> *sorted = [samples sortedArrayUsingSelector:@selector(compare:)];
+    double median = sorted.count ? sorted[sorted.count / 2].doubleValue : -1;
+    double worst = sorted.lastObject.doubleValue;
+    recorder.detail = [NSString stringWithFormat:
+        @"%lu samples, median %.1f us, worst %.1f us from handler entry to the adapter's write",
+        (unsigned long)sorted.count, median, worst];
+    // The bound is a tripwire, not a target: a value that needed a queue hop measured in the
+    // hundreds of microseconds and worse under load. Anything near a millisecond means the hop
+    // came back.
+    [recorder check:median >= 0 && median < 1000.0 _:@"the added work is under a millisecond"];
+
+    AKSelfTestOnMain(^{
+        manager.routeLatencyObserver = nil;
+        manager.controllersProvider = nil;
+        [manager noteVirtualPadDisconnected];
+        manager.enabled = NO;
+        if (savedSetting) [NSUserDefaults.standardUserDefaults setObject:savedSetting forKey:routingKey];
+        else [NSUserDefaults.standardUserDefaults removeObjectForKey:routingKey];
+    });
+    [pad disconnect];
+}
+
 // The three situations the feature is defined by. Each is asserted on its own, because each is a
 // separate promise to a different user: no pad at all, a pad being captured, a pad not being
 // captured. The hidden virtual controller stands in for the one the touch controls own, and a
@@ -1608,6 +1678,15 @@ void AKRunSelfTestInHomePage(NSString *name, id home) {
         // which is main-queue work, and none of it waits. The attempts cover the automatic
         // check that runs the moment the home page appears, during which the row declines.
         AKSelfTestRenderProfilePress(recorder, 150);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestControllerLatency]) {
+        // Off the main queue: the routing work is what is being timed, and it must not be
+        // measured on top of the main queue it used to hop through.
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            AKSelfTestRunControllerLatency(recorder);
+            AKSelfTestLogVerdict(recorder, name);
+        });
         return;
     }
     if ([name isEqualToString:AKSelfTestControllerSituations]) {

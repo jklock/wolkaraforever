@@ -153,6 +153,10 @@ FOUNDATION_EXPORT NSString *const AKControllerGuestViewRoutingKey;      // @YES 
 /// promise of the whole feature is in one sentence - with routing on, nothing in this list is
 /// the hardware the manager is reading.
 @property (nonatomic, readonly) NSArray<GCController *> *guestControllers;
+/// Called on the routing thread, with the tick at which the handler was entered, every time a
+/// routed value is actually sent. A test uses it to measure what this feature adds; production
+/// leaves it nil and pays one nil check.
+@property (nonatomic, copy, nullable) void (^routeLatencyObserver)(uint64_t enteredAt);
 - (nullable AKControllerProfile *)profileForIdentity:(NSString *)identity;
 - (void)resetProfileForIdentity:(NSString *)identity;
 /// Re-apply a profile the page has just edited: the gestures routing asked for follow the

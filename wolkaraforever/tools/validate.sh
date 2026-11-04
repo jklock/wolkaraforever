@@ -298,6 +298,9 @@ if [ "$device" = 1 ]; then
         run_step "the routing chain, on the device" wolkaraforever/tools/pilot.sh selftest controller-routing || failures=$((failures+1))
         # The three situations the feature is defined by, named one at a time.
         run_step "the three controller situations, on the device" wolkaraforever/tools/pilot.sh selftest controller-situations || failures=$((failures+1))
+        # What routing costs. The requirement is that a pass-through press is as fast as it was
+        # before this feature, so the added work is a measured number, not a claim.
+        run_step "what routing costs, on the device" wolkaraforever/tools/pilot.sh selftest controller-latency || failures=$((failures+1))
     else
         failures=$((failures+1))
         step_names+=("the app's own log, from the launch above")

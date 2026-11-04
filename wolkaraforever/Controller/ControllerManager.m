@@ -5,7 +5,13 @@
 #import "../App/WolkaraForeverLog.h"
 #import "../Input/InputElement.h"
 
+// When the handler was entered, for the latency measurement. Thread-local because handlers for
+// different pads can run on different threads at the same moment.
+static _Thread_local uint64_t AKCMEntryTicks;
+
+
 #import <GameController/GameController.h>
+#include <mach/mach_time.h>
 #import <UIKit/UIKit.h>
 
 #if __has_include("AKSupport.h")
@@ -83,19 +89,19 @@ static BOOL AKControllerElementIsReserved(NSString *element) {
 // GameController does not promise which thread a handler arrives on, and every piece of
 // state here is touched by UIKit notifications on main. Reports move to main, as they did
 // in the inspector, so all of this state is single-threaded by construction.
+// Straight through, on the thread GameController called us on. The queue hop that used to be
+// here was a whole main-queue turn before the adapter wrote the value - on a queue that is also
+// servicing the UI and the guest. Routing is measured (--selftest=controller-latency) precisely
+// so this cannot quietly come back.
 static void AKCMReport(AKControllerManager *manager, NSString *device, NSString *name,
                        NSString *source, NSString *element, double value, BOOL pressed) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [manager reportElement:element value:value pressed:pressed
-                        device:device deviceName:name source:source];
-    });
+    [manager reportElement:element value:value pressed:pressed
+                    device:device deviceName:name source:source];
 }
 
 static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSString *name,
                            NSString *stableElement, CGPoint position) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [manager reportAxis:stableElement position:position device:device deviceName:name];
-    });
+    [manager reportAxis:stableElement position:position device:device deviceName:name];
 }
 
 #pragma mark - Model
@@ -146,6 +152,16 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 
     NSMutableDictionary<NSString *, AKControllerProfile *> *_profiles;
 
+    // The routing hot path runs on whatever thread GameController calls a handler on, so the
+    // state it touches is behind this lock, and nothing on it creates a profile object or
+    // touches UIKit. This is where "as fast as it is today" is actually spent.
+    NSRecursiveLock *_hot;
+    // Source element -> target element, per controller model. Rebuilt on the main thread when a
+    // profile, a pad or the switch changes, then read by the routing path.
+    NSMutableDictionary<NSString *, NSDictionary<NSString *, NSString *> *> *_routes;
+    // Every model this session has seen, so the rebuild knows what to build.
+    NSMutableSet<NSString *> *_knownIdentities;
+
     BOOL _learning;
     NSString *_learningIdentity;
 
@@ -170,6 +186,9 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         _voiceReleased = [NSMutableDictionary dictionary];
         _routingReleased = [NSMutableDictionary dictionary];
         _profiles = [NSMutableDictionary dictionary];
+        _hot = [NSRecursiveLock new];
+        _routes = [NSMutableDictionary dictionary];
+        _knownIdentities = [NSMutableSet set];
     }
     return self;
 }
@@ -496,11 +515,13 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 }
 
 - (void)resetProfileForIdentity:(NSString *)identity {
+    [self rebuildRoutes];
     [[self profileForIdentity:identity] resetToDefault];
     [self applyProfileChangeForIdentity:identity];
 }
 
 - (void)applyProfileChangeForIdentity:(NSString *)identity {
+    [self rebuildRoutes];
     (void)identity;
     // The gestures routing asked for are a consequence of the profile, so they follow it.
     [self applyRoutingGestures];
@@ -538,6 +559,12 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 }
 
 - (void)learnFromSource:(NSString *)source device:(NSString *)device {
+    // Learning is page state and gesture bookkeeping, so it belongs on main; the routing above it
+    // does not wait for this.
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self learnFromSource:source device:device]; });
+        return;
+    }
     if (!_learning || ![device isEqualToString:_learningIdentity]) return;
     _learning = NO;
     NSString *identity = _learningIdentity;
@@ -552,10 +579,13 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 
 - (void)reportElement:(NSString *)element value:(double)value pressed:(BOOL)pressed
                device:(NSString *)device deviceName:(NSString *)name source:(NSString *)source {
-    NSAssert(NSThread.isMainThread, @"Input state belongs on the main thread");
+    // Deliberately no main-thread assertion: this is the hot path and it runs where the
+    // framework calls it. The parts that need main (learning, the router's own observing, the
+    // page's refresh) defer themselves.
     _currentDevice = device;
     _currentDeviceName = name;
     _currentSourceName = source;
+    AKCMEntryTicks = mach_absolute_time();
 
     if ([source isEqualToString:@"controller"]) {
         [self noteButtonValue:value element:element device:device];
@@ -563,12 +593,18 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         [self routeButton:element value:value pressed:pressed device:device];
     }
 
-    if (self.onEvent) self.onEvent(element, value, pressed, device, name, source);
+    void (^event)(NSString *, double, BOOL, NSString *, NSString *, NSString *) = self.onEvent;
+    if (event) {
+        // The router is main-thread code. The routing above is not, and must not wait for this.
+        if (NSThread.isMainThread) event(element, value, pressed, device, name, source);
+        else dispatch_async(dispatch_get_main_queue(), ^{
+            event(element, value, pressed, device, name, source);
+        });
+    }
 }
 
 - (void)reportAxis:(NSString *)stableElement position:(CGPoint)point
             device:(NSString *)device deviceName:(NSString *)name {
-    NSAssert(NSThread.isMainThread, @"Input state belongs on the main thread");
     _currentDevice = device;
     _currentDeviceName = name;
     _currentSourceName = @"controller";
@@ -580,50 +616,99 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 
 - (void)noteButtonValue:(double)value element:(NSString *)element device:(NSString *)device {
     if (!device.length || !element.length) return;
+    [_hot lock];
     NSMutableDictionary *values = _buttonValues[device];
     if (!values) { values = [NSMutableDictionary dictionary]; _buttonValues[device] = values; }
     values[element] = @(value);
+    [_hot unlock];
 }
 
 - (void)noteAxisPosition:(CGPoint)position element:(NSString *)element device:(NSString *)device {
     if (!device.length || !element.length) return;
+    [_hot lock];
     NSMutableDictionary *values = _axisValues[device];
     if (!values) { values = [NSMutableDictionary dictionary]; _axisValues[device] = values; }
     values[element] = [NSValue valueWithCGPoint:position];
+    [_hot unlock];
+}
+
+// The hot path cannot build a profile object, so it reads this: source element -> target element
+// for every model this session has seen. Rebuilt whenever a profile, a pad or the switch changes,
+// on the main thread, and swapped in whole so a reader never sees half a table.
+- (void)rebuildRoutes {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self rebuildRoutes]; });
+        return;
+    }
+    // Everything connected right now counts as known, whether or not discovery has attached it
+    // yet: a pad that starts reporting before it is attached must not have its first press
+    // dropped.
+    for (GCController *pad in self.connectedControllers) [_knownIdentities addObject:AKControllerIdentity(pad)];
+    NSMutableDictionary<NSString *, NSDictionary<NSString *, NSString *> *> *table =
+        [NSMutableDictionary dictionary];
+    for (NSString *identity in [_knownIdentities copy]) {
+        AKControllerProfile *profile = [self profileForIdentity:identity];
+        if (!profile) continue;
+        NSMutableDictionary<NSString *, NSString *> *map = [NSMutableDictionary dictionary];
+        // Availability is about what a pad can physically produce, which does not change the
+        // mapping itself: routing asks only "what does this source drive".
+        for (AKControllerBinding *binding in [profile bindingsWithAvailability:@{} reserved:@{}]) {
+            if (!binding.source.length) continue;
+            map[binding.source] = binding.target.length ? binding.target : AKControllerTargetNone;
+        }
+        table[identity] = map;
+    }
+    [_hot lock];
+    _routes = table;
+    [_hot unlock];
 }
 
 #pragma mark - Routing into the virtual pad
 
 - (void)routeButton:(NSString *)element value:(double)value pressed:(BOOL)pressed device:(NSString *)device {
-    // Nothing is sent before the virtual controller is connected: a value aimed at a pad
-    // that is not there is a value the adapter drops, and reporting routing as running
-    // while it drops everything is the kind of half-state this feature must not have.
-    if (!_enabled || !_virtualController) return;
-    NSString *target = [[self profileForIdentity:device] targetForSource:element];
-    if (!target.length || [target isEqualToString:AKControllerTargetNone]) return;
-    // A released button is always sent, even if the value did not change: the one thing
-    // that must never be missed is "this is no longer pressed".
-    if (!pressed) value = 0;
-    NSNumber *last = _routedButtons[target];
-    if (last && pressed && fabs(last.doubleValue - value) < 1.0 / 255.0) return;
-    _routedButtons[target] = @(value);
+    NSString *target = nil;
+    [_hot lock];
+    // Nothing is sent before the virtual controller is connected: a value aimed at a pad that is
+    // not there is a value the adapter drops, and reporting routing as running while it drops
+    // everything is the kind of half-state this feature must not have.
+    if (_enabled && _virtualController) {
+        target = _routes[device][element];
+        if (target.length && ![target isEqualToString:AKControllerTargetNone]) {
+            // A released button is always sent, even if the value did not change: the one thing
+            // that must never be missed is "this is no longer pressed".
+            double out = pressed ? value : 0;
+            NSNumber *last = _routedButtons[target];
+            if (last && pressed && fabs(last.doubleValue - out) < 1.0 / 255.0) target = nil;
+            else _routedButtons[target] = @(out);
+            if (target) value = out;
+        } else target = nil;
+    }
+    [_hot unlock];
+    if (!target) return;
     [NSNotificationCenter.defaultCenter postNotificationName:AKControllerRouteValueNotification
                                                      object:nil
                                                    userInfo:@{AKControllerRouteElementKey: target,
                                                               AKControllerRouteValueKey: @(value)}];
+    if (self.routeLatencyObserver) self.routeLatencyObserver(AKCMEntryTicks);
 }
 
 - (void)routeAxis:(NSString *)element position:(CGPoint)position device:(NSString *)device {
-    if (!_enabled || !_virtualController) return;
-    NSString *target = [[self profileForIdentity:device] targetForSource:element];
-    if (!target.length || [target isEqualToString:AKControllerTargetNone]) return;
-    NSValue *last = _routedAxes[target];
-    if (last) {
-        CGPoint previous = last.CGPointValue;
-        if (fabs(previous.x - position.x) < AKControllerAxisQuantum &&
-            fabs(previous.y - position.y) < AKControllerAxisQuantum) return;
+    NSString *target = nil;
+    [_hot lock];
+    if (_enabled && _virtualController) {
+        target = _routes[device][element];
+        if (target.length && ![target isEqualToString:AKControllerTargetNone]) {
+            NSValue *last = _routedAxes[target];
+            if (last) {
+                CGPoint previous = last.CGPointValue;
+                if (fabs(previous.x - position.x) < AKControllerAxisQuantum &&
+                    fabs(previous.y - position.y) < AKControllerAxisQuantum) target = nil;
+            }
+            if (target) _routedAxes[target] = [NSValue valueWithCGPoint:position];
+        } else target = nil;
     }
-    _routedAxes[target] = [NSValue valueWithCGPoint:position];
+    [_hot unlock];
+    if (!target) return;
     [NSNotificationCenter.defaultCenter postNotificationName:AKControllerRoutePositionNotification
                                                      object:nil
                                                    userInfo:@{AKControllerRouteElementKey: target,
@@ -631,8 +716,6 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
                                                               AKControllerRouteYKey: @(position.y)}];
 }
 
-// Every virtual value back to nothing. Called on disable, on backgrounding, and before
-// the pad goes away - the three ways this feature could otherwise leave a button held.
 - (void)releaseVirtualValues:(NSString *)why {
     if (!_routedButtons.count && !_routedAxes.count) return;
     NSUInteger count = _routedButtons.count + _routedAxes.count;
@@ -717,6 +800,10 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 }
 
 - (void)noteVirtualPadConnected:(GCController *)controller {
+    if (controller) {
+        [_knownIdentities addObject:AKControllerIdentity(controller)];
+        [self rebuildRoutes];
+    }
     _virtualController = controller;
     _awaitingVirtualPad = NO;
     _virtualFailed = NO;
@@ -952,6 +1039,8 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 }
 
 - (void)attachPad:(GCController *)pad {
+    [_knownIdentities addObject:AKControllerIdentity(pad)];
+    [self rebuildRoutes];
     GCPhysicalInputProfile *profile = pad.physicalInputProfile;
     NSString *device = AKControllerIdentity(pad);
     NSString *deviceName = pad.vendorName ?: @"Controller";
@@ -1132,6 +1221,10 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 #pragma mark - Telling the page
 
 - (void)postChange {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self postChange]; });
+        return;
+    }
     [NSNotificationCenter.defaultCenter postNotificationName:AKControllerManagerDidChangeNotification object:self];
 }
 
