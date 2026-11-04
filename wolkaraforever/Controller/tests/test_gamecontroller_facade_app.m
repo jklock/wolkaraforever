@@ -125,10 +125,12 @@ static NSString *GuestName(id object) {
 static void CheckClassIdentity(void) {
     void *framework = dlopen("/System/Library/Frameworks/GameController.framework/GameController", RTLD_LAZY);
     GUEST_CHECK(framework != NULL, "the real GameController framework is present");
-    NSArray<NSString *> *symbols = @[@"OBJC_CLASS_$_GCControllerButtonInput",
+    NSArray<NSString *> *symbols = @[@"OBJC_CLASS_$_GCController",
+                                     @"OBJC_CLASS_$_GCControllerButtonInput",
                                      @"OBJC_CLASS_$_GCControllerAxisInput",
                                      @"OBJC_CLASS_$_GCColor"];
-    NSArray<Class> *bound = @[[GCControllerButtonInput class], [GCControllerAxisInput class], [GCColor class]];
+    NSArray<Class> *bound = @[[GCController class], [GCControllerButtonInput class],
+                              [GCControllerAxisInput class], [GCColor class]];
     for (NSUInteger index = 0; index < symbols.count; index++) {
         Class real = (__bridge Class)dlsym(framework, symbols[index].UTF8String);
         GUEST_CHECK(real != Nil, "the real element class is exported by the framework");

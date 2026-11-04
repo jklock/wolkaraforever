@@ -1399,6 +1399,21 @@ static void AKSelfTestRunControllerRouting(AKSelfTestRecorder *recorder) {
         return pad.controller.extendedGamepad.buttonA.value == 1;
     }, 5.0) _:@"and the two adapter calls move the controller the guest would enumerate"];
 
+    // What a game does with the controller it binds: install a valueChangedHandler on the
+    // profile and wait to be told about input. It is installed here, before the routed write
+    // below, and the write it must report is one this test never makes itself - the button the
+    // reassignment maps A onto. So a call here can only have come through the manager.
+    __block BOOL guestHandlerSawRoutedPress = NO;
+    __block NSUInteger guestHandlerCalls = 0;
+    GCExtendedGamepad *guestProfile = pad.controller.extendedGamepad;
+    AKSelfTestOnMain(^{
+        guestProfile.valueChangedHandler = ^(GCExtendedGamepad *gamepad, GCControllerElement *element) {
+            guestHandlerCalls++;
+            if (element == gamepad.buttonY && gamepad.buttonY.value > 0.5)
+                guestHandlerSawRoutedPress = YES;
+        };
+    });
+
     // A reassignment: A now drives Y, and no longer drives A.
     AKSelfTestOnMain(^{
         @synchronized (values) { [values removeAllObjects]; }
@@ -1419,6 +1434,8 @@ static void AKSelfTestRunControllerRouting(AKSelfTestRecorder *recorder) {
     [recorder check:AKSelfTestWaitUntil(^BOOL{
         return pad.controller.extendedGamepad.buttonY.value == 1;
     }, 5.0) _:@"and the reassigned button is what moves on the pad"];
+    [recorder check:AKSelfTestWaitUntil(^BOOL{ return guestHandlerSawRoutedPress; }, 5.0)
+                 _:@"a handler installed the way a game installs one is told about the input"];
     // The old target is not driven any more. It cannot be read off the pad here, because this
     // one controller is also the input and its A really is held; what shows the mapping is gone
     // is that the press produced no A notification at all.
@@ -1498,6 +1515,7 @@ static void AKSelfTestRunControllerRouting(AKSelfTestRecorder *recorder) {
     });
     // The applier lives for the whole test: it is an observer, not a value.
     (void)applier;
+    (void)guestHandlerCalls;
     [pad disconnect];
 }
 void AKRunSelfTest(NSString *name) {
