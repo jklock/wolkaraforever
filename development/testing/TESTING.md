@@ -131,3 +131,13 @@ A script cannot press a pad button, speak into the microphone, or judge whether 
 plays well. Those results are recorded by date in [COMPATIBILITY.md](../../COMPATIBILITY.md).
 If something fails, include the exact message from Settings -> Technical details and a
 redacted log - never account, pairing or device-identifier information.
+
+### Native control tracking inside a desktop loop
+
+`wolkaraforever/tools/test_touch_gamepad_ui.sh --self-test` checks tracking-mode timers
+and deferred UIKit work while the main thread is pumped recursively. For a manual
+regression, run `--stay --guest-pump`, open the gear, drag Transparency repeatedly,
+then press Done and reopen the panel. `--legacy-pump` reproduces the old default-only,
+zero-duration pump in this original fixture; it never runs an imported application.
+The adapter allows up to one millisecond per mode while settings or layout editing
+are open. Closing them restores the existing zero-duration gameplay poll.
