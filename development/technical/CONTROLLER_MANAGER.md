@@ -16,8 +16,14 @@ Two sentences, and everything else in this note serves them.
   controllers, and the manager reads them as it always did.
 
 Both are measured on the device, in `--selftest=controller-routing`: with routing on the guest is
-offered exactly one controller, it is the virtual one, and the pad being read is not in the list;
+stolen exactly one controller, it is the virtual one, and the pad being read is not in the list;
 with routing off the real controllers are offered again.
+
+What a game does with the controller it is handed is measured too, on the same device and without
+any session: install a `valueChangedHandler` on the profile, route a press that only the manager
+can produce (the button a reassignment maps A onto), and the handler is told about it. Together
+with the class-identity checks, that covers every step between "a pad is pressed" and "the
+guest's own handler fires" - none of which needs the game to be running.
 
 Two things had to be true for "on" to mean that, and neither was, until they were measured:
 
