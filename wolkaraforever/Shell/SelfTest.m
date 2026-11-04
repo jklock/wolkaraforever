@@ -1276,6 +1276,37 @@ static GCVirtualController *AKSelfTestVirtualPad(NSTimeInterval limit) {
 }
 @end
 
+// A pad that exists only to be read: this check is about what the guest is offered, so nothing
+// has to arrive from it. The manager messages a pad for these and these only.
+@interface AKSelfTestEmptyProfile : NSObject
+@end
+@implementation AKSelfTestEmptyProfile
+- (NSDictionary *)buttons { return @{}; }
+- (NSDictionary *)axes { return @{}; }
+- (NSDictionary *)dpads { return @{}; }
+- (NSDictionary *)touchpads { return @{}; }
+- (NSDictionary *)allButtons { return @{}; }
+- (NSDictionary *)allAxes { return @{}; }
+- (NSDictionary *)allDpads { return @{}; }
+@end
+
+@interface AKSelfTestReadOnlyPad : NSObject
+@property (nonatomic) BOOL isSnapshot;
+@property (nonatomic, strong) id extendedGamepad, microGamepad, physicalInputProfile;
+@property (nonatomic, copy) NSString *vendorName, *productCategory;
+@end
+@implementation AKSelfTestReadOnlyPad
+- (instancetype)init {
+    if ((self = [super init])) {
+        _extendedGamepad = @YES;
+        _vendorName = @"Selftest Hardware";
+        _productCategory = @"Selftest Pad";
+        _physicalInputProfile = [AKSelfTestEmptyProfile new];
+    }
+    return self;
+}
+@end
+
 static void AKSelfTestRunControllerRouting(AKSelfTestRecorder *recorder) {
     static NSString *const routingKey = @"WolkaraForeverControllerRouting";
     AKControllerManager *manager = AKControllerManager.shared;
@@ -1429,6 +1460,30 @@ static void AKSelfTestRunControllerRouting(AKSelfTestRecorder *recorder) {
         return !profile.buttonA.pressed && !profile.buttonY.pressed && profile.leftTrigger.value == 0 &&
                profile.leftThumbstick.xAxis.value == 0 && profile.dpad.yAxis.value == 0;
     }, 5.0) _:@"and nothing is left held on the controller"];
+
+    // The promise of the feature, on the device: while routing is on the guest is offered the
+    // virtual controller and never the hardware the manager is reading. The hardware here is a
+    // read-only stand-in, so this is about the list and nothing else.
+    AKSelfTestReadOnlyPad *hardware = [AKSelfTestReadOnlyPad new];
+    __block NSArray<GCController *> *guestWhileOn = nil;
+    __block NSArray<GCController *> *guestWhileOff = nil;
+    AKSelfTestOnMain(^{
+        manager.controllersProvider = ^NSArray<GCController *> *{ return @[(GCController *)(id)hardware]; };
+        manager.enabled = NO;
+        manager.enabled = YES;
+        [manager noteVirtualPadConnected:pad.controller];
+        guestWhileOn = [manager.guestControllers copy];
+    });
+    [recorder check:guestWhileOn.count == 1 && guestWhileOn.firstObject == pad.controller
+                 _:@"routing on: the guest is offered exactly one controller"];
+    [recorder check:![guestWhileOn containsObject:(id)hardware]
+                 _:@"routing on: the pad being read is not in the guest's list"];
+    AKSelfTestOnMain(^{
+        manager.enabled = NO;
+        guestWhileOff = [manager.guestControllers copy];
+    });
+    [recorder check:[guestWhileOff containsObject:(GCController *)(id)hardware]
+                 _:@"routing off: the guest is offered the real controllers again"];
 
     // Put everything back.
     AKSelfTestOnMain(^{

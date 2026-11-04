@@ -464,6 +464,12 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
 // controls are added. A stored choice wins; without one they are on, because
 // this product wants them on every device it runs on.
 + (BOOL)enabled {
+    // This object is what owns the hidden virtual controller, and while the Controller Manager
+    // routes a pad the guest must still be offered one. So routing being on is enough to install
+    // it even where the on-screen controls themselves are off: the alternative is a session with
+    // no controller at all, which is worse than controls appearing.
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"WolkaraForeverControllerRouting"])
+        return YES;
     NSNumber *saved = [NSUserDefaults.standardUserDefaults objectForKey:AKTouchControlsDefaultsKey];
     return [saved isKindOfClass:NSNumber.class] ? saved.boolValue : YES;
 }
