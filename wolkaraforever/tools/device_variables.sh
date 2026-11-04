@@ -138,7 +138,9 @@ def normalise(dev):
 devices = []
 for dev in (data.get("result") or {}).get("devices", []):
     d = normalise(dev)
-    if not d["device_type"].startswith("iPad"):
+    # Keep automatic discovery iPad-only, but honor an explicit iPhone target.
+    if not (d["device_type"].startswith("iPad") or
+            (want and d["device_type"].startswith("iPhone"))):
         continue
     if d["platform"] not in ("iOS", "iPadOS"):
         continue

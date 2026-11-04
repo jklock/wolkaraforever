@@ -90,7 +90,13 @@ credentials or game code are supplied by Tolkara.
 `Client.m` uses Blizzard's public HTTPS services, bounded responses and verified
 Range requests. It reuses a connection pool and groups adjacent archive objects
 into requests of up to 16 MiB (larger individual objects remain bounded at
-256 MiB). Every selected object is checked before being passed to storage.
+256 MiB). Up to four requests run concurrently in a rolling window. Completed
+ranges are consumed serially and their slots refilled immediately, so a slow
+request cannot hold up unrelated completed work. In-flight, completed and
+currently consumed responses share a 64 MiB payload budget; a larger individual
+object runs alone. Transport, checksum or consumer failure cancels and drains
+remaining requests before returning. Every selected object is checked before
+being passed to storage.
 Metadata caches are content-addressed and reverified. Protocol sources and
 licences from TACTSharp, CascLib and lookup3 are recorded in `NOTICE.md`;
 no .NET runtime is embedded.
@@ -103,7 +109,9 @@ no .NET runtime is embedded.
    outside the installation and unsupported files fail the update.
 2. Reuses receipts for unchanged content and verifies objects without a valid
    receipt, then computes missing objects. It checks space for
-   missing objects, loose files and a 1 GiB margin; filesystem write errors also
+   missing objects, loose files and a 1 GiB margin, using the greater valid value
+   of important-usage capacity (including reclaimable caches) and filesystem free
+   blocks. Missing capacity information and arithmetic overflow fail closed; filesystem write errors also
    stop activation. Bootstrap manifests and the root manifest are included.
 3. Appends new encoded objects to new CASC segments and checkpoints local indexes
    every 64 MiB and on a handled interruption. The latest two index generations
@@ -134,8 +142,12 @@ a missing or rejected cache falls back to normal payload verification.
 Cloning changes inode identity. Before cloning, the updater captures validated
 receipts; after its APFS clone it rebinds only segments whose source stayed
 unchanged and whose clone has the same content size/mtime. It saves receipts
-after planning, before activation and on handled interruptions, only for durable
-indexed content. New downloads still pass their original encoded checksums.
+after each 1 GiB of payload read during planning, after planning, before activation
+and on handled interruptions, only for durable indexed content. Normal updates
+reuse these checkpoints after a forced process termination. Explicit repair still
+clears cached verification on each attempt. Download-manifest keys are checked in
+binary form on the warm path, avoiding hexadecimal string allocation and parsing
+for each of the million required objects. New downloads still pass their original encoded checksums.
 Reading bytes for loose-file extraction still verifies them, and the original
 executable is still checked against the current manifest. If a segment's
 metadata changes during the transaction, the updater rechecks every previously

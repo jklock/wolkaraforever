@@ -51,7 +51,7 @@
 - (void)done;
 @end
 static atomic_uint requests, revision, updates, repairs;
-static atomic_bool failure, slow, interruptRepair;
+static atomic_bool failure, slow, slowUpdate, interruptRepair;
 static unsigned requestsBeforePopup;
 static BOOL keyboardShown;
 static TKFixtureLibrary *fixture;
@@ -71,6 +71,7 @@ static BOOL Update(id self, SEL selector, NSDictionary *plan, NSString *root,
         if(atomic_exchange(&interruptRepair,false)) { if(error)*error=TKWoWError(@"Synthetic repair interruption");return NO; }
     }
     atomic_fetch_add(&updates,1); progress(@"download",50,100);
+    if(atomic_load(&slowUpdate)) [NSThread sleepForTimeInterval:0.5];
     [fixture writeMetadata:atomic_load(&revision) duplicate:NO];
     progress(@"complete",1,1); return YES;
 }
@@ -450,6 +451,11 @@ static void TestAddons(void) {
     [self performSelector:@selector(checkReady) withObject:nil afterDelay:0.3];
 }
 - (void)checkReady {
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--lifecycle-only"]) {
+        assert([[self status] isEqual:@"Ready to play"]);
+        [self startThenBackground];
+        return;
+    }
     // The add-on subsystem first: it needs no network and no launcher, and it was the one
     // part the audit listed as having no automated coverage at all.
     TestAddons();
@@ -751,12 +757,53 @@ static void TestAddons(void) {
 - (void)startThenBackground {
     assert([self primary].enabled);
     atomic_store(&slow,true); [self tap];
+    assert(UIApplication.sharedApplication.idleTimerDisabled);
     [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
     [self performSelector:@selector(checkCancellation) withObject:nil afterDelay:0.7];
 }
 - (void)checkCancellation {
-    assert(self.launches==0); atomic_store(&slow,false); [self.controller refresh];
-    [self performSelector:@selector(captureAndLaunch) withObject:nil afterDelay:0.3];
+    // A brief interruption cancels only Play's intent; the check completes.
+    assert(self.launches==0 && [[self status] isEqual:@"Ready to play"]);
+    assert(!UIApplication.sharedApplication.idleTimerDisabled);
+    atomic_store(&slow,false); atomic_store(&slowUpdate,true);
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"WoWInstallRequested.wowf"];
+    [self.controller refresh];
+    [self performSelector:@selector(pauseUpdate) withObject:nil afterDelay:0.15];
+}
+- (void)pauseUpdate {
+    assert([[self status] isEqual:@"Updating your game…"]);
+    assert(UIApplication.sharedApplication.idleTimerDisabled);
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidEnterBackgroundNotification object:nil];
+    assert([[self status] isEqual:@"Check paused"]);
+    assert([self primary].enabled && self.controller.navigationItem.rightBarButtonItem.enabled);
+    assert(!UIApplication.sharedApplication.idleTimerDisabled);
+    [self performSelector:@selector(resumeUpdate) withObject:nil afterDelay:0.6];
+}
+- (void)resumeUpdate {
+    // Completion from the cancelled worker must not overwrite the paused UI.
+    assert([[self status] isEqual:@"Check paused"] && self.launches==0);
+    atomic_store(&slowUpdate,false);
+    requestsBeforePopup=atomic_load(&requests);
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    assert(UIApplication.sharedApplication.idleTimerDisabled);
+    [self performSelector:@selector(checkResumedUpdate) withObject:nil afterDelay:0.3];
+}
+- (void)checkResumedUpdate {
+    assert([[self status] isEqual:@"Ready to play"] && self.launches==0);
+    assert(atomic_load(&requests)==requestsBeforePopup+1);
+    assert(!UIApplication.sharedApplication.idleTimerDisabled);
+    requestsBeforePopup=atomic_load(&requests);
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    [self performSelector:@selector(checkCompletedForeground) withObject:nil afterDelay:0.1];
+}
+- (void)checkCompletedForeground {
+    assert(atomic_load(&requests)==requestsBeforePopup);
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--lifecycle-only"]) {
+        puts("WoW UIKit PASS: transient interruption keeps verification alive, paused update renders usable controls, foreground resumes once without launching, completed checks stay completed, and Auto-Lock is restored.");
+        exit(0);
+    }
+    [self captureAndLaunch];
 }
 - (void)captureAndLaunch {
     assert([self primary].enabled);

@@ -541,3 +541,6 @@
 "forever.error.unsupportedLanguage" = "Die gewählte Spielsprache wird nicht unterstützt.";
 "forever.error.noBackupComponent" = "Die Sicherungskomponente ist in dieser Version nicht enthalten.";
 "forever.error.backupComponent" = "Die Sicherungskomponente kann in dieser Version nicht verwendet werden.";
+
+"home.status.paused" = "Prüfung pausiert";
+"home.status.paused.detail" = "Die Prüfung wird fortgesetzt, wenn du zu dieser Seite zurückkehrst.";

@@ -140,6 +140,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // The game files are read once, when the launcher first appears. Not on every
     // appearance: leaving a popup used to send us straight back to the network.
     BOOL _checkedThisLaunch;
+    BOOL _resumeCheck, _launchWhenReady, _checkOwnsIdleTimer, _previousIdleTimerDisabled;
     NSString *_startupFailure;
     UILabel *_updatesLabel;
     NSString *_updatePhase;
@@ -419,14 +420,17 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     ]];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(foreground:)
         name:UIApplicationDidBecomeActiveNotification object:nil];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(background:)
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(inactive:)
         name:UIApplicationWillResignActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(background:)
+        name:UIApplicationDidEnterBackgroundNotification object:nil];
     // The app language can change from this page's own row, so the page rewrites its words
     // where they are instead of being rebuilt: the game-file check it has already done and
     // the installation it is showing stay exactly as they were.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appLanguageChanged:)
         name:WKLocalizationDidChangeNotification object:nil];
     [self localize];
+
     [self render];
 }
 - (void)viewWillAppear:(BOOL)animated {
@@ -466,6 +470,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    if (_resumeCheck) { [self resumeCheckIfVisible]; return; }
     // Once per launch, and not again. This used to run on every appearance, so
     // closing the add-on or the voice popup sent the launcher back for a full
     // manifest check and the home page sat busy again - every single time, for a
@@ -476,15 +481,43 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     WKLog("ui", @"home: first appearance, checking the game files");
     [self refresh];
 }
-- (void)viewDidDisappear:(BOOL)animated { [super viewDidDisappear:animated]; [self cancel]; }
+- (void)viewDidDisappear:(BOOL)animated { [super viewDidDisappear:animated]; [self pauseCheck]; }
 - (void)foreground:(NSNotification *)note {
     (void)note;
-    // Deliberately no check here. Coming back to the app is not a reason to re-read
-    // every manifest, and the check above has already happened for this launch.
     WKLog("ui", @"home: back in front");
+    // Only unfinished work resumes. Returning from a popup after a completed
+    // check still does not fetch manifests again, and never launches a guest.
+    [self resumeCheckIfVisible];
 }
-- (void)background:(NSNotification *)note { (void)note; [self cancel]; }
-- (void)cancel { [_client cancel]; _client=nil; _generation++; _busy=NO; }
+- (void)inactive:(NSNotification *)note {
+    (void)note;
+    // A notification or Control Centre must not cancel file verification.
+    // A pending Play action, however, must not launch after the user leaves.
+    _launchWhenReady=NO;
+}
+- (void)background:(NSNotification *)note { (void)note; [self pauseCheck]; }
+- (void)releaseCheckIdleTimer {
+    if (!_checkOwnsIdleTimer) return;
+    UIApplication.sharedApplication.idleTimerDisabled=_previousIdleTimerDisabled;
+    _checkOwnsIdleTimer=NO;
+}
+- (void)cancel {
+    [_client cancel]; _client=nil; _generation++; _busy=NO; _updating=NO; _launchWhenReady=NO;
+    [self releaseCheckIdleTimer];
+}
+- (void)pauseCheck {
+    if (!_busy) return;
+    WKLog("wow", @"check paused: phase=%@ progress=%llu/%llu", _updatePhase?:@"plan", _updateDone, _updateTotal);
+    [self cancel]; _resumeCheck=YES;
+    [self render];
+}
+- (void)resumeCheckIfVisible {
+    if (!_resumeCheck || _busy || _starting || _sessionUsed ||
+        UIApplication.sharedApplication.applicationState!=UIApplicationStateActive ||
+        !self.view.window || self.navigationController.topViewController!=self || self.presentedViewController) return;
+    WKLog("wow", @"resuming interrupted check without launching the game");
+    [self checkForUpdatesAndLaunch:NO];
+}
 - (void)setExecutionMode:(TKExecutionMode)mode { _executionMode=mode; if (self.isViewLoaded) [self render]; }
 - (void)setSessionUsed:(BOOL)used { _sessionUsed=used; if (used) { _running=NO; [self cancel]; } if (self.isViewLoaded) [self render]; }
 - (void)selectProduct:(NSDictionary *)product {
@@ -511,6 +544,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     install=install || [NSUserDefaults.standardUserDefaults boolForKey:installKey];
     BOOL repair=[NSUserDefaults.standardUserDefaults boolForKey:repairKey];
     [self cancel]; _plan=nil; _installation=nil; _error=nil; _checkedAt=nil; _startupFailure=nil;
+    _resumeCheck=NO; _launchWhenReady=launch;
+    _previousIdleTimerDisabled=UIApplication.sharedApplication.idleTimerDisabled;
+    _checkOwnsIdleTimer=YES; UIApplication.sharedApplication.idleTimerDisabled=YES;
     _updating=NO; _updateError=NO; _updatePhase=nil; _updateDone=0; _updateTotal=0;
     _client=[TKWoWClient new]; _busy=YES; [self render];
     WKLog("wow", @"checking %@ %@/%@ install=%d launch=%d", _product[@"id"], _region, _locale, install, launch);
@@ -526,9 +562,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         BOOL updateAttempted=plan && (install || installation.state==TKWoWInstallationOutdated) && !client.cancelled;
         if(updateAttempted) {
             __block NSString *lastPhase=nil;
+            __block NSTimeInterval lastProgressLog=0;
             void (^progress)(NSString *,uint64_t,uint64_t)=^(NSString *phase,uint64_t done,uint64_t total) {
-                if(![lastPhase isEqual:phase]) {
-                    lastPhase=phase;NSLog(@"[wow-update] Phase: %@",phase);
+                NSTimeInterval now=NSDate.timeIntervalSinceReferenceDate;
+                if(![lastPhase isEqual:phase] || now-lastProgressLog>=5) {
+                    lastPhase=phase;lastProgressLog=now;
+                    WKLog("wow", @"update progress: %@ %llu/%llu",phase,done,total);
                 }
                 dispatch_async(dispatch_get_main_queue(),^{
                     if(generation!=self->_generation)return;
@@ -562,7 +601,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             }
             if(error)NSLog(@"[wow-update] Interrupted during %@: %@ (%@:%ld)",lastPhase?:@"preparation",
                 error.localizedDescription,error.domain,(long)error.code);
-            NSLog(@"[wow-update] Verification bytes read=%llu reused=%llu",updater.verificationBytesRead,updater.verificationBytesReused);
+            WKLog("wow", @"verification bytes read=%llu reused=%llu",updater.verificationBytesRead,updater.verificationBytesReused);
         }
 
         // Before the home page is exposed again: finish or roll back a restore
@@ -577,10 +616,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         dispatch_async(dispatch_get_main_queue(),^{
             if (generation!=self->_generation) return;
             self->_plan=plan; self->_installation=installation; self->_error=error;
+            [self releaseCheckIdleTimer];
             self->_checkedAt=plan?NSDate.date:nil; self->_busy=NO; self->_updating=NO; self->_updateError=updateAttempted && error; [self render];
             WKLog("wow", @"checked: state=%ld error=%@", (long)installation.state, error.localizedDescription ?: @"none");
             // Returning from the background or changing edition invalidates this request.
-            if (launch && !error && !client.cancelled && installation.state==TKWoWInstallationReady && installation.app && !self->_sessionUsed &&
+            if (launch && self->_launchWhenReady && UIApplication.sharedApplication.applicationState==UIApplicationStateActive &&
+                !error && !client.cancelled && installation.state==TKWoWInstallationReady && installation.app && !self->_sessionUsed &&
                 self.view.window && self.navigationController.topViewController==self && self.startApp) self.startApp(installation.app);
         });
     });
@@ -592,6 +633,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // start a second guest, and the user must be able to close it from here.
     if (_sessionUsed) { [self closeApp]; return; }
     if (_busy) return;
+    if (_resumeCheck) { [self refresh]; return; }
     if (_startupFailure) { _startupFailure=nil; [self render]; }
     if (_error || !_plan) { [self refresh]; return; }
     if (_installation.state==TKWoWInstallationMissing || _installation.state==TKWoWInstallationNeedsRepair) {
@@ -823,6 +865,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         title=WKLocalized(@"home.status.closed");
         detail=WKLocalized(@"home.status.closed.detail");
         action=WKLocalized(@"home.action.close"); enabled=YES;
+    } else if (_resumeCheck) {
+        title=WKLocalized(@"home.status.paused");
+        detail=WKLocalized(@"home.status.paused.detail");
+        action=WKLocalized(@"home.action.retry"); enabled=YES;
+
     } else if (_busy && _updating) {
         title=WKLocalized(@"home.status.updating");
         // The updater reports these phase names and they stay English: they are log keys,

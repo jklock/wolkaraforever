@@ -13,7 +13,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable NSData *)encodingForPlan:(NSDictionary *)plan directory:(NSString *)directory error:(NSError **)error;
 - (nullable NSData *)encodedKey:(NSString *)key size:(uint64_t)size plan:(NSDictionary *)plan
     indices:(NSString *)indices error:(NSError **)error;
-// Groups adjacent archive objects into bounded ranges. The consumer receives
+// Downloads up to four bounded archive ranges concurrently (64 MiB window;
+// larger individual objects run alone), refilling each slot after consumption.
+// Ranges can complete out of order. The consumer receives
 // only checksum-verified original encoded bytes, serially on the calling queue.
 - (BOOL)downloadEntries:(NSData *)entries plan:(NSDictionary *)plan indices:(NSString *)indices
     consume:(BOOL (^)(NSData *data, NSString *key, NSError **error))consume error:(NSError **)error;
