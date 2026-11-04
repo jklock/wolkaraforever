@@ -6,30 +6,27 @@ the file that makes it true. Physical results are recorded in
 
 ## The guarantee
 
-Two sentences, and everything else in this note serves them.
+There are exactly three situations. They are the basis for every change to this subject, and
+everything else in this note serves them.
 
-* **On** — no application running inside WolkaraForever ever sees the connected pad, whatever it
-  is. All it sees is the virtual controller: `-[AKControllerManager guestControllers]` returns
-  exactly that one device, the façade hands the guest exactly that list, and the hardware the
-  manager is reading is never in it.
-* **Off** — nothing changes from before this feature existed: the guest is offered the real
-  controllers, and the manager reads them as it always did.
+| | Situation | What the guest sees |
+| --- | --- | --- |
+| 1 | **No physical controller** | Tolkara's own gamepad — keyboard, pointer, on-screen pad — exactly as always. Capture being on or off changes nothing, because there is nothing to capture. |
+| 2 | **Physical controller, capture on** | The virtual gamepad only. Every physical input drives it, and it is what reaches the app. The pad being read is never in the guest's list. |
+| 3 | **Physical controller, capture off** | The physical pad again, working the way it did before this feature existed. |
 
-Both are measured on the device, in `--selftest=controller-routing`: with routing on the guest is
-stolen exactly one controller, it is the virtual one, and the pad being read is not in the list;
-with routing off the real controllers are offered again.
+All three are asserted on the device, one at a time, in `--selftest=controller-situations`
+(8/8): the guest's controller list in each situation, and that the manager is reading the pad in
+2 and 3. `--selftest=controller-routing` (22/22) then covers what happens *inside* situation 2 —
+a real element handler, the profile, the system gesture, the routed element and value, the
+release, and nothing left held.
 
-What a game does with the controller it is handed is measured too, on the same device and without
-any session: install a `valueChangedHandler` on the profile, route a press that only the manager
-can produce (the button a reassignment maps A onto), and the handler is told about it. Together
-with the class-identity checks, that covers every step between "a pad is pressed" and "the
-guest's own handler fires" - none of which needs the game to be running.
-
-Two things had to be true for "on" to mean that, and neither was, until they were measured:
+Two things had to be true for situation 2 to mean that, and neither was, until they were
+measured:
 
 * the controller the guest is handed must pass its own `-isKindOfClass:[GCController class]`, so
   the façade answers `+class` with Apple's class;
-* the virtual controller must exist whenever routing is on, so routing being on is enough to
+* the virtual controller must exist whenever capture is on, so capture being on is enough to
   install the object that owns it — it does not depend on the on-screen controls.
 
 ## What it is for
