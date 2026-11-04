@@ -190,22 +190,31 @@ Verified in the simulator, by the suite that owns each claim:
   persistence, learn/cancel, German without reopening, and no game file written.
 * `--selftest=controller-manager`, run on the installed build with
   `wolkaraforever/tools/pilot.sh selftest controller-manager` — the same page driven by the app
-  itself on the iPad, because a device matrix cannot tap: 11/11 checks, and it restores the
-  user's own value.
+  itself on the iPad, because a device matrix cannot tap: 18/18 checks across the page and the
+  front-page card, and it restores the user's own value.
+* `--selftest=controller-routing` — the whole chain on the iPad with no hardware: a hidden
+  `GCVirtualController` on which the manager installs its **real** handlers, driven through a
+  button, a trigger, a stick and the D-pad, with the route notifications applied by the same two
+  framework calls the adapter makes and the values read back off the controller a guest would
+  enumerate. It also reassigns a control, checks the old target produces nothing, and switches
+  routing off to check nothing is left held. 13/13.
 * `wolkaraforever/tools/pilot.sh preview controller-manager` — the page opened directly and
   photographed on the iPad, for a row that is below the fold on the home screen.
 * `test_voice.sh`, `test_translation_sim.sh`, `check_layers.sh`, `check_docs.sh` — that
   moving the handlers out of the inspector did not change the voice trigger, and that the
   shared event/render loop is untouched.
 
-**Not verified here:** a physical Bluetooth or USB pad on an iPad. Simulator results say
-nothing about whether iPadOS delivers a reserved button to this app, whether the virtual
-controller appears to World of Warcraft as a controller it will bind, or whether physical
-suppression is observable in the guest. Those need the installed build and the pads; see
-the record under [`development/validation/`](../validation/).
+**Not verified here:** a physical pad's own hardware. Simulator and device results both say
+nothing about whether iPadOS delivers a reserved button (Menu, Options, Home, Share) to this
+app on real hardware, and nothing about whether World of Warcraft binds the virtual controller
+in a live session. The path from an element handler to the pad is proven; the arrival of a
+press from a real pad is not. See the record under [`development/validation/`](../validation/).
 
 ## Known limits
 
+* **One hidden virtual controller at a time.** A second `GCVirtualController` is refused while
+  one is connected — measured on the device, 2026-11-03, which is why the manager owns exactly
+  one and waits for the adapter's reply rather than creating another.
 * Routing needs the AppKit adapter's touch host to exist, because that is what owns the
   hidden virtual controller. It is created for every guest session, so this is a property
   of the design rather than a setting; a build that installs no on-screen controls has no
