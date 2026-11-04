@@ -239,6 +239,9 @@ run_step "the on-screen gamepad (simulator fixture)" wolkaraforever/tools/test_t
 # somebody other than its author, and a suite outside it is a claim nobody can reproduce.
 run_step "the Controller Manager's state machine (simulator fixture)" wolkaraforever/tools/test_controller_manager.sh || failures=$((failures+1))
 run_step "the guest GameController facade (simulator fixture)" wolkaraforever/tools/test_gamecontroller_facade.sh || failures=$((failures+1))
+# The catalogue and the adapter's table live in different binaries, so no fixture links both.
+# This compares them as source, because a drift there is silent at runtime.
+run_step "every virtual target is one the adapter can write" wolkaraforever/tools/check_controller_targets.sh || failures=$((failures+1))
 # And these two were run by nothing either, for the same kind of reason: they were only ever
 # reached through the loop at the end of test_emulation.sh, and that loop never ran, because
 # the platform's suite exits 1 on its one known failure and `set -e` stopped the script
