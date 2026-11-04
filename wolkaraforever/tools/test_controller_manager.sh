@@ -26,6 +26,7 @@ xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroo
     -Ilauncher/Controller -Ilauncher/App -Ilauncher/Input \
     launcher/Controller/ControllerManager.m launcher/Controller/ControllerProfile.m \
     launcher/Controller/ControllerIdentity.m launcher/Input/InputElement.m \
+    launcher/Input/Trigger.m \
     launcher/App/WolkaraForeverLog.m \
     tests/test_controller_manager_app.m \
     -framework Foundation -framework UIKit -framework GameController -framework CoreGraphics \

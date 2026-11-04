@@ -41,7 +41,12 @@ typedef NS_ENUM(NSInteger, AKControllerTargetKind) {
 /// One row of the mapping list: what the pad has, and what it drives.
 @interface AKControllerBinding : NSObject
 @property (nonatomic, copy, readonly) NSString *source;         // "controller.button.a"
-@property (nonatomic, copy, readonly) NSString *target;         // "virtual.button.b"
+@property (nonatomic, copy, readonly) NSString *target;         // "virtual.button.b", or none
+/// Set when the control is claimed by Tolkara instead of routed. Exactly one action exists today
+/// - dictation - and it reuses the trigger the voice page already stores, so a claimed control
+/// behaves the way a learned dictation button does. A claimed control has no target: it never
+/// reaches the guest.
+@property (nonatomic, copy, readonly, nullable) NSString *action;  // "tolkara.dictation"
 @property (nonatomic, copy, readonly) NSString *sourceDisplay;  // "A"
 @property (nonatomic, copy, readonly) NSString *targetDisplay;  // "B"
 /// YES when the connected pad actually has this source. A stored profile outlives the
@@ -67,7 +72,18 @@ typedef NS_ENUM(NSInteger, AKControllerTargetKind) {
 
 /// The target a source drives, or AKControllerTargetNone. Never nil: a source the user
 /// never touched answers with its one-to-one default.
+/// The one action a control can be claimed for. There is no catalogue: adding to this list is a
+/// product decision, not a configuration one.
+extern NSString *const AKControllerActionDictation;
++ (NSString *)displayForAction:(NSString *)action;
+
 - (NSString *)targetForSource:(NSString *)source;
+/// The action this control is claimed by, or nil when it routes.
+- (nullable NSString *)actionForSource:(NSString *)source;
+/// Claim a control for an action, or pass nil to give it back to routing. Claiming clears the
+/// target; unclaiming restores the one-to-one default for that control.
+- (void)claimSource:(NSString *)source forAction:(nullable NSString *)action;
+- (NSArray<NSString *> *)claimedSources;
 
 /// The source that drives a target, or nil. One target has at most one source, which is
 /// what makes routing deterministic: two controls can never fight over the same virtual

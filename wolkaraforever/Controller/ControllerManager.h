@@ -158,6 +158,13 @@ FOUNDATION_EXPORT NSString *const AKControllerGuestViewRoutingKey;      // @YES 
 /// leaves it nil and pays one nil check.
 @property (nonatomic, copy, nullable) void (^routeLatencyObserver)(uint64_t enteredAt);
 - (nullable AKControllerProfile *)profileForIdentity:(NSString *)identity;
+/// Claim a control for a Tolkara action, or pass nil to give it back to routing.
+///
+/// Exactly one action exists - dictation - and this does not implement it: it writes the same
+/// saved trigger the voice page writes, so the router's existing press/release handling does the
+/// work. A claimed control produces no route value or position notification, by construction: the
+/// route table is rebuilt without it.
+- (void)claimSource:(NSString *)source forAction:(nullable NSString *)action device:(NSString *)identity;
 - (void)resetProfileForIdentity:(NSString *)identity;
 /// Re-apply a profile the page has just edited: the gestures routing asked for follow the
 /// new table, and a stick that is already deflected is sent again rather than ignored

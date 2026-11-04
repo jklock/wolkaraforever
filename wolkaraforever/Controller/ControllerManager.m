@@ -4,6 +4,7 @@
 
 #import "../App/WolkaraForeverLog.h"
 #import "../Input/InputElement.h"
+#import "../Input/Trigger.h"
 
 // When the handler was entered, for the latency measurement. Thread-local because handlers for
 // different pads can run on different threads at the same moment.
@@ -507,6 +508,34 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 
 #pragma mark - Profiles
 
+- (void)claimSource:(NSString *)source forAction:(NSString *)action device:(NSString *)identity {
+    if (!source.length || !identity.length) return;
+    NSAssert(NSThread.isMainThread, @"Claims are edited on the main thread");
+    AKControllerProfile *profile = [self profileForIdentity:identity];
+    if (!profile) return;
+    [profile claimSource:source forAction:action];
+    [profile save];
+
+    // The action itself is the trigger the voice page already stores, not a second implementation
+    // of it: dictation is push-to-talk, so one press starts it and one release finishes, which is
+    // the policy that page already has.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    if ([action isEqualToString:AKControllerActionDictation]) {
+        AKTrigger *trigger = [AKTrigger new];
+        trigger.element = source;
+        trigger.pattern = AKTriggerPatternPushToTalk;
+        [trigger saveForDevice:identity defaults:defaults];
+        WKLog("input", @"controller %@: %@ claimed for dictation", identity, source);
+    } else {
+        AKTrigger *existing = [AKTrigger savedTriggerForDevice:identity defaults:defaults];
+        if (existing && [AKTrigger element:existing.element covers:source])
+            [AKTrigger forgetTriggerForDevice:identity defaults:defaults];
+        WKLog("input", @"controller %@: %@ back to routing", identity, source);
+    }
+    [self rebuildRoutes];
+    [self postChange];
+}
+
 - (nullable AKControllerProfile *)profileForIdentity:(NSString *)identity {
     if (!identity.length) return nil;
     AKControllerProfile *profile = _profiles[identity];
@@ -666,6 +695,9 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         // mapping itself: routing asks only "what does this source drive".
         for (AKControllerBinding *binding in [profile bindingsWithAvailability:@{} reserved:@{}]) {
             if (!binding.source.length) continue;
+            // Claimed by a Tolkara action: it must produce no guest route at all, not merely a
+            // route to nothing.
+            if (binding.action.length) continue;
             map[binding.source] = binding.target.length ? binding.target : AKControllerTargetNone;
         }
         table[identity] = map;

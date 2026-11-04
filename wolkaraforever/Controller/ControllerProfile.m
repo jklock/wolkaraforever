@@ -5,11 +5,15 @@
 #import "../Input/InputElement.h"
 
 NSString *const AKControllerTargetNone = @"virtual.none";
+NSString *const AKControllerActionDictation = @"tolkara.dictation";
 
 // Bumped when the vocabulary changes shape. A stored table with another version is
 // ignored rather than half-read: the defaults are always a usable one-to-one pad, so
 // losing an unreadable table costs the user a choice, not a working controller.
-static NSInteger const AKControllerProfileVersion = 1;
+// 2 adds claimed controls beside the routing table. 1 is still read: a table written before
+// claims existed is a routing table with no claims, which is exactly what it meant.
+static NSInteger const AKControllerProfileVersion = 2;
+static NSInteger const AKControllerProfileOldestReadableVersion = 1;
 static NSString *const AKControllerProfileKeyPrefix = @"WolkaraForeverControllerProfile.";
 
 #pragma mark - Targets
@@ -70,6 +74,7 @@ static NSString *const AKControllerProfileKeyPrefix = @"WolkaraForeverController
 @interface AKControllerBinding ()
 @property (nonatomic, copy, readwrite) NSString *source;
 @property (nonatomic, copy, readwrite) NSString *target;
+@property (nonatomic, copy, readwrite) NSString *action;
 @property (nonatomic, copy, readwrite) NSString *sourceDisplay;
 @property (nonatomic, copy, readwrite) NSString *targetDisplay;
 @property (nonatomic, readwrite) BOOL available;
@@ -119,6 +124,7 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 
 @implementation AKControllerProfile {
     NSMutableDictionary<NSString *, NSString *> *_map;
+    NSMutableDictionary<NSString *, NSString *> *_actions;
     NSUserDefaults *_defaults;
 }
 
@@ -143,6 +149,7 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
         _displayName = productCategory.length
             ? [NSString stringWithFormat:@"%@ — %@", vendor, productCategory] : vendor;
         _map = [NSMutableDictionary dictionary];
+        _actions = [NSMutableDictionary dictionary];
         for (NSArray<NSString *> *pair in AKControllerDefaultPairs()) _map[pair[0]] = pair[1];
         [self load];
     }
@@ -153,12 +160,15 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
     id stored = [_defaults objectForKey:[AKControllerProfile defaultsKeyForIdentity:_identity]];
     if (![stored isKindOfClass:NSDictionary.class]) return;
     NSDictionary *table = stored[@"map"];
-    if (![stored[@"version"] isKindOfClass:NSNumber.class] ||
-        [stored[@"version"] integerValue] != AKControllerProfileVersion ||
+    NSInteger version = [stored[@"version"] isKindOfClass:NSNumber.class]
+        ? [stored[@"version"] integerValue] : -1;
+    if (version < AKControllerProfileOldestReadableVersion ||
+        version > AKControllerProfileVersion ||
         ![table isKindOfClass:NSDictionary.class]) {
         // An older or larger table is not guessed at. The defaults are a working pad.
-        WKLog("input", @"controller profile %@: stored table is not version %ld, using the default",
-              _identity, (long)AKControllerProfileVersion);
+        WKLog("input", @"controller profile %@: stored version %ld is outside %ld-%ld, using the default",
+              _identity, (long)version, (long)AKControllerProfileOldestReadableVersion,
+              (long)AKControllerProfileVersion);
         return;
     }
     NSUInteger applied = 0, rejected = 0;
@@ -173,13 +183,57 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
         _map[source] = target;
         applied++;
     }
-    if (applied || rejected)
-        WKLog("input", @"controller profile %@: %lu mapping(s) read, %lu rejected",
-              _identity, (unsigned long)applied, (unsigned long)rejected);
+    // Version 1 has no claims, which is exactly right: nothing could claim a control before the
+    // action model existed.
+    NSUInteger claimed = 0;
+    NSDictionary *actions = stored[@"actions"];
+    if (version >= 2 && [actions isKindOfClass:NSDictionary.class]) {
+        for (NSString *source in actions) {
+            id action = actions[source];
+            if (![action isKindOfClass:NSString.class] || !_map[source]) { rejected++; continue; }
+            if (![action isEqualToString:AKControllerActionDictation]) { rejected++; continue; }
+            _actions[source] = action;
+            _map[source] = AKControllerTargetNone;
+            claimed++;
+        }
+    }
+    if (applied || rejected || claimed)
+        WKLog("input", @"controller profile %@: %lu mapping(s) read, %lu claimed, %lu rejected",
+              _identity, (unsigned long)applied, (unsigned long)claimed, (unsigned long)rejected);
 }
 
 - (NSString *)targetForSource:(NSString *)source {
+    // A claimed control has no target by definition; asking for one must not look like a route.
+    if (_actions[source]) return AKControllerTargetNone;
     return _map[source] ?: AKControllerTargetNone;
+}
+
++ (NSString *)displayForAction:(NSString *)action {
+    if ([action isEqualToString:AKControllerActionDictation]) return @"Dictation";
+    return @"Not assigned";
+}
+
+- (NSString *)actionForSource:(NSString *)source {
+    return _actions[source];
+}
+
+- (NSArray<NSString *> *)claimedSources {
+    return [_actions.allKeys sortedArrayUsingSelector:@selector(compare:)];
+}
+
+- (void)claimSource:(NSString *)source forAction:(NSString *)action {
+    if (!source.length || !_map[source]) return;
+    if (action.length && ![action isEqualToString:AKControllerActionDictation]) return;
+    if (action.length) {
+        _actions[source] = action;
+        _map[source] = AKControllerTargetNone;
+        return;
+    }
+    if (!_actions[source]) return;
+    [_actions removeObjectForKey:source];
+    // Back to the standard layout for that one control, not to "unassigned".
+    for (NSArray<NSString *> *pair in AKControllerDefaultPairs())
+        if ([pair[0] isEqualToString:source]) _map[source] = pair[1];
 }
 
 - (NSString *)sourceForTarget:(NSString *)target {
@@ -220,6 +274,7 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 }
 
 - (BOOL)customised {
+    if (_actions.count) return YES;
     for (NSArray<NSString *> *pair in AKControllerDefaultPairs())
         if (![_map[pair[0]] isEqualToString:pair[1]]) return YES;
     return NO;
@@ -230,11 +285,14 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
     NSMutableArray<AKControllerBinding *> *rows = [NSMutableArray array];
     for (NSString *source in [AKControllerProfile sourceElements]) {
         NSString *target = [self targetForSource:source];
+        NSString *action = _actions[source];
         AKControllerBinding *row = [AKControllerBinding new];
         row.source = source;
         row.target = target;
+        row.action = action;
         row.sourceDisplay = AKInputElementDisplay(source);
-        row.targetDisplay = [AKControllerTarget targetWithIdentifier:target].display ?: @"Not assigned";
+        row.targetDisplay = action ? [AKControllerProfile displayForAction:action]
+                                   : ([AKControllerTarget targetWithIdentifier:target].display ?: @"Not assigned");
         row.available = available[source] ? available[source].boolValue : NO;
         row.reserved = reserved[source] ? reserved[source].boolValue : NO;
         [rows addObject:row];
@@ -245,7 +303,9 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 - (void)save {
     NSString *key = [AKControllerProfile defaultsKeyForIdentity:_identity];
     if (!self.customised) { [_defaults removeObjectForKey:key]; return; }
-    [_defaults setObject:@{@"version": @(AKControllerProfileVersion), @"map": [_map copy]} forKey:key];
+    [_defaults setObject:@{@"version": @(AKControllerProfileVersion),
+                           @"map": [_map copy],
+                           @"actions": [_actions copy]} forKey:key];
 }
 
 + (void)forgetIdentity:(NSString *)identity defaults:(NSUserDefaults *)defaults {
