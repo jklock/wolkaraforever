@@ -1108,7 +1108,13 @@ static void AKSelfTestRunControllerManager(AKSelfTestRecorder *recorder, UIViewC
 
     // The adapter is a dylib the runtime loads for a guest session. A build that carries it
     // may promise the pending state; one that does not must say so instead.
-    [recorder check:manager.guestFacadeAvailable _:@"this build carries the guest GameController adapter"];
+    // Whichever build this is, the page has to tell the truth about it. A build without the
+    // guest adapter cannot hide a pad, and its page must say so; a build with it promises the
+    // pending state. The first version of this test demanded the adapter, so a correct default
+    // build failed it - a test that fails the product for being the product is worse than none.
+    NSString *expectedWhileOn = manager.guestFacadeAvailable
+        ? WKLocalized(@"controller.status.pending")
+        : WKLocalized(@"controller.status.nofacade");
 
     TKWoWControllerManagerViewController *page = [TKWoWControllerManagerViewController new];
     [page loadViewIfNeeded];
@@ -1125,8 +1131,8 @@ static void AKSelfTestRunControllerManager(AKSelfTestRecorder *recorder, UIViewC
     [routing sendActionsForControlEvents:UIControlEventValueChanged];
     [recorder check:[defaults boolForKey:routingKey] _:@"switching on stores WolkaraForever's own key"];
     [recorder check:manager.enabled _:@"the manager follows the switch"];
-    [recorder check:[status.text isEqual:WKLocalized(@"controller.status.pending")]
-                 _:@"the page says routing starts with the game session"];
+    [recorder check:[status.text isEqual:expectedWhileOn]
+                 _:@"the page says what this build can actually do about routing"];
 
     routing.on = NO;
     [routing sendActionsForControlEvents:UIControlEventValueChanged];
@@ -1162,8 +1168,8 @@ static void AKSelfTestRunControllerManager(AKSelfTestRecorder *recorder, UIViewC
         [(UISwitch *)cardSwitch sendActionsForControlEvents:UIControlEventValueChanged];
         [recorder check:[defaults boolForKey:routingKey] && manager.enabled
                      _:@"the card's switch is the same setting as the page's"];
-        [recorder check:[((UILabel *)cardStatus).text isEqual:WKLocalized(@"controller.status.pending")]
-                     _:@"the card says routing starts with the game session"];
+        [recorder check:[((UILabel *)cardStatus).text isEqual:expectedWhileOn]
+                     _:@"the card says what this build can actually do about routing"];
         ((UISwitch *)cardSwitch).on = NO;
         [(UISwitch *)cardSwitch sendActionsForControlEvents:UIControlEventValueChanged];
         [recorder check:![defaults boolForKey:routingKey] && !manager.enabled

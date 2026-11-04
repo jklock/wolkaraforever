@@ -30,6 +30,19 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 
+# The Controller Manager's whole promise is that a physical pad does not reach the game while
+# routing is on, and the only lever for that is the guest-facing GameController façade. In a
+# build without it the feature is inert: routing refuses, and the card says so. So when the
+# build is told which application it is for - which is the build where routing is meant to
+# work - the adapter is included, and the import-coverage gate below decides whether it may be.
+# Setting the variable at all, even to an empty value, is an explicit choice and is left alone:
+#   TOLKARA_EXPERIMENTAL_ADAPTERS= wolkaraforever/tools/install.sh     # opt out
+if [ -z "${TOLKARA_EXPERIMENTAL_ADAPTERS+set}" ] && [ -n "${GUEST_EXE:-}" ]; then
+    TOLKARA_EXPERIMENTAL_ADAPTERS=GameController
+    export TOLKARA_EXPERIMENTAL_ADAPTERS
+    printf 'install: %s is set, so the guest GameController adapter is included (routing needs it)\n' "$(basename "$GUEST_EXE")"
+fi
+
 replace_running=0
 force_kill=0
 build_only=0
