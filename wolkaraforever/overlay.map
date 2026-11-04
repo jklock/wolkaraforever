@@ -55,6 +55,8 @@ wolkaraforever/WoW/Client.h launcher/WoW/Client.h add
 wolkaraforever/WoW/Client.m launcher/WoW/Client.m add
 wolkaraforever/WoW/ControllerManagerViewController.h launcher/WoW/ControllerManagerViewController.h add
 wolkaraforever/WoW/ControllerManagerViewController.m launcher/WoW/ControllerManagerViewController.m add
+wolkaraforever/WoW/ControllerPadDiagram.h launcher/WoW/ControllerPadDiagram.h add
+wolkaraforever/WoW/ControllerPadDiagram.m launcher/WoW/ControllerPadDiagram.m add
 wolkaraforever/WoW/CurseForgeClient.h launcher/WoW/CurseForgeClient.h add
 wolkaraforever/WoW/CurseForgeClient.m launcher/WoW/CurseForgeClient.m add
 wolkaraforever/WoW/DeviceProfile.h launcher/WoW/DeviceProfile.h add

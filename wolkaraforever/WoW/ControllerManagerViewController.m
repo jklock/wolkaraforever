@@ -6,6 +6,7 @@
 #import "../App/WolkaraForeverTheme.h"
 #import "../Controller/ControllerProfile.h"
 #import "../Input/Trigger.h"
+#import "ControllerPadDiagram.h"
 
 static UIColor *CMGold(void) { return [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1]; }
 static UIColor *CMMuted(void) { return [UIColor colorWithRed:0.66 green:0.72 blue:0.78 alpha:1]; }
@@ -27,7 +28,13 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     UILabel *_routingTitleLabel;
     UILabel *_statusLabel;
     UISegmentedControl *_modelsControl;
-    UIStackView *_bindingsStack;
+    // The controller, drawn: what a mapping is, instead of a list to read.
+    TKWoWControllerPadDiagram *_diagram;
+    // Controls the drawing has no place for - paddles, Share, a touchpad - land here as taps.
+    UIStackView *_chipsStack;
+    // The rows on screen in chip order, so a tap names a binding rather than an index into a list
+    // the page rebuilt underneath it.
+    NSArray<AKControllerBinding *> *_rowBindings;
     UILabel *_bindingsHeading;
     UIButton *_learnButton, *_cancelButton, *_resetButton;
     UILabel *_hintLabel, *_disclosureLabel;
@@ -96,15 +103,27 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     _modelsControl.selectedSegmentIndex = UISegmentedControlNoSegment;
     [_modelsControl addTarget:self action:@selector(modelChanged:) forControlEvents:UIControlEventValueChanged];
 
-    UILabel *bindingsHeading = CMLabel(15, UIFontWeightSemibold, CMMuted());
-    bindingsHeading.text = WKLocalized(@"controller.binding.header").uppercaseString;
+    UILabel *bindingsHeading = CMLabel(14, UIFontWeightRegular, CMMuted());
     _bindingsHeading = bindingsHeading;
-    _bindingsStack = [[UIStackView alloc] initWithArrangedSubviews:@[]];
-    _bindingsStack.axis = UILayoutConstraintAxisVertical;
-    _bindingsStack.spacing = 4;
 
-    _learnButton = [self commandButton:@"controllerManager.learn" title:WKLocalized(@"controller.learn")
-                                action:@selector(beginLearning)];
+    _diagram = [TKWoWControllerPadDiagram new];
+    _diagram.translatesAutoresizingMaskIntoConstraints = NO;
+    __weak TKWoWControllerManagerViewController *weakDiagramSelf = self;
+    _diagram.onSourceTapped = ^(NSString *source) {
+        TKWoWControllerManagerViewController *strongSelf = weakDiagramSelf;
+        AKControllerModel *model = [strongSelf selectedModel];
+        if (strongSelf && model) [strongSelf chooseTargetForSource:source identity:model.identity];
+    };
+    [_diagram.heightAnchor constraintEqualToAnchor:_diagram.widthAnchor multiplier:0.62].active = YES;
+
+    _chipsStack = [[UIStackView alloc] initWithArrangedSubviews:@[]];
+    _chipsStack.axis = UILayoutConstraintAxisVertical;
+    _chipsStack.spacing = 4;
+
+    // The box for everything the picture cannot show. It is the same control as the old "reassign"
+    // button, because that is what it is: press something on the pad, then say what it drives.
+    _learnButton = [self boxButton:@"controllerManager.learn" title:WKLocalized(@"controller.learn.box")
+                            action:@selector(beginLearning)];
     _cancelButton = [self commandButton:@"controllerManager.cancel" title:WKLocalized(@"controller.cancel")
                                  action:@selector(cancelLearning)];
     _cancelButton.hidden = YES;
@@ -123,9 +142,9 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     [column addArrangedSubview:[self cardWithTitle:WKLocalized(@"controller.section.routing")
                                               rows:@[routingRow, _statusLabel]]];
     [column addArrangedSubview:[self cardWithTitle:WKLocalized(@"controller.section.model")
-                                              rows:@[_modelsControl, bindingsHeading, _bindingsStack]]];
-    [column addArrangedSubview:[self cardWithTitle:WKLocalized(@"controller.section.change")
-                                              rows:@[_hintLabel, _learnButton, _cancelButton, _resetButton]]];
+                                              rows:@[_modelsControl, bindingsHeading, _diagram,
+                                                     _learnButton, _hintLabel, _cancelButton,
+                                                     _chipsStack, _resetButton]]];
     [column addArrangedSubview:_disclosureLabel];
 
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(managerChanged:)
@@ -212,14 +231,15 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     self.title = WKLocalized(@"controller.title");
     _routingTitleLabel.text = WKLocalized(@"controller.enabled");
     _routingSwitch.accessibilityLabel = WKLocalized(@"controller.enabled");
-    _bindingsHeading.text = WKLocalized(@"controller.binding.header").uppercaseString;
     _hintLabel.text = WKLocalized(@"controller.learn.hint");
     _disclosureLabel.text = WKLocalized(@"controller.disclosure");
-    [_learnButton setTitle:WKLocalized(@"controller.learn") forState:UIControlStateNormal];
+    // The box and the two commands are configured buttons; setTitle: does nothing to them.
+    UIButtonConfiguration *boxConfiguration = _learnButton.configuration;
+    boxConfiguration.title = WKLocalized(@"controller.learn.box");
+    _learnButton.configuration = boxConfiguration;
     [_cancelButton setTitle:WKLocalized(@"controller.cancel") forState:UIControlStateNormal];
     [_resetButton setTitle:WKLocalized(@"controller.reset") forState:UIControlStateNormal];
-    NSArray<NSString *> *sections = @[@"controller.section.routing", @"controller.section.model",
-                                      @"controller.section.change"];
+    NSArray<NSString *> *sections = @[@"controller.section.routing", @"controller.section.model"];
     for (NSUInteger index = 0; index < _headings.count && index < sections.count; index++)
         _headings[index].text = WKLocalized(sections[index]).uppercaseString;
     // VoiceOver is told the language of the words it is about to read.
@@ -230,6 +250,27 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     (void)note;
     [self localize];
     [self render];
+}
+
+// The catch-box: a field, because it is somewhere to put a control you press rather than a
+// command to run.
+- (UIButton *)boxButton:(NSString *)identifier title:(NSString *)title action:(SEL)action {
+    UIButton *box = [UIButton buttonWithType:UIButtonTypeSystem];
+    box.accessibilityIdentifier = identifier;
+    UIButtonConfiguration *configuration = UIButtonConfiguration.plainButtonConfiguration;
+    configuration.title = title;
+    configuration.image = [UIImage systemImageNamed:@"plus.circle"];
+    configuration.imagePadding = 10;
+    configuration.contentInsets = NSDirectionalEdgeInsetsMake(16, 16, 16, 16);
+    configuration.baseForegroundColor = CMGold();
+    configuration.background.backgroundColor = [CMGold() colorWithAlphaComponent:0.08];
+    configuration.background.cornerRadius = 12;
+    configuration.background.strokeColor = [CMGold() colorWithAlphaComponent:0.45];
+    configuration.background.strokeWidth = 1;
+    box.configuration = configuration;
+    box.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
+    [box addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
+    return box;
 }
 
 - (void)render {
@@ -283,10 +324,6 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     }
     if (models.count) _modelsControl.selectedSegmentIndex = (NSInteger)selected;
 
-    for (UIView *view in _bindingsStack.arrangedSubviews) {
-        [_bindingsStack removeArrangedSubview:view];
-        [view removeFromSuperview];
-    }
     AKControllerModel *model = models.count ? models[selected] : nil;
     _learnButton.enabled = model != nil && !manager.learning;
     _cancelButton.hidden = !manager.learning;
@@ -298,49 +335,98 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     NSSet<NSString *> *withheld = [NSSet setWithArray:
         model ? [manager withheldSourcesForIdentity:model.identity] : @[]];
     NSArray<AKControllerBinding *> *bindings = model.bindings ?: @[];
-    NSUInteger index = 0;
+
+    NSMutableDictionary<NSString *, AKControllerBinding *> *bySource = [NSMutableDictionary dictionary];
+    NSUInteger reachable = 0, routed = 0;
     for (AKControllerBinding *binding in bindings) {
-        UIButton *row = [UIButton buttonWithType:UIButtonTypeSystem];
-        row.accessibilityIdentifier = [NSString stringWithFormat:@"controllerManager.binding.%lu", (unsigned long)index++];
-        row.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
-        // A row the pad cannot produce is shown, not hidden: the choice belongs to the
-        // profile, and the next pad of this model may well have the control.
-        row.enabled = binding.available;
-        // What the control does, named. Withheld means a Tolkara feature is using it, and that
-        // fact is read from the feature - Voice & Input for dictation - not kept here: this page
-        // shows the consequence and sends the user to the page that owns the choice.
-        NSString *destination;
-        if ([withheld containsObject:binding.source]) {
-            AKTrigger *trigger = [AKTrigger savedTriggerForDevice:model.identity defaults:NSUserDefaults.standardUserDefaults];
-            NSString *feature = trigger ? [NSString stringWithFormat:@"%@ (%@)", WKLocalized(@"controller.withheld.dictation"),
-                                                                          [trigger patternName]]
-                                        : WKLocalized(@"controller.withheld.unused");
-            destination = [NSString stringWithFormat:@"%@: %@", WKLocalized(@"controller.state.withheld"), feature];
-        } else if (binding.discovered) {
-            destination = [NSString stringWithFormat:@"%@: %@", WKLocalized(@"controller.state.discovered"), binding.targetDisplay];
-        } else {
-            destination = [NSString stringWithFormat:@"%@: %@", WKLocalized(@"controller.state.passthrough"), binding.targetDisplay];
-        }
-        NSString *title = [NSString stringWithFormat:@"%@  ·  %@%@", binding.sourceDisplay, destination,
-                           binding.reserved ? WKLocalized(@"controller.reserved") : @""];
-        UIButtonConfiguration *configuration = UIButtonConfiguration.plainButtonConfiguration;
-        configuration.title = binding.available && model ? title : [title stringByAppendingFormat:@"  (%@)", WKLocalized(@"controller.unavailable")];
-        configuration.contentInsets = NSDirectionalEdgeInsetsMake(6, 0, 6, 0);
-        configuration.baseForegroundColor = binding.available ? UIColor.whiteColor : CMMuted();
-        row.configuration = configuration;
-        row.tag = (NSInteger)index - 1;
-        [row addTarget:self action:@selector(bindingTapped:) forControlEvents:UIControlEventTouchUpInside];
-        [_bindingsStack addArrangedSubview:row];
+        bySource[binding.source] = binding;
+        if (!binding.available) continue;
+        reachable++;
+        if ([withheld containsObject:binding.source]) continue;
+        if (binding.target.length && ![binding.target isEqualToString:AKControllerTargetNone]) routed++;
     }
+    // The picture is the page. Its ink carries the same numbers this summary does, so the two can
+    // never tell a different story.
+    _diagram.bindings = bySource;
+    _diagram.withheld = withheld;
+    _diagram.waiting = manager.learning;
+    _bindingsHeading.text = [NSString stringWithFormat:WKLocalized(@"controller.summary"),
+                             (unsigned long)reachable, (unsigned long)routed,
+                             (unsigned long)withheld.count];
+
+    // Everything the picture has no place for, one tap each - paddles, Share, a touchpad, and any
+    // control this pad reports that the drawing does not know. This is the box's answer as well as
+    // its input: press something once and it lands here, already mappable.
+    for (UIView *view in _chipsStack.arrangedSubviews) {
+        [_chipsStack removeArrangedSubview:view];
+        [view removeFromSuperview];
+    }
+    NSArray<NSString *> *drawn = [TKWoWControllerPadDiagram drawnSources];
+    NSMutableArray<AKControllerBinding *> *chips = [NSMutableArray array];
+    for (AKControllerBinding *binding in bindings)
+        if (![drawn containsObject:binding.source] && binding.source.length) [chips addObject:binding];
+    // Controls this pad does not have go last: what it can actually do belongs at the top.
+    [chips sortUsingComparator:^NSComparisonResult(AKControllerBinding *a, AKControllerBinding *b) {
+        if (a.available != b.available) return a.available ? NSOrderedAscending : NSOrderedDescending;
+        return [a.sourceDisplay compare:b.sourceDisplay];
+    }];
+    NSUInteger chipIndex = 0;
+    for (AKControllerBinding *binding in chips)
+        [_chipsStack addArrangedSubview:[self chipForBinding:binding index:chipIndex++ withheld:withheld]];
+    _chipsStack.hidden = chips.count == 0;
+    _rowBindings = [chips copy];
+
     if (!bindings.count) {
         UILabel *empty = CMLabel(15, UIFontWeightRegular, CMMuted());
         empty.text = WKLocalized(@"controller.nomodels");
         empty.accessibilityIdentifier = @"controllerManager.empty";
-        [_bindingsStack addArrangedSubview:empty];
+        [_chipsStack addArrangedSubview:empty];
+        _chipsStack.hidden = NO;
     }
 }
 
-#pragma mark - Actions
+// One control the drawing cannot show: the control on the left, what it drives on the right, and a
+// tap to change it. Same shape as a row, one line each, because there are only ever a few.
+- (UIButton *)chipForBinding:(AKControllerBinding *)binding index:(NSUInteger)index
+                    withheld:(NSSet<NSString *> *)withheld {
+    BOOL kept = [withheld containsObject:binding.source];
+    NSString *state;
+    UIColor *colour;
+    if (kept) {
+        state = WKLocalized(@"controller.withheld.dictation");
+        colour = CMGold();
+    } else if (!binding.available) {
+        state = WKLocalized(@"controller.row.absent");
+        colour = CMMuted();
+    } else if (!binding.target.length || [binding.target isEqualToString:AKControllerTargetNone]) {
+        state = WKLocalized(@"controller.row.unmapped");
+        colour = CMMuted();
+    } else {
+        state = binding.targetDisplay;
+        colour = UIColor.whiteColor;
+    }
+    UIButton *chip = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIButtonConfiguration *configuration = UIButtonConfiguration.plainButtonConfiguration;
+    configuration.title = [NSString stringWithFormat:@"%@  →  %@", binding.sourceDisplay, state];
+    configuration.contentInsets = NSDirectionalEdgeInsetsMake(7, 12, 7, 12);
+    configuration.baseForegroundColor = colour;
+    configuration.background.backgroundColor = [UIColor.whiteColor colorWithAlphaComponent:0.06];
+    configuration.background.cornerRadius = 10;
+    chip.configuration = configuration;
+    chip.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
+    chip.tag = (NSInteger)index;
+    chip.accessibilityIdentifier = [NSString stringWithFormat:@"controllerManager.binding.%lu",
+                                    (unsigned long)index];
+    chip.accessibilityLabel = [NSString stringWithFormat:@"%@, %@", binding.sourceDisplay, state];
+    [chip addTarget:self action:@selector(chipTapped:) forControlEvents:UIControlEventTouchUpInside];
+    return chip;
+}
+
+- (void)chipTapped:(UIButton *)sender {
+    AKControllerModel *model = [self selectedModel];
+    if (!model || sender.tag < 0 || (NSUInteger)sender.tag >= _rowBindings.count) return;
+    [self chooseTargetForSource:_rowBindings[(NSUInteger)sender.tag].source identity:model.identity];
+}
 
 - (void)routingChanged:(UISwitch *)sender {
     AKControllerManager.shared.enabled = sender.on;

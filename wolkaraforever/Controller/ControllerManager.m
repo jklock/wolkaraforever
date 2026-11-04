@@ -360,6 +360,10 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         NSString *dylib = [NSBundle.mainBundle.bundlePath
             stringByAppendingPathComponent:@"Frameworks/akGameController.dylib"];
         carried = [NSFileManager.defaultManager fileExistsAtPath:dylib];
+        // Said out loud once, with the path it looked at: a build that cannot do this has to be
+        // distinguishable from a pad that did not connect.
+        AKCMLog(@"manager: guest GameController facade %@ (looked for %@)",
+                carried ? @"carried by this build" : @"NOT in this build", dylib);
     });
     return carried;
 }
@@ -875,8 +879,13 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     [NSNotificationCenter.defaultCenter postNotificationName:AKControllerGuestFacadeQueryNotification object:nil];
     if (!_guestFacadePresent) {
         // Nothing may be routed, and no virtual pad may be asked for: the guest would see
-        // the physical pad and the virtual one at once.
-        AKCMLog(@"manager: routing refused — the guest GameController facade is not in this build");
+        // the physical pad and the virtual one at once. The adapter loads inside a guest session,
+        // so in the launcher it has not announced itself yet - which is a different thing from a
+        // build that does not carry it, and saying which one it is matters.
+        AKCMLog(@"manager: routing waits — %@",
+                self.guestFacadeAvailable
+                    ? @"the guest GameController facade loads with a game session"
+                    : @"this build carries no guest GameController facade");
         [self clearRoutingGestures];
         [self releaseVirtualValues:@"this build has no guest GameController facade"];
         [self postChange];
