@@ -84,11 +84,11 @@ conservative profile rather than a guess.
 
 ### Render profile
 
-**Render profile** offers only the levels that hardware was measured at — Performance, Balanced
-and Quality where each was measured, fewer where they were not. A level that could not hold its
-frame budget on that device is not offered at all. Raising the load above the recommendation
-asks first, and says the size it will render at. The choice takes effect the next time the game
-starts.
+**Render profile** offers Performance and Balanced on supported devices, with Quality on the
+iPad profile where native rendering was measured. iPhones use a 2× Balanced default for
+readability; it is not a measured frame-rate guarantee. Raising the load above the
+recommendation asks first and shows the render size. The choice takes effect on the next
+game session after reopening the app.
 
 These two rows change **only WolkaraForever's own render scale**. They never write the game's
 `Config.wtf`. The rows in the last card are the ones that touch game files, and each says so.
@@ -155,3 +155,17 @@ Technical details message to identify the next step.
 
 For the boundary between feature availability and device-tested compatibility, see
 [Compatibility](../COMPATIBILITY.md).
+
+### iPhone render size
+
+On iPhone Pro, Pro Max and Duo, **Balanced** renders at two pixels per window point;
+**Performance** uses one. The default is Balanced for readability. These are resolution
+choices, not frame-rate guarantees. iPad profiles retain their existing settings.
+The first launch of a build with phone profiles migrates the old automatic, unknown-phone
+profile to Balanced once. A manually selected device override is preserved.
+
+The current window supplies the dimensions. Folding/unfolding Duo and rotating the device
+update the virtual display mode; no fixed panel dimensions or iPad viewport are imposed.
+Choose the render profile before starting the game. After a game session, close and reopen
+WolkaraForever to apply a different profile. The game's graphics, interface scale and files
+are not reset by this change.

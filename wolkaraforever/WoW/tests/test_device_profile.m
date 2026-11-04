@@ -41,11 +41,10 @@ int main(void) {
                       [NSString stringWithFormat:@"%@ is claimed by one record only", model]);
                 [models addObject:model];
             }
-            // Performance and Balanced are the same target on every device; only Quality varies,
-            // and only where it was measured.
-            Check([profile backingScaleForQuality:TKRenderQualityPerformance]==0.75,
+            // Phones use 1x/2x for legibility; existing iPad scales remain unchanged.
+            Check([profile backingScaleForQuality:TKRenderQualityPerformance]==(profile.family==TKDeviceFamilyPhone?1.0:0.75),
                   [NSString stringWithFormat:@"%@ renders Performance at 0.75", profile.identifier]);
-            Check([profile backingScaleForQuality:TKRenderQualityBalanced]==1.0,
+            Check([profile backingScaleForQuality:TKRenderQualityBalanced]==(profile.family==TKDeviceFamilyPhone?2.0:1.0),
                   [NSString stringWithFormat:@"%@ renders Balanced at 1.0", profile.identifier]);
             if (profile.highestQuality<TKRenderQualityQuality)
                 Check([profile backingScaleForQuality:TKRenderQualityQuality]==0,
@@ -125,12 +124,20 @@ int main(void) {
         Check([TKDeviceProfile qualityForBackingScale:2.0]==TKRenderQualityQuality, @"2.0 was Quality");
         Check([TKDeviceProfile qualityForBackingScale:0.9]==TKRenderQualityBalanced, @"anything else is Balanced");
 
-        // --- no iPhone record is claimed yet. The plan asks for the 17 and 18 families; nobody
-        // has confirmed a model identifier for them here, so the table must not carry a guess.
-        // This is the check that fails when one is added by hand without the hardware.
-        NSUInteger phones=0;
-        for (TKDeviceProfile *profile in profiles) if (profile.family==TKDeviceFamilyPhone) phones++;
-        Check(phones==0, @"no iPhone record exists until one is confirmed");
+        // Xcode-confirmed Pro/Pro Max models and the physically observed Duo.
+        for (NSString *model in @[@"iPhone17,1",@"iPhone17,2",@"iPhone18,1",@"iPhone18,2",@"iPhone19,2",@"iPhone19,3",@"iPhone19,4",@"iPhone99,99"]) {
+            TKDeviceProfile *phone=[TKDeviceProfile profileForModelIdentifier:model];
+            Check(phone.family==TKDeviceFamilyPhone,@"phones do not inherit the iPad/unknown rendering budget");
+            Check(phone.recommendedQuality==TKRenderQualityBalanced,@"phones default to readable 2x");
+            Check(!phone.measured,@"no phone performance benchmark is invented");
+            const CGFloat sizes[][2]={{852,393},{956,440},{678,466},{951,669},{669,951}};
+            for (NSUInteger i=0;i<sizeof(sizes)/sizeof(sizes[0]);i++) {
+                TKDeviceProfile *sized=[phone profileWithWidth:sizes[i][0] height:sizes[i][1]];
+                Check(sized.nativeWidth==sizes[i][0] && sized.nativeHeight==sizes[i][1],@"uses window geometry, including rotation/fold");
+                Check([sized backingScaleForQuality:TKRenderQualityBalanced]==2,@"balanced doubles both pixel dimensions");
+                Check(phone.nativeWidth==0 && phone.nativeHeight==0,@"does not mutate the shared catalogue");
+            }
+        }
 
         printf("DEVICE_PROFILE_PASS: %lu checks: every model resolves to its own record, an unknown device "
                "falls back to Performance, Quality is only offered where it was measured, an override is "
