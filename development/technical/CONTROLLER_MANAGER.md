@@ -245,8 +245,14 @@ A pad's firmware is the one thing outside this app, and it is outside any app: w
 controller's reserved button can be delivered at all is Apple's behaviour plus that pad's, not
 something this feature can get wrong or right.
 
-## Known limits
 
+## What comes next
+
+This note describes the three situations and how they are held. The output vocabulary - chords,
+keys, layers, and the action model that replaces `source -> target` - is planned separately in
+[`CONTROLLER_OUTPUT_PLAN.md`](CONTROLLER_OUTPUT_PLAN.md), which is not implemented.
+
+## Known limits
 * **One hidden virtual controller at a time.** A second `GCVirtualController` is refused while
   one is connected — measured on the device, 2026-11-03, which is why the manager owns exactly
   one and waits for the adapter's reply rather than creating another.
