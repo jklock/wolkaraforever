@@ -10,6 +10,8 @@ FOUNDATION_EXPORT NSNotificationName const AKGamepadLayoutDidChangeNotification;
 @property(nonatomic) CGFloat rearScale;
 @property(nonatomic) CGFloat frontScale;
 @property(nonatomic) BOOL hapticsEnabled;
+// Swap the visual shoulder slots only; controller element identities are unchanged.
+@property(nonatomic) BOOL swapShoulders;
 // Whether the optional performance HUD is shown. Off by default; the in-game
 // settings page and the launcher's Performance & UI row both write it, so the
 // preference has one home and one meaning.

@@ -137,6 +137,12 @@ on-screen keyboard includes text, symbols, and dictation entry; the gamepad has 
 size, opacity, grid, and haptic controls. Physical keyboard and controller input can also be
 mapped in the app.
 
+Touch settings use two columns when there is enough width and remain scrollable in smaller
+windows. **Triggers on the outside** swaps LT/LB and RT/RB positions without changing their
+inputs. New or reset layouts put the triggers inside; existing saved layouts keep their
+positions until you choose otherwise. Connecting a physical controller closes the touch
+settings or layout editor and releases touch inputs.
+
 Open **Key / Button Configuration** for voice input:
 
 1. Enable **Use a button to talk** and choose **Map a button**.
