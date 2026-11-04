@@ -49,6 +49,35 @@
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         records=@[
+            // Phone geometry is supplied by UIKit, never fixed to a model's panel.
+            [self record:@"iphone-16-pro" name:@"iPhone 16 Pro" family:TKDeviceFamilyPhone
+                    chip:@"" width:0 height:0 highest:TKRenderQualityBalanced qualityScale:0 measured:NO
+                   notes:@"Model from Xcode's device catalogue. Uses the current window size; 2x is a readability default, not a measured frame-rate claim."
+                  models:@[@"iPhone17,1"]],
+            [self record:@"iphone-16-pro-max" name:@"iPhone 16 Pro Max" family:TKDeviceFamilyPhone
+                    chip:@"" width:0 height:0 highest:TKRenderQualityBalanced qualityScale:0 measured:NO
+                   notes:@"Model from Xcode's device catalogue. Uses the current window size; 2x is a readability default, not a measured frame-rate claim."
+                  models:@[@"iPhone17,2"]],
+            [self record:@"iphone-17-pro" name:@"iPhone 17 Pro" family:TKDeviceFamilyPhone
+                    chip:@"" width:0 height:0 highest:TKRenderQualityBalanced qualityScale:0 measured:NO
+                   notes:@"Model from Xcode's device catalogue. Uses the current window size; 2x is a readability default, not a measured frame-rate claim."
+                  models:@[@"iPhone18,1"]],
+            [self record:@"iphone-17-pro-max" name:@"iPhone 17 Pro Max" family:TKDeviceFamilyPhone
+                    chip:@"" width:0 height:0 highest:TKRenderQualityBalanced qualityScale:0 measured:NO
+                   notes:@"Model from Xcode's device catalogue. Uses the current window size; 2x is a readability default, not a measured frame-rate claim."
+                  models:@[@"iPhone18,2"]],
+            [self record:@"iphone-18-pro" name:@"iPhone 18 Pro" family:TKDeviceFamilyPhone
+                    chip:@"" width:0 height:0 highest:TKRenderQualityBalanced qualityScale:0 measured:NO
+                   notes:@"Model from Xcode's device catalogue. Uses the current window size; 2x is a readability default, not a measured frame-rate claim."
+                  models:@[@"iPhone19,2"]],
+            [self record:@"iphone-18-pro-max" name:@"iPhone 18 Pro Max" family:TKDeviceFamilyPhone
+                    chip:@"" width:0 height:0 highest:TKRenderQualityBalanced qualityScale:0 measured:NO
+                   notes:@"Model from Xcode's device catalogue. Uses the current window size; 2x is a readability default, not a measured frame-rate claim."
+                  models:@[@"iPhone19,3"]],
+            [self record:@"iphone-duo" name:@"iPhone Duo" family:TKDeviceFamilyPhone
+                    chip:@"" width:0 height:0 highest:TKRenderQualityBalanced qualityScale:0 measured:NO
+                   notes:@"Model confirmed on device and in Xcode. Uses the current window, including fold and orientation changes. Performance is not benchmarked."
+                  models:@[@"iPhone19,4"]],
             // Measured on this project: the 12.9-inch M1 is "Dadpad", the device every
             // performance figure in development/technical/PERFORMANCE_THERMAL.md was taken on.
             // Native-size rendering is what those sessions measured missing the frame budget,
@@ -132,6 +161,12 @@
             if ([profile.modelIdentifiers containsObject:identifier]) return profile;
         }
     }
+    if ([identifier hasPrefix:@"iPhone"]) {
+        return [self record:@"iphone" name:@"iPhone" family:TKDeviceFamilyPhone
+            chip:@"" width:0 height:0 highest:TKRenderQualityBalanced qualityScale:0 measured:NO
+            notes:@"Uses the current iPhone window. No model-specific performance measurement."
+            models:@[identifier]];
+    }
     return self.fallbackProfile;
 }
 
@@ -159,7 +194,17 @@
     return [self profileForModelIdentifier:self.currentModelIdentifier];
 }
 
+- (TKDeviceProfile *)profileWithWidth:(CGFloat)width height:(CGFloat)height {
+    if (self.family!=TKDeviceFamilyPhone || !isfinite(width) || !isfinite(height) || width<=0 || height<=0) return self;
+    return [TKDeviceProfile record:self.identifier name:self.displayName family:self.family chip:self.chip
+        width:width height:height highest:self.highestQuality qualityScale:self.qualityBackingScale
+        measured:self.measured notes:self.notes models:self.modelIdentifiers];
+}
+
 - (CGFloat)backingScaleForQuality:(TKRenderQuality)quality {
+    if (self.family==TKDeviceFamilyPhone)
+        return quality==TKRenderQualityPerformance ? 1.0 : quality==TKRenderQualityBalanced ? 2.0 : 0;
+
     if (quality>TKRenderQualityBalanced && self.qualityBackingScale<=0) return 0;
     switch (quality) {
         case TKRenderQualityPerformance: return 0.75;

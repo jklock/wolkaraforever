@@ -384,6 +384,56 @@ static void TestAddons(void) {
                  gameVersion:(NSString *)gameVersion compact:(BOOL)compact;
 @end
 
+// Exercise the production migration/startup policy without an updater or game.
+@interface TKWoWViewController (DisplayFixture)
+- (void)migratePhoneRenderProfile;
+- (void)prepareRenderProfileForStartup;
+- (TKDeviceProfile *)selectedDeviceProfile;
+- (void)writeDeviceProfileOverride:(NSString *)identifier quality:(TKRenderQuality)quality;
+@end
+@interface TKDisplayFixtureController : TKWoWViewController
+@end
+@implementation TKDisplayFixtureController
+- (void)loadView { self.view=[[UIView alloc] initWithFrame:CGRectMake(0,0,852,393)]; }
+- (void)viewDidLoad {}
+@end
+static NSString *displayFixtureModel;
+static NSString *DisplayFixtureModel(id self, SEL selector) { (void)self; (void)selector; return displayFixtureModel; }
+static void TestPhoneDisplayDefaults(void) {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSArray *keys=@[@"WolkaraForeverDeviceProfile",@"WolkaraForeverRenderProfile",@"WolkaraForeverBackingScale",@"WolkaraForeverPhoneDisplayV1"];
+    Method method=class_getClassMethod(TKDeviceProfile.class,@selector(currentModelIdentifier));
+    IMP original=method_setImplementation(method,(IMP)DisplayFixtureModel);
+    for (NSString *model in @[@"iPhone19,2",@"iPhone19,3",@"iPhone19,4"]) {
+        displayFixtureModel=model;
+        for (NSString *key in keys) [defaults removeObjectForKey:key];
+        [defaults setObject:@"performance" forKey:@"WolkaraForeverRenderProfile"];
+        [defaults setDouble:0.75 forKey:@"WolkaraForeverBackingScale"];
+        TKDisplayFixtureController *controller=[[TKDisplayFixtureController alloc] initWithLibrary:(id)[TKFixtureLibrary new]];
+        [controller loadViewIfNeeded];
+        [controller migratePhoneRenderProfile];
+        assert([defaults doubleForKey:@"WolkaraForeverBackingScale"]==2);
+        [controller writeDeviceProfileOverride:nil quality:TKRenderQualityPerformance];
+        [controller migratePhoneRenderProfile];
+        assert([defaults doubleForKey:@"WolkaraForeverBackingScale"]==1); // migration is one-shot
+        [controller writeDeviceProfileOverride:nil quality:TKRenderQualityBalanced];
+        [defaults removeObjectForKey:@"WolkaraForeverBackingScale"];
+        [controller prepareRenderProfileForStartup];
+        assert([defaults doubleForKey:@"WolkaraForeverBackingScale"]==2); // UI and runtime agree
+        controller.view.frame=CGRectMake(0,0,951,669);
+        assert([controller selectedDeviceProfile].nativeWidth==951);
+        controller.view.frame=CGRectMake(0,0,669,951);
+        assert([controller selectedDeviceProfile].nativeWidth==669);
+        [defaults removeObjectForKey:@"WolkaraForeverPhoneDisplayV1"];
+        [controller writeDeviceProfileOverride:@"ipad-pro-12.9-m1" quality:TKRenderQualityPerformance];
+        [controller migratePhoneRenderProfile];
+        assert([defaults doubleForKey:@"WolkaraForeverBackingScale"]==0.75); // manual override preserved
+    }
+    method_setImplementation(method,original);
+    for (NSString *key in keys) [defaults removeObjectForKey:key];
+    puts("WoW UIKit PASS: phone profile migration, one-shot upgrade, manual overrides, startup scale and current viewport");
+}
+
 @interface TKWoWFixtureDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic) UIWindow *window;
 @property(nonatomic) TKWoWViewController *controller;
@@ -407,6 +457,9 @@ static void TestAddons(void) {
     // with the reason and the stack, and it can be read afterwards.
     WKLogStart();
     WKLog("test", @"fixture starting");
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--display-only"]) {
+        TestPhoneDisplayDefaults(); exit(0);
+    }
     method_setImplementation(class_getInstanceMethod(TKWoWClient.class,@selector(planForProduct:region:locale:error:)),(IMP)Plan);
     method_setImplementation(class_getInstanceMethod(TKWoWUpdater.class,@selector(updatePlan:root:progress:error:)),(IMP)Update);
     [NSUserDefaults.standardUserDefaults setObject:@"wowf" forKey:@"WoWProduct"];

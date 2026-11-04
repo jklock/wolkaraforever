@@ -70,6 +70,10 @@ typedef NS_ENUM(NSInteger, TKRenderQuality) {
 // hardware, so the caller is expected to say so on screen.
 + (TKDeviceProfile *)resolvedProfileWithOverride:(nullable NSString *)overrideIdentifier;
 
+// A phone profile sized for the current UIKit window (including folds/rotation).
+// Returns a new record; the shared catalogue is immutable. iPad records are unchanged.
+- (TKDeviceProfile *)profileWithWidth:(CGFloat)width height:(CGFloat)height;
+
 // The backing scale for a quality on this profile: the value the runtime is given.
 - (CGFloat)backingScaleForQuality:(TKRenderQuality)quality;
 // The quality this profile renders at when nothing else is chosen. This is deliberately not

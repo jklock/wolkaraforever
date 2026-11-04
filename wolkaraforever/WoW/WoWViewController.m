@@ -288,6 +288,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)viewDidLoad {
     [super viewDidLoad];
+    [self migratePhoneRenderProfile];
     self.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     self.view.backgroundColor=[UIColor colorWithRed:0.025 green:0.045 blue:0.075 alpha:1];
     _background=[CAGradientLayer layer];
@@ -467,6 +468,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // takes the full width and the mark goes above it, so the Play button is never squeezed.
     _topRow.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
     _markWidth.active=horizontal;
+    if (_renderProfileButton && [self thisDeviceProfile].family==TKDeviceFamilyPhone) {
+        NSString *title=WKLocalizedFormat(@"home.performance.renderProfile",[self renderProfileDescription]);
+        if (![_renderProfileButton.configuration.title isEqual:title])
+            [self configureButton:_renderProfileButton title:title filled:NO];
+    }
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
@@ -1365,10 +1371,12 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     return stored.length?stored:nil;
 }
 - (TKDeviceProfile *)selectedDeviceProfile {
-    return [TKDeviceProfile resolvedProfileWithOverride:[self deviceProfileOverrideIdentifier]];
+    TKDeviceProfile *profile=[TKDeviceProfile resolvedProfileWithOverride:[self deviceProfileOverrideIdentifier]];
+    return [profile profileWithWidth:self.view.bounds.size.width height:self.view.bounds.size.height];
 }
 - (TKDeviceProfile *)thisDeviceProfile {
-    return [TKDeviceProfile profileForModelIdentifier:TKDeviceProfile.currentModelIdentifier];
+    TKDeviceProfile *profile=[TKDeviceProfile profileForModelIdentifier:TKDeviceProfile.currentModelIdentifier];
+    return [profile profileWithWidth:self.view.bounds.size.width height:self.view.bounds.size.height];
 }
 - (BOOL)deviceProfileIsThisDevice {
     return [[self selectedDeviceProfile].identifier isEqual:[self thisDeviceProfile].identifier];
@@ -1393,6 +1401,23 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     if (wanted>device.highestQuality) wanted=device.highestQuality;
     if ([device backingScaleForQuality:wanted]<=0) wanted=device.recommendedQuality;
     return wanted;
+}
+// Earlier builds treated every iPhone as unknown and only offered Performance.
+// Migrate that automatic profile once, keeping manual device overrides intact.
+- (void)migratePhoneRenderProfile {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    if ([self thisDeviceProfile].family!=TKDeviceFamilyPhone || [defaults boolForKey:@"WolkaraForeverPhoneDisplayV1"]) return;
+    if (![self deviceProfileOverrideIdentifier])
+        [self writeDeviceProfileOverride:nil quality:TKRenderQualityBalanced];
+    [defaults setBool:YES forKey:@"WolkaraForeverPhoneDisplayV1"];
+}
+- (void)prepareRenderProfileForStartup {
+    // Resolve before any guest adapter caches the scale. The UI's recommendation
+    // and the running renderer must agree even when no setting was ever stored.
+    [self writeDeviceProfileOverride:[self deviceProfileOverrideIdentifier] quality:[self effectiveRenderQuality]];
+    TKDeviceProfile *device=[self selectedDeviceProfile];
+    WKLog("ui", @"guest display: window=%.0fx%.0f target=%@",self.view.bounds.size.width,
+          self.view.bounds.size.height,TKRenderSize(device,[self effectiveRenderQuality]));
 }
 - (NSString *)renderProfileDescription {
     return TKRenderQualityTitle([self selectedDeviceProfile],[self effectiveRenderQuality]);
@@ -1448,7 +1473,8 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
         // The device we are on is the Automatic action above, not a choice of its own.
         if ([profile.identifier isEqual:actual.identifier]) continue;
         BOOL chosen=[profile.identifier isEqual:override];
-        NSString *title=[NSString stringWithFormat:@"%@ — %@",profile.displayName,TKDeviceProfileSizeDescription(profile)];
+        NSString *size=TKDeviceProfileSizeDescription(profile);
+        NSString *title=size.length?[NSString stringWithFormat:@"%@ — %@",profile.displayName,size]:profile.displayName;
         if (chosen) title=[@"✓ " stringByAppendingString:title];
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
             handler:^(__unused UIAlertAction *action) {
@@ -1601,6 +1627,7 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
 - (UILabel *)startupStatusLabel { [self loadViewIfNeeded]; return _detailLabel; }
 - (void)beginStartup {
     [self loadViewIfNeeded];
+    [self prepareRenderProfileForStartup];
     [self cancel]; _starting=YES; _running=NO; _startupFailure=nil;
     _detailLabel.text=WKLocalized(@"home.status.starting.detail");
     _diagnosticsButton.hidden=YES;

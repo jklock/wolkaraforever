@@ -1,0 +1,42 @@
+# WolkaraForever layer patch 0046: size the first guest surface from its UIWindowScene.
+# Duo evidence: UIScreen supplied 678x466 while the active scene was 951x669.
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -721,7 +721,7 @@
+ @end
+ @implementation AKHostViewController
+ - (void)loadView {
+-    self.view = [[AKHostView alloc] initWithFrame:UIScreen.mainScreen.bounds];
++    self.view = [[AKHostView alloc] initWithFrame:NSScreen.mainScreen.frame];
+     self.view.backgroundColor = UIColor.blackColor;
+     // What the guest actually derives its surface from. NSScreen's answer alone
+     // changes nothing: the drawable follows this view. One pixel per point, so the
+@@ -924,9 +924,15 @@
+             if ([s isKindOfClass:UIWindowScene.class]) { scene = (UIWindowScene *)s; break; }
+         if (!scene) { AKLog(@"makeKeyAndOrderFront: no UIWindowScene connected"); return; }
+         _uiWindow = [[UIWindow alloc] initWithWindowScene:scene];
++        // A resizable phone can have a scene larger than UIScreen.bounds. Seed
++        // the display before the first content attachment: some clients allocate
++        // their drawable on that first resize and never revisit it afterwards.
++        _uiWindow.frame=scene.coordinateSpace.bounds;
++        AKSetGuestDisplayGeometry(_uiWindow.bounds.size,scene.screen.maximumFramesPerSecond);
+         AKHostViewController *vc = [AKHostViewController new];
+         _uiWindow.rootViewController = vc;
+-        _host = (AKHostView *)vc.view; _host.nsWindow = self;
++        _host = (AKHostView *)vc.view;
++        _host.frame=_uiWindow.bounds; _host.nsWindow = self;
+         if (_contentView) [self ak_attach];
+     }
+     [_uiWindow makeKeyAndVisible];
+--- a/tests/test_appkit_views.m
++++ b/tests/test_appkit_views.m
+@@ -309,6 +309,9 @@
+         AKSetGuestDisplayGeometry(phoneSizes[i],120);
+         NSScreen *screen=NSScreen.mainScreen;
+         assert(CGSizeEqualToSize(screen.frame.size,phoneSizes[i]));
++        UIViewController *host=[NSClassFromString(@"AKHostViewController") new];
++        assert(host && CGSizeEqualToSize(host.view.bounds.size,phoneSizes[i]));
++        assert(host.view.contentScaleFactor==screen.backingScaleFactor);
+         assert(screen.backingScaleFactor==other.backingScaleFactor);
+         CGRect points=CGRectMake(12,24,100,60);
+         CGRect pixels=[screen convertRectToBacking:points];
