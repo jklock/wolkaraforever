@@ -48,9 +48,13 @@ the matrix runner's final terminal exit was not retained by the host capture.
 - **The game's own text field.** `selftest dictation-target` asks a *running* guest whether it
   takes words and keys; with no game launched it correctly reports 0/1 checks. Launching the
   game is outside this work, so it is deferred with that reason.
-- **A real controller button in a hand.** The on-device input self-test drives the router with
-  a synthetic press, which proves the mapper, both modes and the published key set, not what
-  iPadOS reports for a particular pad's buttons.
+- **A real controller button in a hand.** On 2026-11-04 an Xbox Bluetooth Gamepad (Xbox One) was
+  attached and read: iPadOS reported 25 buttons, 6 axes and 3 D-pads — 34 controls — every one of
+  them became a row the Controller Manager page offers, and with routing on the guest was offered
+  the virtual gamepad only (`selftest controller-hardware`). What is still not measured is a
+  **press**: nothing here presses a button on the pad, and the latency figure (median 1.0 µs,
+  worst 4.9 µs over 600 samples, handler entry to the adapter's write) is that step and not the
+  whole chain. A USB pad and a pad with a Share button or paddles were not exercised.
 - **The store and the account.** No install, update or repair was performed against the
   client's own files.
 
