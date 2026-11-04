@@ -234,6 +234,11 @@ run_step "app language resolution, tables and formatting" wolkaraforever/tools/t
 # mode), so they belong here.
 run_step "on-screen controls and the game text field (simulator fixture)" wolkaraforever/tools/test_touch_controls_ui.sh --self-test || failures=$((failures+1))
 run_step "the on-screen gamepad (simulator fixture)" wolkaraforever/tools/test_touch_gamepad_ui.sh --self-test || failures=$((failures+1))
+# The Controller Manager's own suites. They were written with the feature and, for two commits,
+# were run only by hand: the record this script writes is what makes a commit checkable by
+# somebody other than its author, and a suite outside it is a claim nobody can reproduce.
+run_step "the Controller Manager's state machine (simulator fixture)" wolkaraforever/tools/test_controller_manager.sh || failures=$((failures+1))
+run_step "the guest GameController facade (simulator fixture)" wolkaraforever/tools/test_gamecontroller_facade.sh || failures=$((failures+1))
 # And these two were run by nothing either, for the same kind of reason: they were only ever
 # reached through the loop at the end of test_emulation.sh, and that loop never ran, because
 # the platform's suite exits 1 on its one known failure and `set -e` stopped the script
@@ -283,6 +288,11 @@ if [ "$device" = 1 ]; then
         # The parts of the device matrix a Mac can drive by itself. What needs a person is
         # listed inside the step's own output rather than left unsaid.
         run_step "the device matrix, so far as a script can go" wolkaraforever/tools/device_matrix.sh || failures=$((failures+1))
+        # The app driving its own Controller Manager code on the installed build: the page and
+        # the front-page card, and the routing chain with a hidden virtual controller standing
+        # in for a pad. Neither needs hardware; both say so in their own output.
+        run_step "the Controller Manager page and card, on the device" wolkaraforever/tools/pilot.sh selftest controller-manager || failures=$((failures+1))
+        run_step "the routing chain, on the device" wolkaraforever/tools/pilot.sh selftest controller-routing || failures=$((failures+1))
     else
         failures=$((failures+1))
         step_names+=("the app's own log, from the launch above")
