@@ -75,12 +75,20 @@ virtual controller offers — twelve targets, checked by
   is a row whether or not the default table has heard of it. Measured on an Xbox
   Bluetooth Gamepad: 25 buttons, 6 axes, 3 D-pads, 34 named controls, 34 enabled
   rows.
-* **From events.** A control that never appears in the profile but does produce a
-  value or a position is discovered the first time it arrives. That is the only
-  way some extra buttons can be mapped at all. The first sighting costs one set
-  lookup on the hot path; the work behind it — storing it, rebuilding the route
-  table, redrawing the page — happens on main exactly once for that model, never
-  again per event.
+* **From events, whatever they are called.** What a control *shows up as* and what
+  it *is* are two different things, so nothing here depends on recognising a name.
+  Discovery hangs off receiving input, not off a list: it happens inside
+  `-routeButton:` and `-routeAxis:` — the two points every button value and every
+  axis position passes through, from either handler — and, for a touchpad, in
+  `-reportElement:`. A control that never appears in the profile and is never
+  understood by name the first time it arrives is still discovered, and a
+  framework name containing no letters or digits still produces an id of its own
+  rather than collapsing onto another row. That is the only way some extra
+  buttons can be mapped at all.
+* **Cost.** The first sighting costs one set lookup on the path the routing was
+  measured on (discovery shares the lock the routing step already takes); the
+  work behind it — storing it, rebuilding the route table, redrawing the page —
+  happens on main exactly once for that model, never again per event.
 * **Remembered.** Discovered controls are stored per model in `observed`, so the
   row survives a restart and another pad of the same model gets the same table.
   Reset restores the default layout and keeps the observations: a pad has the
@@ -160,6 +168,7 @@ showing the withheld control produces no route notification — not before.
 | a v1 table still loads as pass-through with nothing discovered | same suite |
 | reset restores the layout and keeps observations | same suite |
 | the pad in the hand: 34 controls reported, each one a row, and the guest offered the virtual pad only | `--selftest=controller-hardware` |
+| a button and an axis the app has never listed are both rows it can map, and a name with no letters still gets its own id | `--selftest=controller-hardware` |
 | the page's row states, its bind handler and both languages | `test_wow_launcher_ui.sh` |
 | every target the page offers can be written by the adapter | `check_controller_targets.sh` |
 | pass-through direct, analog, sticks, D-pad, release, latency | `--selftest=controller-routing`, `--selftest=controller-latency` |

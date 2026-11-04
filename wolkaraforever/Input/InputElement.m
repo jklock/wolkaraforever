@@ -46,16 +46,32 @@ NSString *AKInputIdentifierSlug(NSString *text) {
     return slug;
 }
 
+// A framework name that carries no letters or digits at all still has to have an id of its own:
+// two different controls must never collapse into one row. The digest is computed here rather
+// than taken from -hash, which is not promised to be stable from one launch to the next.
+static NSString *AKInputStableDigest(NSString *text) {
+    unsigned long long digest = 1469598103934665603ULL;   // FNV-1a offset basis
+    for (NSUInteger index = 0; index < text.length; index++) {
+        digest ^= (unsigned long long)[text characterAtIndex:index];
+        digest *= 1099511628211ULL;
+    }
+    return [NSString stringWithFormat:@"unnamed.%llx", digest];
+}
+
 NSString *AKInputElementForControllerButton(NSString *buttonName) {
     NSString *name = buttonName;
     // GameController names every button "Button <Something>"; the prefix carries no
     // information and only makes the key longer.
     if ([name hasPrefix:@"Button "]) name = [name substringFromIndex:@"Button ".length];
-    return [AKInputElementControllerPrefix stringByAppendingString:AKInputIdentifierSlug(name)];
+    NSString *slug = AKInputIdentifierSlug(name);
+    if (!slug.length) slug = AKInputStableDigest(buttonName);
+    return [AKInputElementControllerPrefix stringByAppendingString:slug];
 }
 
 NSString *AKInputElementForControllerAxis(NSString *axisName) {
-    return [AKInputElementControllerAxisPrefix stringByAppendingString:AKInputIdentifierSlug(axisName)];
+    NSString *slug = AKInputIdentifierSlug(axisName);
+    if (!slug.length) slug = AKInputStableDigest(axisName);
+    return [AKInputElementControllerAxisPrefix stringByAppendingString:slug];
 }
 
 NSString *AKInputElementForKeyboardKey(NSInteger keyCode) {

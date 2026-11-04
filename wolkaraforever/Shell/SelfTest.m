@@ -1794,6 +1794,38 @@ static void AKSelfTestRunControllerHardware(AKSelfTestRecorder *recorder) {
     }
     [recorder check:missing == 0 _:@"every control iPadOS reports is a row this pad has"];
 
+    // The rule that matters more than any list of names: what a control shows up as and what it
+    // actually is are different things, so any input that arrives has to become a row. Both halves
+    // are checked here, on the device, through the same code the pad's events take - on a fixture
+    // model, so the profile of the pad in the hand is left alone.
+    NSString *oddId = AKInputElementForControllerButton(@"Button ???");
+    NSString *bareId = AKInputElementForControllerButton(@"Button");
+    [recorder check:oddId.length > 0 && bareId.length > 0 && ![oddId isEqualToString:bareId]
+                 _:@"a control whose name carries no letters still gets an id of its own"];
+
+    NSString *unlistedButton = @"controller.button.never.listed";
+    NSString *unlistedAxis = @"controller.axis.slider.left";
+    NSString *fixture = @"selftest.controller.hardware.fixture";
+    AKSelfTestOnMain(^{
+        [AKControllerProfile forgetIdentity:fixture defaults:NSUserDefaults.standardUserDefaults];
+        [manager reportElement:unlistedButton value:1 pressed:YES
+                        device:fixture deviceName:@"Fixture" source:AKControllerPhysicalSource];
+        [manager reportAxis:unlistedAxis position:CGPointMake(0.5, 0) device:fixture deviceName:@"Fixture"];
+    });
+    __block BOOL buttonRow = NO, axisRow = NO;
+    AKSelfTestOnMain(^{
+        for (AKControllerBinding *row in [[manager profileForIdentity:fixture]
+                                             bindingsWithAvailability:@{} reserved:@{}]) {
+            if ([row.source isEqualToString:unlistedButton]) buttonRow = YES;
+            if ([row.source isEqualToString:unlistedAxis]) axisRow = YES;
+        }
+        [manager reportElement:unlistedButton value:0 pressed:NO
+                        device:fixture deviceName:@"Fixture" source:AKControllerPhysicalSource];
+        [AKControllerProfile forgetIdentity:fixture defaults:NSUserDefaults.standardUserDefaults];
+    });
+    [recorder check:buttonRow _:@"a button the app has never listed is a row it can map"];
+    [recorder check:axisRow _:@"an axis the app has never listed is a row it can map"];
+
     // What the guest is offered, with the pad captured and released. This is the promise the
     // feature exists for, read off the real pad rather than a stand-in.
     __block NSArray<GCController *> *guest = nil;

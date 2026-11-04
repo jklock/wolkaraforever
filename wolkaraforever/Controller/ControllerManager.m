@@ -609,10 +609,16 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     [_hot unlock];
 
     if ([source isEqualToString:AKControllerPhysicalSource]) {
-        [self noteDiscoverableElement:element device:device];
+        // Discovery is not part of this branch on purpose: it happens in routeButton:, which
+        // every button value passes through from either handler, so a button that only ever
+        // reports an analog value is discovered too.
         [self noteButtonValue:value element:element device:device];
         if (pressed) [self learnFromSource:element device:device];
         [self routeButton:element value:value pressed:pressed device:device];
+    } else if ([source isEqualToString:@"touchpad"]) {
+        // A touchpad's taps and swipes are input from this pad, so they are controls of it.
+        // They never route - the virtual pad has no touchpad - but they are mappable.
+        [self noteDiscoverableElement:element device:device];
     }
 
     void (^event)(NSString *, double, BOOL, NSString *, NSString *, NSString *) = self.onEvent;
@@ -751,6 +757,10 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 #pragma mark - Routing into the virtual pad
 
 - (void)routeButton:(NSString *)element value:(double)value pressed:(BOOL)pressed device:(NSString *)device {
+    // Every button value the app receives arrives here - from the press edge, from the analog
+    // handler, whatever the element is called - so this is where a control becomes known. Any
+    // input is mappable, not only the inputs whose names this app recognises.
+    [self noteDiscoverableElement:element device:device];
     // What this feature costs, measured where it is spent: entering the routing step to the
     // adapter being told. A handler sets no state for it, so a value routed from either handler
     // gives exactly one sample.
@@ -785,6 +795,8 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 }
 
 - (void)routeAxis:(NSString *)element position:(CGPoint)position device:(NSString *)device {
+    // Axes are input like any other: one this app has never heard of still becomes a row.
+    [self noteDiscoverableElement:element device:device];
     NSString *target = nil;
     [_hot lock];
     if (_enabled && _virtualController) {

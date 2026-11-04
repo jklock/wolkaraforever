@@ -54,7 +54,9 @@ the matrix runner's final terminal exit was not retained by the host capture.
   the virtual gamepad only (`selftest controller-hardware`). What is still not measured is a
   **press**: nothing here presses a button on the pad, and the latency figure (median 1.0 µs,
   worst 4.9 µs over 600 samples, handler entry to the adapter's write) is that step and not the
-  whole chain. A USB pad and a pad with a Share button or paddles were not exercised.
+  whole chain. A control iPadOS never lists is covered by the same check on a fixture identity —
+  an unlisted button and an unlisted axis both become rows — but a pad that actually has such a
+  control (Elite paddles, a DualSense touchpad) was not in hand. A USB pad was not exercised.
 - **The store and the account.** No install, update or repair was performed against the
   client's own files.
 
