@@ -30,45 +30,50 @@ the game" without the game knowing the button exists.
 **Conclusion.** The output space is not a list of twelve gamepad targets. It is an **action**, and an
 action can drive several outputs of different kinds. That is the whole of step 2.
 
-## The model
+## Corrected model (2026-11-04, after review)
 
-Today a profile is `source -> target`, one string to one string. It becomes
-`source -> action`, where an action is a small, declarative list of steps:
+The first version of this plan proposed chords and sequences - inventing game output to reach the
+game's modifier layers. That was wrong, and it is recorded here rather than quietly replaced.
+
+**Tolkara already owns an input layer.** A physical control can be *claimed* by Tolkara instead of
+being passed on: the voice trigger system does exactly this today - press the learned button, live
+dictation starts, and the game never sees the press. It can do that because the game is only ever
+shown the virtual controller, so a button Tolkara keeps is, to the game, a button that does not
+exist.
+
+So the second kind of mapping is not "physical -> some exotic game output". It is:
+
+* **pass through** (the default): the control drives the virtual element of the same name, one to
+  one, and reaches the game. This is what works today and it must not get slower.
+* **claimed by Tolkara**: the control drives a Tolkara action - dictation, an overlay toggle, a
+  preset change, anything the app can do - and never reaches the game at all.
+
+The page's job is to let a person choose, per control, which of those it is, per controller model.
+That is the whole of step 2, and it reuses the trigger machinery that already exists rather than
+inventing an action language.
+
+### The latency rule, and the defect it exposed
+
+A pass-through press must be as fast as it is today. Measured path with capture on, as written
+today:
 
 ```
-Action {
-  mode:  hold | tap | toggle | turbo(<hz>)
-  steps: [ Step ]
-}
-Step {
-  output:  virtual(element, value | position)   // GCVirtualController
-         | key(keyCode, characters, modifiers)  // a real key event in the guest
-         | text(string)                         // rare; for completeness
-         | layer(name | none)                   // Tolkara's own layer
-  when:    onPress | onRelease | after(ms)      // sequences are ordered steps
-}
+framework handler (its own thread)
+  -> dispatch_async(main)                     <- a whole main-queue turn, added
+  -> reportElement: (main-thread assert, string building, profile lookup, quantiser)
+  -> synchronous notification -> adapter -> setValue:
 ```
 
-Examples, all expressible:
+The main-queue hop is latency this feature introduced, onto the same queue that services the UI and
+the guest's run loop. It is removed: the routing step does its work on the thread the framework
+calls it on, under one lock, with no allocation on the hot path, and the adapter writes the value
+from there. Everything that is not the hot path - learn, status, the page, replay after a profile
+change - stays on main.
 
-| Physical input | Action | Why it is worth having |
-| --- | --- | --- |
-| Back paddle | `virtual(LT) + virtual(A)` on press, release in reverse | The game's LT-A ability, from a button WoW never sees |
-| Share button | `key(kVK_ANSI_1)` | The player's own action-bar keybind, whatever it is |
-| Any face button, while our layer `alt` is held | a different action | Our own layer, independent of the game's |
-| Menu, held 400 ms | `tap` semantics: fires once, not on repeat | Long-press without the game seeing a stuck button |
-| Stick click | `toggle` a layer | Push-to-talk-style toggles for the pad |
-
-Two rules that keep it honest:
-
-* **Every step is a discrete press a human could make.** No loops, no timing that plays the game.
-  `AGENTS.md` forbids automating the application; remapping input is not automating it, and the
-  boundary is that a sequence is bounded (≤ 4 steps), fires once per press, and never repeats
-  while held. That is written here so a later change has to argue with it.
-* **A held action releases in reverse order**, and every output it turned on is turned off when the
-  source is released, when the model changes, when capture is turned off, on disconnect, and on
-  backgrounding. The existing release machinery already does the last three for single outputs; it
-  becomes the same list of outputs.
+It is measured, not asserted: `--selftest=controller-latency` reports the time from the framework
+handler being entered to `setValue:` returning, in microseconds, over a run of presses, and the
+number is recorded in the validation note. The threshold that matters is that it is the same order
+as the touch overlay's own write, which has no such hop.
 
 ## The virtual pad, patched
 
@@ -132,16 +137,15 @@ is `WolkaraForeverControllerActions.<identity>` → `{source: [step...]}`, with 
 
 | Phase | What it adds | How it is proven |
 | --- | --- | --- |
-| **1. Model + migration, no behaviour change** | the action store, translated from the existing one, rendered read-only on the page | every existing check stays green; migration test both ways; the three situations unchanged |
-| **2. Chords** | `source -> [virtual, virtual]`, press in order, release in reverse | device: paddle → `LT + A` produces both elements in order and releases in reverse; a held chord does not re-fire |
-| **3. Keyboard output** | the key channel and the picker | device: paddle → `1` posts exactly one down and one up into the guest, and the guest's own handler sees it |
-| **4. Layers, toggle, turbo** | our own modifier state, per-model | device: while the layer is held a mapping resolves differently and reverts on release; toggle survives a re-render and clears on disable |
-| **5. Sequences** | bounded steps with `after(ms)` | device: a 2-step action fires once per press, in order, and never while held |
-| **6. Docs, matrix, validator** | plan → reference, rows in `validate.sh --device` | `check_controller_targets.sh` grows to compare actions, not just targets |
+| **0. The hot path** | routing moves off the main queue: one lock, no allocation, the adapter writes from the framework's own thread | `--selftest=controller-latency` reports microseconds from handler entry to `setValue:` return; the three situations and the routing chain stay green |
+| **1. Claiming** | a control can be claimed by Tolkara instead of passed through, per controller model, reusing the trigger machinery | device: a claimed control starts dictation and produces **no** route notification; an unclaimed one passes through unchanged |
+| **2. The page** | per-model list of physical controls, each showing *pass through* or *Tolkara action*, with learn and reset | launcher fixture: rows, learn, reset, the two states, German, no game-file write; device self-test drives it |
+| **3. More Tolkara actions** | the claim target is a list rather than dictation alone | each action asserted once on the device |
+| **4. Docs, matrix, validator** | plan becomes reference; rows in `validate.sh --device` | `check_controller_targets.sh` compares the claim list as well |
 
-Phase 2 is the one that answers "a button the game doesn't know does something in the game", and it
-should come before the keyboard work: it needs no new channel and it reaches the game's own
-existing layers.
+Phase 0 comes first because it is a defect in what is already shipped, not a feature. Everything
+after it adds choice, not latency: a claimed control takes the existing trigger path, which does
+not touch the virtual controller at all.
 
 ## Risks, and what each one costs if it goes wrong
 
