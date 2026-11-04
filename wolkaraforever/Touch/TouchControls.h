@@ -68,6 +68,7 @@ extern NSString *const AKTouchOwnedKeyUsagesKey;                             // 
 @property (nonatomic, weak) id<AKTouchControlsDelegate> delegate;
 @property (nonatomic) BOOL trackpadEnabled;
 @property (nonatomic, readonly) BOOL gamepadEnabled;
+@property (nonatomic, readonly) BOOL configuring;
 - (void)setGamepadVisible:(BOOL)visible;
 @property (nonatomic, readonly) BOOL keyboardVisible;
 - (void)processTouches:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event;

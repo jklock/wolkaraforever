@@ -90,6 +90,7 @@ wolkaraforever/Touch/AKHostLocalization.h translation/AppKit/AKHostLocalization.
 wolkaraforever/Touch/AKHostLocalization.m translation/AppKit/AKHostLocalization.m add
 wolkaraforever/Touch/AKPerformanceOverlay.h translation/AppKit/AKPerformanceOverlay.h add
 wolkaraforever/Touch/AKPerformanceOverlay.m translation/AppKit/AKPerformanceOverlay.m add
+wolkaraforever/Touch/AKTouchEventPump.h translation/AppKit/AKTouchEventPump.h add
 wolkaraforever/Touch/Fonts.h translation/AppKit/Fonts.h add
 wolkaraforever/Touch/Fonts.m translation/AppKit/Fonts.m add
 wolkaraforever/Touch/TouchControls.h translation/AppKit/TouchControls.h replace

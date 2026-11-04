@@ -627,6 +627,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     [NSUserDefaults.standardUserDefaults setBool:self.trackpadEnabled forKey:AKTouchTrackpadDefaultsKey];
 }
 - (BOOL)gamepadEnabled { return _gamepadEnabled; }
+- (BOOL)configuring { return _gamepad.configuring; }
 - (void)showControlSettings {
     [self cancelTouches]; [self dismissKeyboard];
     // The gamepad owns the settings sheet, so we open it here rather than asking a

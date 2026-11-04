@@ -6,6 +6,8 @@
 #import "../translation/AppKit/TouchHaptics.h"
 #include <assert.h>
 #include <math.h>
+#include <unistd.h>
+#import "../translation/AppKit/AKTouchEventPump.h"
 
 @interface AKTouchGamepad (FixtureSeams)
 - (NSArray<GCController *> *)connectedControllers;
@@ -345,7 +347,33 @@ static void TestStickMapping(void) {
     assert(CGPointEqualToPoint(AKTouchGamepadStickPosition(CGPointMake(CGFLOAT_MAX,CGFLOAT_MAX),CGSizeMake(0.001,0.001)),CGPointZero));
 }
 
+// Exercise work UIKit queues specifically for tracking, and its deferred UI
+// completion phase, from a nested pump rather than UIApplication's outer loop.
+static void TestTrackingPump(void) {
+    CFRunLoopRef loop=CFRunLoopGetCurrent();
+    __block BOOL trackingTimer=NO, defaultCompletion=NO, trackingCompletion=NO;
+    CFRunLoopTimerRef timer=CFRunLoopTimerCreateWithHandler(NULL,CFAbsoluteTimeGetCurrent(),0,0,0,
+        ^(__unused CFRunLoopTimerRef t) { trackingTimer=YES; });
+    CFRunLoopAddTimer(loop,timer,(__bridge CFStringRef)UITrackingRunLoopMode);
+    CFRunLoopObserverRef observer=CFRunLoopObserverCreateWithHandler(NULL,kCFRunLoopBeforeWaiting,true,0,
+        ^(__unused CFRunLoopObserverRef o,__unused CFRunLoopActivity a) {
+            CFStringRef mode=CFRunLoopCopyCurrentMode(loop);
+            if (CFEqual(mode,kCFRunLoopDefaultMode)) defaultCompletion=YES;
+            if (CFEqual(mode,(__bridge CFStringRef)UITrackingRunLoopMode)) trackingCompletion=YES;
+            CFRelease(mode);
+        });
+    CFRunLoopAddObserver(loop,observer,kCFRunLoopCommonModes);
+    AKPumpTouchEvents(NO);
+    assert(!trackingTimer && !defaultCompletion && !trackingCompletion);
+    AKPumpTouchEvents(YES);
+    assert(trackingTimer && defaultCompletion && trackingCompletion);
+    CFRunLoopTimerInvalidate(timer); CFRelease(timer);
+    CFRunLoopObserverInvalidate(observer); CFRelease(observer);
+    puts("TOUCH_TRACKING_PUMP_PASS: deferred UI and tracking timers progress; closed-panel pump remains nonblocking.");
+}
+
 static void TestLifecycle(UIView *host) {
+    TestTrackingPump();
     TestStickMapping();
     TestHaptics();
     AKFixtureGamepad *pad=[[AKFixtureGamepad alloc] initWithHostView:host];
@@ -478,6 +506,19 @@ static void TestLifecycle(UIView *host) {
     NSLog(@"FIXTURE_CONTROLLER_COUNT=%lu",(unsigned long)GCController.controllers.count);
     [self.gamepad refresh];
     [self performSelector:@selector(report) withObject:nil afterDelay:2];
+    // The guest owns the main thread after a timer callout and polls UIKit
+    // re-entrantly. Keep an interactive fixture for that distinct input path.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--guest-pump"]) {
+        [NSTimer scheduledTimerWithTimeInterval:1 repeats:NO block:^(__unused NSTimer *timer) {
+            NSLog(@"FIXTURE_GUEST_PUMP_STARTED");
+            BOOL legacy = [NSProcessInfo.processInfo.arguments containsObject:@"--legacy-pump"];
+            for (;;) { @autoreleasepool {
+                if (legacy) CFRunLoopRunInMode(kCFRunLoopDefaultMode,0,false);
+                else AKPumpTouchEvents(self.gamepad.configuring);
+                usleep(16000);
+            } }
+        }];
+    }
 }
 - (void)testInput { TestNativeInput(self.window.rootViewController.view,(id)self.gamepad); fflush(stdout); exit(0); }
 - (void)report {
