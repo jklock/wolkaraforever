@@ -62,6 +62,14 @@ extern NSString *const AKSelfTestControllerManager;
 /// the release. What it cannot cover is a real pad's own hardware and iPadOS handing a reserved
 /// button to this app - those need a pad in a hand.
 extern NSString *const AKSelfTestControllerRouting;
+/// The three situations the feature is defined by, each asserted on its own:
+///   1. no physical controller        - the guest still has Tolkara's own gamepad, and nothing
+///                                      changes about it whether capture is on or off;
+///   2. physical controller, on       - the guest is offered the virtual gamepad and nothing
+///                                      else, and never the pad being read;
+///   3. physical controller, off      - the guest is offered the physical pad again, exactly as
+///                                      before this feature existed.
+extern NSString *const AKSelfTestControllerSituations;
 
 // Runs one self-test and logs the verdict the matrix greps:
 //   selftest: <name> PASS <passed>/<total> checks (<what was exercised>)

@@ -296,6 +296,8 @@ if [ "$device" = 1 ]; then
         # in for a pad. Neither needs hardware; both say so in their own output.
         run_step "the Controller Manager page and card, on the device" wolkaraforever/tools/pilot.sh selftest controller-manager || failures=$((failures+1))
         run_step "the routing chain, on the device" wolkaraforever/tools/pilot.sh selftest controller-routing || failures=$((failures+1))
+        # The three situations the feature is defined by, named one at a time.
+        run_step "the three controller situations, on the device" wolkaraforever/tools/pilot.sh selftest controller-situations || failures=$((failures+1))
     else
         failures=$((failures+1))
         step_names+=("the app's own log, from the launch above")
