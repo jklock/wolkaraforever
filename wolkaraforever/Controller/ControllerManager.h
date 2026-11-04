@@ -90,6 +90,9 @@ FOUNDATION_EXPORT NSString *const AKControllerRouteEnabledKey;
 // failed). It is how the manager knows whether routing can be reported as running and
 // which controller the guest may see.
 FOUNDATION_EXPORT NSNotificationName const AKControllerVirtualPadDidChangeNotification;
+/// The source value a physical pad's events carry. `reportElement:` treats only events carrying
+/// it as pad input, so it is named here rather than spelled out by every caller.
+FOUNDATION_EXPORT NSString *const AKControllerPhysicalSource;
 FOUNDATION_EXPORT NSString *const AKControllerVirtualPadConnectedKey;
 FOUNDATION_EXPORT NSString *const AKControllerVirtualPadControllerKey;
 FOUNDATION_EXPORT NSString *const AKControllerVirtualPadErrorKey;
@@ -158,13 +161,13 @@ FOUNDATION_EXPORT NSString *const AKControllerGuestViewRoutingKey;      // @YES 
 /// leaves it nil and pays one nil check.
 @property (nonatomic, copy, nullable) void (^routeLatencyObserver)(uint64_t enteredAt);
 - (nullable AKControllerProfile *)profileForIdentity:(NSString *)identity;
-/// Claim a control for a Tolkara action, or pass nil to give it back to routing.
+/// The controls Tolkara is using on this model, read from the feature that owns them - Voice &
+/// Input's dictation trigger - so the page can show them as withheld.
 ///
-/// Exactly one action exists - dictation - and this does not implement it: it writes the same
-/// saved trigger the voice page writes, so the router's existing press/release handling does the
-/// work. A claimed control produces no route value or position notification, by construction: the
-/// route table is rebuilt without it.
-- (void)claimSource:(NSString *)source forAction:(nullable NSString *)action device:(NSString *)identity;
+/// Nothing is stored here for it. Withholding one fact in two places is what made the first
+/// version of this feature wrong: the manager wrote the voice page's trigger and then had to
+/// delete it again when the user chose a route. There is one record, one owner, and this reads it.
+- (NSArray<NSString *> *)withheldSourcesForIdentity:(NSString *)identity;
 - (void)resetProfileForIdentity:(NSString *)identity;
 /// Re-apply a profile the page has just edited: the gestures routing asked for follow the
 /// new table, and a stick that is already deflected is sent again rather than ignored

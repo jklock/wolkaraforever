@@ -34,6 +34,7 @@ NSString *const AKControllerRouteEnabledKey = @"enabled";
 NSNotificationName const AKControllerVirtualPadDidChangeNotification = @"AKControllerVirtualPadDidChange";
 NSString *const AKControllerVirtualPadConnectedKey = @"connected";
 NSString *const AKControllerVirtualPadControllerKey = @"controller";
+NSString *const AKControllerPhysicalSource = @"controller";
 NSString *const AKControllerVirtualPadErrorKey = @"error";
 
 NSNotificationName const AKControllerGuestViewRequestNotification = @"AKControllerGuestViewRequest";
@@ -158,6 +159,9 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     NSMutableDictionary<NSString *, NSDictionary<NSString *, NSString *> *> *_routes;
     // Every model this session has seen, so the rebuild knows what to build.
     NSMutableSet<NSString *> *_knownIdentities;
+    // Which elements each model has produced, so the hot path can tell "already discovered" with
+    // a set lookup and only touch main the first time a control is seen.
+    NSMutableDictionary<NSString *, NSMutableSet<NSString *> *> *_seenSources;
 
     BOOL _learning;
     NSString *_learningIdentity;
@@ -186,6 +190,7 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         _hot = [NSRecursiveLock new];
         _routes = [NSMutableDictionary dictionary];
         _knownIdentities = [NSMutableSet set];
+        _seenSources = [NSMutableDictionary dictionary];
     }
     return self;
 }
@@ -504,34 +509,6 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 
 #pragma mark - Profiles
 
-- (void)claimSource:(NSString *)source forAction:(NSString *)action device:(NSString *)identity {
-    if (!source.length || !identity.length) return;
-    NSAssert(NSThread.isMainThread, @"Claims are edited on the main thread");
-    AKControllerProfile *profile = [self profileForIdentity:identity];
-    if (!profile) return;
-    [profile claimSource:source forAction:action];
-    [profile save];
-
-    // The action itself is the trigger the voice page already stores, not a second implementation
-    // of it: dictation is push-to-talk, so one press starts it and one release finishes, which is
-    // the policy that page already has.
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    if ([action isEqualToString:AKControllerActionDictation]) {
-        AKTrigger *trigger = [AKTrigger new];
-        trigger.element = source;
-        trigger.pattern = AKTriggerPatternPushToTalk;
-        [trigger saveForDevice:identity defaults:defaults];
-        WKLog("input", @"controller %@: %@ claimed for dictation", identity, source);
-    } else {
-        AKTrigger *existing = [AKTrigger savedTriggerForDevice:identity defaults:defaults];
-        if (existing && [AKTrigger element:existing.element covers:source])
-            [AKTrigger forgetTriggerForDevice:identity defaults:defaults];
-        WKLog("input", @"controller %@: %@ back to routing", identity, source);
-    }
-    [self rebuildRoutes];
-    [self postChange];
-}
-
 - (nullable AKControllerProfile *)profileForIdentity:(NSString *)identity {
     if (!identity.length) return nil;
     AKControllerProfile *profile = _profiles[identity];
@@ -552,16 +529,6 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 }
 
 - (void)applyProfileChangeForIdentity:(NSString *)identity {
-    // A control is either routed or claimed, never both. Binding a source to a target takes the
-    // claim out of the profile, so a dictation trigger on that same element would leave one press
-    // with two meanings: it would route and start dictation. The trigger goes with the claim.
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    AKTrigger *trigger = [AKTrigger savedTriggerForDevice:identity defaults:defaults];
-    if (trigger && [trigger.element hasPrefix:@"controller."]) {
-        AKControllerProfile *profile = [self profileForIdentity:identity];
-        if (![[profile actionForSource:trigger.element] length])
-            [AKTrigger forgetTriggerForDevice:identity defaults:defaults];
-    }
     [self rebuildRoutes];
     (void)identity;
     // The gestures routing asked for are a consequence of the profile, so they follow it.
@@ -631,7 +598,8 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     _currentSourceName = source;
     [_hot unlock];
 
-    if ([source isEqualToString:@"controller"]) {
+    if ([source isEqualToString:AKControllerPhysicalSource]) {
+        [self noteDiscoverableElement:element device:device];
         [self noteButtonValue:value element:element device:device];
         if (pressed) [self learnFromSource:element device:device];
         [self routeButton:element value:value pressed:pressed device:device];
@@ -652,7 +620,7 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
     [_hot lock];
     _currentDevice = device;
     _currentDeviceName = name;
-    _currentSourceName = @"controller";
+    _currentSourceName = AKControllerPhysicalSource;
     [_hot unlock];
     [self noteAxisPosition:point element:stableElement device:device];
     if (hypot(point.x, point.y) > AKControllerLearnAxisThreshold)
@@ -681,6 +649,62 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 // The hot path cannot build a profile object, so it reads this: source element -> target element
 // for every model this session has seen. Rebuilt whenever a profile, a pad or the switch changes,
 // on the main thread, and swapped in whole so a reader never sees half a table.
+- (NSArray<NSString *> *)withholdsForIdentity:(NSString *)identity profile:(AKControllerProfile *)profile {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    AKTrigger *trigger = [AKTrigger savedTriggerForDevice:identity defaults:defaults];
+    if (!trigger) return @[];
+    NSMutableArray<NSString *> *covered = [NSMutableArray array];
+    NSMutableArray<NSString *> *sources = [[AKControllerProfile sourceElements] mutableCopy];
+    for (NSString *source in [profile observedSources]) if (![sources containsObject:source]) [sources addObject:source];
+    for (NSString *source in sources)
+        if ([AKTrigger element:trigger.element covers:source]) [covered addObject:source];
+    return covered;
+}
+
+/// The controls Tolkara is using on this model, for the page to show as withheld. Empty when no
+/// feature wants any of them.
+- (NSArray<NSString *> *)withheldSourcesForIdentity:(NSString *)identity {
+    AKControllerProfile *profile = [self profileForIdentity:identity];
+    if (!profile) return @[];
+    return [self withholdsForIdentity:identity profile:profile];
+}
+
+- (void)noteDiscoverableElement:(NSString *)element device:(NSString *)device {
+    if (!element.length || !device.length) return;
+    [_hot lock];
+    NSMutableSet<NSString *> *seen = _seenSources[device];
+    if (!seen) { seen = [NSMutableSet set]; _seenSources[device] = seen; }
+    BOOL fresh = ![seen containsObject:element];
+    if (fresh) [seen addObject:element];
+    [_hot unlock];
+    // Only the first sighting costs anything. Every later event is one set look up, so
+    // discovering a pad's controls cannot become a per-event main-queue block on the path
+    // this feature was measured to keep short. A caller that is already on main gets the
+    // answer now, so the fact is readable when the event returns rather than a turn later.
+    if (!fresh) return;
+    if (NSThread.isMainThread) {
+        [self applyDiscoveryOfElement:element device:device];
+        return;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self applyDiscoveryOfElement:element device:device];
+    });
+}
+
+// The work behind a first sighting, on main: the profile is main-thread state, and so is the
+// route table it feeds.
+- (void)applyDiscoveryOfElement:(NSString *)element device:(NSString *)device {
+    AKControllerProfile *profile = [self profileForIdentity:device];
+    if (!profile) return;
+    NSUInteger before = profile.observedSources.count;
+    [profile noteObservedSource:element];
+    if (profile.observedSources.count == before) return;
+    [profile save];
+    [self rebuildRoutes];
+    [self postChange];
+    WKLog("input", @"controller %@: discovered control %@", device, element);
+}
+
 - (void)rebuildRoutes {
     if (!NSThread.isMainThread) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self rebuildRoutes]; });
@@ -700,11 +724,13 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         // mapping itself: routing asks only "what does this source drive".
         for (AKControllerBinding *binding in [profile bindingsWithAvailability:@{} reserved:@{}]) {
             if (!binding.source.length) continue;
-            // Claimed by a Tolkara action: it must produce no guest route at all, not merely a
-            // route to nothing.
-            if (binding.action.length) continue;
             map[binding.source] = binding.target.length ? binding.target : AKControllerTargetNone;
         }
+        // An input a Tolkara feature is using is never routed, whatever the table says. That fact
+        // is not stored here: it is read from the feature that owns it, so there is one record and
+        // nothing can drift. Voice & Input owns dictation; its trigger names the control.
+        for (NSString *source in [self withholdsForIdentity:identity profile:profile])
+            map[source] = AKControllerTargetNone;
         table[identity] = map;
     }
     [_hot lock];
@@ -1123,7 +1149,7 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         // tells routing that a button is now down.
         button.pressedChangedHandler = ^(GCControllerButtonInput *input, float value, BOOL pressed) {
             (void)input;
-            AKCMReport(weakSelf, device, deviceName, @"controller", element, value, pressed);
+            AKCMReport(weakSelf, device, deviceName, AKControllerPhysicalSource, element, value, pressed);
         };
         // The analog value is what routing needs: a trigger is not a switch. It is a
         // separate handler so the published event stream keeps exactly the shape the
@@ -1142,7 +1168,7 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
         NSString *stable = [self stableAxisElementForName:name];
         axis.valueChangedHandler = ^(GCControllerAxisInput *input, float value) {
             (void)input;
-            AKCMReport(weakSelf, device, deviceName, @"controller", element, value, value != 0);
+            AKCMReport(weakSelf, device, deviceName, AKControllerPhysicalSource, element, value, value != 0);
             AKCMReportAxis(weakSelf, device, deviceName, stable, CGPointMake(value, 0));
         };
     }

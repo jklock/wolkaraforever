@@ -12,6 +12,7 @@
 #import "../WoW/WoWViewController.h"
 #import "../WoW/ControllerManagerViewController.h"
 #import "../Controller/ControllerManager.h"
+#import "../Controller/ControllerProfile.h"
 #import "../Controller/ControllerIdentity.h"
 #import "../WoW/AddonCredentialStore.h"
 #import "../WoW/CurseForgeClient.h"
@@ -1149,6 +1150,50 @@ static void AKSelfTestRunControllerManager(AKSelfTestRecorder *recorder, UIViewC
                  _:@"the page carries the shared-mapping disclosure"];
     [recorder check:![(UIControl *)AKSelfTestFind(page.view, @"controllerManager.learn") isEnabled]
                  _:@"reassigning is unavailable with no controller connected"];
+
+    // Withholding is not this feature's fact to own, and the device proves it: a trigger the
+    // voice page stores is all it takes for a control to stop being routed, and a control the
+    // pad sends that the standard layout never heard of becomes a row of its own.
+    NSString *fixtureIdentity = @"selftest.controller.model";
+    NSString *fixtureSource = @"controller.button.x";
+    NSString *extraSource = @"controller.button.paddle";
+    [AKTrigger forgetTriggerForDevice:fixtureIdentity defaults:defaults];
+    [AKControllerProfile forgetIdentity:fixtureIdentity defaults:defaults];
+    [manager applyProfileChangeForIdentity:fixtureIdentity];
+    [recorder check:[manager withheldSourcesForIdentity:fixtureIdentity].count == 0
+                 _:@"nothing is withheld while no feature is using the controller"];
+
+    AKTrigger *fixtureTrigger = [AKTrigger new];
+    fixtureTrigger.element = fixtureSource;
+    fixtureTrigger.pattern = AKTriggerPatternPushToTalk;
+    [fixtureTrigger saveForDevice:fixtureIdentity defaults:defaults];
+    [manager applyProfileChangeForIdentity:fixtureIdentity];
+    [recorder check:[[manager withheldSourcesForIdentity:fixtureIdentity] containsObject:fixtureSource]
+                 _:@"the voice trigger is what withholds a control, read rather than copied"];
+
+    [AKTrigger forgetTriggerForDevice:fixtureIdentity defaults:defaults];
+    [manager applyProfileChangeForIdentity:fixtureIdentity];
+    [recorder check:[manager withheldSourcesForIdentity:fixtureIdentity].count == 0
+                 _:@"removing the voice trigger gives the control back to the game"];
+
+    [manager reportElement:extraSource value:1 pressed:YES
+                    device:fixtureIdentity deviceName:@"Fixture" source:AKControllerPhysicalSource];
+    // Discovery stores itself on main, and this check is already on main, so the queue is given
+    // turns to run rather than the answer being read too early.
+    for (int turn = 0; turn < 20; turn++) {
+        if ([[[manager profileForIdentity:fixtureIdentity] observedSources] containsObject:extraSource]) break;
+        [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+    }
+    [recorder check:[[[manager profileForIdentity:fixtureIdentity] observedSources] containsObject:extraSource]
+                 _:@"a control the pad sent that iOS never listed is discovered and remembered"];
+    BOOL offered = NO;
+    for (AKControllerBinding *row in [[manager profileForIdentity:fixtureIdentity] bindingsWithAvailability:@{} reserved:@{}])
+        if ([row.source isEqualToString:extraSource]) offered = YES;
+    [recorder check:offered _:@"and the page has a row it could not have listed before"];
+    [manager reportElement:extraSource value:0 pressed:NO
+                    device:fixtureIdentity deviceName:@"Fixture" source:AKControllerPhysicalSource];
+    [AKControllerProfile forgetIdentity:fixtureIdentity defaults:defaults];
+    [manager applyProfileChangeForIdentity:fixtureIdentity];
 
     // The sixth card on the home page, which is where a person finds the feature at all. It is a
     // section of its own, and its switch is the same setting as the page's - so this drives it

@@ -68,8 +68,10 @@
 "controller.binding.header" = "Physische Steuerung → was sie auslöst";
 "controller.binding.unassigned" = "Nicht zugewiesen";
 "controller.state.passthrough" = "Leitet weiter an";
-"controller.state.action" = "Tolkara-Aktion";
-"controller.action.dictation" = "Diktat (zum Sprechen halten)";
+"controller.state.discovered" = "An diesem Controller gefunden · leitet weiter an";
+"controller.state.withheld" = "Vom Spiel zurückgehalten";
+"controller.withheld.dictation" = "Diktat";
+"controller.withheld.unused" = "keine Tolkara-Funktion nutzt ihn";
 "controller.unavailable" = "auf diesem Controller nicht vorhanden";
 "controller.reserved" = "  ·  Systemtaste";
 "controller.nomodels" = "Es ist kein Controller verbunden.";

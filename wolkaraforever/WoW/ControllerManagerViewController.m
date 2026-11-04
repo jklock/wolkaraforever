@@ -4,6 +4,8 @@
 #import "../App/WKLocalization.h"
 #import "../App/WolkaraForeverLog.h"
 #import "../App/WolkaraForeverTheme.h"
+#import "../Controller/ControllerProfile.h"
+#import "../Input/Trigger.h"
 
 static UIColor *CMGold(void) { return [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1]; }
 static UIColor *CMMuted(void) { return [UIColor colorWithRed:0.66 green:0.72 blue:0.78 alpha:1]; }
@@ -291,6 +293,10 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     _hintLabel.hidden = !manager.learning;
     _resetButton.enabled = model.customised;
 
+    // What Tolkara is using on this model, asked once per render. The set comes from the feature
+    // that owns the choice, so this page cannot disagree with the page that made it.
+    NSSet<NSString *> *withheld = [NSSet setWithArray:
+        model ? [manager withheldSourcesForIdentity:model.identity] : @[]];
     NSArray<AKControllerBinding *> *bindings = model.bindings ?: @[];
     NSUInteger index = 0;
     for (AKControllerBinding *binding in bindings) {
@@ -300,11 +306,21 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
         // A row the pad cannot produce is shown, not hidden: the choice belongs to the
         // profile, and the next pad of this model may well have the control.
         row.enabled = binding.available;
-        // Two states, named: routed to a virtual control, or claimed by a Tolkara action. A
-        // claimed control has no target, so showing only "→ Not assigned" would hide the point.
-        NSString *destination = binding.action.length
-            ? [NSString stringWithFormat:@"%@: %@", WKLocalized(@"controller.state.action"), binding.targetDisplay]
-            : [NSString stringWithFormat:@"%@: %@", WKLocalized(@"controller.state.passthrough"), binding.targetDisplay];
+        // What the control does, named. Withheld means a Tolkara feature is using it, and that
+        // fact is read from the feature - Voice & Input for dictation - not kept here: this page
+        // shows the consequence and sends the user to the page that owns the choice.
+        NSString *destination;
+        if ([withheld containsObject:binding.source]) {
+            AKTrigger *trigger = [AKTrigger savedTriggerForDevice:model.identity defaults:NSUserDefaults.standardUserDefaults];
+            NSString *feature = trigger ? [NSString stringWithFormat:@"%@ (%@)", WKLocalized(@"controller.withheld.dictation"),
+                                                                          [trigger patternName]]
+                                        : WKLocalized(@"controller.withheld.unused");
+            destination = [NSString stringWithFormat:@"%@: %@", WKLocalized(@"controller.state.withheld"), feature];
+        } else if (binding.discovered) {
+            destination = [NSString stringWithFormat:@"%@: %@", WKLocalized(@"controller.state.discovered"), binding.targetDisplay];
+        } else {
+            destination = [NSString stringWithFormat:@"%@: %@", WKLocalized(@"controller.state.passthrough"), binding.targetDisplay];
+        }
         NSString *title = [NSString stringWithFormat:@"%@  ·  %@%@", binding.sourceDisplay, destination,
                            binding.reserved ? WKLocalized(@"controller.reserved") : @""];
         UIButtonConfiguration *configuration = UIButtonConfiguration.plainButtonConfiguration;
@@ -387,14 +403,6 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
             [self bindSource:source toTarget:target.identifier identity:identity];
         }]];
     }
-    // The one Tolkara action there is. Claimed means the guest never sees this control at all;
-    // the action itself is the dictation trigger the voice page already has.
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"controller.action.dictation")
-        style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        (void)action;
-        [self claimSource:source forAction:AKControllerActionDictation identity:identity];
-    }]];
-
     // "Not assigned" is a choice, not a cancellation: a control the user does not want to
     // drive anything is a real answer and has to survive a reload.
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"controller.binding.unassigned")
@@ -413,11 +421,6 @@ static UILabel *CMLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     AKControllerProfile *profile = [AKControllerManager.shared profileForIdentity:identity];
     [profile bindSource:source toTarget:target];
     [AKControllerManager.shared applyProfileChangeForIdentity:identity];
-    [self render];
-}
-
-- (void)claimSource:(NSString *)source forAction:(NSString *)action identity:(NSString *)identity {
-    [AKControllerManager.shared claimSource:source forAction:action device:identity];
     [self render];
 }
 

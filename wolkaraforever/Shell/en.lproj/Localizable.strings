@@ -68,8 +68,10 @@
 "controller.binding.header" = "Physical control → what it drives";
 "controller.binding.unassigned" = "Not assigned";
 "controller.state.passthrough" = "Routes to";
-"controller.state.action" = "Tolkara action";
-"controller.action.dictation" = "Dictation (hold to talk)";
+"controller.state.discovered" = "Found on this controller · routes to";
+"controller.state.withheld" = "Withheld from the game";
+"controller.withheld.dictation" = "Dictation";
+"controller.withheld.unused" = "no Tolkara feature is using it";
 "controller.unavailable" = "not on this controller";
 "controller.reserved" = "  ·  system button";
 "controller.nomodels" = "No controller is connected.";

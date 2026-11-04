@@ -50,7 +50,6 @@
 @end
 // The page's own handlers, so the claim path a tap goes through is what the fixture drives.
 @interface TKWoWControllerManagerViewController (Fixture)
-- (void)claimSource:(NSString *)source forAction:(NSString *)action identity:(NSString *)identity;
 - (void)bindSource:(NSString *)source toTarget:(NSString *)target identity:(NSString *)identity;
 @end
 @interface AKVoiceViewController (Fixture)
@@ -1965,7 +1964,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     for (UIBarButtonItem *item in @[gear, refresh])
         assert(item.target != nil && item.action != NULL);
 
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items; the sixth card of its own, the Controller Manager - its switch, its status sentence, its row, and that the card's switch and the page's are one setting - and the page it opens - off default, persistence, the learn/cancel flow, a control claimed for the one Tolkara action and given back to its route, German without reopening it, and no game file touched.");
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items; the sixth card of its own, the Controller Manager - its switch, its status sentence, its row, and that the card's switch and the page's are one setting - and the page it opens - off default, persistence, the learn/cancel flow, a control withheld by the voice trigger the other page owns and given back to its route when that trigger is removed, German without reopening it, and no game file touched.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.
@@ -2076,28 +2075,40 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([(UIControl *)Find(page.view, @"controllerManager.cancel") isHidden]);
     assert([(UIControl *)Find(page.view, @"controllerManager.hint") isHidden]);
 
-    // Claiming, through the page's own handlers rather than the manager's API, so what is
-    // measured is the wiring a tap goes through. Choosing a Tolkara action takes the control out
-    // of the guest's route table and hands it to the trigger the voice page already stores;
-    // choosing a target again is choosing to route, and the claim goes.
+    // Withholding is read from the feature that owns it. The voice page's trigger is the only
+    // record; this page shows the consequence and stores nothing of its own.
+    NSString *claimIdentity = @"fixture.controller.model";
+    NSUserDefaults *claimDefaults = NSUserDefaults.standardUserDefaults;
+    [AKTrigger forgetTriggerForDevice:claimIdentity defaults:claimDefaults];
+    [AKControllerProfile forgetIdentity:claimIdentity defaults:claimDefaults];
+    [self.controller render];
+    AKControllerManager *claimManager = AKControllerManager.shared;
+    assert([[claimManager withheldSourcesForIdentity:claimIdentity] count] == 0);
+
+    AKTrigger *trigger = [AKTrigger new];
+    trigger.element = @"controller.button.x";
+    trigger.pattern = AKTriggerPatternPushToTalk;
+    [trigger saveForDevice:claimIdentity defaults:claimDefaults];
+    [claimManager applyProfileChangeForIdentity:claimIdentity];
+    assert([[claimManager withheldSourcesForIdentity:claimIdentity] containsObject:@"controller.button.x"]);
+
+    // The page's own handler still routes a control when the user chooses a target.
     TKWoWControllerManagerViewController *claimPage = [TKWoWControllerManagerViewController new];
     [claimPage loadViewIfNeeded];
-    NSString *claimIdentity = @"fixture.controller.model";
-    [claimPage claimSource:@"controller.button.x" forAction:AKControllerActionDictation identity:claimIdentity];
-    AKControllerProfile *claimed = [manager profileForIdentity:claimIdentity];
-    assert([[claimed actionForSource:@"controller.button.x"] isEqual:AKControllerActionDictation]);
-    assert([[claimed targetForSource:@"controller.button.x"] isEqual:AKControllerTargetNone]);
-    assert([AKTrigger savedTriggerForDevice:claimIdentity defaults:defaults] != nil);
     [claimPage bindSource:@"controller.button.x" toTarget:@"virtual.button.x" identity:claimIdentity];
-    assert(![[claimed actionForSource:@"controller.button.x"] length]);
-    assert([[claimed targetForSource:@"controller.button.x"] isEqual:@"virtual.button.x"]);
-    assert([AKTrigger savedTriggerForDevice:claimIdentity defaults:defaults] == nil);
-    // Both states have words in both languages: a raw key on this page would be a defect the
-    // string tables are supposed to make impossible.
-    for (NSString *key in @[@"controller.action.dictation", @"controller.state.action",
-                            @"controller.state.passthrough"])
+    AKControllerProfile *bound = [claimManager profileForIdentity:claimIdentity];
+    assert([[bound targetForSource:@"controller.button.x"] isEqual:@"virtual.button.x"]);
+
+    [AKTrigger forgetTriggerForDevice:claimIdentity defaults:claimDefaults];
+    [claimManager applyProfileChangeForIdentity:claimIdentity];
+    assert([[claimManager withheldSourcesForIdentity:claimIdentity] count] == 0);
+    // The three states this page can print have words in both languages: a raw key would be a
+    // defect the string tables are supposed to make impossible.
+    for (NSString *key in @[@"controller.state.passthrough", @"controller.state.discovered",
+                            @"controller.state.withheld", @"controller.withheld.dictation",
+                            @"controller.withheld.unused"])
         assert(![WKLocalized(key) hasPrefix:@"controller."]);
-    [AKControllerProfile forgetIdentity:claimIdentity defaults:defaults];
+    [AKControllerProfile forgetIdentity:claimIdentity defaults:claimDefaults];
 
     // The app language, without reopening the page.
     WKAppLanguage previous = WKLocalization.shared.language;

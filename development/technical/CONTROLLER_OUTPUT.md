@@ -1,51 +1,101 @@
-# Controller output: pass through, or claimed by Tolkara
+# Controller output: what the game gets, and what Tolkara keeps
 
-Status: **shipped.** This describes what the Controller Manager does now, not a proposal. Read
-[`CONTROLLER_MANAGER.md`](CONTROLLER_MANAGER.md) first: it states the three situations and the
-guarantee this serves.
+Status: **shipped.** This describes what the Controller Manager does now, not a
+proposal. Read [`CONTROLLER_MANAGER.md`](CONTROLLER_MANAGER.md) first: it states
+the three situations and the guarantee this serves.
 
-## The two states a physical control can be in
+## Two states, one owner each
 
-Every control of a connected controller model is in exactly one of these. There is no third state
-and no combination.
+While routing is on, every control of a connected model is in exactly one of two
+states. Which state it is in is decided by whoever owns the answer, and only by
+them:
 
-**Pass through** — the default for every routable control. The control drives the virtual control
-of the same name, one to one, and that is what the guest sees. A button is a button; a trigger is a
-trigger with its analog value; a stick is a position; the D-pad is a position. The work happens on
-the thread GameController called the handler on, with one recursive lock and a prebuilt table, and
-is measured at a median of about a microsecond (see `--selftest=controller-latency`). There is no
-main-queue hop anywhere on this path.
+* **Pass through** — the question *"does the game see this control?"* is answered
+  here.
+* **Withheld** — the question *"what does this control do instead?"* is answered
+  by the feature that uses it. Today that is Voice & Input for dictation. This
+  feature never stores an answer to it.
 
-**Tolkara action** — the control is claimed. It is removed from the guest's route table entirely,
-so it produces no route notification and the guest never sees it. Instead it drives a behaviour
-this app already has, through the interface that behaviour already uses.
+**Pass through** is the default for every control in the standard layout. The
+control drives the virtual control of the same name, one to one, and that is what
+the guest sees: a button is a button, a trigger is a trigger with its analog
+value, a stick is a position, the D-pad is a position. The work happens on the
+thread GameController called the handler on, with one recursive lock and a
+prebuilt table, and is measured at a median of about a microsecond (see
+`--selftest=controller-latency`). There is no main-queue hop anywhere on this
+path.
 
-Claiming exists because of the second half of the guarantee: while routing is on, the guest is only
-ever shown the virtual controller. A control Tolkara keeps is therefore a control the game does not
-have — and that is what makes it useful.
+**Withheld** means the control is removed from the guest's route table entirely:
+it produces no route notification at all, so the game cannot see it. It exists
+because of the second half of the guarantee — while routing is on the guest is
+only ever shown the virtual controller, so a control Tolkara keeps is a control
+the game does not have. That is what makes it useful.
 
-## The action catalogue
+## Where withholding comes from
 
-There is one action, and it is real:
+Not from this feature. `AKTrigger` already stores, per controller model, which
+input starts dictation and how (`saveForDevice:defaults:`,
+`savedTriggerForDevice:defaults:`, `forgetTriggerForDevice:defaults:`), and
+`AKInputRouter` already fires it. The Controller Manager reads that record and
+withholds whatever it covers:
 
-| Action | What it does | Press | Release |
-| --- | --- | --- | --- |
-| `tolkara.dictation` | Live dictation, the same one the voice page's trigger drives | `[AKDictation.shared begin]` | `[AKDictation.shared end]` |
+```objc
+for (NSString *source in [manager withheldSourcesForIdentity:identity])
+    map[source] = AKControllerTargetNone;
+```
 
-It is not a second implementation. `-claimSource:forAction:device:` stores an `AKTrigger` with
-`AKTriggerPatternPushToTalk` on that element for that controller model — the same trigger record
-the voice page reads and the same object `AKInputRouter` fires — so the press and release semantics
-are the ones the product already had, not a parallel set. The voice page and the Controller Manager
-are two views of one mapping, and choosing a target for a claimed control puts it back to routing
-and forgets the trigger, so one control can never both route and start dictation.
+Consequences that follow from having one record instead of two:
 
-### What is not in the catalogue, and why
+* The voice page and the Controller Manager cannot disagree. There is nothing to
+  reconcile because nothing is duplicated.
+* The row on the Controller Manager page says *withheld — dictation
+  (push-to-talk)*, and names the page that owns the choice. It does not offer to
+  make that choice itself.
+* Choosing a target for a withheld control is still allowed, and that is how a
+  user takes the control back for the game — but it takes effect only once the
+  voice page releases the trigger. Both pages then show the same thing.
+* A second behaviour arrives as a second trigger-owning feature, not as a second
+  table here.
 
-The rule is: only behaviours that already exist behind an app-owned interface, and only if making
-them an action does not change product behaviour. Everything else is excluded by that rule, not
-deferred:
+The profile stores no claim, no action name and no list of behaviours. Its record
+is the mapping (`version`, `map`) plus what has been discovered about the model
+(`observed`).
 
-| Behaviour | Why it is not an action |
+## Discovering the controls
+
+There is no model list. A pad's controls are whatever iPadOS reports plus
+whatever the pad turns out to send, and the target side is fixed by what the
+virtual controller offers — twelve targets, checked by
+`check_controller_targets.sh`.
+
+* **From the framework.** The manager enumerates each connected `GCController`'s
+  `physicalInputProfile` — buttons, axes, D-pad directions — and names each one
+  through `AKInputElementForController*`. Anything iOS reports becomes a row,
+  whether or not the default table has heard of it.
+* **From events.** A control that never appears in the profile but does produce a
+  value or a position is discovered the first time it arrives. That is the only
+  way some extra buttons can be mapped at all. The first sighting costs one set
+  lookup on the hot path; the work behind it — storing it, rebuilding the route
+  table, redrawing the page — happens on main exactly once for that model, never
+  again per event.
+* **Remembered.** Discovered controls are stored per model in `observed`, so the
+  row survives a restart and another pad of the same model gets the same table.
+  Reset restores the default layout and keeps the observations: a pad has the
+  buttons it has.
+* **Marked as such.** A discovered row is shown as *discovered* rather than
+  *pass through*, so it is clear the row came from the pad and not from the
+  default layout.
+
+A discovered control routes like any other: it is in the table the moment it is
+seen, so it can be mapped immediately.
+
+## What is deliberately not here
+
+Only behaviours that already exist behind an app-owned interface belong on the
+other side of withholding, and only if taking the input does not change product
+behaviour. Everything else is excluded by that rule, not deferred:
+
+| Behaviour | Why it is not withheld |
 | --- | --- |
 | On-screen keyboard / gamepad visibility | Lives in the AppKit adapter as part of the touch overlay's own layout state. Driving it from a controller would change what the overlay does while the user is using it, and the adapter exposes no app-owned entry point for it. |
 | Performance overlay | Same: adapter-side HUD state, changed through the gamepad layout screen, not through an app interface. |
@@ -53,8 +103,8 @@ deferred:
 | Screenshots, Spotlight, other system gestures | Not ours: iPadOS owns them, and the product's rule is that a feature never starts because an unrelated system press happened. |
 | Anything that types or presses game keys | Not input remapping. The boundary in `AGENTS.md` is that we adapt input, never automate the application. |
 
-A behaviour joins this table when it has an app-owned interface and a test showing the claimed
-control produces no route notification — not before.
+A behaviour joins this table when it has an app-owned interface and a test
+showing the withheld control produces no route notification — not before.
 
 ## Where the model is stored
 
@@ -62,42 +112,51 @@ control produces no route notification — not before.
 
 ```json
 { "version": 2,
-  "map":     { "controller.button.a": "virtual.button.a" },
-  "actions": { "controller.button.x": "tolkara.dictation" } }
+  "map":      { "controller.button.a": "virtual.button.a" },
+  "observed": ["controller.button.paddle"] }
 ```
 
-* **Version 1 migrated**: a bare `source -> target` table becomes version 2 with those targets as
-  explicit pass-through and no claims — nothing a v1 user chose is lost, and nothing they never
-  had is invented.
-* **Unknown versions and malformed values** fall back to the complete default 1:1 layout rather
-  than half-applying, so a corrupt table cannot leave a control dead.
-* **Reset** restores the default layout *and* removes every claim.
-* **One target, one source**: binding a source to a target unmaps whoever else drove it, and
-  claiming a source clears its target. Two controls cannot fight over one virtual button.
-* Profiles are per *model* (`vendor` + `product category`), so two identical pads share one. The
-  page says so.
+* **Version 1 migrated**: a bare `source -> target` table becomes version 2 with
+  those targets as explicit pass-through and nothing discovered — nothing a v1
+  user chose is lost, and nothing they never had is invented.
+* **A version 2 table written by the earlier build** may carry an `actions` key.
+  It is ignored: withholding now comes from the trigger the voice page owns, so
+  no dangling reference to a behaviour this feature no longer stores is left
+  behind.
+* **Unknown versions and malformed values** fall back to the complete default 1:1
+  layout rather than half-applying, so a corrupt table cannot leave a control
+  dead.
+* **Reset** restores the default layout, clears remaps and keeps observations.
+* **One target, one source**: binding a source to a target unmaps whoever else
+  drove it, so two controls cannot fight over one virtual button. Binding a
+  withheld control is allowed and takes effect when its trigger is released.
+* Profiles are per *model* (`vendor` + `product category`), so two identical pads
+  share one. The page says so.
 
 ## Invariants
 
-1. A claimed control produces no `AKControllerRouteValue` or `...Position` notification, ever.
-2. A routed control never fires a Tolkara action.
-3. Pass-through stays on the framework's callback thread; actions may be dispatched, because they
-   are discrete events rather than a stream of positions.
-4. Releases are symmetric: releasing, disabling routing, disconnecting, backgrounding, resigning
-   active, a profile change and a reset each leave no held virtual value and no dictation session
-   running.
-5. The hot path never reads a mutable profile object, never touches defaults, never builds a table
-   and never hops to main. Tables are built on main and published whole.
+1. A withheld control produces no `AKControllerRouteValue` or `...Position`
+   notification, ever.
+2. Withholding is read from the feature that owns the behaviour, never stored
+   here; the profile contains only `version`, `map` and `observed`.
+3. Pass-through stays on the framework's callback thread. Discovery may dispatch,
+   because it happens once per model, not per event.
+4. Releases are symmetric: releasing, disabling routing, disconnecting,
+   backgrounding, resigning active, a profile change and a reset each leave no
+   held virtual value — and no dictation session this feature started.
+5. The hot path never reads a mutable profile object, never touches defaults,
+   never builds a table and never hops to main. Tables are built on main and
+   published whole; discovery's main-queue work is a first-sighting event.
 
 ## Where each is proven
 
 | Claim | Test |
 | --- | --- |
-| claimed control routes nothing, is the stored dictation trigger, survives reload, gives the route back | `test_controller_manager.sh` — `CONTROLLER_MANAGER_CLAIM_PASS` |
-| a v1 table still loads as pass-through with no claims | same suite |
-| reset clears claims | same suite |
-| the page's claim and restore handlers, and both languages | `test_wow_launcher_ui.sh` |
-| the action list matches what the page offers and what both string tables name | `check_controller_actions.sh` |
+| a withheld control routes nothing and the withholding comes from the voice trigger; removing it restores the route; the profile stores no claim | `test_controller_manager.sh` — `CONTROLLER_MANAGER_WITHHOLD_PASS` |
+| an extra button the pad produces becomes a stored, discovered row | same suite |
+| a v1 table still loads as pass-through with nothing discovered | same suite |
+| reset restores the layout and keeps observations | same suite |
+| the page's row states, its bind handler and both languages | `test_wow_launcher_ui.sh` |
 | every target the page offers can be written by the adapter | `check_controller_targets.sh` |
 | pass-through direct, analog, sticks, D-pad, release, latency | `--selftest=controller-routing`, `--selftest=controller-latency` |
 | the three situations, on the device | `--selftest=controller-situations` |

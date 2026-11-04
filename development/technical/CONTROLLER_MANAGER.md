@@ -248,8 +248,10 @@ something this feature can get wrong or right.
 
 ## What a control can do
 
-Each physical control either passes through one to one, or is claimed by Tolkara and never reaches
-the guest. The vocabulary, the one action that exists, and why nothing else is in it:
+Each physical control either passes through one to one, or is withheld from the guest because a
+Tolkara feature is using it. This page answers only the first question; the second belongs to the
+feature that owns the behaviour — Voice & Input, for dictation. The states, where withholding is
+read from, how controls are discovered rather than listed, and why nothing else is withheld:
 [`CONTROLLER_OUTPUT.md`](CONTROLLER_OUTPUT.md).
 
 ## Known limits

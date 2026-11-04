@@ -179,9 +179,10 @@ static void CMTestProfile(void) {
     puts("CONTROLLER_MANAGER_PROFILE_PASS: default layout, remap, one-to-one targets, reload, reset.");
 }
 
-// A claimed control is not routed at all, and the action it claims is the one the voice page
-// already stores - not a parallel implementation of dictation.
-static void CMTestClaiming(CMRecorder *recorder, CMFakePad *pad) {
+// Which inputs Tolkara keeps is not this feature's fact to own: Voice & Input stores the trigger
+// that starts dictation, and the manager reads it. So the check is the consequence - that source
+// routes nothing - plus the traffic in the other direction: remove the trigger, the route returns.
+static void CMTestWithholding(CMRecorder *recorder, CMFakePad *pad) {
     AKControllerManager *manager = AKControllerManager.shared;
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     // Whatever the switch was when this check started, it is put back: the lifecycle check runs
@@ -189,54 +190,73 @@ static void CMTestClaiming(CMRecorder *recorder, CMFakePad *pad) {
     BOOL wasEnabled = manager.enabled;
     manager.controllersProvider = ^NSArray<GCController *> *{ return @[(GCController *)(id)pad]; };
     [manager noteGuestFacadePresent];
-    [manager noteVirtualPadConnected:(GCController *)(id)[CMFakePad new]];
+    [manager noteVirtualPadConnected:(GCController *)[CMFakePad new]];
     manager.enabled = YES;
     [manager profileForIdentity:CMIdentity];
-
-    [manager claimSource:@"controller.button.x" forAction:AKControllerActionDictation device:CMIdentity];
+    [AKTrigger forgetTriggerForDevice:CMIdentity defaults:defaults];
+    [manager applyProfileChangeForIdentity:CMIdentity];
+    // Whatever a previous check left the pad holding is released first, so this check reads its
+    // own press and not a value that was already there.
+    [manager reportElement:@"controller.button.x" value:0 pressed:NO
+                    device:CMIdentity deviceName:@"Fixture" source:@"controller"];
     [recorder clear];
     [manager reportElement:@"controller.button.x" value:1 pressed:YES
                     device:CMIdentity deviceName:@"Fixture" source:@"controller"];
-    CM_CHECK(recorder.values.count == 0, "a claimed control produces no route value at all");
+    CM_CHECK([recorder hasValue:@"virtual.button.x=1.0000"], "an unused control routes");
 
-    AKTrigger *saved = [AKTrigger savedTriggerForDevice:CMIdentity defaults:defaults];
-    CM_CHECK([saved.element isEqualToString:@"controller.button.x"],
-             "the claim is stored as the trigger the voice page reads");
-    CM_CHECK(saved.pattern == AKTriggerPatternPushToTalk,
-             "dictation keeps its push-to-talk policy: press starts, release finishes");
+    // The voice page claims it, with the push-to-talk policy it already owns.
+    AKTrigger *trigger = [AKTrigger new];
+    trigger.element = @"controller.button.x";
+    trigger.pattern = AKTriggerPatternPushToTalk;
+    [trigger saveForDevice:CMIdentity defaults:defaults];
+    [manager applyProfileChangeForIdentity:CMIdentity];
 
-    // The profile records the claim, and a second instance reads it back.
-    AKControllerProfile *reloaded = [[AKControllerProfile alloc] initWithIdentity:CMIdentity
+    CM_CHECK([[manager withheldSourcesForIdentity:CMIdentity] containsObject:@"controller.button.x"],
+             "the manager reports the control as withheld, read from the voice trigger");
+    [manager reportElement:@"controller.button.x" value:0 pressed:NO
+                    device:CMIdentity deviceName:@"Fixture" source:@"controller"];
+    [recorder clear];
+    [manager reportElement:@"controller.button.x" value:1 pressed:YES
+                    device:CMIdentity deviceName:@"Fixture" source:@"controller"];
+    CM_CHECK(recorder.values.count == 0, "a withheld control produces no route value at all");
+
+    // Taking the trigger away - on the page that owns it - gives the route back.
+    [AKTrigger forgetTriggerForDevice:CMIdentity defaults:defaults];
+    [manager applyProfileChangeForIdentity:CMIdentity];
+    [manager reportElement:@"controller.button.x" value:0 pressed:NO
+                    device:CMIdentity deviceName:@"Fixture" source:@"controller"];
+    [recorder clear];
+    [manager reportElement:@"controller.button.x" value:1 pressed:YES
+                    device:CMIdentity deviceName:@"Fixture" source:@"controller"];
+    CM_CHECK([recorder hasValue:@"virtual.button.x=1.0000"], "removing the voice trigger restores the route");
+    CM_CHECK([[manager withheldSourcesForIdentity:CMIdentity] count] == 0,
+             "and nothing is withheld any more");
+
+    // A control the pad has beyond the standard layout becomes a row once it has been pressed.
+    [manager reportElement:@"controller.button.paddle" value:1 pressed:YES
+                    device:CMIdentity deviceName:@"Fixture" source:@"controller"];
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
+    AKControllerProfile *learned = [[AKControllerProfile alloc] initWithIdentity:CMIdentity
                                                                       vendorName:@"Fixture Vendor"
                                                                  productCategory:@"Fixture Category"
                                                                         defaults:defaults];
-    CM_CHECK([[reloaded actionForSource:@"controller.button.x"] isEqualToString:AKControllerActionDictation],
-             "the claim survives a reload");
-    CM_CHECK([[reloaded targetForSource:@"controller.button.x"] isEqualToString:AKControllerTargetNone],
-             "a claimed control has no target");
+    CM_CHECK([[learned observedSources] containsObject:@"controller.button.paddle"],
+             "an extra button the pad produced becomes a stored control of that model");
+    BOOL hasRow = NO;
+    for (AKControllerBinding *row in [learned bindingsWithAvailability:@{} reserved:@{}])
+        if ([row.source isEqualToString:@"controller.button.paddle"] && row.discovered) hasRow = YES;
+    CM_CHECK(hasRow, "and the page has a row for it, marked as discovered");
 
-    // Giving it back restores the one-to-one route and removes the trigger.
-    [manager claimSource:@"controller.button.x" forAction:nil device:CMIdentity];
-    [recorder clear];
-    [manager reportElement:@"controller.button.x" value:1 pressed:YES
-                    device:CMIdentity deviceName:@"Fixture" source:@"controller"];
-    CM_CHECK([recorder hasValue:@"virtual.button.x=1.0000"], "unclaiming restores the route");
-    CM_CHECK([AKTrigger savedTriggerForDevice:CMIdentity defaults:defaults] == nil,
-             "unclaiming forgets the stored trigger");
+    // The profile does not keep a second copy of the fact: its record is the mapping, nothing else.
+    // Written now, because the discovered control is what makes this model customised.
+    id stored = [defaults objectForKey:[@"WolkaraForeverControllerProfile." stringByAppendingString:CMIdentity]];
+    if (!stored) stored = @{};
+    NSSet *storedKeys = [NSSet setWithArray:[stored allKeys]];
+    BOOL onlyMapping = [storedKeys isEqualToSet:[NSSet setWithArray:@[@"version", @"map", @"observed"]]];
+    CM_CHECK(onlyMapping, "the stored profile holds the mapping and what was discovered and no claim");
 
-    // A table written before claims existed still loads, and loads as routes with no claims.
-    [defaults setObject:@{@"version": @1, @"map": @{@"controller.button.a": @"virtual.button.b"}}
-                 forKey:[@"WolkaraForeverControllerProfile." stringByAppendingString:CMIdentity]];
-    AKControllerProfile *legacy = [[AKControllerProfile alloc] initWithIdentity:CMIdentity
-                                                                    vendorName:@"Fixture Vendor"
-                                                               productCategory:@"Fixture Category"
-                                                                      defaults:defaults];
-    CM_CHECK([[legacy targetForSource:@"controller.button.a"] isEqualToString:@"virtual.button.b"],
-             "a version 1 table still loads its route");
-    CM_CHECK([legacy actionForSource:@"controller.button.a"] == nil,
-             "a version 1 table has no claims, because nothing could have made one");
 
-    [AKTrigger forgetTriggerForDevice:CMIdentity defaults:defaults];
+
     [AKControllerProfile forgetIdentity:CMIdentity defaults:defaults];
     // Leave the manager exactly as this check found it: the lifecycle check below reads the
     // switch rather than setting it, and would otherwise inherit both a virtual pad it never
@@ -244,7 +264,7 @@ static void CMTestClaiming(CMRecorder *recorder, CMFakePad *pad) {
     manager.enabled = wasEnabled;
     [manager noteVirtualPadDisconnected];
     manager.controllersProvider = nil;
-    puts("CONTROLLER_MANAGER_CLAIM_PASS: claimed control routes nothing, is the existing dictation trigger, survives a reload, and gives the route back.");
+    puts("CONTROLLER_MANAGER_WITHHOLD_PASS: withheld controls route nothing and come from the voice trigger, removing it restores the route, extra buttons become rows.");
 }
 
 static void CMTestRouting(CMRecorder *recorder, CMFakePad *pad) {
@@ -504,7 +524,7 @@ static void RunAll(void) {
     [manager noteGuestFacadePresent];
     CM_CHECK(manager.guestFacadePresent, "the facade is present once it has announced itself");
     CMTestRouting(recorder, pad);
-    CMTestClaiming(recorder, pad);
+    CMTestWithholding(recorder, pad);
     CMTestLifecycle(recorder, pad);
     CMTestLearning();
     CMTestGestureReasons();

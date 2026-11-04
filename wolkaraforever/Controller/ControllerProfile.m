@@ -5,13 +5,14 @@
 #import "../Input/InputElement.h"
 
 NSString *const AKControllerTargetNone = @"virtual.none";
-NSString *const AKControllerActionDictation = @"tolkara.dictation";
 
 // Bumped when the vocabulary changes shape. A stored table with another version is
 // ignored rather than half-read: the defaults are always a usable one-to-one pad, so
 // losing an unreadable table costs the user a choice, not a working controller.
-// 2 adds claimed controls beside the routing table. 1 is still read: a table written before
-// claims existed is a routing table with no claims, which is exactly what it meant.
+// 2 added claimed controls. Claims are gone: which inputs Tolkara keeps is its own fact,
+// owned by the feature that uses them (Voice & Input for dictation), and this file stores
+// only what each control drives. A version 2 table still loads - its "actions" key is now
+// simply unknown and ignored, so its mappings survive and nothing is withheld by it.
 static NSInteger const AKControllerProfileVersion = 2;
 static NSInteger const AKControllerProfileOldestReadableVersion = 1;
 static NSString *const AKControllerProfileKeyPrefix = @"WolkaraForeverControllerProfile.";
@@ -74,11 +75,11 @@ static NSString *const AKControllerProfileKeyPrefix = @"WolkaraForeverController
 @interface AKControllerBinding ()
 @property (nonatomic, copy, readwrite) NSString *source;
 @property (nonatomic, copy, readwrite) NSString *target;
-@property (nonatomic, copy, readwrite) NSString *action;
 @property (nonatomic, copy, readwrite) NSString *sourceDisplay;
 @property (nonatomic, copy, readwrite) NSString *targetDisplay;
 @property (nonatomic, readwrite) BOOL available;
 @property (nonatomic, readwrite) BOOL reserved;
+@property (nonatomic, readwrite) BOOL discovered;
 @end
 
 @implementation AKControllerBinding
@@ -124,7 +125,8 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 
 @implementation AKControllerProfile {
     NSMutableDictionary<NSString *, NSString *> *_map;
-    NSMutableDictionary<NSString *, NSString *> *_actions;
+    // Controls this model has beyond the standard layout, in the order they were seen.
+    NSMutableOrderedSet<NSString *> *_observed;
     NSUserDefaults *_defaults;
 }
 
@@ -149,7 +151,6 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
         _displayName = productCategory.length
             ? [NSString stringWithFormat:@"%@ — %@", vendor, productCategory] : vendor;
         _map = [NSMutableDictionary dictionary];
-        _actions = [NSMutableDictionary dictionary];
         for (NSArray<NSString *> *pair in AKControllerDefaultPairs()) _map[pair[0]] = pair[1];
         [self load];
     }
@@ -183,57 +184,38 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
         _map[source] = target;
         applied++;
     }
-    // Version 1 has no claims, which is exactly right: nothing could claim a control before the
-    // action model existed.
-    NSUInteger claimed = 0;
-    NSDictionary *actions = stored[@"actions"];
-    if (version >= 2 && [actions isKindOfClass:NSDictionary.class]) {
-        for (NSString *source in actions) {
-            id action = actions[source];
-            if (![action isKindOfClass:NSString.class] || !_map[source]) { rejected++; continue; }
-            if (![action isEqualToString:AKControllerActionDictation]) { rejected++; continue; }
-            _actions[source] = action;
-            _map[source] = AKControllerTargetNone;
-            claimed++;
+    // Controls this model was seen to have beyond the standard layout. They are what makes a
+    // controller's extra buttons appear at all; without them a button iOS reports but the
+    // default table never heard of has no row to be mapped on.
+    NSArray *extras = stored[@"observed"];
+    NSUInteger observed = 0;
+    if ([extras isKindOfClass:NSArray.class]) {
+        for (id source in extras) {
+            if (![source isKindOfClass:NSString.class] || ![(NSString *)source length]) { rejected++; continue; }
+            if (!_observed) _observed = [NSMutableOrderedSet orderedSet];
+            [_observed addObject:source];
+            observed++;
         }
     }
-    if (applied || rejected || claimed)
-        WKLog("input", @"controller profile %@: %lu mapping(s) read, %lu claimed, %lu rejected",
-              _identity, (unsigned long)applied, (unsigned long)claimed, (unsigned long)rejected);
+    if (applied || rejected || observed)
+        WKLog("input", @"controller profile %@: %lu mapping(s) read, %lu discovered, %lu rejected",
+              _identity, (unsigned long)applied, (unsigned long)observed, (unsigned long)rejected);
 }
 
 - (NSString *)targetForSource:(NSString *)source {
-    // A claimed control has no target by definition; asking for one must not look like a route.
-    if (_actions[source]) return AKControllerTargetNone;
     return _map[source] ?: AKControllerTargetNone;
 }
 
-+ (NSString *)displayForAction:(NSString *)action {
-    if ([action isEqualToString:AKControllerActionDictation]) return @"Dictation";
-    return @"Not assigned";
+- (void)noteObservedSource:(NSString *)source {
+    if (!source.length) return;
+    if ([AKControllerProfile sourceElements] && [[AKControllerProfile sourceElements] containsObject:source]) return;
+    if (!_observed) _observed = [NSMutableOrderedSet orderedSet];
+    if ([_observed containsObject:source]) return;
+    [_observed addObject:source];
 }
 
-- (NSString *)actionForSource:(NSString *)source {
-    return _actions[source];
-}
-
-- (NSArray<NSString *> *)claimedSources {
-    return [_actions.allKeys sortedArrayUsingSelector:@selector(compare:)];
-}
-
-- (void)claimSource:(NSString *)source forAction:(NSString *)action {
-    if (!source.length || !_map[source]) return;
-    if (action.length && ![action isEqualToString:AKControllerActionDictation]) return;
-    if (action.length) {
-        _actions[source] = action;
-        _map[source] = AKControllerTargetNone;
-        return;
-    }
-    if (!_actions[source]) return;
-    [_actions removeObjectForKey:source];
-    // Back to the standard layout for that one control, not to "unassigned".
-    for (NSArray<NSString *> *pair in AKControllerDefaultPairs())
-        if ([pair[0] isEqualToString:source]) _map[source] = pair[1];
+- (NSArray<NSString *> *)observedSources {
+    return _observed.array ?: @[];
 }
 
 - (NSString *)sourceForTarget:(NSString *)target {
@@ -246,9 +228,9 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 }
 
 - (void)bindSource:(NSString *)source toTarget:(NSString *)target {
-    if (!source.length || !_map[source]) return;
-    // A control is either routed or claimed, never both: choosing a target is choosing to route.
-    [_actions removeObjectForKey:source];
+    if (!source.length) return;
+    // A discovered control is in the table the moment it is seen, so it can be mapped at once.
+    if (!_map[source]) _map[source] = AKControllerTargetNone;
     NSString *wanted = target.length ? target : AKControllerTargetNone;
     if (![wanted isEqualToString:AKControllerTargetNone] && ![AKControllerTarget targetWithIdentifier:wanted]) return;
     if ([_map[source] isEqualToString:wanted]) return;
@@ -269,8 +251,8 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 }
 
 - (void)resetToDefault {
-    // The standard layout is the standard layout: no claims either.
-    [_actions removeAllObjects];
+    // The standard layout is the standard layout. What was discovered about the model stays:
+    // it is a fact about the pad, not a choice the user made.
     [_map removeAllObjects];
     for (NSArray<NSString *> *pair in AKControllerDefaultPairs()) _map[pair[0]] = pair[1];
     [AKControllerProfile forgetIdentity:_identity defaults:_defaults];
@@ -278,7 +260,9 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 }
 
 - (BOOL)customised {
-    if (_actions.count) return YES;
+    // Discovered controls are part of the stored profile: without this the rows a pad taught us
+    // about would be forgotten the next time the page saved nothing.
+    if (_observed.count) return YES;
     for (NSArray<NSString *> *pair in AKControllerDefaultPairs())
         if (![_map[pair[0]] isEqualToString:pair[1]]) return YES;
     return NO;
@@ -287,18 +271,21 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
 - (NSArray<AKControllerBinding *> *)bindingsWithAvailability:(NSDictionary<NSString *, NSNumber *> *)available
                                                    reserved:(NSDictionary<NSString *, NSNumber *> *)reserved {
     NSMutableArray<AKControllerBinding *> *rows = [NSMutableArray array];
-    for (NSString *source in [AKControllerProfile sourceElements]) {
+    // The standard layout first, in its own order, then whatever this model turned out to have.
+    // A row exists for a discovered control because the pad produced an event for it - which is
+    // the only way a button iOS never lists can be mapped at all.
+    NSMutableArray<NSString *> *order = [[AKControllerProfile sourceElements] mutableCopy];
+    for (NSString *source in _observed) if (![order containsObject:source]) [order addObject:source];
+    for (NSString *source in order) {
         NSString *target = [self targetForSource:source];
-        NSString *action = _actions[source];
         AKControllerBinding *row = [AKControllerBinding new];
         row.source = source;
         row.target = target;
-        row.action = action;
         row.sourceDisplay = AKInputElementDisplay(source);
-        row.targetDisplay = action ? [AKControllerProfile displayForAction:action]
-                                   : ([AKControllerTarget targetWithIdentifier:target].display ?: @"Not assigned");
+        row.targetDisplay = [AKControllerTarget targetWithIdentifier:target].display ?: @"Not assigned";
         row.available = available[source] ? available[source].boolValue : NO;
         row.reserved = reserved[source] ? reserved[source].boolValue : NO;
+        row.discovered = [_observed containsObject:source];
         [rows addObject:row];
     }
     return rows;
@@ -309,7 +296,7 @@ static NSArray<NSArray<NSString *> *> *AKControllerDefaultPairs(void) {
     if (!self.customised) { [_defaults removeObjectForKey:key]; return; }
     [_defaults setObject:@{@"version": @(AKControllerProfileVersion),
                            @"map": [_map copy],
-                           @"actions": [_actions copy]} forKey:key];
+                           @"observed": _observed.array ?: @[]} forKey:key];
 }
 
 + (void)forgetIdentity:(NSString *)identity defaults:(NSUserDefaults *)defaults {

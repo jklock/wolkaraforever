@@ -135,23 +135,44 @@ default), a line saying what routing is doing right now, and **Controller mappin
 reassignment**, which opens the page below. With routing off, a physical controller reaches the
 game directly, exactly as before.
 
-With it on, the game is offered that single virtual controller and the physical pad is used
-as its input. Each controller **model** has its own mapping, starting as a standard
-extended-gamepad layout — every button, trigger, stick and the D-pad drives the same control
-it always did. **Reassign a control** asks you to press or move the control you want to change, then choose what
-it should do. Each control is in one of two states:
+With it on, the game is offered that single virtual controller and the physical
+pad is used
+as its input. Each controller **model** has its own mapping, starting as a
+standard
+extended-gamepad layout — every button, trigger, stick and the D-pad drives the
+same control
+it always did. **Reassign a control** asks you to press or move the control you
+want to change, then choose what
+it should do.
 
-- **Routes to** a control of the virtual gamepad — the default, one to one. A button drives a
-  button, a trigger keeps its analog value, a stick or the D-pad keeps its position.
-- **Tolkara action** — the control is taken for WolkaraForever itself and never reaches the game at
-  all. Today the action is **Dictation (hold to talk)**, the same dictation the voice page's trigger
-  starts: holding the control records, releasing it finishes. Because the game is only ever shown
-  the virtual controller, a control taken this way is, as far as the game is concerned, a control
-  that does not exist.
+The list is built from the controller itself, not from a list of known models:
+whatever
+iPadOS says your pad has, plus any extra control it turns out to send, appears as
+ a row — so a
+button this page has never heard of still becomes mappable the first time you
+press it. Rows
+that came from the pad rather than from the standard layout are marked
+**discovered**, and they
+are remembered per model. Each control is in one of two states:
 
-Choosing a virtual control for a claimed control gives it back to routing, and drops the dictation
-mapping, so one control never has two meanings. **Reset** puts the model back to the standard layout
-and removes every claim.
+- **Routes to** a control of the virtual gamepad — the default, one to one. A
+  button drives a
+  button, a trigger keeps its analog value, a stick or the D-pad keeps its
+  position.
+- **Withheld** — a WolkaraForever feature is using the control, so it never
+  reaches the game at
+  all. Today that is **dictation (hold to talk)**: holding the control records,
+  releasing it
+  finishes. Because the game is only ever shown the virtual controller, a
+  control withheld this
+  way is, as far as the game is concerned, a control that does not exist.
+
+The dictation choice belongs to the voice page, which is where you set it and where you
+remove it — this page only reports the consequence and names the feature on the row, so the
+two pages cannot disagree. Pressing a withheld row still lets you choose a virtual control,
+and that choice takes effect the moment dictation lets go of the input. **Reset** puts the
+model back to the standard layout, keeps what has been discovered about the controller, and
+clears your reassignments.
 
 Two things worth knowing before you switch it on:
 
