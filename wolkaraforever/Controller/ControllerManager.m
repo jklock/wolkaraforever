@@ -889,12 +889,23 @@ static void AKCMReportAxis(AKControllerManager *manager, NSString *device, NSStr
 - (void)clearRoutingGestures {
     NSArray<NSString *> *identities = _routingReleased.allKeys;
     [_routingReleased removeAllObjects];
-    for (NSString *identity in identities)
-        for (GCController *pad in self.physicalControllers) {
-            if (![AKControllerIdentity(pad) isEqualToString:identity]) continue;
-            for (NSString *name in pad.physicalInputProfile.buttons)
-                [self refreshGestureForElement:AKInputElementForControllerButton(name) device:identity];
+    // Every controller that carries one of those elements, not only the ones this manager still
+    // counts as hardware. A gesture must be given back wherever it was held: a pad can leave the
+    // hardware list while its elements exist (it is disconnecting, or it has just been adopted as
+    // the virtual pad), and leaving the release behind would change how that pad behaves after
+    // routing is switched off. Found by the device self-test, whose single controller is both.
+    for (GCController *pad in self.connectedControllers) {
+        NSString *identity = AKControllerIdentity(pad);
+        if (![identities containsObject:identity]) continue;
+        for (NSString *name in pad.physicalInputProfile.buttons) {
+            NSString *element = AKInputElementForControllerButton(name);
+            if ([self anyReasonWants:element device:identity]) continue;
+            GCControllerButtonInput *button = pad.physicalInputProfile.buttons[name];
+            if (button.preferredSystemGestureState == GCSystemGestureStateEnabled) continue;
+            button.preferredSystemGestureState = GCSystemGestureStateEnabled;
+            AKCMLog(@"manager: gave the system gesture back on %@ for %@", element, identity);
         }
+    }
 }
 
 #pragma mark - The guest's view

@@ -1324,6 +1324,32 @@ static void AKSelfTestRunControllerRouting(AKSelfTestRecorder *recorder) {
         manager.controllersProvider = ^NSArray<GCController *> *{ return @[pad.controller]; };
         [manager noteGuestFacadePresent];
         manager.enabled = YES;
+    });
+
+    // The system-gesture contract, on the framework's own element objects. This is the whole of
+    // what an app can do about a button iPadOS reserves: release the gesture for a source the
+    // profile routes, leave every other button alone, and give it back when it is unrouted or
+    // routing stops. Checked here rather than described, because a gesture that stayed released
+    // would change how the pad behaves after the feature was switched off.
+    GCPhysicalInputProfile *elements = pad.controller.physicalInputProfile;
+    GCControllerButtonInput *reserved = elements.buttons[GCInputButtonMenu];
+    GCControllerButtonInput *ordinary = elements.buttons[GCInputButtonA];
+    [recorder check:reserved != nil _:@"the controller declares the Menu element iPadOS reserves"];
+    [recorder check:reserved == nil || reserved.preferredSystemGestureState == GCSystemGestureStateDisabled
+                 _:@"a routed reserved button has its gesture released"];
+    [recorder check:ordinary == nil || ordinary.preferredSystemGestureState == GCSystemGestureStateEnabled
+                 _:@"an ordinary button's gesture is left alone"];
+    AKSelfTestOnMain(^{
+        AKControllerProfile *profile = [manager profileForIdentity:padIdentity];
+        [profile bindSource:@"controller.button.menu" toTarget:AKControllerTargetNone];
+        [manager applyProfileChangeForIdentity:padIdentity];
+    });
+    [recorder check:reserved == nil || reserved.preferredSystemGestureState == GCSystemGestureStateEnabled
+                 _:@"unrouting it gives the gesture back"];
+    AKSelfTestOnMain(^{
+        AKControllerProfile *profile = [manager profileForIdentity:padIdentity];
+        [profile bindSource:@"controller.button.menu" toTarget:@"virtual.button.menu"];
+        [manager applyProfileChangeForIdentity:padIdentity];
         [manager noteVirtualPadConnected:pad.controller];
     });
 
@@ -1390,6 +1416,8 @@ static void AKSelfTestRunControllerRouting(AKSelfTestRecorder *recorder) {
     [recorder check:AKSelfTestWaitUntil(^BOOL{
         @synchronized (values) { return releases > 0; }
     }, 5.0) _:@"switching routing off releases every routed value"];
+    [recorder check:reserved == nil || reserved.preferredSystemGestureState == GCSystemGestureStateEnabled
+                 _:@"and gives the system back every gesture it was holding"];
     [recorder check:AKSelfTestWaitUntil(^BOOL{
         GCExtendedGamepad *profile = pad.controller.extendedGamepad;
         return !profile.buttonA.pressed && !profile.buttonY.pressed && profile.leftTrigger.value == 0 &&
