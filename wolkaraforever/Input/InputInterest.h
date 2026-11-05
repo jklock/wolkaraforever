@@ -28,7 +28,11 @@ typedef NS_ENUM(NSInteger, AKInputInterestMode) {
     AKInputInterestModeDiagnostic,
 };
 
-@interface AKInputInterest : NSObject
+// A snapshot is immutable once made, so a `copy` of it is itself. Declaring the conformance is
+// not decoration: the router publishes it through a `copy` property, and a `copy` of an object
+// that does not answer -copyWithZone: is a crash the first time it is published. Measured on the
+// iPad on 2026-11-05: `-[AKInputInterest copyWithZone:]: unrecognized selector`, at launch.
+@interface AKInputInterest : NSObject <NSCopying>
 
 + (instancetype)none;
 + (instancetype)mappedWithElements:(NSSet<NSString *> *)elements;

@@ -33,6 +33,13 @@
             (long)_mode, (unsigned long)_elements.count];
 }
 
+// Immutable, so the copy is the original. There is nothing to duplicate and nothing that could
+// diverge between the two.
+- (id)copyWithZone:(NSZone *)zone {
+    (void)zone;
+    return self;
+}
+
 - (BOOL)admitsElement:(NSString *)element {
     if (!element.length) return NO;
     switch (_mode) {

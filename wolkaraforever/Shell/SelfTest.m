@@ -8,8 +8,12 @@
 #import "SelfTest.h"
 #import "WolkaraForeverLog.h"
 #import "../WoW/ForeverUI.h"
+#import "../App/WolkaraForeverTheme.h"
+#import "../App/WKLocalization.h"
 #import "../WoW/WoWViewController.h"
 #import "../WoW/AddonCredentialStore.h"
+#import "../WoW/AddonManager.h"
+#import "../WoW/AddonStore.h"
 #import "../WoW/CurseForgeClient.h"
 #import <CommonCrypto/CommonDigest.h>
 #import "../Input/InputElement.h"
@@ -30,6 +34,8 @@ NSString *const AKSelfTestForeverUIClean = @"forever-ui-clean";
 NSString *const AKSelfTestRenderProfile = @"render-profile";
 NSString *const AKSelfTestCurseForge = @"curseforge";
 NSString *const AKSelfTestSpeechFile = @"speech-file";
+NSString *const AKSelfTestAddonsPage = @"addons-page";
+NSString *const AKSelfTestLanguage = @"language";
 
 #pragma mark - Recording what happened
 
@@ -1076,6 +1082,168 @@ static void AKSelfTestRenderProfilePress(AKSelfTestRecorder *recorder, NSInteger
     AKSelfTestRenderProfileStage(recorder, page, defaults, scaleBefore, directory, configBefore);
 }
 
+// The Add-ons page, built and laid out on the device.
+//
+// The store is pointed at a temporary directory, so this never reads or writes the iPad's own
+// add-ons, never adopts a folder the user already had, and leaves nothing behind. What it does
+// prove is the part a compile cannot: that the page's own controls exist, that a package row and
+// the selection toolbar are built, and that nothing is drawn outside the table.
+static UIView *AKSelfTestFind(UIView *view, NSString *identifier) {
+    if ([view.accessibilityIdentifier isEqual:identifier]) return view;
+    for (UIView *child in view.subviews) {
+        UIView *found = AKSelfTestFind(child, identifier);
+        if (found) return found;
+    }
+    return nil;
+}
+
+static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:@"selftest-addons"];
+    [files removeItemAtPath:root error:NULL];
+    NSString *addons = [root stringByAppendingPathComponent:@"Interface/AddOns"];
+    NSString *folder = [addons stringByAppendingPathComponent:@"SelftestFixture"];
+    [files createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:NULL];
+    [[NSString stringWithFormat:@"## Title: Selftest Fixture\n## Version: 9.9\n## Interface: 11509\n"]
+        writeToFile:[folder stringByAppendingPathComponent:@"SelftestFixture.toc"]
+         atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+
+    TKWoWAddonManagerViewController *page =
+        [[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:addons edition:@"Forever"];
+    UIView *view = page.view;                      // loads the page
+    view.frame = CGRectMake(0, 0, 834, 1100);      // the iPad's portrait width
+    [view layoutIfNeeded];
+    [page.tableView layoutIfNeeded];
+
+    [recorder check:view != nil _:@"the Add-ons page builds and lays out"];
+    [recorder check:page.tableView.tableHeaderView.bounds.size.height > 100
+                   _:@"its header is built, which is where the toolbar lives"];
+    [recorder check:AKSelfTestFind(view, @"wow.addons.sort") != nil &&
+                   AKSelfTestFind(view, @"wow.addons.filters") != nil &&
+                   AKSelfTestFind(view, @"wow.addons.columns") != nil
+                    _:@"the Browse toolbar exists"];
+    [recorder check:AKSelfTestFind(view, @"wow.addons.selectAll") != nil &&
+                   AKSelfTestFind(view, @"wow.addons.clearSelection") != nil &&
+                   AKSelfTestFind(view, @"wow.addons.updateSelected") != nil &&
+                   AKSelfTestFind(view, @"wow.addons.updateAll") != nil
+                    _:@"the selection toolbar exists"];
+    [recorder check:AKSelfTestFind(view, @"wow.addons.refresh") != nil ||
+                   page.navigationItem.rightBarButtonItems.count >= 2
+                    _:@"the refresh control is on the bar"];
+
+    // A folder the user already had is shown and is not adopted: no provider identity, not
+    // managed, and unverified because its TOC names an older interface.
+    // The store is private to the page; the fixture reaches it the same way, by name.
+    TKAddonStore *store = [page valueForKey:@"store"];
+    TKAddonRecord *fixture = nil;
+    for (TKAddonRecord *record in store.records)
+        if ([record.identifier isEqual:@"SelftestFixture"]) fixture = record;
+    [recorder check:fixture != nil _:@"the existing folder is listed"];
+    [recorder check:fixture != nil && !fixture.managed _:@"and is not managed"];
+    [recorder check:fixture != nil && !fixture.providerUpdatable
+                    _:@"and is not offered a provider update"];
+    [recorder check:store.manifestFormat == 2 _:@"the manifest the page read is format 2"];
+
+    // Nothing is drawn outside the list.
+    CGFloat width = page.tableView.bounds.size.width;
+    BOOL overflow = NO;
+    for (UIView *cell in page.tableView.visibleCells) {
+        CGRect frame = [cell convertRect:cell.bounds toView:page.tableView];
+        if (CGRectGetMaxX(frame) > width + 0.5 || CGRectGetMinX(frame) < -0.5) overflow = YES;
+    }
+    [recorder check:!overflow _:@"no row is drawn outside the list"];
+
+    // The popup bound, which every sheet in the app goes through.
+    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1000, 800)];
+    UIViewController *oversized = [UIViewController new];
+    oversized.view.frame = CGRectMake(0, 0, 1000, 800);
+    [container addSubview:oversized.view];
+    CGRect bounded = WKConstrainPopupToScreen(oversized, container);
+    [recorder check:WKPopupMaximumScreenFraction == 0.85 &&
+                   CGRectGetWidth(bounded) <= 850.5 && CGRectGetHeight(bounded) <= 680.5
+                    _:@"a popup is bounded to 85 % of the presenting view"];
+
+    [files removeItemAtPath:root error:NULL];
+}
+
+// The app's own language, on the device, in both directions.
+//
+// The localization table check runs on the Mac; this is the other half - that the strings the
+// app actually reads on the iPad are the German ones, that the home page redraws into them
+// without a relaunch, and that the choice the user had is exactly what it was afterwards.
+@interface TKWoWViewController (AKSelfTestLanguage)
+- (void)render;
+@end
+
+static void AKSelfTestRunLanguage(AKSelfTestRecorder *recorder, NSInteger attempts) {
+    WKLocalization *localization = WKLocalization.shared;
+    TKWoWViewController *page = AKSelfTestHomePage();
+    // The page is built during launch. What this checks is what the page *says*, not whether it
+    // has been composited, so the view merely has to exist - a window is not required and
+    // waiting for one only made the result depend on launch ordering.
+    BOOL ready = page != nil;
+    if (!ready && attempts == 175) {
+        // One line, once, so a failure says whether the page was missing or never drew.
+        WKLog("selftest", @"language: waiting for the home page (scenes=%lu)",
+              (unsigned long)UIApplication.sharedApplication.connectedScenes.count);
+    }
+    if (!ready && attempts > 0) {
+        // No check is recorded while waiting, so a retry cannot count anything twice.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            AKSelfTestRunLanguage(recorder, attempts - 1);
+        });
+        return;
+    }
+    [recorder check:ready _:@"the home page exists, so its words can be read"];
+    if (!ready) { AKSelfTestLogVerdict(recorder, AKSelfTestLanguage); return; }
+    [page loadViewIfNeeded];
+
+    WKAppLanguage before = localization.language;
+
+    localization.language = WKAppLanguageGerman;
+    [recorder check:localization.resolvedLanguage == WKAppLanguageGerman
+                    _:@"German is the language in use"];
+    // The strings this change added or renamed, read the way the app reads them.
+    [recorder check:[WKLocalized(@"home.box.edition") isEqual:@"Spielverwaltung"]
+                    _:@"the Game Settings Manager heading is German"];
+    [recorder check:[WKLocalized(@"home.box.voice") isEqual:@"Diktatverwaltung (V2T)"]
+                    _:@"the Dictation (V2T) Manager heading is German"];
+    [recorder check:[WKLocalized(@"addons.action.install") isEqual:@"Installieren"]
+                    _:@"the row's Install action is German"];
+    [recorder check:[WKLocalized(@"addons.select.all") isEqual:@"Alle auswählen"]
+                    _:@"the Select All action is German"];
+    [recorder check:[WKLocalizedFormat(@"home.edition.row", @"Forever") isEqual:@"Spieledition: Forever"]
+                    _:@"the edition row reads as a German sentence with the edition in it"];
+    [recorder check:[WKLocalizedFormat(@"addons.filters.forever", @"1.60.1") isEqual:@"Forever (Fassung 1.60.1)"]
+                    _:@"the Forever filter names its version in German"];
+    // The change posts its notification, and the page that is already up rewrites its own
+    // words through -localize. Asking the label is the check; asking the table again would
+    // only prove the table.
+    UILabel *heading = (UILabel *)AKSelfTestFind(page.view, @"wow.heading.edition");
+    [recorder check:heading != nil && [heading.text isEqual:@"SPIELVERWALTUNG"]
+                    _:@"the live home page shows the German heading"];
+    UIButton *edition = (UIButton *)AKSelfTestFind(page.view, @"wow.edition");
+    [recorder check:edition != nil &&
+                   [[edition configuration].title hasPrefix:@"Spieledition: "]
+                    _:@"and the live edition row reads in German"];
+
+    localization.language = WKAppLanguageEnglish;
+    [recorder check:localization.resolvedLanguage == WKAppLanguageEnglish
+                    _:@"English comes back"];
+    heading = (UILabel *)AKSelfTestFind(page.view, @"wow.heading.edition");
+    [recorder check:heading != nil && [heading.text isEqual:@"GAME SETTINGS MANAGER"]
+                    _:@"and the live page reads English again"];
+
+    // Put the user's own choice back, whatever it was.
+    localization.language = before;
+    heading = (UILabel *)AKSelfTestFind(page.view, @"wow.heading.edition");
+    [recorder check:localization.language == before
+                    _:@"the language the user had is restored"];
+    (void)heading;
+    AKSelfTestLogVerdict(recorder, AKSelfTestLanguage);
+}
+
 void AKRunSelfTest(NSString *name) {
     AKSelfTestRecorder *recorder = [AKSelfTestRecorder new];
     recorder.detail = @"";
@@ -1085,6 +1253,17 @@ void AKRunSelfTest(NSString *name) {
         // which is main-queue work, and none of it waits. The attempts cover the automatic
         // check that runs the moment the home page appears, during which the row declines.
         AKSelfTestRenderProfilePress(recorder, 150);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestLanguage]) {
+        // On the main queue, and it logs its own verdict once the page is up.
+        AKSelfTestRunLanguage(recorder, 175);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestAddonsPage]) {
+        // On the main queue: it builds and lays out UIKit views and changes none.
+        AKSelfTestOnMain(^{ AKSelfTestRunAddonsPage(recorder); });
+        AKSelfTestLogVerdict(recorder, name);
         return;
     }
     if ([name isEqualToString:AKSelfTestInput]) {

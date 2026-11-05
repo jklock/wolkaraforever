@@ -155,9 +155,20 @@ static void TestInputInterest(void) {
     CHECK(![none admitsElement:@"controller.button.a"], @"no button is admitted when nothing is mapped");
     CHECK(![none admitsElement:@"controller.axis.leftx"], @"no axis is admitted when nothing is mapped");
 
+    // 1a. The snapshot survives a copy, because the router publishes it through a `copy`
+    // property. It did not, and the app aborted at launch on the iPad on 2026-11-05:
+    // `-[AKInputInterest copyWithZone:]: unrecognized selector`. A compile is not a launch.
+    AKInputInterest *copied = [none copy];
+    CHECK(copied != nil && copied.mode == AKInputInterestModeNone,
+          @"a snapshot can be copied, and the copy is still 'nothing is interesting'");
+
     // 2. A mapping admits exactly its own element - and nothing that streams.
     NSSet *mapped = [NSSet setWithObject:@"controller.button.share"];
     AKInputInterest *one = [AKInputInterest mappedWithElements:mapped];
+    AKInputInterest *copiedMapped = [one copy];
+    CHECK(copiedMapped != nil && [copiedMapped admitsElement:@"controller.button.share"] &&
+          ![copiedMapped admitsElement:@"controller.button.b"],
+          @"a copy of a mapped snapshot admits exactly what the original did");
     CHECK([one admitsElement:@"controller.button.share"], @"the mapped element is admitted");
     CHECK(![one admitsElement:@"controller.button.b"], @"an unmapped button is not");
     CHECK(![one admitsElement:@"controller.axis.leftx"], @"a stick axis is not");

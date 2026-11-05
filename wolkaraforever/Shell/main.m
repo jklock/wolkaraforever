@@ -541,7 +541,10 @@ static NSString *AKAudioStateDescription(void) {
     // the page the app shows; every other non-plain argument keeps the plain status screen and
     // the development behaviour. It is the one self-test that needs the real UI, and it needs
     // nothing else - see wolkaraforever/Shell/SelfTest.h.
-    BOOL homeSelfTest=[arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestRenderProfile]];
+    // The self-tests that read the real home page need it to be the page the app shows:
+    // render-profile presses its rows, and language reads its headings in both languages.
+    BOOL homeSelfTest=[arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestRenderProfile]]
+                   || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestLanguage]];
     for(NSUInteger i=1;i<arguments.count;i++) if(![arguments[i] hasPrefix:TKExecutionModeArgumentPrefix] &&
         ![arguments[i] isEqualToString:TKExecutionModeSaveArgument] &&
         ![arguments[i] isEqualToString:@"--addons-preview"] &&
