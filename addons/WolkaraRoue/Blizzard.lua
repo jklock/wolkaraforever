@@ -4,7 +4,7 @@
 --   barres de sorts (et l'expérience qu'elles portaient)  -> roues et boutons libres
 --   cadres du joueur et de la cible                        -> barres de vie
 --   suivi des objectifs sous la mini-carte                 -> carte des quêtes
---   mini-boutons du chat (émotes, voix, défilement)        -> inutiles au doigt
+--   le chat (rangé par le module Chat)                     -> chat mobile
 --
 -- Rien n'est caché : tout est rangé dans un cadre invisible, comme le font les addons de
 -- barres d'action. Le jeu ne le réaffiche pas de lui-même, les raccourcis clavier ou manette
@@ -25,8 +25,6 @@ local GROUPS = {
         "StatusTrackingBarManager", "MainStatusTrackingBarContainer", "SecondaryStatusTrackingBarContainer" },
     units = { "PlayerFrame", "TargetFrame", "TargetFrameToT" },
     tracker = { "ObjectiveTrackerFrame", "QuestWatchFrame", "WatchFrame" },
-    chatButtons = { "ChatFrameMenuButton", "ChatFrameChannelButton", "ChatFrameToggleVoiceDeafenButton",
-        "ChatFrameToggleVoiceMuteButton", "QuickJoinToastButton", "ChatFrame1ButtonFrame" },
 }
 
 local moved = {}
@@ -60,7 +58,6 @@ function Blizzard:Layout()
     -- Les cadres d'origine ne partent que si nos barres de vie sont là pour les remplacer.
     Set("units", settings.hideUnitFrames and ns.db.hud.enabled)
     Set("tracker", ns.db.quests.enabled)
-    Set("chatButtons", ns.db.chat.bubble)
 end
 
 -- Certains cadres sont créés plus tard (addons du jeu chargés à la demande).

@@ -22,7 +22,10 @@ local pendingLayout = false
 ns.editing = false
 
 function ns.Print(message)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff66ccffMobile|r : " .. message)
+    local line = "|cff66ccffMobile|r : " .. message
+    -- Le chat mobile range celui du jeu : nos messages passent alors par lui.
+    if ns.ChatAdd and ns.ChatAdd(line) then return end
+    DEFAULT_CHAT_FRAME:AddMessage(line)
 end
 
 local reported = 0
@@ -322,7 +325,7 @@ local function Defaults()
         freeLeft = { count = 0, scale = 100, buttons = {} },
         shortcuts = { enabled = true, scale = 100 },
         hud = { enabled = true, scale = 100 },
-        chat = { bubble = true, fontSize = 16, moveUp = true },
+        chat = { custom = true, fontSize = 16 },
         blizzard = { hideBars = true, hideUnitFrames = true },
         quests = { enabled = true, collapsed = false, shown = 3 },
         welcomed = false,

@@ -29,8 +29,24 @@ local TILES = {
     { label = "Guilde", icon = "Interface\\Icons\\INV_Shirt_GuildTabard_01", click = "GuildMicroButton",
       run = function() if ToggleGuildFrame then ToggleGuildFrame() end end },
     { label = "Macros", icon = "Interface\\Icons\\INV_Scroll_03", macro = "/macro" },
-    { label = "Options du jeu", icon = "Interface\\Icons\\INV_Misc_Gear_01", click = "MainMenuMicroButton",
-      run = function() if ToggleGameMenu then ToggleGameMenu() end end },
+    { label = "Menu du jeu", icon = "Interface\\Icons\\INV_Misc_Gear_01", run = function()
+        if GameMenuFrame then
+            if GameMenuFrame:IsShown() then HideUIPanel(GameMenuFrame) else ShowUIPanel(GameMenuFrame) end
+        elseif ToggleGameMenu then
+            ToggleGameMenu()
+        end
+    end },
+    { label = "Réglages du jeu", icon = "Interface\\Icons\\INV_Misc_Wrench_01", run = function()
+        if SettingsPanel and SettingsPanel.Open then
+            SettingsPanel:Open()
+        elseif SettingsPanel then
+            ShowUIPanel(SettingsPanel)
+        elseif VideoOptionsFrame then
+            ShowUIPanel(VideoOptionsFrame)
+        elseif InterfaceOptionsFrame then
+            ShowUIPanel(InterfaceOptionsFrame)
+        end
+    end },
     { label = "Interface mobile", icon = "Interface\\Icons\\Trade_Engineering",
       run = function() if ns.Settings then ns.Settings:Toggle() end end },
     { label = "Recharger", icon = "Interface\\Icons\\INV_Misc_PocketWatch_01", macro = "/reload" },
