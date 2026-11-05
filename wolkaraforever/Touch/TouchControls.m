@@ -458,10 +458,6 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     AKTouchHaptics *_haptics;
     AKTouchGamepad *_gamepad;
     BOOL _tookOwnPlace;
-    // Whether the game's chat box is probably open: every Return this layer sends opens or
-    // sends it, Escape closes it. Sending a message opens the box first only when it is
-    // believed closed, so a box left open is not closed and the words typed as hotkeys.
-    BOOL _chatOpenGuess;
 }
 
 // This dylib is loaded by name, so nothing here can be called by the shell at link time. The
@@ -610,8 +606,10 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 #pragma mark - Folding toolbar
 
 - (void)applyToolbarCollapsed {
-    for (UIButton *button in @[_trackpadButton, _keyboardButton, _gamepadButton, _settingsButton, _leaveButton])
+    // Folded, the keyboard stays: it is the button a player reaches for most (the chat).
+    for (UIButton *button in @[_trackpadButton, _gamepadButton, _settingsButton, _leaveButton])
         button.hidden = _toolbarCollapsed;
+    _keyboardButton.hidden = NO;
     [_toolbarHandle setImage:[UIImage systemImageNamed:_toolbarCollapsed ? @"chevron.compact.down" : @"chevron.compact.up"]
                     forState:UIControlStateNormal];
     _toolbarHandle.accessibilityLabel = AKHostLocalized(_toolbarCollapsed ? @"touch.toolbar.show" : @"touch.toolbar.hide");
@@ -667,7 +665,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         self.translatesAutoresizingMaskIntoConstraints = YES;
     }
     static unsigned logged;
-    CGFloat width = _toolbarCollapsed ? 44 : 304, height = _toolbarCollapsed ? 26 : 44;
+    CGFloat width = _toolbarCollapsed ? 96 : 304, height = _toolbarCollapsed ? 34 : 44;
     CGRect bounds = host.bounds;
     self.frame = CGRectMake(floor((bounds.size.width - width) / 2),
                             host.safeAreaInsets.top + 8, width, height);
@@ -684,12 +682,13 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     [super layoutSubviews];
     if (self.superview) [self placeToolbarInHost:self.superview];
     _trackpadButton.frame = CGRectMake(0, 0, 44, 44);
-    _keyboardButton.frame = CGRectMake(52, 0, 44, 44);
+    _keyboardButton.frame = _toolbarCollapsed ? CGRectMake(0, 0, 44, 34) : CGRectMake(52, 0, 44, 44);
+    _keyboardButton.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
     _gamepadButton.frame = CGRectMake(104, 0, 44, 44);
     _settingsButton.frame = CGRectMake(156, 0, 44, 44);
     _leaveButton.frame = CGRectMake(208, 0, 44, 44);
-    _toolbarHandle.frame = _toolbarCollapsed ? CGRectMake(0, 0, 44, 26) : CGRectMake(260, 0, 44, 44);
-    _toolbarHandle.layer.cornerRadius = _toolbarCollapsed ? 13 : 22;
+    _toolbarHandle.frame = _toolbarCollapsed ? CGRectMake(52, 0, 44, 34) : CGRectMake(260, 0, 44, 44);
+    _toolbarHandle.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
 }
 - (void)setTrackpadEnabled:(BOOL)enabled {
     [self cancelTouches];
@@ -836,7 +835,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     }
 }
 - (void)keyboardViewBackspace { [self.delegate touchSpecialKey:51 characters:@"\x7f"]; }
-- (void)keyboardViewReturn { [self.delegate touchSpecialKey:36 characters:@"\r"]; _chatOpenGuess = !_chatOpenGuess; }
+- (void)keyboardViewReturn { [self.delegate touchSpecialKey:36 characters:@"\r"]; }
 // The microphone key. Dictation belongs to the voice module, which this one cannot include;
 // the shell links both and is what answers, exactly as it does for Leave game.
 - (void)keyboardViewToggleDictation {
@@ -912,19 +911,24 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     if ([self.delegate respondsToSelector:@selector(touchReplaceText:)]) [self.delegate touchReplaceText:text];
 }
 - (void)deleteBackward { [self.delegate touchSpecialKey:51 characters:@"\x7f"]; }
+// Nothing tells this layer whether the game's chat box is open, so sending must not depend
+// on it. A command starts with "/", the game's own key that opens the box with the slash in
+// it. A message is preceded by F12, which the Interface mobile add-on binds to "open the box
+// on the chosen conversation"; with the box already open, F12 types nothing. Either way the
+// words land in the box and Return sends them.
+static const unsigned short AKKeyF12 = 111;
 - (void)sendChatText:(NSString *)text {
-    if (text.length) {
-        if (!_chatOpenGuess) [self.delegate touchSpecialKey:36 characters:@"\r"];
-        [self.delegate touchInsertText:text];
+    if (!text.length) {
+        // Nothing typed: Return is just Return.
         [self.delegate touchSpecialKey:36 characters:@"\r"];
-        _chatOpenGuess = NO;
-        AKLog(@"keyboard: a line went to the chat (%lu characters)", (unsigned long)text.length);
-        [self dismissKeyboard];
-    } else {
-        // Nothing typed: Return is just Return, and it opens or sends the chat box.
-        [self.delegate touchSpecialKey:36 characters:@"\r"];
-        _chatOpenGuess = !_chatOpenGuess;
+        return;
     }
+    if (![text hasPrefix:@"/"]) [self.delegate touchSpecialKey:AKKeyF12 characters:@"\uF70F"];
+    [self.delegate touchInsertText:text];
+    [self.delegate touchSpecialKey:36 characters:@"\r"];
+    AKLog(@"keyboard: a line went to the chat (%lu characters, %@)", (unsigned long)text.length,
+          [text hasPrefix:@"/"] ? @"command" : @"message");
+    [self dismissKeyboard];
 }
 
 - (UIView *)inputAccessoryView {
@@ -959,8 +963,6 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     const unsigned short codes[] = {53, 48, 123, 124, 51, 36};
     NSArray<NSString *> *characters = @[@"\x1b", @"\t", @"\uF702", @"\uF703", @"\x7f", @"\r"];
     if (button.tag >= 0 && button.tag < 6) [self.delegate touchSpecialKey:codes[button.tag] characters:characters[button.tag]];
-    if (button.tag == 5) _chatOpenGuess = !_chatOpenGuess;
-    if (button.tag == 0) _chatOpenGuess = NO;
 }
 - (void)insertDraft { [_keyboardInput forwardCommittedText]; }
 - (void)clearDraft { if ([_keyboardInput canModifyDraft]) [_keyboardInput discardDraft]; }

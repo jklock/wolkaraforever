@@ -113,12 +113,10 @@ local function Build()
     y = y - ROW_H
 
     Text(panel, "Chat", LEFT, y - 10, 90)
-    Switch(panel, LEFT + 90, y, 70, function() return ns.db.chat.bubble end,
-        function(v) ns.db.chat.bubble = v end, "Bulle", "Sans")
-    Stepper(panel, LEFT + 175, y, "Police", function() return ns.db.chat.fontSize end,
+    Switch(panel, LEFT + 90, y, 70, function() return ns.db.chat.custom end,
+        function(v) ns.db.chat.custom = v end, "Mobile", "Jeu")
+    Stepper(panel, LEFT + 175, y, "Texte", function() return ns.db.chat.fontSize end,
         function(v) ns.db.chat.fontSize = v end, 1, 10, 26)
-    Switch(panel, LEFT + 375, y, 190, function() return ns.db.chat.moveUp end,
-        function(v) ns.db.chat.moveUp = v end, "En bas au centre", "Place du jeu")
     y = y - ROW_H
 
     Text(panel, "Quêtes", LEFT, y - 10, 90)
