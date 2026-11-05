@@ -60,6 +60,17 @@ The dated record for that run is
 the commands with captured success exits from the observed self-test results in the matrix;
 the matrix runner's final terminal exit was not retained by the host capture.
 
+### iPhone, branch `experience-mobile` (2026-11-05)
+
+Human full-game, one device and one session: an **iPhone Duo, iOS 27.2, Developer service**,
+WoW Forever 1.60.1.70790 (client executable sha256 `4e262ff6...`), on Wi-Fi, with the build of
+`582c597` (it differed from that commit only in comments). The login at 17:14 went through
+and the session continued past the login screen: 148 more shader libraries compiled and the
+game captured the pointer for its camera. From 11:44 to 16:15 the same login had been refused
+at Battle.net's logon form submission (BLZ51914400, BLZ51914500), on mobile data and on Wi-Fi,
+while the same client on a Mac was accepted with the same account; the refusal ended on
+Blizzard's side. A session started on mobile data alone was not tried again after that.
+
 ### Not run, and deliberately not claimed
 
 - **Human full-game.** No launch, login, in-world session, performance measurement, or
