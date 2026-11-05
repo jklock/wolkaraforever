@@ -1,0 +1,21 @@
+## Interface: 16001
+## Title: Interface mobile |cff66ccff(WolkaraForever)|r
+## Notes: Roues de sorts, boutons libres, raccourcis, barres de vie et chat pensés pour le tactile.
+## Author: ExoGroupe
+## Version: 0.3.0
+## SavedVariablesPerCharacter: WolkaraRoueDB
+
+Core.lua
+Scale.lua
+Actions.lua
+Picker.lua
+Wheels.lua
+Free.lua
+Menu.lua
+Shortcuts.lua
+Hud.lua
+Objectives.lua
+Chat.lua
+Blizzard.lua
+Settings.lua
+Bindings.lua
