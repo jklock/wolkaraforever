@@ -126,6 +126,7 @@
 "locale.deDE" = "Deutsch";
 
 "home.settings.title" = "Einstellungen";
+"home.settings.manageAddons" = "Add-ons verwalten";
 "home.settings.message" = "Aktualisierungen werden automatisch installiert, solange diese App geöffnet ist. Einstellungen und Add-ons bleiben erhalten. Die Startvorbereitung ist vom Herunterladen der Aktualisierungen getrennt.";
 "home.settings.repair" = "Spieldateien prüfen und reparieren";
 "home.settings.diagnostics" = "Diagnose und Protokolle";

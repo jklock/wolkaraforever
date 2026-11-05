@@ -1107,6 +1107,22 @@ static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
     [[NSString stringWithFormat:@"## Title: Selftest Fixture\n## Version: 9.9\n## Interface: 11509\n"]
         writeToFile:[folder stringByAppendingPathComponent:@"SelftestFixture.toc"]
          atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    // A second package, recorded as managed by this app, so the row's own actions can be
+    // exercised. It is a fixture in a temporary directory: nothing on the iPad is read or
+    // changed, and the folder and the manifest are removed at the end.
+    NSString *ownedFolder = [addons stringByAppendingPathComponent:@"SelftestOwned"];
+    [files createDirectoryAtPath:ownedFolder withIntermediateDirectories:YES attributes:nil error:NULL];
+    [[NSString stringWithFormat:@"## Title: Selftest Owned\n## Version: 1\n## Interface: 16001\n"]
+        writeToFile:[ownedFolder stringByAppendingPathComponent:@"SelftestOwned.toc"]
+         atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    NSDictionary *manifest = @{ @"format": @2, @"version": @1, @"packages": @[
+        @{ @"identifier": @"SelftestOwned", @"uuid": @"selftest-owned", @"name": @"Selftest Owned",
+           @"version": @"1", @"source": @"zip", @"folders": @[@"SelftestOwned"],
+           @"pinned": @NO, @"disabled": @NO, @"tocInterface": @[@"16001"],
+           @"compatibility": @"verified" } ] };
+    NSData *manifestData = [NSJSONSerialization dataWithJSONObject:manifest options:0 error:NULL];
+    [manifestData writeToFile:[addons stringByAppendingPathComponent:@".wolkaraforever-addons.json"]
+                   atomically:YES];
 
     TKWoWAddonManagerViewController *page =
         [[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:addons edition:@"Forever"];
@@ -1143,6 +1159,36 @@ static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
     [recorder check:fixture != nil && !fixture.providerUpdatable
                     _:@"and is not offered a provider update"];
     [recorder check:store.manifestFormat == 2 _:@"the manifest the page read is format 2"];
+
+    // The way into this page from the home screen's settings menu. The Add-On Manager card is
+    // disabled until a Forever installation is ready, so this entry is the route that still
+    // works - and it was removed once, which took the page and its Remove action with it.
+    TKWoWViewController *home = AKSelfTestHomePage();
+    UIAlertController *menu = home ? [home settingsSheet] : nil;
+    BOOL hasManageAddons = NO;
+    for (UIAlertAction *action in menu.actions)
+        if ([action.title isEqual:WKLocalized(@"home.settings.manageAddons")]) hasManageAddons = YES;
+    [recorder check:menu != nil && hasManageAddons
+                    _:@"the settings menu still offers the way into the Add-ons page"];
+
+    // Removing a package is reachable: the row's own sheet offers it, and it is the destructive
+    // action. Losing this route is what made "can I delete anything?" a real question, so it is
+    // asserted rather than assumed.
+    TKAddonRecord *owned = nil;
+    for (TKAddonRecord *record in store.records)
+        if ([record.identifier isEqual:@"SelftestOwned"]) owned = record;
+    [recorder check:owned != nil && owned.managed _:@"the package this app recorded is managed"];
+    UIAlertController *manage = owned ? [page manageSheetForRecord:owned] : nil;
+    [recorder check:manage != nil _:@"tapping a managed package builds its action sheet"];
+    BOOL hasRemove = NO, hasDisable = NO, hasPin = NO, hasCancel = NO;
+    for (UIAlertAction *action in manage.actions) {
+        if (action.style == UIAlertActionStyleDestructive) hasRemove = YES;
+        if ([action.title isEqual:WKLocalized(@"addons.disable")]) hasDisable = YES;
+        if ([action.title isEqual:WKLocalized(@"addons.pin")]) hasPin = YES;
+        if (action.style == UIAlertActionStyleCancel) hasCancel = YES;
+    }
+    [recorder check:hasRemove _:@"and the sheet offers Remove, as its destructive action"];
+    [recorder check:hasDisable && hasPin && hasCancel _:@"with Disable, Pin and Cancel beside it"];
 
     // Nothing is drawn outside the list.
     CGFloat width = page.tableView.bounds.size.width;

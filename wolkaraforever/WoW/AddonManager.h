@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import "AddonStore.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -41,6 +42,11 @@ BOOL TKAddonRowsAreCompact(CGFloat width);
 // Starts on Browse rather than Installed, for the development preview and for
 // a future direct link from the home page.
 - (instancetype)initWithAddOnsDirectory:(NSString *)directory edition:(NSString *)edition browse:(BOOL)browse;
+
+// The actions a managed package offers: disable/restore, pin/unpin, remove, cancel. Exposed so
+// the device self-test can assert that removal is reachable without a second pair of hands on
+// the iPad; the page presents this same sheet when a row is tapped.
+- (UIAlertController *)manageSheetForRecord:(TKAddonRecord *)record;
 @end
 
 NS_ASSUME_NONNULL_END

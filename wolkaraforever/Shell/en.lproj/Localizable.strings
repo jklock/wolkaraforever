@@ -126,6 +126,7 @@
 "locale.deDE" = "German";
 
 "home.settings.title" = "Settings";
+"home.settings.manageAddons" = "Manage add-ons";
 "home.settings.message" = "Updates install automatically while this app is open. Settings and addons are preserved. Startup preparation is separate from downloading updates.";
 "home.settings.repair" = "Verify and repair game files";
 "home.settings.diagnostics" = "Diagnostics and logs";

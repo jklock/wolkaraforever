@@ -1020,12 +1020,19 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.preferences.language") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:NO]; }]];
     [self presentSheet:sheet anchor:_preferencesButton];
 }
-- (void)settings {
+// Built in one place so the page and the device self-test use the same menu. The Add-ons entry
+// is part of this sheet, and "is there still a way in?" is a question a test has to answer.
+- (UIAlertController *)settingsSheet {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.title")
         message:WKLocalized(@"home.settings.message") preferredStyle:UIAlertControllerStyleActionSheet];
-    // The Add-ons route that used to hide in this menu is gone. It was a second way to the same
-    // page, above Play, invisible from the page itself; the Add-On Manager card is the one way to
-    // it now, and it is on screen.
+    // The Add-ons route in this menu stays. It was removed on the theory that the Add-On Manager
+    // card made it redundant, and that was wrong: the card is disabled until a Forever
+    // installation is ready, so on a page with no install it is the *only* way in - and its loss
+    // took the page's own actions, removing a package among them, with it. Two routes to one
+    // page is not clutter; it is the route that still works when the other is greyed.
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.manageAddons") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        (void)a; [self manageAddons];
+    }]];
     if(!_busy && !_starting && !_sessionUsed && _installation.app) {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.repair") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             (void)a; [self repairInstallation];
@@ -1056,7 +1063,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [self presentMessage:WKLocalized(@"home.settings.details.title")
                      message:self->_startupFailure?:(self->_error?:self->_installation.error).localizedDescription];
     }]];
-    [self presentSheet:sheet anchor:nil];
+    return sheet;
+}
+- (void)settings {
+    [self presentSheet:[self settingsSheet] anchor:nil];
 }
 // Everything about dictation lives on its own screen: the button, the mode, and
 // what happens to the words afterwards.

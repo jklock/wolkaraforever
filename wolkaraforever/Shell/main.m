@@ -544,7 +544,8 @@ static NSString *AKAudioStateDescription(void) {
     // The self-tests that read the real home page need it to be the page the app shows:
     // render-profile presses its rows, and language reads its headings in both languages.
     BOOL homeSelfTest=[arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestRenderProfile]]
-                   || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestLanguage]];
+                   || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestLanguage]]
+                   || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestAddonsPage]];
     for(NSUInteger i=1;i<arguments.count;i++) if(![arguments[i] hasPrefix:TKExecutionModeArgumentPrefix] &&
         ![arguments[i] isEqualToString:TKExecutionModeSaveArgument] &&
         ![arguments[i] isEqualToString:@"--addons-preview"] &&

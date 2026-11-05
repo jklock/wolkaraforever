@@ -1558,6 +1558,13 @@ static NSString *BrowseSortLabel(NSInteger field) {
     }
     if (indexPath.section==0) return;
     TKAddonRecord *record=_store.records[indexPath.row]; if(!record.managed)return;
+    [self presentSheet:[self manageSheetForRecord:record] from:indexPath];
+}
+// The actions a managed package offers, built in one place so the page and the device self-test
+// exercise the same sheet. The destructive action is what removes a package, and it is here
+// rather than only in the row's tap handler because "can I delete anything?" is a question a
+// test has to be able to answer without a second pair of hands on the iPad.
+- (UIAlertController *)manageSheetForRecord:(TKAddonRecord *)record {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:record.name
         message:record.disabled?WKLocalized(@"addons.manage.disabledNote"):WKLocalized(@"addons.manage.note")
         preferredStyle:UIAlertControllerStyleActionSheet];
@@ -1567,7 +1574,7 @@ static NSString *BrowseSortLabel(NSInteger field) {
     [sheet addAction:[UIAlertAction actionWithTitle:record.pinned?WKLocalized(@"addons.unpin"):WKLocalized(@"addons.pin") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store setPinned:!record.pinned record:record error:e];}];}]];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store removeRecord:record error:e];}];}]];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
-    [self presentSheet:sheet from:indexPath];
+    return sheet;
 }
 // One place that shows an alert, so every one of them is bounded the same way.
 - (void)presentAlert:(UIAlertController *)alert {
