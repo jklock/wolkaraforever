@@ -8,13 +8,14 @@ local _, ns = ...
 local SIZE = 64
 -- Le centre des sticks de l'app, mesuré sur l'écran du Duo : à 12 % du bord, 22 % du bas.
 local STICK_X, STICK_Y = 0.12, 0.222
+ns.STICK_X, ns.STICK_Y = STICK_X, STICK_Y
 -- Première rangée serrée autour du stick, deuxième rangée au-delà.
 local INNER, OUTER = 0.165, 0.275
 
 local Free = ns.Register("Boutons libres", {})
 local groups = {}
 
-local function Arc(side, index, count)
+local function Arc(side, index, count, spread)
     return function()
         local width, height = UIParent:GetWidth(), UIParent:GetHeight()
         local cx = side == "right" and width * (1 - STICK_X) or width * STICK_X
@@ -28,7 +29,7 @@ local function Arc(side, index, count)
         -- De la verticale vers l'intérieur de l'écran : de 90° à 180° à droite, de 90° à 0° à gauche.
         local t = slots <= 1 and 0.5 or (slot - 1) / (slots - 1)
         local degrees = side == "right" and (90 + 90 * t) or (90 - 90 * t)
-        local distance = height * radius
+        local distance = height * radius * (spread or 100) / 100
         return { "CENTER", "BOTTOMLEFT", cx + math.cos(math.rad(degrees)) * distance,
             cy + math.sin(math.rad(degrees)) * distance }
     end
@@ -49,7 +50,7 @@ local function BuildGroup(side, key, prefix)
         button:SetFrameStrata("MEDIUM")
         button:RegisterForDrag("LeftButton")
         ns.Movable(button, function() return store(index) end, "pos",
-            function() return Arc(side, index, settings().count)() end)
+            function() return Arc(side, index, settings().count, settings().spread)() end)
         button:Hide()
         local since = 0
         button:HookScript("OnUpdate", function(self, elapsed)
@@ -63,10 +64,13 @@ local function BuildGroup(side, key, prefix)
 
     function group:Layout()
         local scale = settings().scale / 100
+        -- La roue qui tourne place elle-même les sorts de droite, et certains hors de l'écran.
+        local turning = side == "right" and ns.Turn and ns.Turn:Enabled()
         for index, button in ipairs(self.buttons) do
             if index <= settings().count then
                 button:SetScale(scale)
-                button:PlaceSaved()
+                button:SetClampedToScreen(not turning)
+                if not turning then button:PlaceSaved() end
                 button:Show()
             else
                 button:Hide()
@@ -95,6 +99,7 @@ end
 function Free:Init()
     groups[1] = BuildGroup("right", "free", "WolkaraMobileFree")
     groups[2] = BuildGroup("left", "freeLeft", "WolkaraMobileFreeLeft")
+    if ns.Turn then ns.Turn:Attach(groups[1].buttons) end
 end
 
 function Free:Layout()

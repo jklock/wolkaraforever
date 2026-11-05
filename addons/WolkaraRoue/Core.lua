@@ -261,6 +261,7 @@ function ns.Movable(frame, store, key, default)
         local point, _, relativePoint, x, y = self:GetPoint(1)
         local target = store()
         target[key] = { point = point, relativePoint = relativePoint, x = x, y = y }
+        if ns.MarkChanged then ns.MarkChanged() end
         if frame.OnMoved then frame:OnMoved() end
     end)
     function frame:PlaceSaved()
@@ -321,8 +322,8 @@ local function Defaults()
         version = 2,
         wheels = wheels,
         ui = { scale = 170 },
-        free = { count = 4, scale = 100, buttons = {} },
-        freeLeft = { count = 0, scale = 100, buttons = {} },
+        free = { count = 4, scale = 100, spread = 100, turn = true, turnOffset = 0, buttons = {} },
+        freeLeft = { count = 0, scale = 100, spread = 100, buttons = {} },
         shortcuts = { enabled = true, scale = 100 },
         hud = { enabled = true, scale = 100 },
         chat = { custom = true, fontSize = 16 },
@@ -365,6 +366,8 @@ local function LoadSettings()
     end
     saved.free.count = ns.Clamp(tonumber(saved.free.count) or 4, 0, ns.MAX_FREE)
     saved.freeLeft.count = ns.Clamp(tonumber(saved.freeLeft.count) or 0, 0, ns.MAX_FREE)
+    saved.free.spread = ns.Clamp(tonumber(saved.free.spread) or 100, 60, 180)
+    saved.freeLeft.spread = ns.Clamp(tonumber(saved.freeLeft.spread) or 100, 60, 180)
     saved.ui.scale = ns.Clamp(tonumber(saved.ui.scale) or 170, 100, 220)
     -- La disposition 3 (interface agrandie, éléments placés en proportion de l'écran) remet
     -- une fois les positions par défaut : les anciennes étaient faites pour l'interface d'origine.
@@ -457,6 +460,7 @@ SlashCmdList.WOLKARAMOBILE = function(message)
         LoadSettings()
         for i = 1, ns.MAX_WHEELS do ns.db.wheels[i].entries = wheels[i] and wheels[i].entries or {} end
         ns.db.welcomed = true
+        ns.MarkChanged()
         ns.Layout(); ns.Refresh()
         ns.Print("réglages et positions par défaut remis (les sorts des roues restent).")
     elseif ns.Settings then

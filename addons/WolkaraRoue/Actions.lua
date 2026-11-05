@@ -128,6 +128,7 @@ end
 -- Ranger une entrée dans un bouton : enregistre, redessine, et réapplique hors combat.
 function ns.AssignEntry(button, entry)
     button:SetEntry(entry)
+    ns.MarkChanged()
     ns.RefreshButton(button)
     ns.ApplyButton(button)
     if button.OnAssigned then button:OnAssigned() end
@@ -183,13 +184,15 @@ function ns.CreateActionButton(name, parent, size, getEntry, setEntry)
     -- Un curseur plein, une case vide ou le mode Personnaliser : le toucher sert à ranger,
     -- pas à lancer.
     button:SetScript("PreClick", function(self)
-        if InCombatLockdown() then return end
+        if InCombatLockdown() or self.swiped then return end
         if ns.editing or GetCursorInfo() or not self:GetEntry() then
             self:SetAttribute("type", nil)
             self.suppressed = true
         end
     end)
     button:SetScript("PostClick", function(self, _, down)
+        -- Un glissé sur la roue l'a fait tourner : ni lancer ni sélecteur (Turn.lua).
+        if self.swiped and not down then self.swiped = nil; return end
         if InCombatLockdown() or down or not self.suppressed then return end
         if GetCursorInfo() then
             ns.AssignFromCursor(self)

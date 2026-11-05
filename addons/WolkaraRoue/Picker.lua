@@ -242,6 +242,8 @@ function Picker:Open(button)
     SelectTab(tab)
 end
 
+function Picker:IsOpen() return frame ~= nil and frame:IsShown() end
+
 function Picker:Close()
     target = nil
     if frame then frame:Hide() end
