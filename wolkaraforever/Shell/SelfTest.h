@@ -56,6 +56,11 @@ extern NSString *const AKSelfTestSpeechFile;
 /// and writes nothing of the user's.
 extern NSString *const AKSelfTestAddonsPage;
 
+/// The pointer-latency counters, printed as one line each and then cleared. This is what the
+/// three pointer sweeps read; the counters are aggregation-only, so this is the only place the
+/// numbers are written down.
+extern NSString *const AKSelfTestLatency;
+
 /// English and German on the live home page: the strings, the choice, and that a page that is
 /// already up rewrites its words without a relaunch. It puts the user's own choice back.
 extern NSString *const AKSelfTestLanguage;

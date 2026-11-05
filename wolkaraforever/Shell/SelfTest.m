@@ -18,6 +18,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #import "../Input/InputElement.h"
 #import "../Input/InputRouter.h"
+#import "../Controller/ControllerInspector.h"
 #import "../Input/Trigger.h"
 #import "../Voice/Dictation.h"
 #import "../Voice/AudioSessionCoordinator.h"
@@ -36,6 +37,7 @@ NSString *const AKSelfTestCurseForge = @"curseforge";
 NSString *const AKSelfTestSpeechFile = @"speech-file";
 NSString *const AKSelfTestAddonsPage = @"addons-page";
 NSString *const AKSelfTestLanguage = @"language";
+NSString *const AKSelfTestLatency = @"latency";
 
 #pragma mark - Recording what happened
 
@@ -1290,6 +1292,51 @@ static void AKSelfTestRunLanguage(AKSelfTestRecorder *recorder, NSInteger attemp
     AKSelfTestLogVerdict(recorder, AKSelfTestLanguage);
 }
 
+// The pointer-latency counters, made readable.
+//
+// The plan's gate is three five-minute sweeps and a p95/p99 per sweep, and that gate needs the
+// numbers written down, not inferred from a log of events. The counters are aggregation-only by
+// design, so this is the one call that prints them: one line per counter, in milliseconds, with
+// the sample count beside it so a sweep with nothing in it cannot pass for a fast one.
+static NSString *AKSelfTestLatencyLine(NSString *name, AKTimingSamples *samples) {
+    return [NSString stringWithFormat:@"latency: %@ n=%lu p50=%.2fms p95=%.2fms p99=%.2fms max=%.2fms",
+            name, (unsigned long)samples.count, [samples percentile:0.50],
+            [samples percentile:0.95], [samples percentile:0.99], samples.maximum];
+}
+
+static void AKSelfTestRunLatency(AKSelfTestRecorder *recorder) {
+    AKControllerInspector *inspector = AKControllerInspector.shared;
+    AKInputRouter *router = AKInputRouter.shared;
+    AKTimingSamples *callback = inspector.callbackTiming;
+    AKTimingSamples *handoff = inspector.handoffTiming;
+    AKTimingSamples *pointer = router.pointerTiming;
+
+    [recorder check:callback != nil && handoff != nil && pointer != nil
+                    _:@"the three latency counters exist"];
+
+    // A percentile that is out of order would mean the ring is being read wrong, which is the
+    // one arithmetic mistake that would silently flatter every sweep.
+    BOOL ordered = YES;
+    for (AKTimingSamples *samples in @[callback, handoff, pointer]) {
+        if (!samples.count) continue;
+        double p50 = [samples percentile:0.50], p95 = [samples percentile:0.95];
+        double p99 = [samples percentile:0.99], maximum = samples.maximum;
+        if (!(p50 <= p95 && p95 <= p99 && p99 <= maximum)) ordered = NO;
+    }
+    [recorder check:ordered _:@"p50 <= p95 <= p99 <= max on every counter"];
+
+    // These lines are the sweep's result. They are written whatever the checks above say, so a
+    // sweep is never reported without its numbers.
+    WKLog("selftest", @"%@", AKSelfTestLatencyLine(@"controller.callback", callback));
+    WKLog("selftest", @"%@", AKSelfTestLatencyLine(@"controller.handoff", handoff));
+    WKLog("selftest", @"%@", AKSelfTestLatencyLine(@"pointer.dispatchToNextFrame", pointer));
+    [recorder check:YES _:@"the counters are printed for the sweep record"];
+
+    // Clear them, so one sweep never carries another's samples.
+    [inspector resetDiagnostics];
+    [pointer reset];
+}
+
 void AKRunSelfTest(NSString *name) {
     AKSelfTestRecorder *recorder = [AKSelfTestRecorder new];
     recorder.detail = @"";
@@ -1299,6 +1346,12 @@ void AKRunSelfTest(NSString *name) {
         // which is main-queue work, and none of it waits. The attempts cover the automatic
         // check that runs the moment the home page appears, during which the row declines.
         AKSelfTestRenderProfilePress(recorder, 150);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestLatency]) {
+        // On the main queue: the counters are read and reset where the input path writes them.
+        AKSelfTestOnMain(^{ AKSelfTestRunLatency(recorder); });
+        AKSelfTestLogVerdict(recorder, name);
         return;
     }
     if ([name isEqualToString:AKSelfTestLanguage]) {
