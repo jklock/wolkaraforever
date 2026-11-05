@@ -1602,7 +1602,8 @@ static NSString *BrowseSortLabel(NSInteger field) {
         preferredStyle:UIAlertControllerStyleActionSheet];
     if (!record.managed) {
         sheet.message=WKLocalized(@"addons.manage.unmanaged");
-        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleCancel handler:nil]];
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store removeRecord:record error:e];}];}]];
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
         return sheet;
     }
     [sheet addAction:[UIAlertAction actionWithTitle:record.disabled?WKLocalized(@"addons.restore"):WKLocalized(@"addons.disable") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store setDisabled:!record.disabled record:record error:e];}];}]];

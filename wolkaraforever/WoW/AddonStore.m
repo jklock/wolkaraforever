@@ -66,6 +66,10 @@ static NSString *CompatibilityForInterfaces(NSArray<NSString *> *interfaces) {
 }
 static NSString *Digest(NSData *data) { unsigned char hash[CC_SHA256_DIGEST_LENGTH];CC_SHA256(data.bytes,(CC_LONG)data.length,hash);NSMutableString *s=[NSMutableString new];for(NSUInteger i=0;i<sizeof(hash);i++)[s appendFormat:@"%02x",hash[i]];return s; }
 static BOOL Managed(NSDictionary *item) { return [item[@"folders"] isKindOfClass:NSArray.class] && [item[@"identifier"] isKindOfClass:NSString.class]; }
+static BOOL SafeFolderName(NSString *name) {
+    return [name isKindOfClass:NSString.class] && name.length && ![name containsString:@"/"] &&
+        ![name isEqual:@"."] && ![name isEqual:@".."];
+}
 // Only the six documented keys survive a write, so a stray value cannot be smuggled into the
 // manifest through a provider dictionary.
 static NSDictionary *CleanProvider(NSDictionary *provider) {
@@ -522,7 +526,20 @@ BOOL TKAddonProviderIsCurseForge(NSDictionary *provider) {
     } @finally { TKWoWReleaseUpdateLock(lock); if(!success)[self reload]; }
 }
 - (BOOL)removeRecord:(TKAddonRecord *)record error:(NSError **)error {
-    if(!record.managed)return Fail(error,@"WolkaraForever only removes folders it installed."); int lock=[self lock:error];if(lock<0)return NO; BOOL success=NO;
+    int lock=[self lock:error];if(lock<0)return NO; BOOL success=NO;
+    if (!record.managed) {
+        // Existing add-ons are listed from their actual AddOns directory. Removal is limited to
+        // that one current, top-level TOC folder and cannot cross the game directory boundary.
+        NSFileManager *fm=NSFileManager.defaultManager;
+        @try {
+            if (record.folders.count != 1 || !SafeFolderName(record.folders.firstObject))
+                return Fail(error,@"This add-on does not name one safe top-level folder.");
+            NSString *path=[_directory stringByAppendingPathComponent:record.folders.firstObject];
+            if (!TOC(path)) return Fail(error,@"The selected add-on folder no longer has a readable .toc manifest.");
+            if (![fm removeItemAtPath:path error:error]) return NO;
+            success=YES; [self reload]; return YES;
+        } @finally { TKWoWReleaseUpdateLock(lock); if(!success)[self reload]; }
+    }
     // The ownership record is dropped *before* anything moves. The other order had one
     // bad state: folders already moved aside and the manifest still claiming them, which
     // is a package that has vanished while its record says it is installed. This way a

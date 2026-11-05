@@ -117,10 +117,17 @@ int TestRealAddonImport(const char *fixtures, const char *temporary) {
         CHECK(ManagedRecord(store).disabled, "and stays disabled");
         CHECK([store setDisabled:NO record:ManagedRecord(store) error:&error], "restore it");
 
-        // --- removing a managed package never removes a folder it does not own
+        // --- users may remove any listed package; the operation stays inside its exact folder
         CHECK([store removeRecord:ManagedRecord(store) error:&error], "remove the managed package");
         CHECK([fm fileExistsAtPath:[unmanaged stringByAppendingPathComponent:@"Details.toc"]],
-              "the unmanaged folder is still there");
+              "the existing folder remains until the user removes it");
+        CHECK([store removeRecord:foreign error:&error], "remove an existing package at the user's request");
+        CHECK(![fm fileExistsAtPath:[unmanaged stringByAppendingPathComponent:@"Details.toc"]],
+              "the requested existing folder is removed");
+        TKAddonRecord *unsafe = [TKAddonRecord new];
+        unsafe.folders = @[@".."];
+        unsafe.managed = NO;
+        CHECK(![store removeRecord:unsafe error:&error], "refuse an existing-package removal outside AddOns");
 
         // --- format-1 -> format-2 migration, and recovery from an interrupted one
         NSString *legacyRoot = [root stringByAppendingPathComponent:@"Legacy/Interface/AddOns"];

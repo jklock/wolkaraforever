@@ -508,9 +508,9 @@
 "addons.manage.disabledNote" = "This package is stored privately and is not visible to World of Warcraft.";
 "addons.pin" = "Pin this version";
 "addons.unpin" = "Allow updates again";
-"addons.remove" = "Remove managed package";
+"addons.remove" = "Remove from device";
 "addons.action.manage" = "Manage";
-"addons.manage.unmanaged" = "This existing add-on was not installed by WolkaraForever, so it cannot be changed here.";
+"addons.manage.unmanaged" = "This existing add-on will be removed from this device.";
 /* ---- Voice and dictation ---- */
 "voice.title" = "Key / Button Configuration";
 "voice.test.title" = "Test Voice";
