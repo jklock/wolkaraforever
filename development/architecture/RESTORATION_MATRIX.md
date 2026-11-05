@@ -13,7 +13,7 @@ superseded it.
 
 | Count | Outcome |
 | --- | --- |
-| 48 | Files restored byte-identical into [`development/archive/history/`](../archive/history/README.md) |
+| 46 | Files restored byte-identical into [`development/archive/history/`](../archive/history/README.md) (two more were restored and withdrawn; see below) |
 | 1 | Restored at its active path after three-way reconciliation (`docs/IPHONE.md`) |
 | 0 | Product source files for iPad that were deleted and not superseded |
 | 9 | Deletions audited and deliberately **not** restored, each with its reason below |

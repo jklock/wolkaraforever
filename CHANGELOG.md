@@ -59,7 +59,7 @@ This changelog records release history. It is not a compatibility guarantee: rea
   [the supported-device contract](development/architecture/DEVICE_CONTRACT.md), and the measured
   iPhone evidence is restored in [iPhone support](docs/IPHONE.md). The iPad keeps its two-column
   page; the iPhone gets a one-column, safe-area-aware page at every width.
-- **Restored historical device evidence.** Forty-eight deleted documents and exact-SHA validation
+- **Restored historical device evidence.** Forty-six deleted documents and exact-SHA validation
   records are back under [development/archive/history/](development/archive/history/README.md),
   byte-identical, with an audited
   [restoration matrix](development/architecture/RESTORATION_MATRIX.md) naming each deletion, its
