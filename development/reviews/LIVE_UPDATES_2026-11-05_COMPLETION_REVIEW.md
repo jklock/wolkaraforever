@@ -1,7 +1,7 @@
 # Live updates completion review — 2026-11-05
 
-Reviewed branch: `liveupdates-11042026`  
-Review baseline: `origin/main...765af00`  
+Reviewed branch: `liveupdates-11042026`
+Review baseline: `origin/main...765af00`
 Contracts: `LIVE_UPDATES_2026-11-04_PLAN.md` and
 `LIVE_UPDATES_2026-11-04_NEXT_AGENT_PROMPT.md`.
 
