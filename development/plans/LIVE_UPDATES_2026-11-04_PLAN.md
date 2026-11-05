@@ -39,25 +39,91 @@ filter names are human-readable.  They are not a license to copy CurseForge bran
 desktop geometry.  Use existing navy/gold WolkaraForever components and data from the supported
 CurseForge API only.
 
+## November 4 final-run evidence and risk remediation
+
+`wolkaraforever/tools/device_log.sh` retrieved the final on-device `native-guest.log` without
+stopping the app.  It is a 12,225,493-byte / 125,934-line log spanning 2026-11-04 23:16:35.059
+through 2026-11-05 00:02:04.944.  The relevant measured facts are:
+
+- One controller and a Magic Keyboard mouse were present when the run began.  Native iPad pointer
+  presentation and raw mouse input were installed.
+- The run records **12,658** `[ak] input: controller...` lines and an exactly matching **12,658**
+  `[input] input: controller...` lines: every inspected controller input was written twice.
+  This is from `AKCILog`/`AKIRLog`, which call both `AKLog`/`NSLog` and `WKLog`, while both sinks
+  reach `native-guest.log` on device.
+- The controller inspector attaches both button and axis handlers.  Thumb-stick movement produces
+  synthetic directional button events as well as axis events: the log contains 3,304 right-stick
+  button, 2,517 left-axis, 2,368 left-stick button, and 2,207 right-axis entries in the `[ak]`
+  channel alone.  Each report asynchronously enters the main queue, logs twice, and schedules a
+  second main-queue block for the inspection panel even when the panel is absent.
+- The log contains no `input: mouse` stream, but 56 pointer-delivery and 8 raw mouse-event lines.
+  It contains no frame-hitch measure correlated to those events.  The evidence therefore identifies
+  excessive controller-inspector main-queue/log work as the concrete remediation target, not a
+  proven mouse-event-handler defect or a Controller Manager fault.
+
+Implement the following remediation rather than leaving the pointer item as an open investigation:
+
+1. In `ControllerInspector.m` and `InputRouter.m`, make the normal gameplay path silent and
+   selective.  Maintain an immutable, atomically readable input-interest snapshot owned by
+   `InputRouter`: no interest when voice is off/no mapping is armed; only the mapped exact button
+   or mapped family when dictation is armed; all learnable *button* elements only while the user
+   explicitly opens the mapping learner.  The GameController callbacks must return before any
+   dispatch, allocation, logging, or UI work for elements outside that snapshot.  Continuous axes,
+   synthesized stick-direction buttons, and touch-pad movement are never normal-play input for
+   dictation and must not be forwarded merely for inspection.
+2. Keep all input state/timer changes on the main queue, but coalesce an interested continuous
+   source to at most one pending report per display interval and retain only its latest value.
+   A button press/release remains lossless and ordered.  This must not modify what the game itself
+   receives, release any system gesture beyond an explicitly mapped voice control, or implement
+   Controller Manager.
+3. Split diagnostics from runtime routing.  `recordLine:` must update the panel only while the
+   panel is visible; it must not enqueue a panel block otherwise.  Replace per-event persistent
+   logging with bounded counters/ring-buffer telemetry enabled only by the diagnostic/voice
+   configuration screen.  Make each diagnostic event use one sink, not both `AKLog` and `WKLog`.
+   Keep lifecycle, mapped-trigger, error, and aggregate drop/coalesce summaries in the durable log.
+4. Add a test seam around the controller callback queue and logger.  Assert that idle controller
+   movement produces zero router reports/main-queue blocks/log writes; a mapped button preserves
+   one ordered press/release; learning accepts a requested button; unselected axes and touchpad
+   movement do not enter the router; diagnostic mode is bounded/coalesced; and no event is emitted
+   twice to the persistent log.
+5. Add zero/low-overhead timing counters for pointer dispatch, controller callback admission,
+   main-queue handoff, and the next present.  They are aggregation-only in normal play (count,
+   max, p50/p95/p99), not an event log.  The device gate is three five-minute pointer sweeps with
+   the controller disconnected and connected.  The connected result passes only if its pointer
+   dispatch-to-present p95 is within 2 ms of the disconnected baseline, p99 is below 33 ms, and
+   it has no controller-inspector event-log growth during ordinary play.  Record all three runs;
+   do not substitute simulator evidence.
+
+For CurseForge, remove migration ambiguity before UI work: introduce manifest format 2 with a
+transactional, recoverable format-1-to-format-2 migration.  Store a package-level stable UUID,
+owned folders, current archive digest, disabled/pinned state, and optional `provider` dictionary
+(`kind`, `projectID`, `fileID`, filename, published date, version, and compatibility advisory).
+Write a migration journal and backup of the old manifest in the existing application-support
+store; recover/roll back it before showing Add-ons after an interrupted write.  Never infer a
+provider identity from a display name or folder.  A record without a valid CurseForge project/file
+identity remains locally manageable but is deliberately excluded from provider Update/Update All.
+All provider upgrades must stage, validate, and atomically swap the entire package under the
+existing update lock, then commit the manifest; failure leaves both folders and the format-2
+manifest at their prior revision.
+
 ## Implementation sequence
 
 ### 1. Establish regression fixtures and a measured input baseline
 
 1. Read `development/guides/REPOSITORY_WORKFLOW.md`, launcher fixture setup, current screenshots,
-   and `wolkaraforever/tools/` device workflow before modifying source.
+   and `wolkaraforever/tools/` device workflow before modifying source.  Preserve the retrieved
+   November 4 final-run log as ignored validation evidence; do not commit its 12 MB contents.
 2. Add deterministic CurseForge fixture data for: a matching-version file, only nonmatching files,
    an unavailable file, an update available, up-to-date, pinned, and API-distribution-disabled
    projects.  The fixture must not require a real API key or network.
 3. On the designated iPad, use `wolkaraforever/tools/preflight.sh`, then the project launch/log
-   tools to collect a baseline for pointer movement with no controller and with the affected
-   controller connected.  Record source SHA, device/iPadOS, execution mode, controller model,
-   pointer device, observed frame timing, input-event rate, and reproduction steps in a new
-   ignored/log artifact or `development/validation/<sha>.md` as appropriate.  Leave the iPad at
-   the normal home screen with WolkaraForever running after each run.
-4. Do not change `TouchGamepad`, controller routing, or Controller Manager from this report alone.
-   Use the trace to identify the responsible callback/queue/render path.  If it is in scope and
-   reproducible, make the smallest fix there; otherwise document the measured blocker and do not
-   claim a lag fix.
+   tools to capture the three controlled five-minute sweeps defined above.  Record source SHA,
+   device/iPadOS, execution mode, controller model, pointer device, aggregate timing counters,
+   input-event rate, and reproduction steps in `development/validation/<sha>.md` as appropriate.
+   Leave the iPad at the normal home screen with WolkaraForever running after each run.
+4. Implement only the controller-inspector/input-router remediation specified in the preceding
+   evidence section.  Do not change `TouchGamepad`, game bindings, or Controller Manager unless a
+   new post-fix trace disproves that remediation and identifies a separate in-scope owner.
 
 ### 2. Make CurseForge metadata refreshable and display labels canonical
 
@@ -106,16 +172,19 @@ CurseForge API only.
 
 ### 4. Persist provider identity and implement row actions, update, bulk selection, and Update All
 
-1. Version the manifest in `AddonStore.m` (read existing format-1 records without data loss;
-   write a documented new format).  Store package-level CurseForge project ID, installed file ID,
-   downloaded filename/version/date, TOC interface metadata, and advisory compatibility state.
-   Model multi-folder archives as one managed package so update/remove/disable cannot split a
-   package.  Imported ZIPs and pre-existing folders stay selectable for permitted local actions
-   but are clearly not provider-updatable without an associated CurseForge identity.
+1. Implement the specified format-2 journaled migration in `AddonStore.m`: read format-1 records
+   without loss, write no format-2 manifest until all package records validate, and restore the
+   last complete manifest after any interrupted migration.  Store package-level CurseForge project
+   ID, installed file ID, downloaded filename/version/date, TOC interface metadata, and advisory
+   compatibility state.  Model multi-folder archives as one managed package so update/remove/
+   disable cannot split a package.  Imported ZIPs and pre-existing folders stay selectable for
+   permitted local actions but are clearly not provider-updatable without an associated CurseForge
+   identity.
 2. Extend `TKAddonRecord`/store APIs with transactional package replacement under the existing
-   shared update lock: download to a bounded temporary path, extract/validate before mutation,
-   reject folder collisions outside the owned package, stage old owned folders, atomically commit
-   the new manifest, and restore the previous package on any error.  Preserve disabled and pinned
+   shared update lock and manifest revision: download to a bounded temporary path,
+   extract/validate before mutation, reject folder collisions outside the owned package, stage old
+   owned folders, atomically commit the folder swap and format-2 manifest, and restore the prior
+   folders and manifest revision on any error or relaunch recovery.  Preserve disabled and pinned
    state.  Never delete unowned folders.
 3. Add an inline action button to `TKAddonProjectCell`.  It calls the same install pipeline as the
    details sheet, has a stable accessibility identifier (`wow.addons.project.<id>.install`), and
@@ -193,10 +262,11 @@ not raw logs.
    display mapping at the manager boundary, refresh generation/stale callback handling, matching
    file preference, nonmatching available-file fallback, and malformed/unavailable/distribution
    refusal paths.  Run `wolkaraforever/tools/test_curseforge.sh`.
-2. Add/update AddonStore/archive tests for format-1 migration, provider-identity persistence,
-   unverified ZIP acceptance, structural rejection, package rollback, disabled/pinned preservation,
-   per-package update, Update Selected, Update All partial failure, and never deleting unmanaged
-   folders.  Run the narrow owning archive/store test command(s).
+2. Add/update AddonStore/archive tests for format-1 migration, incomplete/corrupt migration
+   recovery, provider-identity persistence, no folder/name identity inference, unverified ZIP
+   acceptance, structural rejection, package rollback, disabled/pinned preservation, per-package
+   update, Update Selected, Update All partial failure, and never deleting unmanaged folders.
+   Run the narrow owning archive/store test command(s).
 3. Extend `wolkaraforever/WoW/tests/test_wow_launcher_app.m` to press inline Install, refresh,
    Update, Update All, selection actions, and long-label/compact layouts.  Assert user-visible
    sort/filter strings contain no localization key or numeric API ID, project rows retain the
@@ -208,10 +278,10 @@ not raw logs.
    restore-default control/selector/accessibility ID; retained controls/actions; two-column and
    compact grid bounds/heights; and removed settings/wheel Add-ons action.  Run
    `wolkaraforever/tools/test_wow_launcher_ui.sh`.
-5. Add a targeted test or instrumentation regression for the measured pointer/controller fault.
-   It must assert the diagnosed invariant (for example, no duplicate high-frequency handler or no
-   main-queue work per motion event), then run its narrow owning test.  A simulator-only result is
-   not evidence of physical pointer latency.
+5. Add the targeted controller-inspector/input-router queue and logger regression tests specified
+   in the November 4 evidence section.  Run the narrow owning test.  The device gate remains the
+   three sweep measurements with the stated p95/p99 thresholds; simulator success alone is not
+   evidence of physical pointer latency.
 6. Run `wolkaraforever/tools/test_localization.sh`, then
    `python3 wolkaraforever/tools/check_localization.py`, `git diff --check`, and
    `wolkaraforever/tools/check_layers.sh`.  Run `wolkaraforever/tools/check_docs.sh` when docs or
@@ -229,9 +299,10 @@ not raw logs.
    denial, update detection, per-row update, selected bulk update, Update All, pinned skip,
    disabled preservation, partial failure, and no unmanaged-folder loss.  Use synthetic/test
    add-ons or a disposable test install where mutation is needed.
-4. Reproduce the mouse-pointer/controller scenario using the same baseline protocol.  Accept a
-   fix only when post-change measurements meet the agreed threshold and the game remains usable;
-   otherwise record the observed blocker rather than claiming resolution.
+4. Reproduce the mouse-pointer/controller scenario with the three controlled sweeps.  Accept the
+   inspector/input-router fix only when connected p95 is within 2 ms of the disconnected baseline,
+   connected p99 is below 33 ms, no normal-play controller event log is emitted, and gameplay
+   remains usable.  Otherwise retain the collected aggregate evidence and report the failed metric.
 5. Inspect every popup for even spacing, in-bounds controls, readable Dynamic Type, and no more
    than 85% screen occupancy.  End with the app running at the normal home screen.
 
@@ -255,4 +326,5 @@ Result:
 - Completed acceptance criteria and explicitly unverified items.
 
 Risks:
-- Provider/API constraints, data-migration rollback limits, and any physical-test blocker.
+- Provider/API constraints, any failed migration recovery fixture, and any device metric that does
+  not meet the stated pointer thresholds.
