@@ -509,6 +509,8 @@
 "addons.pin" = "Pin this version";
 "addons.unpin" = "Allow updates again";
 "addons.remove" = "Remove managed package";
+"addons.action.manage" = "Manage";
+"addons.manage.unmanaged" = "This existing add-on was not installed by WolkaraForever, so it cannot be changed here.";
 /* ---- Voice and dictation ---- */
 "voice.title" = "Key / Button Configuration";
 "voice.test.title" = "Test Voice";

@@ -366,6 +366,7 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
 @interface TKAddonInstalledCell : UITableViewCell
 @property (nonatomic, copy, nullable) void (^onToggleSelection)(BOOL selected);
 @property (nonatomic, copy, nullable) void (^onUpdate)(void);
+@property (nonatomic, copy, nullable) void (^onManage)(void);
 @property (nonatomic, readonly) UIButton *checkbox;
 @property (nonatomic, readonly) UIButton *updateButton;
 - (void)configureWithRecord:(TKAddonRecord *)record selected:(BOOL)selected
@@ -377,13 +378,18 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
     UIButton *_checkbox;
     UILabel *_titleLabel, *_detailLabel;
     UIButton *_updateButton;
+    BOOL _showsManage;
 }
 - (UIButton *)checkbox { return _checkbox; }
 - (UIButton *)updateButton { return _updateButton; }
 - (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)identifier {
     if ((self=[super initWithStyle:style reuseIdentifier:identifier])) {
         self.backgroundColor=[UIColor colorWithRed:0.07 green:0.09 blue:0.13 alpha:1];
-        self.selectionStyle=UITableViewCellSelectionStyleNone;
+        // The row itself is the always-available management action. Update is a separate
+        // inline action and may be unavailable, but every installed package must still explain
+        // whether it can be removed and expose Remove when this app owns it.
+        self.selectionStyle=UITableViewCellSelectionStyleDefault;
+        self.accessibilityTraits=UIAccessibilityTraitButton;
         _checkbox=[UIButton buttonWithType:UIButtonTypeSystem];
         _checkbox.tintColor=WKGold();
         [_checkbox.widthAnchor constraintEqualToConstant:30].active=YES;
@@ -422,7 +428,11 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
     return self;
 }
 - (void)toggle { if (self.onToggleSelection) self.onToggleSelection(!_checkbox.selected); }
-- (void)tappedUpdate { if (self.onUpdate) self.onUpdate(); }
+- (void)tappedUpdate {
+    if (_showsManage) {
+        if (self.onManage) self.onManage();
+    } else if (self.onUpdate) self.onUpdate();
+}
 - (void)configureWithRecord:(TKAddonRecord *)record selected:(BOOL)selected
                    selectable:(BOOL)selectable state:(TKAddonUpdateState)state
                        detail:(NSString *)detail {
@@ -437,24 +447,28 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
     _checkbox.accessibilityIdentifier=[@"wow.addons.select." stringByAppendingString:identifier];
     _checkbox.accessibilityLabel=WKLocalized(@"addons.select.one");
     _checkbox.accessibilityValue=_checkbox.selected?WKLocalized(@"addons.select.on"):WKLocalized(@"addons.select.off");
-    _updateButton.accessibilityIdentifier=[@"wow.addons.update." stringByAppendingString:identifier];
+    _showsManage=NO;
     switch (state) {
         case TKAddonUpdateStateAvailable:
+            _updateButton.accessibilityIdentifier=[@"wow.addons.update." stringByAppendingString:identifier];
             [_updateButton setTitle:WKLocalized(@"addons.action.update") forState:UIControlStateNormal];
             _updateButton.enabled=YES;
             _updateButton.hidden=NO;
             break;
         case TKAddonUpdateStateBusy:
+            _updateButton.accessibilityIdentifier=[@"wow.addons.update." stringByAppendingString:identifier];
             [_updateButton setTitle:WKLocalized(@"addons.action.updating") forState:UIControlStateNormal];
             _updateButton.enabled=NO;
             _updateButton.hidden=NO;
             break;
         case TKAddonUpdateStateFailed:
+            _updateButton.accessibilityIdentifier=[@"wow.addons.update." stringByAppendingString:identifier];
             [_updateButton setTitle:WKLocalized(@"addons.action.retry") forState:UIControlStateNormal];
             _updateButton.enabled=YES;
             _updateButton.hidden=NO;
             break;
         case TKAddonUpdateStateUpToDate:
+            _updateButton.accessibilityIdentifier=[@"wow.addons.update." stringByAppendingString:identifier];
             [_updateButton setTitle:WKLocalized(@"addons.action.upToDate") forState:UIControlStateNormal];
             _updateButton.enabled=NO;
             _updateButton.hidden=NO;
@@ -462,11 +476,13 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
         case TKAddonUpdateStateNotUpdatable:
         case TKAddonUpdateStateUnknown:
         default:
-            // No action at all. A greyed button that says "Update" on a package that has no
-            // provider identity is a promise this app cannot keep.
-            [_updateButton setTitle:@"" forState:UIControlStateNormal];
-            _updateButton.enabled=NO;
-            _updateButton.hidden=YES;
+            _showsManage=YES;
+            _updateButton.accessibilityIdentifier=[@"wow.addons.manage." stringByAppendingString:identifier];
+            [_updateButton setTitle:WKLocalized(@"addons.action.manage") forState:UIControlStateNormal];
+            _updateButton.enabled=YES;
+            _updateButton.hidden=NO;
+            // A visible management action explains ownership and opens Remove for packages this
+            // app owns. A greyed empty slot made the installed list look inert.
             break;
     }
 }
@@ -1532,6 +1548,10 @@ static NSString *BrowseSortLabel(NSInteger field) {
                 if (ok) [self checkForUpdates];
             }];
         };
+        installed.onManage=^{
+            TKWoWAddonManagerViewController *self=weakSelf; if(!self) return;
+            [self presentSheet:[self manageSheetForRecord:target] from:indexPath];
+        };
         [installed configureWithRecord:addon
                               selected:[_selected containsObject:identifier]
                             selectable:[self recordIsSelectable:addon]
@@ -1569,7 +1589,7 @@ static NSString *BrowseSortLabel(NSInteger field) {
         [self presentProject:_results[indexPath.row]]; return;
     }
     if (indexPath.section==0) return;
-    TKAddonRecord *record=_store.records[indexPath.row]; if(!record.managed)return;
+    TKAddonRecord *record=_store.records[indexPath.row];
     [self presentSheet:[self manageSheetForRecord:record] from:indexPath];
 }
 // The actions a managed package offers, built in one place so the page and the device self-test
@@ -1580,6 +1600,11 @@ static NSString *BrowseSortLabel(NSInteger field) {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:record.name
         message:record.disabled?WKLocalized(@"addons.manage.disabledNote"):WKLocalized(@"addons.manage.note")
         preferredStyle:UIAlertControllerStyleActionSheet];
+    if (!record.managed) {
+        sheet.message=WKLocalized(@"addons.manage.unmanaged");
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleCancel handler:nil]];
+        return sheet;
+    }
     [sheet addAction:[UIAlertAction actionWithTitle:record.disabled?WKLocalized(@"addons.restore"):WKLocalized(@"addons.disable") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store setDisabled:!record.disabled record:record error:e];}];}]];
     // Pinning is how a user says "leave this one alone". It is honoured by every update path,
     // not only by the row that offers it.

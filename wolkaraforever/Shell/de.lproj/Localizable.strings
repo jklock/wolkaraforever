@@ -509,6 +509,8 @@
 "addons.pin" = "Diese Version anheften";
 "addons.unpin" = "Aktualisierungen wieder zulassen";
 "addons.remove" = "Verwaltetes Paket entfernen";
+"addons.action.manage" = "Verwalten";
+"addons.manage.unmanaged" = "Dieses vorhandene Add-on wurde nicht von WolkaraForever installiert und kann hier nicht geändert werden.";
 /* ---- Voice and dictation ---- */
 "voice.title" = "Tasten und Buttons belegen";
 "voice.test.title" = "Sprache testen";
