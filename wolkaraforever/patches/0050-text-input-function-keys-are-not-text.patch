@@ -1,0 +1,104 @@
+# WolkaraForever layer patch 0050 - text input: a function key is never text
+#
+# Why: AKInterpretTextKey inserted the characters AppKit reserves for function keys as text
+# whenever no command named the key: F12 (U+F70F), F1-F35, Insert, Help... AppKit never
+# does. Found on 2026-11-05 while looking into a refused WoW Forever login on the iPhone Duo,
+# because the mobile keyboard sends F12 (the Interface mobile add-on's "open the chat input"
+# binding) in front of a chat line. That refusal had another cause: the device log showed
+# WoW does not hand F12 to interpretKeyEvents, and the same login was refused without F12
+# and accepted later with the same input. Any guest that does would have had an invisible
+# character in its focused field. The characters from U+F700 (NSUpArrowFunctionKey) to
+# U+F747 (NSModeSwitchFunctionKey) are no longer inserted, and the adapter logs once per key,
+# without any typed text, that it inserted nothing. The Apple logo (U+F8FF) shares the
+# private-use block and is still typed; keys that are commands (arrows, Home, End, Page
+# Up/Down, Forward Delete) are unchanged. tests/test_text_input.m fails without this patch.
+#
+# Applies to: translation/AppKit/TextInput.m
+#             tests/test_text_input.m
+# Upstream: candidate.
+#
+--- a/translation/AppKit/TextInput.m
++++ b/translation/AppKit/TextInput.m
+@@ -73,6 +73,21 @@
+         return;
+     }
+     if(!characters.length || command || control) return;
++    // AppKit never makes text of a function key. The characters it reserves for them,
++    // NSUpArrowFunctionKey (U+F700) to NSModeSwitchFunctionKey (U+F747) - F1 to F35,
++    // Insert, Print Screen, Help... - are not inserted when no binding names the key.
++    // Inserted, F12's U+F70F is an invisible character in front of whatever follows it
++    // in the focused field, a password field included. The Apple logo (U+F8FF) shares
++    // the private-use block and is a character.
++    unichar first=[characters characterAtIndex:0];
++    if(first>=0xF700 && first<=0xF747) {
++        static uint64_t reported[2];
++        if(keyCode<128 && !(reported[keyCode/64]&(1ULL<<(keyCode%64)))) {
++            reported[keyCode/64]|=1ULL<<(keyCode%64);
++            AKLog(@"text: function key %u (U+%04X) is not text; nothing inserted",(unsigned)keyCode,(unsigned)first);
++        }
++        return;
++    }
+     SEL insert=NSSelectorFromString(@"insertText:replacementRange:");
+     if([client respondsToSelector:insert]) ((void (*)(id,SEL,id,NSRange))[client methodForSelector:insert])(client,insert,characters,NSMakeRange(NSNotFound,0));
+     else {
+--- a/tests/test_text_input.m
++++ b/tests/test_text_input.m
+@@ -1,5 +1,14 @@
+ #import "TextInput.h"
++#import "AKSupport.h"
+ #include <assert.h>
++// The adapter's log, kept: TextInput.m is built here without AKSupport.m.
++static NSMutableArray<NSString *> *logged;
++void AKLog(NSString *fmt, ...) {
++    va_list ap; va_start(ap, fmt);
++    NSString *line = [[NSString alloc] initWithFormat:fmt arguments:ap];
++    va_end(ap);
++    [logged addObject:line];
++}
+ @interface InputClient : NSObject
+ @property(copy) NSString *text, *command;
+ @property NSRange range;
+@@ -9,8 +18,9 @@
+ - (void)doCommandBySelector:(SEL)selector { self.command=NSStringFromSelector(selector); }
+ @end
+ int main(void) { @autoreleasepool {
++    logged = [NSMutableArray new];
+     NSMutableArray<NSDictionary *> *keys = [NSMutableArray new];
+-    AKEnumerateTextKeys(@"aA@ñ🙂e\u0301\r\n\t", ^(NSString *text, NSString *plain, unsigned short code, NSUInteger mods) {
++    AKEnumerateTextKeys(@"aA@ñ🙂é\r\n\t", ^(NSString *text, NSString *plain, unsigned short code, NSUInteger mods) {
+         [keys addObject:@{@"text":text, @"plain":plain, @"code":@(code), @"mods":@(mods)}];
+     });
+     assert(keys.count == 8);
+@@ -18,7 +28,7 @@
+     assert([keys[1][@"code"] intValue] == 0 && [keys[1][@"plain"] isEqual:@"a"] && [keys[1][@"mods"] unsignedLongValue] == (1UL << 17));
+     assert([keys[2][@"code"] intValue] == 19 && [keys[2][@"plain"] isEqual:@"2"] && [keys[2][@"text"] isEqual:@"@"]);
+     for (unsigned i = 3; i <= 5; i++) assert([keys[i][@"code"] intValue] == 0xFF);
+-    assert([keys[4][@"text"] isEqual:@"🙂"] && [keys[5][@"text"] isEqual:@"e\u0301"]);
++    assert([keys[4][@"text"] isEqual:@"🙂"] && [keys[5][@"text"] isEqual:@"é"]);
+     assert([keys[6][@"code"] intValue] == 36 && [keys[6][@"text"] isEqual:@"\r"]);
+     assert([keys[7][@"code"] intValue] == 48);
+     AKEnumerateTextKeys(@"", ^(NSString *text, NSString *plain, unsigned short code, NSUInteger mods) {
+@@ -31,5 +41,22 @@
+     AKInterpretTextKey(client,@"",123,(1UL<<17)|(1UL<<19));assert([client.command isEqual:@"moveWordLeftAndModifySelection:"]);
+     AKInterpretTextKey(client,@"",51,0);assert([client.command isEqual:@"deleteBackward:"]);
+     AKInterpretTextKey(client,@"password text must not be logged",0,0);assert([client.text hasPrefix:@"password"]);
+-    puts("software text keys, composed Unicode, text-client ABI, commands and replacement ranges: PASS");
++    // A function key is never text, as in AppKit. F12's U+F70F once went into a login
++    // screen's password field in front of the password. Nothing is inserted, no command
++    // is sent, and the log says so once per key without any typed text.
++    client.text=@"typed";client.command=nil;
++    AKInterpretTextKey(client,@"",111,0);assert([client.text isEqual:@"typed"] && client.command==nil);
++    AKInterpretTextKey(client,@"",111,1UL<<17);assert([client.text isEqual:@"typed"] && client.command==nil);
++    AKInterpretTextKey(client,@"",122,0);assert([client.text isEqual:@"typed"] && client.command==nil);
++    AKInterpretTextKey(client,@"",114,0);assert([client.text isEqual:@"typed"] && client.command==nil);
++    assert(logged.count==3);
++    assert([logged[0] rangeOfString:@"111"].location!=NSNotFound);
++    for (NSString *line in logged) assert([line rangeOfString:@"password"].location==NSNotFound && [line rangeOfString:@"typed"].location==NSNotFound);
++    // The Apple logo (Option-Shift-K) shares the private-use block and is a character.
++    AKInterpretTextKey(client,@"",40,(1UL<<17)|(1UL<<19));assert([client.text isEqual:@""]);
++    // Keys that are commands carry function-key characters too; they stay commands.
++    AKInterpretTextKey(client,@"",123,0);assert([client.command isEqual:@"moveLeft:"]);
++    AKInterpretTextKey(client,@"",115,0);assert([client.command isEqual:@"moveToBeginningOfDocument:"]);
++    assert(logged.count==3);
++    puts("software text keys, composed Unicode, text-client ABI, commands, replacement ranges and function keys: PASS");
+ } }
