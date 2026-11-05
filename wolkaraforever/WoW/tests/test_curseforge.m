@@ -78,6 +78,54 @@ int main(void) {
         session.body=@"{\"data\":[null,42,{}, {\"gameVersions\":[\"1.60.1\"],\"isAvailable\":true,\"fileDate\":\"2026-01-01\",\"id\":1}, {\"gameVersions\":[\"1.60.1\"],\"isAvailable\":true,\"fileDate\":\"2026-02-01\",\"id\":2}]}";
         [client latestFileForModID:@1 gameVersion:@"1.60.1" completion:completion];
         CHECK([result[@"id"] isEqual:@2] && !error, "invalid entries ignored; newest compatible file chosen");
+        // --- the sort table is the only source of a visible sort name
+        NSArray<TKCurseForgeSortField *> *sorts=TKCurseForgeSortFields();
+        CHECK(sorts.count==7, "seven sort fields, as the site offers");
+        CHECK(sorts.firstObject.wireValue==1 && [sorts.firstObject.titleKey isEqual:@"addons.sort.featured"], "featured first, by wire id");
+        CHECK(TKCurseForgeSortFieldForWireValue(11).wireValue==11, "release date is reachable by its wire id");
+        CHECK(TKCurseForgeSortFieldForWireValue(99)==nil, "an unlisted wire id has no name and is not offered");
+        for (TKCurseForgeSortField *field in sorts) {
+            CHECK(field.titleKey.length>0 && ![field.titleKey containsString:@"%@"], "every visible sort name is a localization key, not a format");
+            // The direction each field starts in is data, not a hard-coded pair of ids in the menu.
+            if (field.wireValue==4 || field.wireValue==5) CHECK(field.defaultsToAscending, "name and author read A-Z");
+            else CHECK(!field.defaultsToAscending, "everything else reads largest or newest first");
+        }
+        CHECK(TKCurseForgeDefaultSortField()==1, "featured is what the list shows before a choice");
+        // --- the file a row shows is the file the button installs
+        NSString *twoFiles=@"{\"data\":[{\"id\":1,\"gameVersions\":[\"1.15.9\"],\"isAvailable\":true,\"fileDate\":\"2026-05-01\"}, {\"id\":2,\"gameVersions\":[\"1.60.1\"],\"isAvailable\":true,\"fileDate\":\"2026-03-01\"}]}";
+        session.status=200; session.body=twoFiles;
+        __block TKCurseForgeFileCandidate *candidate=nil;
+        [client bestFileForModID:@1 gameVersion:@"1.60.1" completion:^(TKCurseForgeFileCandidate *value,NSError *problem){
+            candidate=value; error=problem;
+        }];
+        CHECK(candidate && [candidate.file[@"id"] isEqual:@2] && candidate.compatibility==TKCurseForgeCompatibilityVerified && !error,
+              "a tagged file wins even when a newer untagged one exists");
+        // No Forever-tagged file at all is *not* a refusal: the newest available file is
+        // offered and the compatibility state says it is unverified. That is the difference
+        // between advice and a gate, and the plan removes the gate.
+        session.body=@"{\"data\":[{\"id\":3,\"gameVersions\":[\"1.15.9\"],\"isAvailable\":true,\"fileDate\":\"2026-06-01\"}]}";
+        [client bestFileForModID:@1 gameVersion:@"1.60.1" completion:^(TKCurseForgeFileCandidate *value,NSError *problem){
+            candidate=value; error=problem;
+        }];
+        CHECK(candidate && [candidate.file[@"id"] isEqual:@3] && candidate.compatibility==TKCurseForgeCompatibilityUnverified && !error,
+              "an untagged file is offered as unverified instead of denied");
+        CHECK([candidate.gameVersions isEqual:@[@"1.15.9"]], "and it carries the versions it does declare, for the advisory line");
+        // Nothing downloadable at all is still a refusal, because it is a broken answer rather
+        // than a compatibility state.
+        session.body=@"{\"data\":[{\"id\":4,\"gameVersions\":[\"1.60.1\"],\"isAvailable\":false,\"fileDate\":\"2026-07-01\"}]}";
+        [client bestFileForModID:@1 gameVersion:@"1.60.1" completion:^(TKCurseForgeFileCandidate *value,NSError *problem){
+            candidate=value; error=problem;
+        }];
+        CHECK(!candidate && error, "a project with no available file is refused");
+        session.body=@"{\"data\":[]}";
+        [client bestFileForModID:@1 gameVersion:@"1.60.1" completion:^(TKCurseForgeFileCandidate *value,NSError *problem){
+            candidate=value; error=problem;
+        }];
+        CHECK(!candidate && error, "an empty file list is refused");
+        // The compatible-only accessor keeps its old meaning for a caller that wants it.
+        session.body=@"{\"data\":[{\"id\":5,\"gameVersions\":[\"1.15.9\"],\"isAvailable\":true,\"fileDate\":\"2026-08-01\"}]}";
+        [client latestFileForModID:@1 gameVersion:@"1.60.1" completion:completion];
+        CHECK(!result && error, "latestFileForModID still means 'none' when nothing matches");
         for (NSString *url in @[@"http://edge.forgecdn.net/a", @"https://forgecdn.net.evil.test/a", @"https://example.org/a"]) {
             NSError *failure=nil;
             CHECK(![client assetRequestForURL:url error:&failure] && failure, "untrusted asset URL refused");

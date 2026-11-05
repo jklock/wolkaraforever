@@ -15,6 +15,17 @@ NS_ASSUME_NONNULL_BEGIN
 // folders are skipped so a damaged add-on cannot prevent the manager opening.
 NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory);
 
+// What a browser row's own action is doing. Part of the row's public contract, because a
+// caller (and the fixture) has to be able to say "this project is already installed" without
+// guessing from the title.
+typedef NS_ENUM(NSInteger, TKAddonInstallState) {
+    TKAddonInstallStateIdle = 0,
+    TKAddonInstallStateBusy,
+    TKAddonInstallStateInstalled,
+    TKAddonInstallStateUnavailable,
+    TKAddonInstallStateFailed,
+};
+
 // Whether the CurseForge list has room for all seven columns at this width.
 //
 // The columns are fixed widths - 480 points of them, plus spacing, artwork and

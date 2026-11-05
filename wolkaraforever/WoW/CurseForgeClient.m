@@ -54,6 +54,93 @@ static NSError *CFHTTPError(NSInteger status, NSData *data) {
     return CFError(reason);
 }
 
+@interface TKCurseForgeSortField ()
+@property (nonatomic, readwrite) NSInteger wireValue;
+@property (nonatomic, readwrite, copy) NSString *titleKey;
+@property (nonatomic, readwrite) BOOL defaultsToAscending;
+@end
+
+@implementation TKCurseForgeSortField
+@end
+
+@interface TKCurseForgeFileCandidate ()
+@property (nonatomic, readwrite, copy) NSDictionary *file;
+@property (nonatomic, readwrite) TKCurseForgeCompatibility compatibility;
+@property (nonatomic, readwrite, copy) NSArray<NSString *> *gameVersions;
+@end
+
+static TKCurseForgeSortField *CFSortField(NSInteger wire, NSString *key, BOOL ascending) {
+    TKCurseForgeSortField *field = [TKCurseForgeSortField new];
+    field.wireValue = wire;
+    field.titleKey = key;
+    field.defaultsToAscending = ascending;
+    return field;
+}
+
+NSArray<TKCurseForgeSortField *> *TKCurseForgeSortFields(void) {
+    static NSArray<TKCurseForgeSortField *> *fields;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        // CurseForge's own field ids and its own words: Featured, Popularity, Last Updated,
+        // Name, Author, Total Downloads, Release Date. A field this build does not list is not
+        // offered, so a visible control can never show a bare number.
+        fields = @[
+            CFSortField(1,  @"addons.sort.featured",       NO),
+            CFSortField(2,  @"addons.sort.popularity",     NO),
+            CFSortField(3,  @"addons.sort.lastUpdated",    NO),
+            CFSortField(4,  @"addons.column.name",         YES),
+            CFSortField(5,  @"addons.column.author",       YES),
+            CFSortField(6,  @"addons.sort.totalDownloads", NO),
+            CFSortField(11, @"addons.sort.releaseDate",    NO),
+        ];
+    });
+    return fields;
+}
+
+TKCurseForgeSortField *TKCurseForgeSortFieldForWireValue(NSInteger value) {
+    for (TKCurseForgeSortField *field in TKCurseForgeSortFields())
+        if (field.wireValue == value) return field;
+    return nil;
+}
+
+NSInteger TKCurseForgeDefaultSortField(void) { return 1; }
+
+@implementation TKCurseForgeFileCandidate
+@end
+
+// The one place a project's file list becomes a decision. Everything that can be decided from
+// the list alone lives here, so the browser list and the install path cannot disagree about
+// which file a project would install.
+TKCurseForgeFileCandidate *TKCurseForgeChooseFile(NSArray *files, NSString *gameVersion) {    if (![files isKindOfClass:NSArray.class]) return nil;
+    NSMutableArray<NSDictionary *> *available = [NSMutableArray array];
+    for (id item in files) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        if (![item[@"fileDate"] isKindOfClass:NSString.class]) continue;
+        if (![item[@"id"] isKindOfClass:NSNumber.class]) continue;
+        // `isAvailable` is the author's and CurseForge's own "may be downloaded" flag. A file
+        // that is not available is not a candidate at any compatibility level.
+        if ([item[@"isAvailable"] isKindOfClass:NSNumber.class] && ![item[@"isAvailable"] boolValue]) continue;
+        [available addObject:item];
+    }
+    NSArray<NSDictionary *> *sorted = [available sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [b[@"fileDate"] compare:a[@"fileDate"]];
+    }];
+    NSMutableArray<NSDictionary *> *matching = [NSMutableArray array];
+    if (gameVersion.length) {
+        for (NSDictionary *file in sorted) {
+            NSArray *versions = [file[@"gameVersions"] isKindOfClass:NSArray.class] ? file[@"gameVersions"] : @[];
+            if ([versions containsObject:gameVersion]) [matching addObject:file];
+        }
+    }
+    NSDictionary *chosen = matching.firstObject ?: sorted.firstObject;
+    if (!chosen) return nil;
+    TKCurseForgeFileCandidate *candidate = [TKCurseForgeFileCandidate new];
+    candidate.file = chosen;
+    candidate.compatibility = matching.count ? TKCurseForgeCompatibilityVerified : TKCurseForgeCompatibilityUnverified;
+    candidate.gameVersions = [chosen[@"gameVersions"] isKindOfClass:NSArray.class] ? chosen[@"gameVersions"] : @[];
+    return candidate;
+}
+
 @implementation TKCurseForgeClient { NSString *_key; NSURLSession *_session; }
 - (instancetype)initWithAPIKey:(NSString *)key { if((self=[super init])){_key=key.copy;_session=[NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration];}return self; }
 - (void)get:(NSString *)path completion:(TKCurseForgeCompletion)completion {
@@ -77,7 +164,38 @@ static NSError *CFHTTPError(NSInteger status, NSData *data) {
     NSURL *url=[NSURL URLWithString:[BaseURL stringByAppendingFormat:@"/mods/search?%@",c.percentEncodedQuery]]; NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];[request setValue:@"application/json" forHTTPHeaderField:@"Accept"];[request setValue:_key forHTTPHeaderField:@"x-api-key"];
     [[_session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *failure){NSHTTPURLResponse *http=(id)response;if(failure){TKAddonLog(@"mods/search failed: %@",failure.localizedDescription);completion(nil,failure);return;}if(http.statusCode<200||http.statusCode>=300){NSError *refusal=CFHTTPError(http.statusCode,data);TKAddonLog(@"mods/search -> HTTP %ld: %@",(long)http.statusCode,refusal.localizedDescription);completion(nil,refusal);return;}id value=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:NULL]:nil;if(![value isKindOfClass:NSDictionary.class]){completion(nil,CFError(@"CurseForge returned invalid JSON."));return;}if(![value[@"data"] isKindOfClass:NSArray.class]){completion(nil,CFError(@"CurseForge returned no mod list."));return;}completion(value,nil);} ] resume];
 }
-- (void)latestFileForModID:(NSNumber *)modID gameVersion:(NSString *)gameVersion completion:(TKCurseForgeCompletion)completion { [self get:[NSString stringWithFormat:@"/mods/%@/files?pageSize=50",modID] completion:^(id value,NSError *error){if(error){completion(nil,error);return;}if (![value isKindOfClass:NSArray.class]) { completion(nil,CFError(@"CurseForge returned an invalid file list.")); return; } NSArray *files=value;NSArray *matches=[files filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id item,NSDictionary *bindings){(void)bindings;return [item isKindOfClass:NSDictionary.class] && [item[@"gameVersions"] isKindOfClass:NSArray.class] && [item[@"isAvailable"] isKindOfClass:NSNumber.class] && [item[@"fileDate"] isKindOfClass:NSString.class] && [item[@"gameVersions"] containsObject:gameVersion] && [item[@"isAvailable"] boolValue];}]];NSDictionary *latest=[matches sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a,NSDictionary *b){return [b[@"fileDate"] compare:a[@"fileDate"]];}].firstObject;completion(latest,latest?nil:CFError([NSString stringWithFormat:@"This project has no file tagged %@.",gameVersion]));}]; }
+- (void)fetchFilesForModID:(NSNumber *)modID completion:(void (^)(NSArray *_Nullable files, NSError *_Nullable error))completion {
+    [self get:[NSString stringWithFormat:@"/mods/%@/files?pageSize=50", modID] completion:^(id value, NSError *error) {
+        if (error) { completion(nil, error); return; }
+        if (![value isKindOfClass:NSArray.class]) { completion(nil, CFError(@"CurseForge returned an invalid file list.")); return; }
+        completion(value, nil);
+    }];
+}
+- (void)bestFileForModID:(NSNumber *)modID gameVersion:(NSString *)gameVersion
+              completion:(void (^)(TKCurseForgeFileCandidate *_Nullable candidate, NSError *_Nullable error))completion {
+    [self fetchFilesForModID:modID completion:^(NSArray *files, NSError *error) {
+        if (error) { completion(nil, error); return; }
+        TKCurseForgeFileCandidate *candidate = TKCurseForgeChooseFile(files, gameVersion);
+        if (!candidate) {
+            // Nothing downloadable at all. That is a broken or empty answer rather than a
+            // compatibility state, and saying so is the difference between "this project has
+            // no file you can have" and "this project is not verified for your version".
+            completion(nil, CFError([NSString stringWithFormat:@"This project has no downloadable file (looking for %@).", gameVersion ?: @"any version"]));
+            return;
+        }
+        completion(candidate, nil);
+    }];
+}
+- (void)latestFileForModID:(NSNumber *)modID gameVersion:(NSString *)gameVersion completion:(TKCurseForgeCompletion)completion {
+    [self bestFileForModID:modID gameVersion:gameVersion completion:^(TKCurseForgeFileCandidate *candidate, NSError *error) {
+        if (error) { completion(nil, error); return; }
+        if (candidate.compatibility != TKCurseForgeCompatibilityVerified) {
+            completion(nil, CFError([NSString stringWithFormat:@"This project has no file tagged %@.", gameVersion]));
+            return;
+        }
+        completion(candidate.file, nil);
+    }];
+}
 - (void)downloadURLForModID:(NSNumber *)modID fileID:(NSNumber *)fileID completion:(TKCurseForgeCompletion)completion { [self get:[NSString stringWithFormat:@"/mods/%@/files/%@/download-url",modID,fileID] completion:^(id value,NSError *error){if(error){completion(nil,error);return;}completion([value isKindOfClass:NSString.class]?value:nil,[value isKindOfClass:NSString.class]?nil:CFError(@"CurseForge returned an invalid download URL."));}]; }
 - (NSURLRequest *)assetRequestForURL:(NSString *)string error:(NSError **)error {
     NSURL *url=[NSURL URLWithString:string]; NSString *host=url.host.lowercaseString;
