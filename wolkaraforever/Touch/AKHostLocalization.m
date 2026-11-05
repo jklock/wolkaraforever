@@ -40,11 +40,13 @@ static NSDictionary<NSString *, NSString *> *AKStandaloneTable(NSString *code) {
 static NSString *AKStandaloneLanguageCode(void) {
     NSString *stored = [NSUserDefaults.standardUserDefaults stringForKey:AKAppLanguageDefaultsKey];
     if ([stored isEqual:@"de"]) return @"de";
+    if ([stored isEqual:@"fr"]) return @"fr";
     if ([stored isEqual:@"en"]) return @"en";
     for (NSString *identifier in NSLocale.preferredLanguages) {
         NSString *primary = [[identifier stringByReplacingOccurrencesOfString:@"_" withString:@"-"]
             componentsSeparatedByString:@"-"].firstObject.lowercaseString;
         if ([primary isEqual:@"de"]) return @"de";
+        if ([primary isEqual:@"fr"]) return @"fr";
         if ([primary isEqual:@"en"]) return @"en";
     }
     return @"en";

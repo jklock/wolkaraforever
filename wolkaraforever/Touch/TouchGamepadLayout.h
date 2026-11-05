@@ -16,6 +16,9 @@ FOUNDATION_EXPORT NSNotificationName const AKGamepadLayoutDidChangeNotification;
 // settings page and the launcher's Performance & UI row both write it, so the
 // preference has one home and one meaning.
 @property(nonatomic) BOOL performanceOverlayEnabled;
+// Only the two sticks are shown (movement and camera); the buttons stay hidden. On by
+// default: on a phone the buttons cover the game, and the game's own UI does the rest.
+@property(nonatomic) BOOL sticksOnly;
 - (CGRect)frameForItem:(NSString *)item defaultFrame:(CGRect)frame inBounds:(CGRect)bounds;
 - (void)moveItem:(NSString *)item toFrame:(CGRect)frame inBounds:(CGRect)bounds;
 - (void)save;

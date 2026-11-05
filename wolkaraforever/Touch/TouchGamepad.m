@@ -137,7 +137,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     UIView *_settings;
     UIButton *_editDone;
     UILabel *_hint;
-    UISwitch *_editSwitch, *_hapticsSwitch, *_overlaySwitch, *_swapShouldersSwitch;
+    UISwitch *_editSwitch, *_hapticsSwitch, *_overlaySwitch, *_swapShouldersSwitch, *_sticksOnlySwitch;
     UIStackView *_settingsColumns;
     NSArray<UISlider *> *_sliders;
     NSArray<UILabel *> *_values;
@@ -214,6 +214,16 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
         item.alpha = _editing ? MAX(0.5,_preferences.opacity) : _preferences.opacity;
         item.layer.borderWidth = _editing ? 1 : ([item isKindOfClass:AKGamepadButton.class] ? 1 : 0);
         item.layer.borderColor = (_editing ? UIColor.systemYellowColor : [UIColor colorWithWhite:1 alpha:0.3]).CGColor;
+    }
+    // Sticks only keeps A, under the camera stick, as the jump: the game's gamepad mode
+    // binds A to Jump, and a phone game always has its jump there.
+    BOOL sticksOnly = _preferences.sticksOnly && !self.configuring;
+    NSArray<UIView *> *placed = _items.allValues;
+    for (AKGamepadButton *button in _buttons.allValues) {
+        BOOL jump = [button.element isEqualToString:GCInputButtonA];
+        if (sticksOnly) button.hidden = !jump;
+        else if (![placed containsObject:button]) button.hidden = NO;
+        if (jump) [button setTitle:sticksOnly ? AKHostLocalized(@"touch.gamepad.jump") : @"A" forState:UIControlStateNormal];
     }
     // An enabled UIControl is needed for its own pan recognizer to receive
     // touches. The manager suppresses game input throughout configuration.
@@ -349,7 +359,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     NSArray *names = @[AKHostLocalized(@"touch.settings.transparency"), AKHostLocalized(@"touch.settings.shoulderSize"),
                        AKHostLocalized(@"touch.settings.stickSize")];
     CGFloat initial[] = {1-_preferences.opacity,_preferences.rearScale,_preferences.frontScale};
-    CGFloat min[] = {0,0.8,0.65}, max[] = {0.8,1.5,1.4};
+    CGFloat min[] = {0,0.8,0.65}, max[] = {0.95,1.5,1.4};
     for (NSUInteger i=0; i<3; i++) {
         UILabel *value = [self label:@""]; [values addObject:value]; [sizes addArrangedSubview:value];
         UISlider *slider = [UISlider new]; slider.tag = i; slider.minimumValue = min[i]; slider.maximumValue = max[i]; slider.value = initial[i];
@@ -358,6 +368,13 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
         [sliders addObject:slider]; [sizes addArrangedSubview:slider];
     }
     _sliders = sliders; _values = values; [self updateValues];
+    _sticksOnlySwitch = [UISwitch new]; _sticksOnlySwitch.on = _preferences.sticksOnly;
+    _sticksOnlySwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.sticksOnly");
+    _sticksOnlySwitch.accessibilityIdentifier = @"wolkaraforever.controls.sticksOnly";
+    [_sticksOnlySwitch addTarget:self action:@selector(sticksOnlyChanged:) forControlEvents:UIControlEventValueChanged];
+    UIStackView *sticksRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.sticksOnly")],_sticksOnlySwitch]];
+    sticksRow.axis = UILayoutConstraintAxisHorizontal; sticksRow.alignment = UIStackViewAlignmentCenter;
+    [options addArrangedSubview:sticksRow];
     _swapShouldersSwitch = [UISwitch new]; _swapShouldersSwitch.on = !_preferences.swapShoulders;
     _swapShouldersSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.outerTriggers");
     _swapShouldersSwitch.accessibilityIdentifier = @"wolkaraforever.controls.swapShoulders";
@@ -424,6 +441,10 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     [self reset]; _preferences.swapShoulders = !sender.on; [_preferences save];
     [self updateAppearance];
 }
+- (void)sticksOnlyChanged:(UISwitch *)sender {
+    [self reset]; _preferences.sticksOnly = sender.on; [_preferences save];
+    [self updateAppearance];
+}
 - (void)hapticsChanged:(UISwitch *)sender {
     _preferences.hapticsEnabled = sender.on; [_preferences save];
     if (self.configurationChanged) self.configurationChanged();
@@ -435,7 +456,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 - (void)beginEditing:(UISwitch *)sender {
     if (!sender.on) return;
     [self reset]; _editing = YES; [_settings removeFromSuperview]; _settings = nil;
-    _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _settingsColumns = nil;
+    _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _settingsColumns = nil;
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
 }
 - (void)resetLayout {
@@ -443,11 +464,12 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     _sliders[0].value = 1-_preferences.opacity; _sliders[1].value = _preferences.rearScale; _sliders[2].value = _preferences.frontScale;
     _hapticsSwitch.on = _preferences.hapticsEnabled; _swapShouldersSwitch.on = !_preferences.swapShoulders;
     _overlaySwitch.on = _preferences.performanceOverlayEnabled;
+    _sticksOnlySwitch.on = _preferences.sticksOnly;
     [self updateValues]; [self updateAppearance];
 }
 - (void)finishConfiguration {
     [self reset]; [_preferences save]; _editing = NO; [_dragOrigins removeAllObjects];
-    [_settings removeFromSuperview]; _settings = nil; _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _settingsColumns = nil;
+    [_settings removeFromSuperview]; _settings = nil; _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _settingsColumns = nil;
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
 }
 - (void)reset {

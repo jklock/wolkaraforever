@@ -37,6 +37,7 @@ wolkaraforever/Shell/artwork/wolkaraforever-icon-source.png artwork/wolkaraforev
 wolkaraforever/Shell/artwork/wolkaraforever-logo.png artwork/wolkaraforever/wolkaraforever-logo.png add
 wolkaraforever/Shell/de.lproj/Localizable.strings launcher/App/de.lproj/Localizable.strings add
 wolkaraforever/Shell/en.lproj/Localizable.strings launcher/App/en.lproj/Localizable.strings add
+wolkaraforever/Shell/fr.lproj/Localizable.strings launcher/App/fr.lproj/Localizable.strings add
 wolkaraforever/Shell/main.m launcher/App/main.m replace
 wolkaraforever/Shell/tests/test_execution_mode.m tests/test_execution_mode.m replace
 wolkaraforever/Shell/tests/test_localization.m tests/test_localization.m add
