@@ -95,3 +95,50 @@ void WKDismissPage(UIViewController *page) {
     // pushes, so a page can never be left with no way out.
     if (frame.viewControllers.count > 1) [frame popViewControllerAnimated:YES];
 }
+CGFloat const WKPopupMaximumScreenFraction = 0.85;
+
+// One implementation for every popup in the app.
+//
+// UIKit sizes an action sheet and an alert with no reference to this app's wishes, and on iPad
+// that is a popover it lays out itself. The measured failure on 2026-10-22 was a form sheet
+// that stayed *regular* however narrow it was: the container was 540 points and the popup was
+// drawn wider than that. Bounding the frame here is deliberately crude and deliberately
+// unconditional - it is the one thing a popup may not do, and it must hold for a popover, a
+// sheet, an alert and a page alike.
+CGRect WKConstrainPopupToScreen(UIViewController *presented, UIView *container) {
+    UIView *view = presented.view;
+    if (!view || !container) return CGRectZero;
+    CGSize screen = container.bounds.size;
+    if (screen.width < 1 || screen.height < 1) return view.frame;
+    CGFloat maxW = floor(screen.width * WKPopupMaximumScreenFraction);
+    CGFloat maxH = floor(screen.height * WKPopupMaximumScreenFraction);
+    CGRect frame = view.frame;
+    BOOL changed = NO;
+    if (CGRectGetWidth(frame) > maxW + 0.5) {
+        frame.size.width = maxW;
+        frame.origin.x = floor((screen.width - maxW) * 0.5);
+        changed = YES;
+    }
+    if (CGRectGetHeight(frame) > maxH + 0.5) {
+        frame.size.height = maxH;
+        frame.origin.y = floor((screen.height - maxH) * 0.5);
+        changed = YES;
+    }
+    if (changed) view.frame = frame;
+    return view.frame;
+}
+
+void WKPreparePopupForPresentation(UIViewController *presented, UIView *container) {
+    CGSize screen = container ? container.bounds.size : CGSizeZero;
+    if (screen.width < 1 || screen.height < 1) return;
+    CGFloat margin = floor((1.0 - WKPopupMaximumScreenFraction) * 0.5 * MIN(screen.width, screen.height));
+    UIPopoverPresentationController *popover = presented.popoverPresentationController;
+    if (popover) {
+        popover.popoverLayoutMargins = UIEdgeInsetsMake(margin, margin, margin, margin);
+        popover.canOverlapSourceViewRect = NO;
+    }
+    CGSize preferred = presented.preferredContentSize;
+    if (preferred.width > 0) preferred.width = MIN(preferred.width, floor(screen.width * WKPopupMaximumScreenFraction));
+    if (preferred.height > 0) preferred.height = MIN(preferred.height, floor(screen.height * WKPopupMaximumScreenFraction));
+    presented.preferredContentSize = preferred;
+}

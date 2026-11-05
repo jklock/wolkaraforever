@@ -17,6 +17,7 @@
 #import "../launcher/App/WKLocalization.h"
 #import "../launcher/App/WolkaraForeverConfig.h"
 #import "../launcher/App/WolkaraForeverLog.h"
+#import "../launcher/App/WolkaraForeverTheme.h"
 #import "../launcher/Voice/VoiceViewController.h"
 #import "../launcher/Voice/VoiceTestViewController.h"
 #import "wow_installation_fixture.h"
@@ -382,6 +383,10 @@ static void TestAddons(void) {
 - (void)configureWithProject:(NSDictionary *)project file:(NSDictionary *)file
                         rank:(NSString *)rank columns:(NSUInteger)columns
                  gameVersion:(NSString *)gameVersion compact:(BOOL)compact;
+- (void)configureWithProject:(NSDictionary *)project file:(NSDictionary *)file
+                        rank:(NSString *)rank columns:(NSUInteger)columns
+                 gameVersion:(NSString *)gameVersion compact:(BOOL)compact
+                installState:(TKAddonInstallState)state;
 @end
 
 // Exercise the production migration/startup policy without an updater or game.
@@ -579,6 +584,71 @@ static void TestPhoneDisplayDefaults(void) {
     // *regular* for a form sheet on an iPad however narrow the sheet is. A portrait sheet is
     // about 540 points wide while the seven columns ask for 586 before the project's name gets
     // any room, so the row ran off the end of the list.
+    // --- the row's own Install action, and what it says in each state
+    [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
+                       gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateIdle];
+    UIButton *install = (id)Find(cell, @"wow.addons.project.61284.install");
+    assert(install != nil && [install.titleLabel.text isEqual:@"Install"] && install.enabled);
+    [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
+                       gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateInstalled];
+    assert([install.titleLabel.text isEqual:@"Installed"] && !install.enabled);
+    [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
+                       gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateBusy];
+    assert([install.titleLabel.text isEqual:@"Installing…"] && !install.enabled);
+    [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
+                       gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateUnavailable];
+    assert([install.titleLabel.text isEqual:@"Unavailable"] && !install.enabled);
+    // The action is inside the row at every width, including the narrow one.
+    [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
+                       gameVersion:@"1.60.1" compact:TKAddonRowsAreCompact(540.0)
+                  installState:TKAddonInstallStateIdle];
+    [cell setFrame:CGRectMake(0, 0, 540, 64)];
+    [cell layoutIfNeeded];
+    CGRect installFrame = [install convertRect:install.bounds toView:cell];
+    assert(CGRectGetMaxX(installFrame) <= CGRectGetMaxX(cell.bounds) + 0.5);
+
+    // --- the installed list's selection toolbar exists and is wired
+    assert(Find(manager.view, @"wow.addons.selectAll") != nil);
+    assert(Find(manager.view, @"wow.addons.clearSelection") != nil);
+    assert(Find(manager.view, @"wow.addons.updateSelected") != nil);
+    assert(Find(manager.view, @"wow.addons.updateAll") != nil);
+
+    // --- no visible sort or filter name is a localization key or a bare API id
+    UIButton *sortButton = (id)Find(manager.view, @"wow.addons.sort");
+    UIButton *filterButton = (id)Find(manager.view, @"wow.addons.filters");
+    assert(sortButton.menu != nil && filterButton.menu != nil);
+    NSMutableArray<UIMenuElement *> *menuChildren = [NSMutableArray array];
+    for (UIMenuElement *element in sortButton.menu.children) {
+        [menuChildren addObject:element];
+        if ([element isKindOfClass:UIMenu.class]) [menuChildren addObjectsFromArray:((UIMenu *)element).children];
+    }
+    for (UIMenuElement *element in filterButton.menu.children) {
+        [menuChildren addObject:element];
+        if ([element isKindOfClass:UIMenu.class]) [menuChildren addObjectsFromArray:((UIMenu *)element).children];
+    }
+    for (UIMenuElement *element in menuChildren) {
+        if (![element isKindOfClass:UIAction.class]) continue;
+        NSString *title = ((UIAction *)element).title;
+        assert(title.length > 0);
+        assert(![title hasPrefix:@"addons."] && ![title hasPrefix:@"home."]);
+        assert(![title isEqual:@"1.60.1 (Forever)"]);
+    }
+    BOOL sawForeverLabel = NO;
+    for (UIMenuElement *element in menuChildren)
+        if ([element isKindOfClass:UIAction.class] &&
+            [((UIAction *)element).title isEqual:@"Forever (1.60.1)"]) sawForeverLabel = YES;
+    assert(sawForeverLabel);
+
+    // --- every popup is bounded to 85 % of the presenting screen, with even margins
+    assert(WKPopupMaximumScreenFraction == 0.85);
+    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1000, 800)];
+    UIViewController *oversized = [UIViewController new];
+    oversized.view.frame = CGRectMake(0, 0, 1000, 800);
+    [container addSubview:oversized.view];
+    CGRect bounded = WKConstrainPopupToScreen(oversized, container);
+    assert(CGRectGetWidth(bounded) <= 850.5 && CGRectGetHeight(bounded) <= 680.5);
+    assert(fabs(CGRectGetMinX(bounded) - CGRectGetMidX(container.bounds) + CGRectGetWidth(bounded) / 2) < 1.0);
+
     assert(TKAddonRowsAreCompact(540.0));
     assert(!TKAddonRowsAreCompact(936.0));
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f gameVersion:@"1.60.1"
@@ -962,9 +1032,9 @@ static void TestPhoneDisplayDefaults(void) {
     [self.window layoutIfNeeded];
 
     // --- headings, in the order the page is read
-    NSArray *headings = @[@[@"wow.heading.edition", @"GAME EDITION"],
+    NSArray *headings = @[@[@"wow.heading.edition", @"GAME SETTINGS MANAGER"],
                           @[@"wow.heading.addons", @"ADD-ON MANAGER"],
-                          @[@"wow.heading.voice", @"VOICE & INPUT MANAGER"],
+                          @[@"wow.heading.voice", @"DICTATION (V2T) MANAGER"],
                           @[@"wow.heading.profile", @"PERFORMANCE MANAGER"],
                           @[@"wow.heading.performance", @"UI MANAGER"]];
     for (NSArray *pair in headings) {
@@ -1007,17 +1077,19 @@ static void TestPhoneDisplayDefaults(void) {
     assert([[boxes valueForKey:@"accessibilityIdentifier"] isEqualToArray:expectedBoxes]);
     // --- each box's heading and rows, exactly
     NSDictionary *expectedRows = @{
-        // The Game Edition card: the edition, the *game's* language, the *app's* language, and
-        // the compatibility note. Three separate settings, three separate rows.
+        // The Game Settings Manager card: the edition, the region/locale pair, and the
+        // *app's* language. Three separate settings, three separate rows. The passive
+        // compatibility note that used to sit at the foot of this card is gone.
         @"wow.box.edition": @[@"wow.heading.edition", @"wow.edition", @"wow.preferences",
-                              @"wow.language", @""],
+                              @"wow.language"],
         @"wow.box.addons": @[@"wow.heading.addons", @"wow.addons.manage", @"wow.addons.macEver",
                              @"wow.addons.directory"],
         @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.voice.test"],
-        // The profile card: which device, which render scale, the way back, and the overlay.
-        // Nothing here reads or writes the game's files.
+        // The profile card: which device, which render scale, and the overlay. Nothing here
+        // reads or writes the game's files, and there is no "restore defaults" row: the way
+        // back is the Automatic choice in the device sheet, which is where the value lives.
         @"wow.box.profile": @[@"wow.heading.profile", @"wow.performance.deviceProfile",
-                              @"wow.performance.renderProfile", @"wow.performance.restoreDefaults",
+                              @"wow.performance.renderProfile",
                               @"wow.performance.overlay"],
         // The retained card, narrower and in the order someone with a broken UI needs it.
         @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.backup",
@@ -1058,8 +1130,17 @@ static void TestPhoneDisplayDefaults(void) {
     assert(CGRectGetMinY(play) >= -0.5 && CGRectGetMaxY(play) <= scroll.bounds.size.height + 0.5);
     // --- labels, exactly
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.manage") configuration].title isEqual:@"Install Addons (Curse & Direct)"]);
+    // Every edition reads with its prefix, and the region/locale row reads with both values.
+    assert([[(UIButton *)Find(self.controller.view, @"wow.edition") configuration].title isEqual:@"Game Edition: Forever"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.preferences") configuration].title isEqual:@"Region / Locale: EU English"]);
+    // Exactly one supporting line below Play, and no second one reserved for a startup note.
+    assert(Find(self.controller.view, @"wow.updates") != nil);
+    assert(Find(self.controller.view, @"wow.startup") == nil);
+    // The removed controls are gone, not hidden.
+    assert(Find(self.controller.view, @"wow.performance.restoreDefaults") == nil);
+    assert(Find(self.controller.view, @"wow.compatibility") == nil);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.directory") configuration].title isEqual:@"Open Add-on Directory"]);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title isEqual:@"Download Mac-Ever"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title isEqual:@"Download Mac-Ever (Perf Optimization)"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.permissions") configuration].title isEqual:@"Toggle Permissions (Mic & Speech)"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.voice") configuration].title isEqual:@"Key / Button Configuration"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.voice.test") configuration].title isEqual:@"Test Voice & Dictation"]);
@@ -1258,8 +1339,9 @@ static int backupsBeforePerformance;
     assert([deviceRow isEqual:@"Device profile: Automatic — this device (unrecognised)"]);
     NSString *renderRow = [(UIButton *)Find(self.controller.view, @"wow.performance.renderProfile") configuration].title;
     assert([renderRow isEqual:@"Render profile: Performance"]);
-    // Nothing to put back yet, so the row is offered and greyed rather than hidden.
-    assert([self row:@"wow.performance.restoreDefaults"].enabled == NO);
+    // The "restore performance defaults" row is gone rather than hidden: its removal was part
+    // of the home-page cleanup, and a hidden control is the thing the plan forbids.
+    assert(Find(self.controller.view, @"wow.performance.restoreDefaults") == nil);
     [[self row:@"wow.performance.renderProfile"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     [self performSelector:@selector(checkFallbackRenderSheet) withObject:nil afterDelay:0.6];
 }
@@ -1313,7 +1395,7 @@ static int backupsBeforePerformance;
     // profile was measured, so Quality is now available as well.
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.renderProfile") configuration].title
             isEqual:@"Render profile: Performance — 1024 × 768"]);
-    assert([self row:@"wow.performance.restoreDefaults"].enabled);
+    assert(Find(self.controller.view, @"wow.performance.restoreDefaults") == nil);
     [self performSelector:@selector(tapRenderProfileOnMeasuredDevice) withObject:nil afterDelay:0.4];
 }
 - (void)tapRenderProfileOnMeasuredDevice {
@@ -1374,13 +1456,15 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(restorePerformanceDefaults) withObject:nil afterDelay:0.4];
 }
 - (void)restorePerformanceDefaults {
-    assert([self row:@"wow.performance.restoreDefaults"].enabled);
-    [[self row:@"wow.performance.restoreDefaults"] sendActionsForControlEvents:UIControlEventTouchUpInside];
-    Pump(0.6);
-    UIAlertController *alert = (id)self.controller.presentedViewController;
-    assert([alert isKindOfClass:UIAlertController.class]);
-    assert([alert.title isEqual:@"Performance defaults restored"]);
-    [self dismissPresented];
+    // The row that used to do this was removed with the rest of the home-page cleanup, and the
+    // way back to this page's defaults is the Automatic choice in the device-profile sheet -
+    // which writes exactly the two keys below. This drives that write, because the sheet's
+    // action handler is not public API and the behaviour under test is the stored state.
+    assert(Find(self.controller.view, @"wow.performance.restoreDefaults") == nil);
+    NSUserDefaults *before = NSUserDefaults.standardUserDefaults;
+    [before removeObjectForKey:@"WolkaraForeverDeviceProfile"];
+    [before removeObjectForKey:@"WolkaraForeverRenderProfile"];
+    [self.controller render];
     Pump(0.4);
     // Automatic for the device we are actually on, with nothing of this page's left behind -
     // and the game's settings still exactly where they were.
@@ -1393,7 +1477,7 @@ static int backupsBeforePerformance;
             isEqual:@"Render profile: Performance"]);
     assert(stubBackups == backupsBeforePerformance);
     assert([[self configText] isEqual:configBeforePerformance]);
-    assert([self row:@"wow.performance.restoreDefaults"].enabled == NO);
+    assert(Find(self.controller.view, @"wow.performance.restoreDefaults") == nil);
     // Finally the app's own language: the setting, the German page, the one-time offer to put
     // the game into German too, and the switch back.
     [self performSelector:@selector(startLanguageTests) withObject:nil afterDelay:0.3];
@@ -1537,7 +1621,7 @@ static int backupsBeforePerformance;
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text]
         isEqual:@"Gamepad-Oberfläche"]);
     // Section headings, which were made before this language existed.
-    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"SPIELEDITION"]);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"SPIELVERWALTUNG"]);
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.profile") text] isEqual:@"LEISTUNGSVERWALTUNG"]);
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.performance") text] isEqual:@"OBERFLÄCHENVERWALTUNG"]);
     // The row that made the change, and the accessibility labels VoiceOver reads.
@@ -1729,7 +1813,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([[self status] isEqual:@"Ready to play"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.language") configuration].title
         isEqual:@"App language: English"]);
-    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"GAME EDITION"]);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"GAME SETTINGS MANAGER"]);
     assert(self.controller.presentedViewController == nil);   // no German offer again
     [self assertNoRawKeysInView:self.controller.view];
 
@@ -1935,7 +2019,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
                                    @"wow.addons.manage", @"wow.addons.macEver", @"wow.addons.directory",
                                    @"wow.permissions", @"wow.voice", @"wow.voice.test",
                                    @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
-                                   @"wow.performance.restoreDefaults", @"wow.performance.backup",
+                                   @"wow.performance.backup",
                                    @"wow.performance.reset", @"wow.performance.restore",
                                    @"wow.performance.settingsFolder", @"wow.primary", @"wow.diagnostics"])
         assert([[self row:identifier] allTargets].count > 0);
