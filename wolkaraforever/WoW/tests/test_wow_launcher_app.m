@@ -1986,8 +1986,9 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([settings.title isEqual:@"Settings"]);
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
-        (@[@"Manage add-ons", @"Verify and repair game files", @"Diagnostics and logs",
+        (@[@"Verify and repair game files", @"Diagnostics and logs",
            @"About and open-source licenses", @"Cancel"])]);
+    assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
     __block NSInteger diagnostics = 0;
     self.controller.showDiagnostics = ^{ diagnostics++; };

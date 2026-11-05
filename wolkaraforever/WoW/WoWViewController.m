@@ -1020,19 +1020,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.preferences.language") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:NO]; }]];
     [self presentSheet:sheet anchor:_preferencesButton];
 }
-// Built in one place so the page and the device self-test use the same menu. The Add-ons entry
-// is part of this sheet, and "is there still a way in?" is a question a test has to answer.
 - (UIAlertController *)settingsSheet {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.title")
         message:WKLocalized(@"home.settings.message") preferredStyle:UIAlertControllerStyleActionSheet];
-    // The Add-ons route in this menu stays. It was removed on the theory that the Add-On Manager
-    // card made it redundant, and that was wrong: the card is disabled until a Forever
-    // installation is ready, so on a page with no install it is the *only* way in - and its loss
-    // took the page's own actions, removing a package among them, with it. Two routes to one
-    // page is not clutter; it is the route that still works when the other is greyed.
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.manageAddons") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        (void)a; [self manageAddons];
-    }]];
     if(!_busy && !_starting && !_sessionUsed && _installation.app) {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.repair") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             (void)a; [self repairInstallation];

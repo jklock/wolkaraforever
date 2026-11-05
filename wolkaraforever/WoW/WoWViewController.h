@@ -39,10 +39,5 @@ NS_ASSUME_NONNULL_BEGIN
 // Development preview: the Add-on Manager, already on Browse. Used by
 // tools, never by a normal launch.
 - (void)previewAddonBrowser;
-// The settings menu, built and returned rather than presented, so the device self-test can
-// assert that the way into the Add-ons page is still in it. The Add-ons card on this page is
-// disabled until a Forever installation is ready, so this entry is the only route when it is
-// not - losing it once meant losing every action on that page, removing a package included.
-- (UIAlertController *)settingsSheet;
 @end
 NS_ASSUME_NONNULL_END

@@ -73,6 +73,10 @@ out=$(run "$work/none.json" 2>&1); rc=$?
 out=$(run "$work/phone.json" 2>&1); rc=$?
 printf '%s' "$out" | grep -q "Device: TestPad"; check $? "automatic discovery still prefers the iPad"
 
+out=$(run "$work/phone.json" --list 2>&1); rc=$?
+[ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'iPad.*TestPad' && printf '%s' "$out" | grep -q 'iPhone.*TestPhone'; check $? "--list discovers both physical form factors"
+printf '%s' "$out" | grep -q 'UDID-'; [ $? -ne 0 ]; check $? "--list keeps device identifiers private"
+
 out=$(run "$work/phone.json" --device UDID-PHONE 2>&1); rc=$?
 [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q "Device: TestPhone"; check $? "explicit iPhone identifier is supported"
 

@@ -1162,17 +1162,6 @@ static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
                     _:@"and is not offered a provider update"];
     [recorder check:store.manifestFormat == 2 _:@"the manifest the page read is format 2"];
 
-    // The way into this page from the home screen's settings menu. The Add-On Manager card is
-    // disabled until a Forever installation is ready, so this entry is the route that still
-    // works - and it was removed once, which took the page and its Remove action with it.
-    TKWoWViewController *home = AKSelfTestHomePage();
-    UIAlertController *menu = home ? [home settingsSheet] : nil;
-    BOOL hasManageAddons = NO;
-    for (UIAlertAction *action in menu.actions)
-        if ([action.title isEqual:WKLocalized(@"home.settings.manageAddons")]) hasManageAddons = YES;
-    [recorder check:menu != nil && hasManageAddons
-                    _:@"the settings menu still offers the way into the Add-ons page"];
-
     // Removing a package is reachable: the row's own sheet offers it, and it is the destructive
     // action. Losing this route is what made "can I delete anything?" a real question, so it is
     // asserted rather than assumed.
