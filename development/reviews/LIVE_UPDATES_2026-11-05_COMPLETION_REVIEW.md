@@ -1,11 +1,11 @@
 # Live updates completion review — 2026-11-05
 
 Reviewed branch: `liveupdates-11042026`
-Review baseline: `origin/main...765af00`
+Review baseline: `origin/main...78436f2`
 Contracts: `LIVE_UPDATES_2026-11-04_PLAN.md` and
 `LIVE_UPDATES_2026-11-04_NEXT_AGENT_PROMPT.md`.
 
-This is a source and non-simulator-test review with limited fresh iPad evidence.
+This is a source and non-simulator-test review with fresh iPad evidence.
 On 2026-11-05, the final source was prepared and the guarded iPad install
 reported `App installed`; the launcher was then relaunched and inspected on the
 physical iPad. The app stayed on its normal home screen with no update write,
@@ -48,3 +48,25 @@ branch does **not** satisfy the remaining original completion contract: German,
 portrait, largest Dynamic Type, Add-ons interactions, input paths, guest-launch
 evidence, retained screenshot/log artifacts, and the three measured pointer
 sweeps were not performed. No simulator result is used as a substitute.
+
+## Follow-up audit — 2026-11-05
+
+The initial review missed a live Browse crash. The last two app logs showed
+`-[NSNull objectForKeyedSubscript:]` in `TKAddonProjectCell` while configuring
+a provider result. `1db9bd3` now accepts a logo only when it is a dictionary,
+and adds a regression fixture whose `logo` is `NSNull`.
+
+The complete non-simulator audit was rerun at `78436f2`: localization, CurseForge,
+add-on archive/import, launcher, UI, icon, authorization, layer, documentation,
+and device-variable suites passed; `git diff --check` passed. `validate.sh
+--full --device` was started but cannot be recorded as a pass: its launcher
+fixture blocks because this Mac's `simctl list devices available` itself blocks.
+
+The repaired build was installed with `install.sh --replace-running`, which
+cleanly stopped the existing launcher first and relaunched it afterwards. Device
+Hub then showed three Installed add-ons, a Manage action for each, and the
+visible message: “Remove any listed add-on from this device. Removing an
+add-on deletes its package folder.” Earlier in the same audit, Device Hub loaded
+8,504 live Browse results without the former exception. The app was returned to
+its normal launcher home screen. No removal was performed, because that would
+delete a real package.
