@@ -30,15 +30,17 @@
 /* ---- Home page ---- */
 "home.settings" = "Einstellungen";
 "home.refresh" = "Auf Aktualisierungen prüfen";
-"home.box.edition" = "Spieledition";
+"home.box.edition" = "Spielverwaltung";
+"home.edition.row" = "Spieledition: %@";
+"home.preferences.row" = "Region / Sprache: %@ %@";
 "home.box.addons" = "Add-on-Verwaltung";
-"home.box.voice" = "Sprache & Eingabe";
+"home.box.voice" = "Diktatverwaltung (V2T)";
 "home.box.profile" = "Leistungsverwaltung";
 "home.box.performance" = "Oberflächenverwaltung";
 
 "home.addons.install" = "Add-ons installieren (Curse & direkt)";
 "home.addons.install.needsgame" = "Add-ons installieren (Curse & direkt) (zuerst Spiel installieren)";
-"home.addons.macever" = "Mac-Ever laden";
+"home.addons.macever" = "Mac-Ever laden (Leistungsoptimierung)";
 "home.addons.directory" = "Add-on-Ordner öffnen";
 "home.addons.directory.needsgame" = "Add-on-Ordner öffnen (zuerst Spiel installieren)";
 "home.voice.keys" = "Tasten und Buttons belegen";
@@ -52,13 +54,11 @@
 "home.performance.overlay" = "Leistungsanzeige";
 "home.performance.renderProfile" = "Renderprofil: %@";
 "home.performance.deviceProfile" = "Geräteprofil: %@";
-"home.performance.restoreDefaults" = "Leistungsvorgaben zurücksetzen";
 "home.render.performance" = "Leistung";
 "home.render.balanced" = "Ausgewogen";
 "home.render.quality" = "Qualität";
 "home.diagnostics" = "Diagnose und Protokolle";
 "home.updates.note" = "Aktualisiert automatisch. Lassen Sie diese App beim Herunterladen geöffnet.";
-"home.compatibility.unverified" = "Die Kompatibilität mit dieser Edition ist noch nicht bestätigt.";
 
 "home.status.running" = "Läuft";
 "home.status.running.detail" = "Das Spiel ist geöffnet. Beenden Sie es über sein eigenes Menü, um hierher zurückzukehren.";
@@ -110,10 +110,6 @@
 "home.version.upToDate" = "Version %@ · Geprüft %@";
 "home.version.compare" = "Installiert %@ · Verfügbar %@";
 
-"home.startup.developerService" = "Der Start kann jedes Mal einige Minuten dauern.";
-"home.startup.localSigning" = "Der Start erfordert einen signierten Container, der zu dieser Version passt.";
-"home.startup.externalJIT" = "Aktivieren Sie JIT, bevor Sie eine neue Sitzung starten.";
-"home.startup.unavailable" = "Diese Version kann das Spiel nicht starten. Siehe „Diagnose und Protokolle“.";
 
 "home.edition.title" = "Edition wählen";
 "home.preferences.title" = "Downloadeinstellungen";
@@ -131,9 +127,10 @@
 
 "home.settings.title" = "Einstellungen";
 "home.settings.message" = "Aktualisierungen werden automatisch installiert, solange diese App geöffnet ist. Einstellungen und Add-ons bleiben erhalten. Die Startvorbereitung ist vom Herunterladen der Aktualisierungen getrennt.";
-"home.settings.manageAddons" = "Add-ons verwalten";
 "home.settings.repair" = "Spieldateien prüfen und reparieren";
 "home.settings.diagnostics" = "Diagnose und Protokolle";
+"home.settings.inputDiagnosticsOn" = "Eingabediagnose einschalten";
+"home.settings.inputDiagnosticsOff" = "Eingabediagnose ausschalten";
 "home.settings.about" = "Über diese App und Open-Source-Lizenzen";
 "home.settings.technical" = "Technische Angaben";
 "home.settings.details.title" = "Angaben";
@@ -173,16 +170,14 @@
 "home.render.confirm.title" = "Über der Empfehlung";
 "home.render.confirm.message" = "%1$@ rendert auf %3$@ mit %2$@, also mehr, als dieses Profil empfiehlt. Dort wurde gemessen, dass das Frame-Budget nicht gehalten wird.";
 "home.render.confirm.yes" = "%@ verwenden";
-"home.performance.restoreDefaults.title" = "Leistungsvorgaben zurückgesetzt";
-"home.performance.restoreDefaults.message" = "%@ ist wieder in Verwendung. Die eigenen Einstellungen des Spiels wurden nicht verändert.";
 "home.profile.title" = "Geräteprofil";
-"home.profile.message" = "Dieses iPad ist %@. „Automatisch“ verwendet das dafür gemessene Profil; ein anderes Gerät lässt sich zum Vergleich wählen und ist überall als Vorschau gekennzeichnet.";
+"home.profile.message" = "Dieses Gerät ist %@. „Automatisch“ verwendet das dafür gemessene Profil; ein anderes Gerät lässt sich zum Vergleich wählen und ist überall als Vorschau gekennzeichnet.";
 "home.profile.automatic" = "Automatisch (empfohlen) – %@";
 "home.profile.automaticRow" = "Automatisch – %@";
 "home.profile.overrideRow" = "Vorschau – %@";
 "home.profile.unknown" = "dieses Gerät (unbekannt)";
 "home.profile.override.title" = "Vorschauprofil";
-"home.profile.override.message" = "%1$@ ist nicht dieses iPad (%2$@). Es bleibt zum Vergleich erhalten, und das Rendern folgt dem sicheren Faktor dieses Profils.";
+"home.profile.override.message" = "%1$@ ist nicht dieses Gerät (%2$@). Es bleibt zum Vergleich erhalten, und das Rendern folgt dem sicheren Faktor dieses Profils.";
 "home.render.ready.title" = "Renderprofil bereit";
 "home.render.ready.message" = "%@ gilt beim nächsten Start von Forever. Die eigenen Einstellungen des Spiels wurden nicht verändert.";
 "home.addons.unavailable.title" = "Add-ons nicht verfügbar";
@@ -440,7 +435,7 @@
 "addons.loading" = "CurseForge wird geladen …";
 "addons.loadingCategories" = "CurseForge-Kategorien werden geladen …";
 "addons.noCategories" = "CurseForge hat keine Add-on-Kategorien geliefert.";
-"addons.projectsShown" = "%lu von %lu Projekten · die Forever-Kompatibilität wird bei der Installation geprüft";
+"addons.projectsShown" = "%lu von %lu Projekten · die Kompatibilität ist ein Hinweis, keine Sperre";
 "addons.projectsOfShown" = "%lu von %lu Projekten angezeigt";
 "addons.by" = "Von %@";
 "addons.downloads" = "%@ Downloads auf CurseForge";
@@ -470,9 +465,8 @@
 "addons.count.other" = "%lu Add-ons installiert";
 "addons.count.none" = "Keine Add-ons installiert";
 "addons.state.disabled" = "Deaktiviert";
-"addons.state.managed" = "Kompatibel · verwaltet";
+"addons.state.managed" = "Verwaltet";
 "addons.state.unverified" = "Ungeprüft · vorhanden";
-"addons.state.pinned" = " · angeheftet";
 "addons.restore" = "Wiederherstellen";
 "addons.disable" = "Deaktivieren";
 "addons.source.existing" = "Vorhanden";
@@ -480,6 +474,41 @@
 "addons.source.zip" = "Aus ZIP importiert";
 "addons.version.unknown" = "Unbekannte Version";
 
+"addons.refreshing" = "Wird von CurseForge aktualisiert…";
+"addons.filters.forever" = "Forever (Fassung %@)";
+"addons.action.install" = "Installieren";
+"addons.action.installing" = "Wird installiert…";
+"addons.action.installed" = "Installiert";
+"addons.action.unavailable" = "Nicht verfügbar";
+"addons.action.retry" = "Erneut versuchen";
+"addons.action.update" = "Aktualisieren";
+"addons.action.updating" = "Wird aktualisiert…";
+"addons.action.upToDate" = "Auf dem neuesten Stand";
+"addons.select.one" = "Dieses Add-on auswählen";
+"addons.select.on" = "Ausgewählt";
+"addons.select.off" = "Nicht ausgewählt";
+"addons.select.all" = "Alle auswählen";
+"addons.select.clear" = "Auswahl aufheben";
+"addons.select.summary" = "%lu ausgewählt · %lu aktualisierbar";
+"addons.select.updateSelected" = "Ausgewählte aktualisieren";
+"addons.updateAll" = "Alle aktualisieren";
+"addons.update.selectedTitle" = "Ausgewählte Add-ons aktualisieren?";
+"addons.update.allTitle" = "Alle Add-ons mit neuerer Datei aktualisieren?";
+"addons.update.confirm" = "Diese Pakete werden ersetzt:
+• %@";
+"addons.update.none" = "Es ist nichts zu aktualisieren.";
+"addons.update.partialFailure" = "%lu Paket(e) konnten nicht aktualisiert werden. Die übrigen wurden aktualisiert.";
+"addons.update.working" = "%@ wird aktualisiert…";
+"addons.update.workingMany" = "Wird aktualisiert…";
+"addons.update.noProvider" = "Dieses Paket hat keine CurseForge-Identität und kann daher nicht vom Anbieter aktualisiert werden.";
+"addons.installedUnverified" = "%@ wurde installiert. Die TOC nennt keine Schnittstellenversion von Forever, daher gilt es als unbestätigt. Es ist installiert und nutzbar.";
+"addons.state.pinnedShort" = "angeheftet";
+"addons.state.notVerifiedForForever" = "nicht für Forever bestätigt";
+"addons.manage.note" = "Nur dieses verwaltete Paket kann geändert werden. Vorhandene Ordner bleiben unangetastet.";
+"addons.manage.disabledNote" = "Dieses Paket ist privat gespeichert und für World of Warcraft nicht sichtbar.";
+"addons.pin" = "Diese Version anheften";
+"addons.unpin" = "Aktualisierungen wieder zulassen";
+"addons.remove" = "Verwaltetes Paket entfernen";
 /* ---- Voice and dictation ---- */
 "voice.title" = "Tasten und Buttons belegen";
 "voice.test.title" = "Sprache testen";
