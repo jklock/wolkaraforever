@@ -707,6 +707,9 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _countLabel.textColor=[UIColor colorWithWhite:0.62 alpha:1];
     _countLabel.accessibilityIdentifier=@"wow.addons.count";
     [_countLabel setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+    // The count gives way to the buttons beside it rather than clipping their titles: it is a
+    // sentence that truncates gracefully, they are menu names that must stay readable.
+    [_countLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
     _sortButton=[self toolbarButton:@"wow.addons.sort" title:WKLocalized(@"addons.sort")];
     _filterButton=[self toolbarButton:@"wow.addons.filters" title:WKLocalized(@"addons.filters")];
     _columnsButton=[self toolbarButton:@"wow.addons.columns" title:WKLocalized(@"addons.columns")];
@@ -757,9 +760,11 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
         [toolbar.trailingAnchor constraintEqualToAnchor:gutters.trailingAnchor constant:-TKAddonPageMargin],
         [toolbar.topAnchor constraintEqualToAnchor:_search.bottomAnchor constant:8],
         [toolbar.heightAnchor constraintEqualToConstant:34],
-        [_sortButton.widthAnchor constraintEqualToConstant:118],
-        [_filterButton.widthAnchor constraintEqualToConstant:92],
-        [_columnsButton.widthAnchor constraintEqualToConstant:104],
+        // Minimum widths, not fixed ones: the titles are localized sentences and must be able to
+        // grow. The count label beside them absorbs the difference.
+        [_sortButton.widthAnchor constraintGreaterThanOrEqualToConstant:96],
+        [_filterButton.widthAnchor constraintGreaterThanOrEqualToConstant:92],
+        [_columnsButton.widthAnchor constraintGreaterThanOrEqualToConstant:72],
         [_selectAllButton.widthAnchor constraintEqualToConstant:84],
         [_clearSelectionButton.widthAnchor constraintEqualToConstant:64],
         [_updateSelectedButton.widthAnchor constraintEqualToConstant:132],
@@ -771,10 +776,17 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem];
     [button setTitle:title forState:UIControlStateNormal];
     button.titleLabel.font=[UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+    button.titleLabel.lineBreakMode=NSLineBreakByTruncatingTail;
     button.tintColor=WKGold();
     button.contentHorizontalAlignment=UIControlContentHorizontalAlignmentRight;
     button.showsMenuAsPrimaryAction=YES;
     button.accessibilityIdentifier=identifier;
+    // The sort and filter titles are sentences, not fixed words: "Filters: Forever (1.60.1)"
+    // is wider than "Filters", and the German "Sortierung: Zuletzt aktualisiert" is wider
+    // again. A fixed width clipped them on the iPad (seen live on 2026-11-05: the filter read
+    // "Filter...1.60.1)"). These hug their title and give way only to the count beside them.
+    [button setContentHuggingPriority:UILayoutPriorityDefaultHigh forAxis:UILayoutConstraintAxisHorizontal];
+    [button setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
     return button;
 }
 - (void)updateToolbar {

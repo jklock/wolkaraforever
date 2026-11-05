@@ -1192,6 +1192,17 @@ static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
     [recorder check:hasRemove _:@"and the sheet offers Remove, as its destructive action"];
     [recorder check:hasDisable && hasPin && hasCancel _:@"with Disable, Pin and Cancel beside it"];
 
+    // No toolbar title is clipped. They are localized sentences ("Filters: Forever (1.60.1)",
+    // and longer in German), and a fixed width cut one off on the iPad on 2026-11-05.
+    BOOL clipped = NO;
+    for (NSString *identifier in @[@"wow.addons.sort", @"wow.addons.filters", @"wow.addons.columns"]) {
+        UIButton *button = (id)AKSelfTestFind(page.tableView.tableHeaderView, identifier);
+        if (!button || button.hidden) continue;
+        CGFloat needed = [button.titleLabel intrinsicContentSize].width;
+        if (needed > CGRectGetWidth(button.bounds) + 0.5) clipped = YES;
+    }
+    [recorder check:!clipped _:@"no toolbar title is clipped"];
+
     // Nothing is drawn outside the list.
     CGFloat width = page.tableView.bounds.size.width;
     BOOL overflow = NO;
