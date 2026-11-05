@@ -452,7 +452,7 @@
 "addons.error.importMessage" = "The downloaded archive could not be imported.";
 "addons.installedStatus" = "Installed %@. Forever compatibility was verified from its TOC.";
 "addons.installed" = "Installed";
-"addons.installed.footer" = "Existing add-ons are preserved. WolkaraForever only removes package folders it installed and recorded.";
+"addons.installed.footer" = "Remove any listed add-on from this device. Removing an add-on deletes its package folder.";
 "addons.setUpAccess" = "Set up CurseForge access";
 "addons.setUpAccess.detail" = "Enter an approved Core API key to search and install from CurseForge.";
 "addons.key.title" = "CurseForge API key";
