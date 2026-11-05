@@ -334,8 +334,9 @@ static UIImage *TKAddonPlaceholderIcon(void) {
         : @"wow.addons.project.install";
     _installButton.accessibilityLabel=[NSString stringWithFormat:@"%@ %@",
         _installButton.titleLabel.text ?: @"", _titleLabel.text ?: @""];
-    NSString *icon=project[@"logo"][@"thumbnailUrl"];
-    if (![icon isKindOfClass:NSString.class] || !icon.length) icon=project[@"logo"][@"url"];
+    NSDictionary *logo=[project[@"logo"] isKindOfClass:NSDictionary.class] ? project[@"logo"] : nil;
+    NSString *icon=logo[@"thumbnailUrl"];
+    if (![icon isKindOfClass:NSString.class] || !icon.length) icon=logo[@"url"];
     if (![icon isKindOfClass:NSString.class]) icon=nil;
     _iconURLString=icon;
     if (icon.length) {

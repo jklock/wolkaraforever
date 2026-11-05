@@ -567,6 +567,12 @@ static void TestPhoneDisplayDefaults(void) {
     assert([((UILabel *)Find(cell,@"wow.addons.value.category")).text isEqual:@"Boss Encounters"]);
     assert([((UILabel *)Find(cell,@"wow.addons.value.game version")).text isEqual:@"1.60.1"]);
     assert([((UILabel *)Find(cell,@"wow.addons.value.author")).text isEqual:@"Terciob"]);
+    // Provider responses may explicitly send `logo: null`. Rendering a Browse row must treat
+    // that as no artwork, not subscript NSNull and abort the entire launcher.
+    NSMutableDictionary *nullLogoProject=[probeProject mutableCopy];
+    nullLogoProject[@"logo"]=NSNull.null;
+    [cell configureWithProject:nullLogoProject file:probeFile rank:@"1" columns:0x3f gameVersion:@"1.60.1" compact:NO];
+    assert(Find(cell,@"wow.addons.name") != nil);
     // Turning a column off hides it; compact width keeps only the two that fit.
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f gameVersion:@"1.60.1" compact:NO];
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f gameVersion:@"1.60.1" compact:YES];
