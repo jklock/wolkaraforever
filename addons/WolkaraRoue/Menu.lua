@@ -97,6 +97,8 @@ local function Tile(info, index)
     highlight:SetBlendMode("ADD")
 end
 
+function Menu:IsOpen() return frame ~= nil and frame:IsShown() end
+
 function Menu:Init()
     frame = CreateFrame("Frame", "WolkaraMobileMenu", UIParent, "SecureHandlerBaseTemplate")
     frame:SetFrameStrata("FULLSCREEN_DIALOG")

@@ -34,7 +34,7 @@ local function Stepper(parent, x, y, caption, get, set, step, low, high, suffix)
     local name = Text(parent, caption, x, y - 10)
     local minus = ns.UIButton(parent, "-", 36, 34, function()
         if InCombatLockdown() then return Apply() end
-        set(ns.Clamp(get() - step, low, high)); Apply()
+        set(ns.Clamp(get() - step, low, high)); ns.MarkChanged(); Apply()
     end)
     minus:SetPoint("TOPLEFT", x + 62, y)
     local value = ns.Label(parent, "GameFontNormal")
@@ -42,7 +42,7 @@ local function Stepper(parent, x, y, caption, get, set, step, low, high, suffix)
     value:SetWidth(50)
     local plus = ns.UIButton(parent, "+", 36, 34, function()
         if InCombatLockdown() then return Apply() end
-        set(ns.Clamp(get() + step, low, high)); Apply()
+        set(ns.Clamp(get() + step, low, high)); ns.MarkChanged(); Apply()
     end)
     plus:SetPoint("LEFT", value, "RIGHT", 4, 0)
     updaters[#updaters + 1] = function() value:SetText(get() .. (suffix or "")) end
@@ -54,7 +54,7 @@ local function Switch(parent, x, y, width, get, set, onText, offText)
     local button
     button = ns.UIButton(parent, "", width, 34, function()
         if InCombatLockdown() then return Apply() end
-        set(not get()); Apply()
+        set(not get()); ns.MarkChanged(); Apply()
     end)
     button:SetPoint("TOPLEFT", x, y)
     updaters[#updaters + 1] = function()
@@ -68,7 +68,7 @@ end
 local function Build()
     panel = CreateFrame("Frame", "WolkaraMobileSettings", UIParent)
     panel:SetFrameStrata("FULLSCREEN_DIALOG")
-    panel:SetSize(700, 70 + ROW_H * 10 + 70)
+    panel:SetSize(700, 70 + ROW_H * 11 + 70)
     panel:SetPoint("CENTER")
     panel:EnableMouse(true)
     panel:Hide()
@@ -99,8 +99,22 @@ local function Build()
             function(v) ns.db[side.key].count = v end, 1, 0, ns.MAX_FREE)
         Stepper(panel, LEFT + 375, y, "Taille", function() return ns.db[side.key].scale end,
             function(v) ns.db[side.key].scale = v end, 10, 50, 200, " %")
+        if side.key == "free" then
+            Switch(panel, LEFT + 575, y, 90, function() return ns.db.free.turn end,
+                function(v) ns.db.free.turn = v end, "Roue", "Arc")
+        end
         y = y - ROW_H
     end
+
+    -- En arc, l'écart entre le stick et ses sorts, donc entre les sorts. En roue (à droite), l'écart
+    -- entre deux sorts qui se suivent. Un sort déplacé à la main en mode Personnaliser garde sa place ;
+    -- Positions par défaut le rend à l'arc.
+    Text(panel, "Écart des sorts", LEFT, y - 10, 150)
+    Stepper(panel, LEFT + 175, y, "Droite", function() return ns.db.free.spread end,
+        function(v) ns.db.free.spread = v end, 10, 60, 180, " %")
+    Stepper(panel, LEFT + 375, y, "Gauche", function() return ns.db.freeLeft.spread end,
+        function(v) ns.db.freeLeft.spread = v end, 10, 60, 180, " %")
+    y = y - ROW_H
 
     Text(panel, "Raccourcis", LEFT, y - 10, 90)
     Switch(panel, LEFT + 90, y, 70, function() return ns.db.shortcuts.enabled end,
@@ -144,6 +158,7 @@ local function Build()
         if InCombatLockdown() then return Apply() end
         ns.ClearPositions(ns.db)
         ns.db.quests.pos = nil
+        ns.MarkChanged()
         Apply()
     end)
     defaults:SetPoint("LEFT", customize, "RIGHT", 10, 0)
@@ -160,11 +175,16 @@ end
 
 function Settings:Init() Build() end
 
+function Settings:IsOpen() return panel ~= nil and panel:IsShown() end
+
 function Settings:Toggle()
     if not panel then return end
     if panel:IsShown() then panel:Hide(); return end
     if InCombatLockdown() then ns.Print("on règle l'interface hors combat."); return end
     for _, update in ipairs(updaters) do update() end
+    -- Toujours entier à l'écran, quelle que soit la taille de l'interface.
+    panel:SetScale(1)
+    panel:SetScale(math.min(1, (UIParent:GetWidth() - 16) / panel:GetWidth(), (UIParent:GetHeight() - 16) / panel:GetHeight()))
     panel:Show()
 end
 
