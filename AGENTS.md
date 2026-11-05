@@ -98,6 +98,9 @@ Three rules learned the hard way, all of them by being wrong first:
   asked 60 milliseconds after the session opened; the tap was fine.
 - Never report a fix without the evidence that it works. The check that found the fault is the
   check that has to pass afterwards, on the device.
+- For live launcher, add-on, controller, or input UI claims, use Device Hub to exercise the
+  installed iPad build. Source tests, simulator fixtures, screenshots, and logs do not replace
+  the relevant Device Hub interaction.
 - Leave the device in no state other than the normal home screen, with the app running. Any
   operation against the app that leaves anything else up is a failure, whatever its verdict said.
 - Use `wolkaraforever/tools/` for every WolkaraForever game install, update, launch, stop,
