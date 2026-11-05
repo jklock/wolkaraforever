@@ -7,6 +7,7 @@
 
 #import <Foundation/Foundation.h>
 #import "Trigger.h"
+#import "InputInterest.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -53,8 +54,7 @@ typedef NS_ENUM(NSInteger, AKInputSource) {
 // sit here answered a question nothing asked.
 
 // The device whose input should be remembered when learning finishes.
-- (void)beginLearning;
-// Disarm, without adopting anything. Learning takes the first event that arrives, so
+- (void)beginLearning;// Disarm, without adopting anything. Learning takes the first event that arrives, so
 // a mapper left armed quietly rewrites the user's mapping when they press anything
 // at all later on - which is what a timed-out mapping used to do. Called on timeout,
 // when the app goes to the background, and when a controller goes away.
@@ -88,6 +88,22 @@ FOUNDATION_EXPORT NSNotificationName const AKInputRouterLearningDidExpireNotific
 
 // The trigger in force for a device, choosing one if none was ever chosen.
 - (AKTrigger *)triggerForDevice:(nullable NSString *)device;
+
+#pragma mark - What is worth reporting at all
+
+// The snapshot the controller inspector consults before it does any work for an event.
+//
+// It is rebuilt, never mutated: a callback that is mid-flight reads one consistent answer, and
+// replacing it is a single pointer store. Rebuilt when the app starts, when a mapping or the
+// voice switch changes, when learning starts or ends, and when a controller comes or goes.
+@property (atomic, copy, readonly) AKInputInterest *interest;
+- (void)refreshInterest;
+
+// Pointer dispatch to the next opportunity to draw: one display link while at most one pointer
+// event is outstanding, nothing at all while no pointer is moving. See -notePointerEvent.
+@property (atomic, strong, readonly) AKTimingSamples *pointerTiming;
+// Called by whichever path owns a pointer or touch-pad event, at the moment it is delivered.
+- (void)notePointerEvent;
 
 @end
 

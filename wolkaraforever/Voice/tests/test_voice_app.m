@@ -141,6 +141,122 @@ static UIView *Find(UIView *view, NSString *identifier) {
 
 #pragma mark - The tests
 
+// The input-interest snapshot, the aggregation counters, and the fact that a GameController
+// callback for something nobody asked about costs nothing.
+//
+// The 2026-11-04 device log recorded 12,658 controller-inspector event lines twice over in one
+// five-minute run with voice off. This is the regression test for the fix: what the inspector
+// is allowed to report at all is decided by this snapshot, before it allocates an event,
+// dispatches a block or writes a line.
+static void TestInputInterest(void) {
+    // 1. Nothing is interesting until something asks for it.
+    AKInputInterest *none = [AKInputInterest none];
+    CHECK(none.mode == AKInputInterestModeNone, @"the default interest is none");
+    CHECK(![none admitsElement:@"controller.button.a"], @"no button is admitted when nothing is mapped");
+    CHECK(![none admitsElement:@"controller.axis.leftx"], @"no axis is admitted when nothing is mapped");
+
+    // 2. A mapping admits exactly its own element - and nothing that streams.
+    NSSet *mapped = [NSSet setWithObject:@"controller.button.share"];
+    AKInputInterest *one = [AKInputInterest mappedWithElements:mapped];
+    CHECK([one admitsElement:@"controller.button.share"], @"the mapped element is admitted");
+    CHECK(![one admitsElement:@"controller.button.b"], @"an unmapped button is not");
+    CHECK(![one admitsElement:@"controller.axis.leftx"], @"a stick axis is not");
+    CHECK(![one admitsElement:@"controller.dpad.up"], @"a d-pad direction is not");
+    CHECK(![one admitsElement:@"touchpad.touchpad.moved"], @"touch-pad movement is not");
+    CHECK(![one admitsElement:@"keyboard.key.36"], @"an unmapped key is not");
+
+    // 3. Learning admits presses, so the user can choose one, and still nothing continuous.
+    AKInputInterest *learning = [AKInputInterest learning];
+    CHECK([learning admitsElement:@"controller.button.a"], @"learning admits a pad button");
+    CHECK([learning admitsElement:@"keyboard.key.36"], @"learning admits a key");
+    CHECK([learning admitsElement:@"mouse.button.left"], @"learning admits a mouse button");
+    CHECK(![learning admitsElement:@"controller.axis.leftx"], @"learning does not admit an axis");
+    CHECK(![learning admitsElement:@"touchpad.touchpad.moved"], @"learning does not admit touch-pad movement");
+
+    // 4. Diagnostics admit the continuous sources, which is the only mode that does.
+    AKInputInterest *diagnostic = [AKInputInterest diagnostic];
+    CHECK([diagnostic admitsElement:@"controller.axis.leftx"], @"diagnostics admit an axis");
+    CHECK([diagnostic admitsElement:@"touchpad.touchpad.moved"], @"diagnostics admit touch-pad movement");
+
+    // 5. The aggregation counters answer the gate's question without keeping an event log.
+    AKTimingSamples *samples = [AKTimingSamples new];
+    for (NSInteger value = 1; value <= 100; value++) [samples record:(double)value];
+    CHECK(samples.count == 100, @"every sample is counted");
+    CHECK(samples.maximum == 100, @"the maximum is the largest sample");
+    CHECK(fabs([samples percentile:0.50] - 50) <= 1, @"p50 is the middle of the ring");
+    CHECK(fabs([samples percentile:0.95] - 95) <= 1, @"p95 is where the tail starts");
+    CHECK(fabs([samples percentile:0.99] - 99) <= 1, @"p99 is the far tail");
+    CHECK([samples percentile:0.50] > 0, @"and a percentile of an empty ring is zero");
+    [samples reset];
+    CHECK(samples.count == 0 && samples.maximum == 0, @"reset clears the ring");
+
+    // 6. The router publishes its snapshot, and the inspector is what consults it.
+    AKVoiceSettings *settings = AKVoiceSettings.shared;
+    BOOL wasEnabled = settings.enabled;
+    settings.enabled = NO;
+    [AKInputRouter.shared refreshInterest];
+    CHECK(AKControllerInspector.shared.interest.mode == AKInputInterestModeNone,
+          @"with voice off the inspector is told nothing is interesting");
+    AKTrigger *trigger = [AKTrigger new];
+    trigger.element = @"controller.button.a";
+    trigger.pattern = AKTriggerPatternPushToTalk;
+    [settings setTrigger:trigger forDevice:@"pad"];
+    settings.enabled = YES;
+    [AKInputRouter.shared refreshInterest];
+    CHECK(AKControllerInspector.shared.interest.mode == AKInputInterestModeMapped,
+          @"with a mapping the inspector is told exactly what to admit");
+    CHECK([AKControllerInspector.shared.interest admitsElement:@"controller.button.a"],
+          @"and the mapped element is in the snapshot");
+
+    // 7. A mapped button is still lossless and ordered: one began, one ended, in that order.
+    __block NSUInteger began = 0, ended = 0, fired = 0;
+    __block BOOL orderWasRight = YES;
+    AKInputRouter.shared.onTrigger = nil;
+    AKInputRouter.shared.onTriggerBegan = ^(AKTrigger *t, AKInputEvent *event) {
+        (void)t; (void)event; began += 1;
+    };
+    AKInputRouter.shared.onTriggerEnded = ^(AKTrigger *t, AKInputEvent *event) {
+        (void)t; (void)event; ended += 1;
+        if (began != 1) orderWasRight = NO;
+    };
+    AKInputRouter.shared.onTrigger = ^(AKTrigger *t, AKInputEvent *event) {
+        (void)t; (void)event; fired += 1;
+    };
+    [AKInputRouter.shared reportElement:@"controller.button.a" value:1 pressed:YES device:@"pad" source:AKInputSourceController];
+    [AKInputRouter.shared reportElement:@"controller.button.a" value:0 pressed:NO device:@"pad" source:AKInputSourceController];
+    CHECK(began == 1 && ended == 1 && orderWasRight, @"press then release is one ordered pair");
+    CHECK(fired == 0, @"push-to-talk does not also fire the toggle callback");
+
+    // 8. An unmapped element on the same pad produces nothing at all.
+    began = 0; ended = 0; fired = 0;
+    [AKInputRouter.shared reportElement:@"controller.button.b" value:1 pressed:YES device:@"pad" source:AKInputSourceController];
+    [AKInputRouter.shared reportElement:@"controller.button.b" value:0 pressed:NO device:@"pad" source:AKInputSourceController];
+    CHECK(began == 0 && ended == 0 && fired == 0, @"an unmapped button changes nothing");
+
+    // 9. Learning accepts the next press and publishes the new interest.
+    [AKInputRouter.shared beginLearning];
+    __block NSString *learned = nil;
+    AKInputRouter.shared.onLearned = ^(AKTrigger *t, NSString *device) {
+        (void)device; learned = t.element;
+    };
+    [AKInputRouter.shared reportElement:@"controller.button.y" value:1 pressed:YES device:@"pad" source:AKInputSourceController];
+    CHECK([learned isEqual:@"controller.button.y"], @"learning adopts the button that was pressed");
+    CHECK(AKControllerInspector.shared.interest.mode != AKInputInterestModeLearning,
+          @"and learning stops admitting every button once it has adopted one");
+    AKInputRouter.shared.onLearned = nil;
+
+    // Put the shared state back for the suites that run after this one.
+    [settings clearMappingForDevice:@"pad"];
+    settings.enabled = wasEnabled;
+    AKInputRouter.shared.onTriggerBegan = nil;
+    AKInputRouter.shared.onTriggerEnded = nil;
+    AKInputRouter.shared.onTrigger = nil;
+    [AKInputRouter.shared refreshInterest];
+    CHECK(AKControllerInspector.shared.interest.mode != AKInputInterestModeMapped ||
+          ![AKControllerInspector.shared.interest admitsElement:@"controller.button.a"],
+          @"the shared snapshot is back to its quiet state");
+}
+
 static void TestElements(void) {
     CHECK(([AKInputElementForControllerButton(@"Button Share") isEqualToString:@"controller.button.share"]),
           @"a pad's Share button should be controller.button.share, got %@", AKInputElementForControllerButton(@"Button Share"));
@@ -1452,6 +1568,7 @@ static void TestConfigWriteFailure(void) {
     [AKInputRouter.shared begin];
 
     TestElements();
+    TestInputInterest();
     TestTriggers();
     TestSettings();
     TestLearning();
