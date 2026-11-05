@@ -14,6 +14,31 @@ voice input, add-on tooling, UI recovery, and diagnostics around it. It is not s
 Mac. You provide the device (iPad or iPhone), Apple development account, eligible WoW account, and game data;
 this repository includes none of them.
 
+## This fork: playing on an iPhone
+
+This fork of [jklock/wolkaraforever](https://github.com/jklock/wolkaraforever) is tuned for
+playing on a phone. It was tested on an **iPhone Duo with iOS 27.2**, Developer service mode,
+WoW Forever 1.60.1.70790: login, character selection and an in-world session on Wi-Fi
+(2026-11-05). On mobile data the developer service needs the app's documented recovery (turn
+mobile data off while it waits for the local connection, back on once the game starts). What
+it adds:
+
+- **Interface mobile**, a touch add-on in [addons/WolkaraRoue](addons/WolkaraRoue): a spell
+  wheel by the right stick that you turn by dragging a spell (a tap casts), spell buttons around
+  the sticks with adjustable spacing, shortcuts and a tile menu, health bars, a quest card and a
+  compact chat that replaces the game's. Its settings save themselves after each change: WoW
+  only writes add-on settings on a clean exit, which a phone session rarely gets.
+- **Jumping while running**: the Jump button of the "sticks only" layout sends the game's own
+  Space and reaches the whole area under the camera stick.
+- **Typing a password**: a password field receives exactly what was typed, and function keys are
+  never turned into text.
+- **Tools**: [push_addon.sh](wolkaraforever/tools/push_addon.sh) installs the add-on on the
+  device, `DEVICE_LOG_FILE=… device_log.sh` reads the game's own logs (its Battle.net login
+  steps), and [forget_login.sh](wolkaraforever/tools/forget_login.sh) clears a remembered login.
+
+Install as below, then run `wolkaraforever/tools/push_addon.sh` with the game closed. Not yet
+checked on the device: turning the wheel during combat, which only the game's secure code can do.
+
 ## Credit and lineage
 
 WolkaraForever builds directly on [Wolkara by fJavierLasso](https://github.com/fJavierLasso/wolkara),
