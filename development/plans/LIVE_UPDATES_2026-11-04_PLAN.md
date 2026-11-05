@@ -39,6 +39,10 @@ filter names are human-readable.  They are not a license to copy CurseForge bran
 desktop geometry.  Use existing navy/gold WolkaraForever components and data from the supported
 CurseForge API only.
 
+Planning assumption: CurseForge provider/API availability is treated as continuous for this work.
+It is not a release risk or acceptance blocker.  Keep malformed-response, unavailable-file, and
+transaction-rollback handling because those protect user data and correct state, not availability.
+
 ## November 4 final-run evidence and risk remediation
 
 `wolkaraforever/tools/device_log.sh` retrieved the final on-device `native-guest.log` without
@@ -326,5 +330,5 @@ Result:
 - Completed acceptance criteria and explicitly unverified items.
 
 Risks:
-- Provider/API constraints, any failed migration recovery fixture, and any device metric that does
-  not meet the stated pointer thresholds.
+- Any failed migration recovery fixture or device metric that does not meet the stated pointer
+  thresholds.  CurseForge provider/API availability is an accepted planning assumption.
