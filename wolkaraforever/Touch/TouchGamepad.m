@@ -2,7 +2,15 @@
 #import "TouchGamepadLayout.h"
 #import "AKHostLocalization.h"
 #import "TouchHaptics.h"
+#import "TouchControls.h"
 #include <math.h>
+// The guest log in the app; a plain [ak] line where the fixture builds this file alone.
+#if __has_include("AKSupport.h")
+#import "AKSupport.h"
+#define AKGamepadLog(...) AKLog(__VA_ARGS__)
+#else
+#define AKGamepadLog(...) NSLog(@"[ak] %@", [NSString stringWithFormat:__VA_ARGS__])
+#endif
 
 CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     if (!isfinite(point.x) || !isfinite(point.y) || !isfinite(size.width) || !isfinite(size.height) ||
@@ -236,8 +244,34 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hit = [super hitTest:point withEvent:event];
     if (self.configuring) return hit; // Editing/settings must never click the game.
-    if (hit == self || hit == _items[@"left"] || hit == _items[@"right"]) return nil;
+    if (hit == self || hit == _items[@"left"] || hit == _items[@"right"]) {
+        AKGamepadButton *jump = [self jumpAround:point event:event];
+        return jump;
+    }
     return hit;
+}
+// With sticks only, the jump is the one button under the camera stick, and a thumb that is
+// steering does not aim: it lands in the gap next to the stick or just under the drawn ring,
+// and that touch used to fall through to the game as a camera drag. B, X and Y are hidden in
+// this mode, so the lower half of the space around the camera stick, out to 1.4 times the
+// ring, is the jump's. Each touch caught this way is logged once, with how far it was from
+// the stick, so a device run shows whether the drawn ring was too small.
+static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachAngle = M_PI / 3;
+- (AKGamepadButton *)jumpAround:(CGPoint)point event:(UIEvent *)event {
+    if (!_preferences.sticksOnly || self.configuring) return nil;
+    AKGamepadButton *jump = _buttons[GCInputButtonA];
+    UIView *ring = _items[@"right"];
+    if (!jump || jump.hidden || !jump.enabled || !ring || ring.hidden) return nil;
+    CGPoint local = [self convertPoint:point toView:ring];
+    CGFloat dx = local.x - ring.bounds.size.width / 2, dy = local.y - ring.bounds.size.height / 2;
+    CGFloat distance = hypot(dx, dy), fromDown = fabs(atan2(dy, dx) - M_PI_2);
+    if (distance < AKJumpReachInner || distance > AKJumpReachOuter || fromDown > AKJumpReachAngle) return nil;
+    static NSTimeInterval logged;
+    if (event && event.timestamp != logged) {
+        logged = event.timestamp;
+        AKGamepadLog(@"touch gamepad: jump caught %.0f pt from the camera stick, outside its drawn ring", distance);
+    }
+    return jump;
 }
 - (CGRect)usableBounds { return UIEdgeInsetsInsetRect(self.bounds,self.safeAreaInsets); }
 - (NSString *)positionName:(NSString *)name {
@@ -484,6 +518,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     AKGamepadOverlay *_overlay;
     AKTouchHaptics *_haptics;
     BOOL _active, _connecting, _cancelConnect, _failed, _invalidated;
+    BOOL _spaceDown;
 }
 - (instancetype)initWithHostView:(UIView *)host {
     if ((self = [super init])) {
@@ -546,12 +581,35 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     return !_invalidated && _enabled && !_keyboardVisible && [self hostIsActive];
 }
 - (void)setVisible:(BOOL)visible {
+    if (!visible) [self holdSpace:NO];
     if (_visible == visible) return;
     _visible = visible; _overlay.controlsVisible = visible;
     [self updateHaptics];
     if (self.visibilityChanged) self.visibilityChanged(visible);
 }
+// With sticks only, the one button is "Saut", and it jumps with the game's own jump key,
+// Space, which the game's default bindings always have. Whether its gamepad layout binds A
+// to Jump was never checked: on 2026-11-05 the controller received A 48 times while the
+// player ran, 20 to 179 ms each, and the character did not jump once. The key is held as long
+// as the finger is (a held Space swims or flies up), and a release always goes out, even if
+// the controls were hidden meanwhile. A host without the key method keeps the gamepad's A.
+- (BOOL)jumpsWithSpace:(AKGamepadButton *)button {
+    return [button.element isEqualToString:GCInputButtonA] && _overlay.preferences.sticksOnly &&
+        [_host respondsToSelector:@selector(touchKey:characters:pressed:)];
+}
+- (void)holdSpace:(BOOL)down {
+    if (_spaceDown == down) return;
+    _spaceDown = down;
+    [(id<AKTouchControlsDelegate>)_host touchKey:49 characters:@" " pressed:down];
+}
 - (void)buttonChanged:(AKGamepadButton *)button {
+    if ([self jumpsWithSpace:button]) {
+        if (!button.pressed) { [self holdSpace:NO]; return; }
+        if (!_visible || _overlay.configuring) return;
+        [_haptics buttonPressed];
+        [self holdSpace:YES];
+        return;
+    }
     if (!_visible || _overlay.configuring) return;
     if (button.pressed) [_haptics buttonPressed];
     if ([button.element hasPrefix:@"dpad."]) {
@@ -567,6 +625,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     }
 }
 - (void)disconnectController {
+    [self holdSpace:NO];
     GCVirtualController *controller = _virtualController;
     // Explicitly release our held controls before removing the virtual device.
     // No value or handler on a physical controller is changed.
