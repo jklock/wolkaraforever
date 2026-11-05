@@ -458,6 +458,9 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     AKTouchHaptics *_haptics;
     AKTouchGamepad *_gamepad;
     BOOL _tookOwnPlace;
+    // Whether one of the game's password fields has the keyboard: the game asked for secure
+    // event input (Carbon adapter, patch 0051).
+    BOOL _protectedField;
 }
 
 // This dylib is loaded by name, so nothing here can be called by the shell at link time. The
@@ -590,7 +593,11 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     // this device, and whether UIKit is talking to our draft editor when it does.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(systemKeyboardShown:) name:UIKeyboardDidShowNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(systemKeyboardHidden:) name:UIKeyboardDidHideNotification object:nil];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardRequestedByGuest:) name:AKTouchKeyboardRequestNotification object:nil];        [self controlAppearanceChanged:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardRequestedByGuest:) name:AKTouchKeyboardRequestNotification object:nil];
+    // The Carbon adapter's announcement, by name: that library is not linked from here.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(secureEventInputChanged:)
+        name:@"AKSecureEventInputDidChangeNotification" object:nil];
+        [self controlAppearanceChanged:nil];
     }
     return self;
 }
@@ -914,20 +921,35 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 // Nothing tells this layer whether the game's chat box is open, so sending must not depend
 // on it. A command starts with "/", the game's own key that opens the box with the slash in
 // it. A message is preceded by F12, which the Interface mobile add-on binds to "open the box
-// on the chosen conversation"; with the box already open, F12 types nothing. Either way the
-// words land in the box and Return sends them.
+// on the chosen conversation"; with the box already open, F12 types nothing (the adapter
+// never makes text of a function key: patch 0050). Either way the words land in the box and
+// Return sends them. The log names the kind of line only: this keyboard also types
+// passwords, and their length is not the log's business.
 static const unsigned short AKKeyF12 = 111;
+- (void)secureEventInputChanged:(NSNotification *)note {
+    _protectedField = [note.userInfo[@"enabled"] boolValue];
+}
 - (void)sendChatText:(NSString *)text {
     if (!text.length) {
         // Nothing typed: Return is just Return.
         [self.delegate touchSpecialKey:36 characters:@"\r"];
         return;
     }
+    if (_protectedField) {
+        // A password field has the keyboard (the game asked for secure event input), so this
+        // line is not chat: type exactly what was written, then Return - the old keyboard's
+        // sequence without its leading Return. A chat key has no business in a password
+        // field. Nothing about the line is logged.
+        [self.delegate touchInsertText:text];
+        [self.delegate touchSpecialKey:36 characters:@"\r"];
+        AKLog(@"keyboard: a line went to a protected field");
+        [self dismissKeyboard];
+        return;
+    }
     if (![text hasPrefix:@"/"]) [self.delegate touchSpecialKey:AKKeyF12 characters:@"\uF70F"];
     [self.delegate touchInsertText:text];
     [self.delegate touchSpecialKey:36 characters:@"\r"];
-    AKLog(@"keyboard: a line went to the chat (%lu characters, %@)", (unsigned long)text.length,
-          [text hasPrefix:@"/"] ? @"command" : @"message");
+    AKLog(@"keyboard: a line went to the chat (%@)", [text hasPrefix:@"/"] ? @"command" : @"message");
     [self dismissKeyboard];
 }
 
