@@ -110,6 +110,50 @@ All provider upgrades must stage, validate, and atomically swap the entire packa
 existing update lock, then commit the manifest; failure leaves both folders and the format-2
 manifest at their prior revision.
 
+## iPhone and iPad parity; history restoration
+
+iPhone is a first-class supported device alongside iPad.  It is not a compact-layout fallback,
+an unmeasured-device disclaimer, or a simulator-only target.  Existing source already has phone
+device profiles, current-window geometry, phone backing-scale policy, one-column launcher layout,
+and phone-oriented touch defaults; this work must turn those partial provisions into documented,
+device-proven support without regressing the existing iPad product.
+
+1. Before code changes, fetch current remotes, rebase this branch on current `origin/main`, and
+   make a deletion/restoration inventory over all reachable history.  Use `git log --all
+   --diff-filter=D --name-status`, `git log -S'iPad'`, `git log -S'iPhone'`, `git log -G'iPad|iPhone'`,
+   `git show <deletion>^:<path>`, and `git range-diff`/`git merge-base` to identify every deleted
+   iPad-related source, documentation, screenshot, test, validation record, and workflow.  The
+   October 21 `478244a` documentation deletion is a known starting point, not the whole audit.
+2. Commit an auditable restoration matrix naming each deleted iPad item, deleting commit, original
+   path, current equivalent, restore destination, reconciliation method, and test/evidence status.
+   Restore every iPad-specific item that was deleted: restore current product behavior/tests/docs
+   at their active paths; preserve superseded historical evidence in a clearly labelled history
+   location with its original commit/path.  Never use `git revert` or wholesale checkout to erase
+   later PR work.  Three-way reconcile each restoration against current `origin/main`, preserving
+   recent PR changes and reapplying only the missing iPad behavior, evidence, or documentation.
+3. Define one supported-device contract covering iPhone and iPad: supported OS/execution-mode
+   conditions, display/window geometry, portrait and landscape, Dynamic Type, touch/keyboard/
+   controller/pointer behavior, performance profile policy, launcher/Add-ons popup geometry, and
+   the exact distinction between source support and physically measured compatibility.  Do not
+   publish an unmeasured model as physically validated.
+4. Audit every idiom/size assumption in launcher, Add-ons, touch controls, device profiles,
+   rendering/window adapters, assets, accessibility, tools, tests, screenshots, README, user
+   guides, installation guide, compatibility matrix, architecture, and validation documents.
+   Replace iPad-only wording/logic with deliberate iPhone/iPad behavior.  Preserve the iPad two
+   column layout where it fits; iPhone uses a readable one-column flow, safe-area-aware controls,
+   no horizontal clipping, no fixed iPad viewport, and the current live window geometry.
+5. Verify on physical devices only: at least one connected iPhone and the designated iPad.
+   Simulator output may not be used as validation, evidence, or a substitute for either device.
+   Use `wolkaraforever/tools/` for every build/install/launch/log/device action; do not uninstall
+   either app or touch game data without the established safe guards.  Exercise the launcher,
+   English/German, portrait/landscape, largest supported Dynamic Type, home-card actions, Add-ons
+   browse/install/update/select flows, popup 85% bounds, touch/keyboard/controller/pointer path,
+   and a real guest launch on each device where game data and execution mode permit.
+6. Update every user-facing and engineering document/screenshots that says or implies iPad-only
+   support.  New evidence must name exact SHA, device model, OS, client build, execution mode,
+   orientation, and result.  State unavailable physical coverage as unavailable; never infer it
+   from the other form factor.
+
 ## Implementation sequence
 
 ### 1. Establish regression fixtures and a measured input baseline
@@ -128,6 +172,18 @@ manifest at their prior revision.
 4. Implement only the controller-inspector/input-router remediation specified in the preceding
    evidence section.  Do not change `TouchGamepad`, game bindings, or Controller Manager unless a
    new post-fix trace disproves that remediation and identifies a separate in-scope owner.
+
+### 1a. Make both Apple form factors release gates
+
+1. Implement the iPhone/iPad contract and restoration matrix above before declaring any launcher
+   UI change complete.  Treat every restored iPad behavior as a regression requirement, not an
+   optional historical note.
+2. Add idiom-specific focused tests for each responsive/geometry decision, but perform final
+   acceptance on the physical iPhone and physical iPad.  A source or simulator-style fixture can
+   detect layout regressions; it cannot replace device proof.
+3. Extend device tooling/evidence so the device under test is explicit rather than silently using
+   whichever device is first attached.  Keep device IDs, credentials, and pairings out of commits
+   and logs.
 
 ### 2. Make CurseForge metadata refreshable and display labels canonical
 
