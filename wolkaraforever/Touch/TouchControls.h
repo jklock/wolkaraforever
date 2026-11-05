@@ -39,6 +39,8 @@ extern NSString *const AKTouchControlsDefaultsKey;   // "AKTouchControls"
 - (void)touchKeyboardVisibilityChanged:(BOOL)visible;
 - (void)touchGamepadPreferenceChanged:(BOOL)enabled;
 - (void)touchControlSettings;
+// One key pressed or released, held as long as a control is (patch 0052).
+- (void)touchKey:(unsigned short)code characters:(NSString *)characters pressed:(BOOL)pressed;
 @end
 
 // Toolbar above the guest layer, with a separate native draft panel above
