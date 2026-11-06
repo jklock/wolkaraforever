@@ -1,0 +1,45 @@
+# WolkaraForever layer patch 0053 - tests: the host takes several fingers in both modes
+#
+# 0048 gives the host view a direct-touch pinch, which needs a second finger, so
+# multipleTouchEnabled is on in both trackpad modes and what follows the trackpad is the
+# pinch recognizer. 0014's assertions still pinned the old single-touch contract, so the
+# AppKit view suite aborted at "!plainHost.multipleTouchEnabled" before it reached anything
+# else. The assertions now say what the adapter does, and the last one also checks that
+# turning the trackpad off leaves the pinch live.
+#
+# Applies after: 0048-direct-touch-gestures.patch
+# Applies to: tests/test_appkit_views.m
+# Upstream: candidate.
+
+--- a/tests/test_appkit_views.m
++++ b/tests/test_appkit_views.m
+@@ -173,12 +173,13 @@
+     // wolkaraforever/Touch/TouchControls.m and docs/TOUCH_INPUT.md.
+     UIView *plainHost=[NSClassFromString(@"AKHostView") new];
+     assert(AKTouchControls.enabled && !![plainHost valueForKey:@"_touchControls"]);
+-    // Multi-touch on the host follows the trackpad, not the on-screen controls: with the
+-    // trackpad off, direct touch stays single-touch.
+-    assert(!plainHost.multipleTouchEnabled);
++    // The host takes several fingers in both modes: direct touch needs the second one for
++    // its pinch, and the trackpad for its own gestures. What follows the trackpad is the
++    // pinch recognizer, not multi-touch.
++    assert(plainHost.multipleTouchEnabled);
+     [defaults setBool:NO forKey:AKTouchControlsDefaultsKey];
+     plainHost=[NSClassFromString(@"AKHostView") new];
+-    assert(![plainHost valueForKey:@"_touchControls"] && !plainHost.multipleTouchEnabled);
++    assert(![plainHost valueForKey:@"_touchControls"] && plainHost.multipleTouchEnabled);
+     [defaults setBool:YES forKey:AKTouchControlsDefaultsKey];
+     id host=[NSClassFromString(@"AKHostView") new];
+     [host setValue:window forKey:@"nsWindow"];
+@@ -276,7 +277,10 @@
+     [host touchButton:0 pressed:YES]; [host touchButton:0 pressed:NO];
+     assert(next_input().clickCount == 2); (void)next_input();
+     controls.trackpadEnabled = NO;
+-    assert(!hostView.multipleTouchEnabled);
++    // Both modes take several fingers now, so multi-touch stays on and the pinch recognizer
++    // is what follows the trackpad.
++    assert(hostView.multipleTouchEnabled);
++    assert(((UIGestureRecognizer *)[hostView valueForKey:@"_pinch"]).enabled);
+ 
+     // Windows are numbered once each; with none on screen, none is found.
+     assert(window.windowNumber > 0 && other.windowNumber != window.windowNumber && panel.windowNumber != other.windowNumber);
