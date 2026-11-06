@@ -1,7 +1,7 @@
--- Interface mobile : les boutons libres. Des sorts toujours à l'écran, en arc autour des
--- sticks comme dans un jeu mobile : autour du stick droit (caméra) par défaut, et en option
--- autour du stick gauche. Chacun se remplit par le sélecteur et se déplace en mode
--- Personnaliser. Une case vide reste discrète tant qu'on ne personnalise pas.
+-- Interface mobile : les boutons libres. Des sorts toujours à l'écran autour des deux sticks,
+-- comme dans un jeu mobile : en roue qui tourne par défaut (Turn.lua), ou en arc. Chacun se
+-- remplit par le sélecteur ; en arc, il se déplace en mode Personnaliser. Une case vide reste
+-- discrète tant qu'on ne personnalise pas.
 
 local _, ns = ...
 
@@ -65,8 +65,8 @@ local function BuildGroup(side, key, prefix)
 
     function group:Layout()
         local scale = settings().scale / 100
-        -- La roue qui tourne place elle-même les sorts de droite, et certains hors de l'écran.
-        local turning = side == "right" and ns.Turn and ns.Turn:Enabled()
+        -- La roue qui tourne place elle-même ses sorts, et certains hors de l'écran.
+        local turning = ns.Turn and ns.Turn:Enabled(side)
         for index, button in ipairs(self.buttons) do
             if index <= settings().count then
                 button:SetScale(scale)
@@ -100,7 +100,10 @@ end
 function Free:Init()
     groups[1] = BuildGroup("right", "free", "WolkaraMobileFree")
     groups[2] = BuildGroup("left", "freeLeft", "WolkaraMobileFreeLeft")
-    if ns.Turn then ns.Turn:Attach(groups[1].buttons) end
+    if ns.Turn then
+        ns.Turn:Attach(groups[1].buttons, "right")
+        ns.Turn:Attach(groups[2].buttons, "left")
+    end
 end
 
 function Free:Layout()

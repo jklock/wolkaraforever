@@ -1,9 +1,10 @@
--- Interface mobile : la roue qui tourne.
+-- Interface mobile : les roues qui tournent.
 --
--- Par défaut (réglages, ligne « Sorts à droite » : Roue ou Arc), les sorts à droite forment une
--- grande roue centrée sur le coin bas-droit de l'écran. On n'en voit que le quart au-dessus et
--- à gauche du stick droit ; les autres sorts attendent hors de l'écran et reviennent quand on
--- la fait tourner. Elle ne passe jamais sous le stick, où est le saut.
+-- Par défaut (réglages, lignes « Sorts à droite » et « Sorts à gauche » : Roue ou Arc), les sorts
+-- de chaque côté forment une grande roue centrée sur le coin bas de l'écran, celle de gauche en
+-- miroir de celle de droite. On n'en voit que le quart au-dessus du stick, vers le centre de
+-- l'écran ; les autres sorts attendent hors de l'écran et reviennent quand on la fait tourner.
+-- Elle ne passe jamais sous le stick (à droite, c'est là qu'est le saut).
 --
 -- On la fait tourner en glissant le doigt depuis un de ses sorts ; toucher un sort sans glisser
 -- le lance, au moment où l'on relève le doigt. Ailleurs, rien n'est capté : un glissé à côté des
@@ -12,23 +13,35 @@
 -- code sécurisé, qui ne voit que l'appui et le relâchement : la roue tourne alors d'autant de
 -- crans au moment où l'on relève le doigt. Ce code sécurisé ne fait que de l'arithmétique et lit
 -- des positions calculées d'avance.
+--
+-- La roue de gauche se calcule comme celle de droite vue dans un miroir : mêmes angles, mêmes
+-- crans, positions retournées de gauche à droite. Rien ne dessine les roues : ni disque ni
+-- ombre, seuls leurs sorts sont à l'écran.
 
 local _, ns = ...
 
-local Turn = ns.Register("Roue tournante", {})
+local Turn = ns.Register("Roues tournantes", {})
 ns.Turn = Turn
 
 local SIZE = 64         -- un sort, comme les boutons libres
-local FIRST = 95        -- le premier emplacement, en degrés depuis la droite (sens direct)
+local FIRST = 95        -- le premier emplacement, en degrés depuis le bord (sens direct, vu de droite)
 local SWIPE = 0.35      -- en crans : en deçà, le doigt a touché le sort ; au-delà, il a glissé
 
-local band, buttons, wrapped, dragging, dragFrom, dragOffset
+local SIDES = {
+    right = { key = "free", name = "WolkaraMobileTurn", corner = "BOTTOMRIGHT", mirror = false },
+    left = { key = "freeLeft", name = "WolkaraMobileTurnLeft", corner = "BOTTOMLEFT", mirror = true },
+}
+local ORDER = { "right", "left" }
+local wheels, attached = {}, {}
 
-local function Settings() return ns.db.free end
+local function Settings(wheel) return ns.db[wheel.key] end
 
-function Turn:Enabled() return ns.db ~= nil and Settings().turn == true end
+function Turn:Enabled(side)
+    local settings = ns.db and ns.db[SIDES[side or "right"].key]
+    return settings ~= nil and settings.turn == true
+end
 
--- La roue est centrée sur le coin bas-droit ; son rayon passe au-dessus du stick droit.
+-- La roue est centrée sur le coin bas ; son rayon passe au-dessus du stick.
 -- Les sorts s'y suivent serrés : d'un centre au suivant, 1,25 taille de sort à « Écart des
 -- sorts » 100 %, de 1,11 (presque bord à bord) à 60 % jusqu'à 1,53 à 180 %.
 function Turn.Geometry(width, height, count, spread)
@@ -40,32 +53,38 @@ function Turn.Geometry(width, height, count, spread)
 end
 
 -- L'emplacement d'un sort (1 à count) pour un décalage donné, fractionnaire pendant un glissé.
+-- L'angle se lit vu de droite ; à gauche, le miroir le retourne.
 function Turn.Angle(index, offset, count, step)
     return FIRST + ((index - 1 + offset) % count) * step
 end
 
-local function Point(radius, degrees)
+local function Point(wheel, radius, degrees)
     local angle = math.rad(degrees)
-    return radius * math.cos(angle), radius * math.sin(angle)
+    local x, y = radius * math.cos(angle), radius * math.sin(angle)
+    if wheel.mirror then x = -x end
+    return x, y
 end
 
 -- Les boutons ont la taille des boutons libres : un décalage se compte à leur échelle.
-local function Place(offset)
-    if not band or InCombatLockdown() then return end
+local function Place(wheel, offset)
+    local band, buttons = wheel.band, attached[wheel.side]
+    if not buttons or InCombatLockdown() then return end
     local count = band:GetAttribute("count") or 0
     local radius, step, scale = band.radius, band:GetAttribute("step"), band.buttonScale or 1
     for index = 1, count do
-        local x, y = Point(radius, Turn.Angle(index, offset, count, step))
+        local x, y = Point(wheel, radius, Turn.Angle(index, offset, count, step))
         buttons[index]:ClearAllPoints()
-        buttons[index]:SetPoint("CENTER", band, "BOTTOMRIGHT", x / scale, y / scale)
+        buttons[index]:SetPoint("CENTER", band, wheel.corner, x / scale, y / scale)
     end
 end
 
--- L'angle du doigt vu du coin, en degrés, hors code sécurisé.
-local function CursorAngle()
+-- L'angle du doigt vu du coin de la roue (et, à gauche, dans le miroir), hors code sécurisé.
+local function CursorAngle(wheel)
     local x, y = GetCursorPosition()
     local scale = UIParent:GetEffectiveScale()
-    return math.deg(math.atan2(y / scale, x / scale - UIParent:GetWidth()))
+    x, y = x / scale, y / scale
+    local inward = wheel.mirror and x or UIParent:GetWidth() - x
+    return math.deg(math.atan2(y, -inward))
 end
 
 -- Le même angle dans le code sécurisé, qui n'a que l'arithmétique : la position du doigt sur
@@ -77,7 +96,8 @@ local ANGLE = [=[
     local angle
     if x then
         local size = owner:GetAttribute("size")
-        local dx, dy = (1 - x) * size, y * size
+        local dx, dy = x * size, y * size
+        if not owner:GetAttribute("mirror") then dx = size - dx end
         if dx <= 0 then angle = 90
         else
             local t = dy / dx
@@ -111,11 +131,12 @@ local UP = [=[
     turns = turns - turns % 1
     local offset = (owner:GetAttribute("offset") + turns) % count
     owner:SetAttribute("offset", offset)
+    local corner = owner:GetAttribute("corner")
     for index = 1, count do
         local slot = (index - 1 + offset) % count
         local button = owner:GetFrameRef("b" .. index)
         button:ClearAllPoints()
-        button:SetPoint("CENTER", owner, "BOTTOMRIGHT", owner:GetAttribute("x" .. slot), owner:GetAttribute("y" .. slot))
+        button:SetPoint("CENTER", owner, corner, owner:GetAttribute("x" .. slot), owner:GetAttribute("y" .. slot))
     end
 ]=]
 
@@ -128,92 +149,106 @@ local CLICK = [=[
 ]=]
 
 function Turn:Init()
-    band = CreateFrame("Frame", "WolkaraMobileTurn", UIParent, "SecureHandlerBaseTemplate")
-    band:SetFrameStrata("BACKGROUND")  -- sous les sorts, eux-mêmes sous les fenêtres du jeu
-    band:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT")
-    band:EnableMouse(false)
-    band.disc = band:CreateTexture(nil, "BACKGROUND")
-    band.disc:SetTexture(ns.WHITE)
-    band.disc:SetVertexColor(0.05, 0.05, 0.08, 0.22)
-    ns.Circle(band, band.disc)
-    band:Hide()
-    band:SetScript("OnUpdate", function()
-        if not dragging or InCombatLockdown() then return end
-        local turns = (CursorAngle() - dragFrom) / (band:GetAttribute("step") or 20)
-        if turns < SWIPE and turns > -SWIPE then turns = 0 end
-        Place(dragOffset + turns)
-    end)
+    for _, side in ipairs(ORDER) do
+        local info = SIDES[side]
+        local band = CreateFrame("Frame", info.name, UIParent, "SecureHandlerBaseTemplate")
+        band:SetFrameStrata("BACKGROUND")  -- sous les sorts, eux-mêmes sous les fenêtres du jeu
+        band:SetPoint(info.corner, UIParent, info.corner)
+        band:EnableMouse(false)
+        band:Hide()
+        local wheel = { side = side, key = info.key, corner = info.corner, mirror = info.mirror, band = band }
+        band:SetScript("OnUpdate", function()
+            if not wheel.dragging or InCombatLockdown() then return end
+            local turns = (CursorAngle(wheel) - wheel.dragFrom) / (band:GetAttribute("step") or 20)
+            if turns < SWIPE and turns > -SWIPE then turns = 0 end
+            Place(wheel, wheel.dragOffset + turns)
+        end)
+        wheels[side] = wheel
+    end
 end
 
--- Free nous confie ses boutons de droite, une fois créés.
-function Turn:Attach(list) buttons = list end
+-- Free nous confie ses boutons, une fois créés (avant notre Init : il passe avant nous).
+function Turn:Attach(list, side) attached[side or "right"] = list end
 
 -- Une fois, hors combat : le code sécurisé et le suivi du doigt accrochés à chaque sort. Ils
 -- ne font rien tant que la roue n'est pas choisie (attribut turning de la bande).
-local function Wrap()
-    if wrapped or not band or not buttons or InCombatLockdown() then return end
-    wrapped = true
+local function Wrap(wheel)
+    local buttons, band = attached[wheel.side], wheel.band
+    if wheel.wrapped or not buttons or InCombatLockdown() then return end
+    wheel.wrapped = true
     for _, button in ipairs(buttons) do
         SecureHandlerWrapScript(button, "OnMouseDown", band, DOWN)
         SecureHandlerWrapScript(button, "OnMouseUp", band, UP)
         SecureHandlerWrapScript(button, "OnClick", band, CLICK)
         button:HookScript("OnMouseDown", function()
-            if InCombatLockdown() or not Turn:Enabled() then return end
-            dragging, dragFrom, dragOffset = true, CursorAngle(), band:GetAttribute("offset") or 0
+            if InCombatLockdown() or not Turn:Enabled(wheel.side) then return end
+            wheel.dragging, wheel.dragFrom, wheel.dragOffset = true, CursorAngle(wheel), band:GetAttribute("offset") or 0
         end)
         button:HookScript("OnMouseUp", function()
-            if not dragging then return end
-            dragging = false
+            if not wheel.dragging then return end
+            wheel.dragging = false
             if InCombatLockdown() then return end
             -- Un glissé ne doit pas non plus ouvrir le sélecteur d'une case vide (PostClick).
-            local turns = (CursorAngle() - dragFrom) / (band:GetAttribute("step") or 20)
+            local turns = (CursorAngle(wheel) - wheel.dragFrom) / (band:GetAttribute("step") or 20)
             if turns >= SWIPE or turns <= -SWIPE then button.swiped = true end
             -- Le code sécurisé a déjà arrondi au cran le plus proche, ou laissé la roue où elle
             -- était pour un simple toucher ; on s'aligne dessus et on le retient.
             local offset = band:GetAttribute("offset") or 0
-            Place(offset)
-            Settings().turnOffset = offset
+            Place(wheel, offset)
+            Settings(wheel).turnOffset = offset
         end)
     end
 end
 
 -- Hors combat : la géométrie, les positions d'avance pour le code sécurisé, puis les sorts.
-function Turn:Layout()
-    if not band or not buttons or InCombatLockdown() then return end
-    Wrap()
-    local turning = self:Enabled()
+local function LayoutWheel(wheel)
+    local buttons, band = attached[wheel.side], wheel.band
+    if not buttons or InCombatLockdown() then return end
+    Wrap(wheel)
+    local turning = Turn:Enabled(wheel.side)
     band:SetAttribute("turning", turning)
     -- Un sort de la roue part au relâchement du doigt, pour qu'un glissé puisse l'annuler.
     for _, button in ipairs(buttons) do
         if turning then button:SetAttribute("useOnKeyDown", false) else button:SetAttribute("useOnKeyDown", nil) end
     end
     if not turning then band:Hide(); return end
-    local settings = Settings()
+    local settings = Settings(wheel)
     local count = math.max(0, math.min(settings.count, #buttons))
     local radius, step = Turn.Geometry(UIParent:GetWidth(), UIParent:GetHeight(), count, settings.spread)
     local size = radius + SIZE
     band.radius = radius
     band.buttonScale = (settings.scale or 100) / 100
     band:SetSize(size, size)
-    band.disc:ClearAllPoints()
-    band.disc:SetPoint("CENTER", band, "BOTTOMRIGHT")
-    band.disc:SetSize(2 * (radius + SIZE / 2 + 8), 2 * (radius + SIZE / 2 + 8))
     band:SetAttribute("size", size)
+    band:SetAttribute("mirror", wheel.mirror)
+    band:SetAttribute("corner", wheel.corner)
     band:SetAttribute("count", count)
     band:SetAttribute("step", step)
     local offset = count > 0 and math.floor(tonumber(settings.turnOffset) or 0) % count or 0
     band:SetAttribute("offset", offset)
     for slot = 0, math.max(0, count - 1) do
-        local x, y = Point(radius, FIRST + slot * step)
+        local x, y = Point(wheel, radius, FIRST + slot * step)
         band:SetAttribute("x" .. slot, x / band.buttonScale)
         band:SetAttribute("y" .. slot, y / band.buttonScale)
     end
     for index = 1, count do band:SetFrameRef("b" .. index, buttons[index]) end
     band:Show()
-    Place(offset)
+    Place(wheel, offset)
 end
 
--- Le combat fini, le cran où la roue s'est arrêtée est retenu.
+function Turn:Layout()
+    for _, side in ipairs(ORDER) do
+        if wheels[side] then LayoutWheel(wheels[side]) end
+    end
+end
+
+-- Le combat fini, le cran où chaque roue s'est arrêtée est retenu.
 ns.On("PLAYER_REGEN_ENABLED", function()
-    if band and ns.db and Turn:Enabled() then Settings().turnOffset = band:GetAttribute("offset") or 0 end
+    if not ns.db then return end
+    for _, side in ipairs(ORDER) do
+        local wheel = wheels[side]
+        if wheel and attached[side] and Turn:Enabled(side) then
+            Settings(wheel).turnOffset = wheel.band:GetAttribute("offset") or 0
+        end
+    end
 end)

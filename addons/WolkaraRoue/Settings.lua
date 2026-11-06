@@ -68,7 +68,7 @@ end
 local function Build()
     panel = CreateFrame("Frame", "WolkaraMobileSettings", UIParent)
     panel:SetFrameStrata("FULLSCREEN_DIALOG")
-    panel:SetSize(700, 70 + ROW_H * 11 + 70)
+    panel:SetSize(700, 70 + ROW_H * 12 + 70)
     panel:SetPoint("CENTER")
     panel:EnableMouse(true)
     panel:Hide()
@@ -99,15 +99,13 @@ local function Build()
             function(v) ns.db[side.key].count = v end, 1, 0, ns.MAX_FREE)
         Stepper(panel, LEFT + 375, y, "Taille", function() return ns.db[side.key].scale end,
             function(v) ns.db[side.key].scale = v end, 10, 50, 200, " %")
-        if side.key == "free" then
-            Switch(panel, LEFT + 575, y, 90, function() return ns.db.free.turn end,
-                function(v) ns.db.free.turn = v end, "Roue", "Arc")
-        end
+        Switch(panel, LEFT + 575, y, 90, function() return ns.db[side.key].turn end,
+            function(v) ns.db[side.key].turn = v end, "Roue", "Arc")
         y = y - ROW_H
     end
 
-    -- En arc, l'écart entre le stick et ses sorts, donc entre les sorts. En roue (à droite), l'écart
-    -- entre deux sorts qui se suivent. Un sort déplacé à la main en mode Personnaliser garde sa place ;
+    -- En arc, l'écart entre le stick et ses sorts, donc entre les sorts. En roue, l'écart entre
+    -- deux sorts qui se suivent. Un sort déplacé à la main en mode Personnaliser garde sa place ;
     -- Positions par défaut le rend à l'arc.
     Text(panel, "Écart des sorts", LEFT, y - 10, 150)
     Stepper(panel, LEFT + 175, y, "Droite", function() return ns.db.free.spread end,
@@ -138,6 +136,13 @@ local function Build()
         function(v) ns.db.quests.enabled = v end, "Carte", "Jeu")
     Stepper(panel, LEFT + 175, y, "Affichées", function() return ns.db.quests.shown end,
         function(v) ns.db.quests.shown = v end, 1, 1, 5)
+    y = y - ROW_H
+
+    Text(panel, "Mini-carte", LEFT, y - 10, 90)
+    Switch(panel, LEFT + 90, y, 70, function() return ns.db.minimap.shown end,
+        function(v) ns.db.minimap.shown = v end, "Oui", "Non")
+    Stepper(panel, LEFT + 175, y, "Taille", function() return ns.db.minimap.scale end,
+        function(v) ns.db.minimap.scale = v end, 10, 30, 150, " %")
     y = y - ROW_H
 
     Text(panel, "D'origine", LEFT, y - 10, 90)

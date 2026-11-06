@@ -23,13 +23,21 @@ WoW Forever 1.60.1.70790: login, character selection and an in-world session on 
 mobile data off while it waits for the local connection, back on once the game starts). What
 it adds:
 
-- **Interface mobile**, a touch add-on in [addons/WolkaraRoue](addons/WolkaraRoue): a spell
-  wheel by the right stick that you turn by dragging a spell (a tap casts), spell buttons around
-  the sticks with adjustable spacing, shortcuts and a tile menu, health bars, a quest card and a
-  compact chat that replaces the game's. Its settings save themselves after each change: WoW
-  only writes add-on settings on a clean exit, which a phone session rarely gets.
+- **Interface mobile**, a touch add-on in [addons/WolkaraRoue](addons/WolkaraRoue): two spell
+  wheels, one by each stick (the left one mirrors the right), that you turn by dragging a spell
+  (a tap casts), with adjustable spacing; shortcuts and a tile menu, health bars with your
+  portrait, a quest card, and a chat at the bottom between the wheels that switches between the
+  players' talk and the system's messages with one touch. The game's windows (world map,
+  quests, merchants, journal) shrink to fit the screen and stay clear of the sticks, so the
+  map's close button and "Complete quest" can be reached; the minimap's size can be set, or it
+  can be put away. Its settings save themselves after each change: WoW only writes add-on
+  settings on a clean exit, which a phone session rarely gets.
 - **Jumping while running**: the Jump button of the "sticks only" layout sends the game's own
   Space and reaches the whole area under the camera stick.
+- **The app's toolbar at the bottom** (keyboard, mouse, gamepad, settings), centred between the
+  thumbs and just under the add-on's chat: its keyboard opens the chat, and Return sends the
+  line to the conversation chosen there, Say by default. While typing it moves to the top,
+  clear of the keyboard.
 - **Typing a password**: a password field receives exactly what was typed, and function keys are
   never turned into text.
 - **Tools**: [push_addon.sh](wolkaraforever/tools/push_addon.sh) installs the add-on on the

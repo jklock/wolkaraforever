@@ -308,19 +308,22 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [self place:@"LB" frame:CGRectMake(left+w+8,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
     [self place:@"RT" frame:CGRectMake(right-w,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
     [self place:@"RB" frame:CGRectMake(right-w*2-8,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
-    [self place:@"menu" frame:CGRectMake(CGRectGetMidX(self.bounds)-22,bottom-side+190*side/216-22,44,44)
+    // The app's toolbar sits at the bottom centre (TouchControls, 44 pt tall and 8 pt up): the
+    // full layout's menu button waits just above it rather than under it.
+    [self place:@"menu" frame:CGRectMake(CGRectGetMidX(self.bounds)-22,CGRectGetMaxY(safe)-8-44-8-44,44,44)
         baseSize:CGSizeMake(44,44) safe:safe];
     _editDone.frame = CGRectMake(CGRectGetMidX(safe)-70,CGRectGetMinY(safe)+60,140,40);
     _hint.frame = CGRectMake(CGRectGetMidX(safe)-150,CGRectGetMinY(safe)+103,300,22);
     if (_settings) {
-        // Keep the fixed toolbar clear. Wide screens use two columns; smaller
-        // windows retain a scrollable single column and a fixed Done button.
+        // Keep the fixed toolbar clear: it sits at the bottom, so the sheet hangs from the top.
+        // Wide screens use two columns; smaller windows retain a scrollable single column and
+        // a fixed Done button.
         BOOL wide = safe.size.width >= 620;
         CGFloat width = MIN(wide ? 700 : 390,safe.size.width-24), height = MIN(wide ? 350 : 470,safe.size.height-68);
         _settingsColumns.axis = wide ? UILayoutConstraintAxisHorizontal : UILayoutConstraintAxisVertical;
         _settingsColumns.alignment = wide ? UIStackViewAlignmentTop : UIStackViewAlignmentFill;
         _settingsColumns.distribution = wide ? UIStackViewDistributionFillEqually : UIStackViewDistributionFill;
-        _settings.frame = CGRectMake(CGRectGetMidX(safe)-width/2,CGRectGetMaxY(safe)-height-8,width,height);
+        _settings.frame = CGRectMake(CGRectGetMidX(safe)-width/2,CGRectGetMinY(safe)+8,width,height);
     }
 }
 - (void)layoutEditGridInBounds:(CGRect)safe {

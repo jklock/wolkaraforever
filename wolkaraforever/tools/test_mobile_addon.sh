@@ -2,8 +2,10 @@
 # The Interface mobile add-on (addons/WolkaraRoue), checked on the Mac: every Lua file compiles
 # as the game's Lua 5.1 would read it, every file the .toc lists exists, and the save module
 # decides when to reload the interface as tests/test_mobile_addon_save.lua expects; the turning
-# wheel, the cooldown text and the bag placement behave as tests/test_mobile_addon_turn.lua,
-# test_mobile_addon_cooldown.lua and test_mobile_addon_bags.lua expect.
+# wheels, the cooldown text, the bag placement, the game's windows, the minimap, the chat and the
+# move of a 0.5 save behave as tests/test_mobile_addon_turn.lua, test_mobile_addon_cooldown.lua,
+# test_mobile_addon_bags.lua, test_mobile_addon_windows.lua, test_mobile_addon_minimap.lua,
+# test_mobile_addon_chat.lua and test_mobile_addon_settings.lua expect.
 #
 # usage: wolkaraforever/tools/test_mobile_addon.sh
 #
@@ -27,3 +29,7 @@ luajit wolkaraforever/tools/tests/test_mobile_addon_save.lua "$addon/Save.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_turn.lua "$addon/Turn.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_cooldown.lua "$addon/Actions.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_bags.lua "$addon/Bags.lua"
+luajit wolkaraforever/tools/tests/test_mobile_addon_windows.lua "$addon/Windows.lua"
+luajit wolkaraforever/tools/tests/test_mobile_addon_minimap.lua "$addon/Minimap.lua"
+luajit wolkaraforever/tools/tests/test_mobile_addon_chat.lua "$addon/Chat.lua"
+luajit wolkaraforever/tools/tests/test_mobile_addon_settings.lua "$addon/Core.lua"

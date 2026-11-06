@@ -236,8 +236,9 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     GCExtendedGamepad *pad=manager.created.controller.extendedGamepad;
     assert(pad && manager.visible);
     [host layoutIfNeeded];
-    // Ring sectors own their visible area, leave the stick and separator gaps
-    // untouched, and put + on the same row as the bottom labels.
+    // Ring sectors own their visible area and leave the stick and separator gaps untouched.
+    // + used to share the bottom labels' row; the app's toolbar now has the bottom centre
+    // (44 pt tall, 8 pt up), so + is centred just above it.
     UIButton *top=(id)Button(host,@"dpad.up");
     CALayer *guestSurface=[CALayer layer];
     guestSurface.frame=host.bounds; [host.layer addSublayer:guestSurface];
@@ -248,7 +249,9 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(![top pointInside:CGPointMake(26,108) withEvent:nil]);
     assert(![top pointInside:CGPointMake(166,50) withEvent:nil]);
     UIButton *a=(id)Button(host,GCInputButtonA), *plus=(id)Button(host,GCInputButtonMenu);
-    assert(fabs([a convertPoint:a.titleLabel.center toView:host].y-[plus convertPoint:plus.titleLabel.center toView:host].y)<1);
+    CGRect plusFrame=[plus convertRect:plus.bounds toView:host];
+    assert(a && fabs(CGRectGetMidX(plusFrame)-CGRectGetMidX(host.bounds))<1);
+    assert(CGRectGetMaxY(plusFrame)<=CGRectGetMaxY(UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets))-8-44-4);
     assert(Find(host,@"tolkara.gamepad.minus")==nil);
     NSArray *names=@[GCInputButtonA,GCInputButtonB,GCInputButtonX,GCInputButtonY,GCInputLeftShoulder,
         GCInputRightShoulder,GCInputLeftTrigger,GCInputRightTrigger,GCInputButtonMenu];
@@ -298,6 +301,10 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(Find(host,@"wolkaraforever.controls.settings"));
     UIView *panel=Find(host,@"wolkaraforever.controls.settings");
     if (UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets).size.width>=620) assert(panel.bounds.size.width>390);
+    // The app's toolbar sits at the bottom centre, 44 pt tall and 8 pt up: the sheet hangs from
+    // the top and leaves that strip free.
+    CGFloat toolbarTop=CGRectGetMaxY(UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets))-8-44;
+    assert(CGRectGetMaxY([panel convertRect:panel.bounds toView:host])<=toolbarTop+0.5);
     CGRect normalBounds=host.bounds;
     host.bounds=CGRectMake(0,0,390,600); [host layoutIfNeeded];
     assert(CGRectContainsRect(host.bounds,[panel convertRect:panel.bounds toView:host]));
@@ -384,6 +391,10 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(sticksOnly.on);
     sticksOnly.on=NO; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
     [manager toggleSettings]; [host layoutIfNeeded];
+    // The full layout's menu button waits above the app's toolbar, not under it.
+    UIControl *menu=Button(host,GCInputButtonMenu);
+    assert(!menu.hidden && CGRectGetMaxY([menu convertRect:menu.bounds toView:host])<=
+        CGRectGetMaxY(UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets))-8-44-4);
     [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchDown];
     [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchUpInside];
     assert(manager.feedback.buttons==silentButtons+1 && manager.feedback.enabled);
