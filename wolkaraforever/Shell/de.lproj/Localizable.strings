@@ -122,6 +122,7 @@
 "region.kr" = "Korea";
 "region.tw" = "Taiwan";
 "locale.enUS" = "Englisch";
+"locale.frFR" = "Französisch";
 "locale.esES" = "Spanisch";
 "locale.deDE" = "Deutsch";
 
@@ -328,12 +329,14 @@
 /* ---- On-screen controls and keyboard ---- */
 "touch.draft.label" = "Ersatztext";
 "touch.draft.hint" = "Tippen Sie auf Ersetzen, um das gewählte Spielfeld zu ersetzen, oder lassen Sie das Feld leer, um es zu leeren. Vorhandener Spieltext wird hier nicht angezeigt.";
-"touch.draft.placeholder" = "Entwurf · ersetzt das Feld; leer leert es";
+"touch.draft.placeholder" = "Eingabe sendet in den Chat · Ersetzen schreibt ins gewählte Feld";
 "touch.draft.replace" = "Ersetzen";
 "touch.draft.replace.hint" = "Ersetzt das gesamte gewählte Spielfeld. Ein leerer Entwurf leert es. Die Eingabetaste wird nicht gedrückt.";
 "touch.draft.clear" = "Entwurf leeren";
 "touch.keyboard.show" = "Tastatur einblenden";
 "touch.keyboard.hide" = "Tastatur ausblenden";
+"touch.toolbar.show" = "Leiste einblenden";
+"touch.toolbar.hide" = "Leiste ausblenden";
 "touch.trackpad.enable" = "Touch-Trackpad einschalten";
 "touch.trackpad.disable" = "Touch-Trackpad ausschalten";
 "touch.trackpad.hint" = "Ein Finger bewegt, Tippen klickt. Zwei Finger scrollen oder tippen für einen Rechtsklick. Drei Finger tippen für einen Mittelklick. Halten und ziehen verschiebt. Langes Tippen auf diese Taste zeigt die Maustasten.";
@@ -347,6 +350,7 @@
 "touch.gamepad.button" = "Controller %@";
 "touch.gamepad.leftStick" = "Controller, linker Stick";
 "touch.gamepad.rightStick" = "Controller, rechter Stick";
+"touch.gamepad.jump" = "Springen";
 "touch.gamepad.doneEditing" = "Bearbeiten beenden";
 "touch.gamepad.dragHint" = "Elemente zum Verschieben ziehen";
 "touch.settings" = "Einstellungen der Bedienelemente";
@@ -358,6 +362,7 @@
 "touch.settings.stickSize" = "Größe von Sticks und Aktionstasten";
 "touch.settings.stickSize.value" = "Größe von Sticks und Aktionstasten · %.0f %%";
 "touch.settings.outerTriggers" = "Trigger außen";
+"touch.settings.sticksOnly" = "Nur Sticks und Springen (andere Tasten ausblenden)";
 "touch.settings.haptics" = "Haptisches Feedback";
 "touch.settings.overlay" = "Leistungsanzeige";
 "touch.settings.overlay.detail" = "Leistungsanzeige (FPS & Temperatur)";

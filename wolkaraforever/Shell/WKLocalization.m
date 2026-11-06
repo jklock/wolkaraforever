@@ -35,11 +35,12 @@ NSString *const WKAppLanguageDefaultsKey = @"WolkaraForeverAppLanguage";
 // what decides - so this is only the set of codes that can match.
 static NSString *const WKLanguageEnglish = @"en";
 static NSString *const WKLanguageGerman = @"de";
+static NSString *const WKLanguageFrench = @"fr";
 
 static NSArray<NSString *> *WKSupportedLanguageCodes(void) {
     static NSArray<NSString *> *codes;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ codes = @[WKLanguageEnglish, WKLanguageGerman]; });
+    dispatch_once(&once, ^{ codes = @[WKLanguageEnglish, WKLanguageGerman, WKLanguageFrench]; });
     return codes;
 }
 
@@ -167,6 +168,7 @@ static NSBundle *WKResourceBundleOverride;
     for (NSString *identifier in languages ?: @[]) {
         NSString *code = [self matchedCodeForLanguageIdentifier:identifier];
         if ([code isEqual:WKLanguageGerman]) return WKAppLanguageGerman;
+        if ([code isEqual:WKLanguageFrench]) return WKAppLanguageFrench;
         if ([code isEqual:WKLanguageEnglish]) return WKAppLanguageEnglish;
     }
     // No supported language anywhere in the list: English, the language every build is
@@ -175,12 +177,15 @@ static NSBundle *WKResourceBundleOverride;
 }
 
 + (NSString *)codeForLanguage:(WKAppLanguage)language {
-    return language == WKAppLanguageGerman ? WKLanguageGerman : WKLanguageEnglish;
+    if (language == WKAppLanguageGerman) return WKLanguageGerman;
+    if (language == WKAppLanguageFrench) return WKLanguageFrench;
+    return WKLanguageEnglish;
 }
 
 + (NSString *)storedValueForLanguage:(WKAppLanguage)language {
     switch (language) {
     case WKAppLanguageGerman: return WKLanguageGerman;
+    case WKAppLanguageFrench: return WKLanguageFrench;
     case WKAppLanguageEnglish: return WKLanguageEnglish;
     case WKAppLanguageSystem: default: return @"system";
     }
@@ -191,12 +196,13 @@ static NSBundle *WKResourceBundleOverride;
     NSString *text = [value lowercaseString];
     if ([text isEqual:WKLanguageEnglish]) return WKAppLanguageEnglish;
     if ([text isEqual:WKLanguageGerman]) return WKAppLanguageGerman;
+    if ([text isEqual:WKLanguageFrench]) return WKAppLanguageFrench;
     // Includes "system", and anything a hand-edited config file invented.
     return WKAppLanguageSystem;
 }
 
 + (NSArray<NSNumber *> *)choices {
-    return @[@(WKAppLanguageEnglish), @(WKAppLanguageGerman), @(WKAppLanguageSystem)];
+    return @[@(WKAppLanguageEnglish), @(WKAppLanguageFrench), @(WKAppLanguageGerman), @(WKAppLanguageSystem)];
 }
 
 - (WKAppLanguage)resolvedLanguage {
@@ -208,16 +214,23 @@ static NSBundle *WKResourceBundleOverride;
 
 - (NSLocale *)locale {
     return [NSLocale localeWithLocaleIdentifier:
-        self.resolvedLanguage == WKAppLanguageGerman ? @"de_DE" : @"en_GB"];
+        self.resolvedLanguage == WKAppLanguageGerman ? @"de_DE"
+        : self.resolvedLanguage == WKAppLanguageFrench ? @"fr_FR" : @"en_GB"];
 }
 
 - (NSString *)resolvedLanguageName {
-    return self.resolvedLanguage == WKAppLanguageGerman ? @"Deutsch" : @"English";
+    return [WKLocalization nativeNameForLanguage:self.resolvedLanguage];
+}
+
++ (NSString *)nativeNameForLanguage:(WKAppLanguage)language {
+    if (language == WKAppLanguageGerman) return @"Deutsch";
+    if (language == WKAppLanguageFrench) return @"Français";
+    return @"English";
 }
 
 - (NSString *)settingDisplayName {
     if (self.language == WKAppLanguageSystem)
-        return [self.resolvedLanguageName stringByAppendingFormat:@" — %@", WKLocalized(@"lang.system")];
+        return [self.resolvedLanguageName stringByAppendingFormat:@" · %@", WKLocalized(@"lang.system")];
     return self.resolvedLanguageName;
 }
 

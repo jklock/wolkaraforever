@@ -34,6 +34,7 @@ static CGFloat Number(id value, CGFloat fallback) {
         // triggers inside; an explicit stored choice always takes precedence.
         self.swapShoulders = Number(values[@"swapShoulders"],values.count ? 0 : 1) != 0;
         self.performanceOverlayEnabled = Number(values[@"performanceOverlayEnabled"],0) != 0;
+        self.sticksOnly = Number(values[@"sticksOnly"],1) != 0;
         _positions = [NSMutableDictionary new];
         id positions = values[@"positions"];
         if ([positions isKindOfClass:NSDictionary.class]) for (NSString *key in positions) {
@@ -45,7 +46,8 @@ static CGFloat Number(id value, CGFloat fallback) {
     }
     return self;
 }
-- (void)setOpacity:(CGFloat)value { _opacity = Clamp(value,0.2,1,0.8); }
+// Down to 5%: sticks that are barely there still work, and some players want exactly that.
+- (void)setOpacity:(CGFloat)value { _opacity = Clamp(value,0.05,1,0.8); }
 - (void)setRearScale:(CGFloat)value { _rearScale = Clamp(value,0.8,1.5,1); }
 - (void)setFrontScale:(CGFloat)value { _frontScale = Clamp(value,0.65,1.4,1); }
 - (CGRect)frameForItem:(NSString *)item defaultFrame:(CGRect)frame inBounds:(CGRect)bounds {
@@ -66,13 +68,14 @@ static CGFloat Number(id value, CGFloat fallback) {
 - (void)save {
     [_defaults setObject:@{@"opacity":@(_opacity),@"rearScale":@(_rearScale),
         @"frontScale":@(_frontScale),@"hapticsEnabled":@(_hapticsEnabled),@"swapShoulders":@(_swapShoulders),
-        @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"positions":_positions} forKey:LayoutKey];
+        @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),@"positions":_positions} forKey:LayoutKey];
     [NSNotificationCenter.defaultCenter postNotificationName:AKGamepadLayoutDidChangeNotification object:_defaults];
 }
 - (void)reset {
     self.opacity = 0.8; self.rearScale = 1; self.frontScale = 1;
     self.hapticsEnabled = YES; self.swapShoulders = YES;
     self.performanceOverlayEnabled = NO;
+    self.sticksOnly = YES;
     [_positions removeAllObjects]; [self save];
 }
 @end

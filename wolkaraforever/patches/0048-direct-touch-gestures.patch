@@ -1,0 +1,215 @@
+# WolkaraForever layer patch 0048 - direct touch: tap, hold, drag and pinch
+#
+# Why: with the trackpad off, a finger was only ever a left button pressed at once, so
+# nothing gave a right click (attack, talk, loot, open), a tap that moved a little became
+# a drag, and there was no way to zoom. Now a quick tap is a left click where the finger
+# is, a finger held still for 0.45 s is a right click there (with haptics), sliding after
+# the hold is a right drag (turns the character), a finger that moves first is a left drag
+# (camera), and a second finger makes it a pinch that zooms the camera like a mouse wheel.
+# The host view takes several fingers in both modes for that; the direct gesture follows
+# its first finger only. A mouse, trackpad or pencil keeps the immediate behaviour.
+#
+# Applies to: translation/AppKit/AppKit.m.
+# Upstream: candidate.
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -296,11 +296,26 @@ @implementation AKHostView { CGPoint _last; NSEventModifierFlags _mods; BOOL _pr
+     unsigned _lastTouchButton;
+     NSInteger _touchClickCount;
+     CGSize _touchViewportSize;
++    // Direct touch (trackpad off): where the finger came down, whether the gesture is still
++    // undecided between a tap, a hold and a drag, whether a hold already right-clicked, and
++    // the hold's timer.
++    CGPoint _directStart;
++    BOOL _directPending, _directHeld;
++    NSTimer *_directHold;
++    // The finger the direct gesture follows, whether a second finger turned it into a
++    // pinch, and the pinch's zoom bookkeeping.
++    UITouch *_directTouch;
++    BOOL _directMulti;
++    CGFloat _pinchScale, _pinchCarry;
++    UIPinchGestureRecognizer *_pinch;
+ }
+ - (BOOL)ak_configuringTouchControls { return _touchControls.configuring; }
+ - (instancetype)initWithFrame:(CGRect)f {
+     if ((self = [super initWithFrame:f])) {
+-        self.multipleTouchEnabled = NO;
++        self.multipleTouchEnabled = YES;
++        _pinch = [[UIPinchGestureRecognizer alloc] initWithTarget:self action:@selector(directPinch:)];
++        _pinch.cancelsTouchesInView = NO; _pinch.delaysTouchesEnded = NO;
++        [self addGestureRecognizer:_pinch];
+         // Before the first pointer event the cursor rests mid-window, as a
+         // Mac's would somewhere on screen: not in a corner, where a game that
+         // polls the position would hover whatever sits there.
+@@ -375,7 +390,10 @@ - (void)layoutSubviews {
+     }
+ }
+ - (void)touchTrackpadChanged:(BOOL)enabled {
+-    self.multipleTouchEnabled = enabled;
++    // Both modes take several fingers now: the trackpad for its own gestures, direct
++    // touch for the pinch that zooms the camera.
++    self.multipleTouchEnabled = YES;
++    _pinch.enabled = !enabled;
+     if (enabled && !_touchCursorInitialized && self.bounds.size.width > 0 && self.bounds.size.height > 0) {
+         _last = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds));
+         self.nsWindow.ak_mouseLocation = CGPointMake(_last.x, self.bounds.size.height - _last.y);
+@@ -635,25 +653,156 @@ - (BOOL)handleTrackpadTouches:(NSSet<UITouch *> *)touches event:(UIEvent *)event
+     }
+     return NO;
+ }
++// Direct touch, with the trackpad off. A quick tap is a left click where the finger is. A
++// finger held still for a moment is a right click there, with a tap of haptics so the hold
++// is felt; sliding after that is a right drag, which turns the character. A finger that
++// moves first is a left drag from where it came down, which is the game's camera. A second
++// finger makes it a pinch: whatever the first finger had started is let go without a
++// click, and spreading or closing the fingers zooms the camera like a mouse wheel. Nothing
++// is pressed until the gesture is known, so a tap never becomes a drag by accident. A
++// mouse, a trackpad or a pencil keeps the immediate behaviour.
++static const CGFloat AKDirectSlop = 10;
++static const NSTimeInterval AKDirectHoldDelay = 0.45;
++static const CGFloat AKPinchNotch = 0.07;
++static BOOL AKIsFinger(NSSet<UITouch *> *t) { return t.anyObject.type == UITouchTypeDirect; }
++- (void)cancelDirectHold { [_directHold invalidate]; _directHold = nil; }
++- (void)directHoldFired {
++    _directHold = nil;
++    if (!_directPending || _directMulti) return;
++    _directPending = NO; _directHeld = YES;
++    [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium] impactOccurred];
++    [self postMouse:NSEventTypeRightMouseDown at:_directStart button:1];
++    [self postMouse:NSEventTypeRightMouseUp at:_directStart button:1];
++    AKLog(@"direct touch: hold became a right click");
++}
++// Let go of whatever one finger had started, without clicking: a pinch has begun.
++- (void)beginDirectMulti {
++    [self cancelDirectHold];
++    _directPending = NO; _directHeld = NO; _directMulti = YES;
++    if (_pressedLeft) [self postMouse:NSEventTypeLeftMouseUp at:_last button:0];
++    if (_pressedRight) [self postMouse:NSEventTypeRightMouseUp at:_last button:1];
++}
++- (void)postScrollNotch:(CGFloat)direction {
++    NSEvent *event = [NSEvent new];
++    event.type = NSEventTypeScrollWheel; event.window = self.nsWindow;
++    event.locationInWindow = self.nsWindow.ak_mouseLocation; event.modifierFlags = _mods;
++    event.deltaX = event.scrollingDeltaX = 0;
++    event.deltaY = event.scrollingDeltaY = direction;
++    event.timestamp = NSProcessInfo.processInfo.systemUptime;
++    [NSApp postEvent:event atStart:NO];
++}
++- (void)directPinch:(UIPinchGestureRecognizer *)pinch {
++    if (_touchControls.trackpadEnabled) return;
++    if (pinch.state == UIGestureRecognizerStateBegan) {
++        [self beginDirectMulti];
++        _pinchScale = pinch.scale > 0 ? pinch.scale : 1; _pinchCarry = 0;
++        // The wheel turns over what is between the fingers: the world, not a window.
++        [self postMouse:NSEventTypeMouseMoved at:[pinch locationInView:self] button:0];
++        return;
++    }
++    if (pinch.state != UIGestureRecognizerStateChanged || pinch.scale <= 0) return;
++    _pinchCarry += log(pinch.scale / _pinchScale);
++    _pinchScale = pinch.scale;
++    // Fingers apart is a wheel turned forward (closer), fingers together is back (farther).
++    while (fabs(_pinchCarry) >= AKPinchNotch) {
++        CGFloat direction = _pinchCarry > 0 ? 1 : -1;
++        _pinchCarry -= direction * AKPinchNotch;
++        [self postScrollNotch:direction];
++    }
++}
++- (BOOL)directGestureActive { return _directTouch != nil || _directMulti; }
+ - (void)touchesBegan:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
+     if ([self handleTrackpadTouches:t event:ev]) return;
+-    BOOL r = AKIsRight(ev);if(r?_pressedRight:_pressedLeft)return; _last = [t.anyObject locationInView:self];
++    BOOL r = AKIsRight(ev);
++    if (!r && AKIsFinger(t) && ![self usesRelativeMouse]) {
++        if ([self directGestureActive] || t.count > 1) { [self beginDirectMulti]; return; }
++        [self reconcileModifiers:AKMods(ev.modifierFlags)];
++        _directTouch = t.anyObject;
++        _last = [_directTouch locationInView:self];
++        _directStart = _last; _directPending = YES; _directHeld = NO;
++        // The pointer moves under the finger first, so the game knows what is there before
++        // any button is pressed.
++        [self postMouse:NSEventTypeMouseMoved at:_last button:0];
++        [self cancelDirectHold];
++        __weak AKHostView *weakSelf = self;
++        _directHold = [NSTimer timerWithTimeInterval:AKDirectHoldDelay repeats:NO block:^(NSTimer *timer) {
++            (void)timer; [weakSelf directHoldFired];
++        }];
++        // The guest's own loop runs the default mode; common modes include it.
++        [NSRunLoop.mainRunLoop addTimer:_directHold forMode:NSRunLoopCommonModes];
++        return;
++    }
++    if(r?_pressedRight:_pressedLeft)return; _last = [t.anyObject locationInView:self];
+     [self reconcileModifiers:AKMods(ev.modifierFlags)];
+     [self postMouse:r ? NSEventTypeRightMouseDown : NSEventTypeLeftMouseDown at:_last button:r];
+ }
+ - (void)touchesMoved:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
+     if ([self handleTrackpadTouches:t event:ev]) return;
+     if([self usesRelativeMouse])return;
++    if ([self directGestureActive]) {
++        if (_directMulti || ![t containsObject:_directTouch]) return;
++        CGPoint point = [_directTouch locationInView:self];
++        if (_directPending || _directHeld) {
++            if (hypot(point.x - _directStart.x, point.y - _directStart.y) < AKDirectSlop) return;
++            [self cancelDirectHold];
++            BOOL turn = _directHeld;
++            _directPending = NO; _directHeld = NO;
++            [self postMouse:turn ? NSEventTypeRightMouseDown : NSEventTypeLeftMouseDown at:_directStart button:turn ? 1 : 0];
++        }
++        if (CGPointEqualToPoint(point, _last)) return;
++        [self postMouse:_pressedRight ? NSEventTypeRightMouseDragged : NSEventTypeLeftMouseDragged at:point button:_pressedRight];
++        return;
++    }
+     BOOL r = _pressedRight;
+     CGPoint point=[t.anyObject locationInView:self];if(CGPointEqualToPoint(point,_last))return;
+     [self postMouse:r ? NSEventTypeRightMouseDragged : NSEventTypeLeftMouseDragged at:point button:r];
+ }
++// The direct gesture is over once no finger of it is left on this view.
++- (void)finishDirectGestureIfIdle:(NSSet<UITouch *> *)lifted event:(UIEvent *)ev {
++    for (UITouch *touch in ev.allTouches) {
++        if (touch.view != self || [lifted containsObject:touch]) continue;
++        if (touch.phase != UITouchPhaseEnded && touch.phase != UITouchPhaseCancelled) return;
++    }
++    _directMulti = NO; _directTouch = nil;
++}
+ - (void)touchesEnded:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
+     if ([self handleTrackpadTouches:t event:ev]) return;
++    if ([self directGestureActive]) {
++        if (!_directMulti && [t containsObject:_directTouch]) {
++            [self cancelDirectHold];
++            CGPoint point = [_directTouch locationInView:self];
++            if (_directPending) {
++                _directPending = NO;
++                [self postMouse:NSEventTypeLeftMouseDown at:_directStart button:0];
++                [self postMouse:NSEventTypeLeftMouseUp at:_directStart button:0];
++            } else if (_directHeld) {
++                // A hold already clicked; lifting the finger adds nothing.
++                _directHeld = NO;
++            } else if (_pressedRight || _pressedLeft) {
++                [self postMouse:_pressedRight ? NSEventTypeRightMouseUp : NSEventTypeLeftMouseUp at:point button:_pressedRight];
++            }
++            _directTouch = nil;
++        }
++        if ([t containsObject:_directTouch]) _directTouch = nil;
++        [self finishDirectGestureIfIdle:t event:ev];
++        return;
++    }
+     if(!_pressedRight && !_pressedLeft)return;
+     [self postMouse:_pressedRight ? NSEventTypeRightMouseUp : NSEventTypeLeftMouseUp at:[self usesRelativeMouse]?_last:[t.anyObject locationInView:self] button:_pressedRight];
+ }
+-- (void)touchesCancelled:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev { [self touchesEnded:t withEvent:ev]; }
++- (void)touchesCancelled:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
++    if ([self directGestureActive]) {
++        // A cancelled gesture clicks nothing; whatever it held is let go.
++        [self cancelDirectHold];
++        _directPending = NO; _directHeld = NO;
++        if (_pressedLeft) [self postMouse:NSEventTypeLeftMouseUp at:_last button:0];
++        if (_pressedRight) [self postMouse:NSEventTypeRightMouseUp at:_last button:1];
++        if ([t containsObject:_directTouch]) _directTouch = nil;
++        [self finishDirectGestureIfIdle:t event:ev];
++        return;
++    }
++    [self touchesEnded:t withEvent:ev];
++}
+ 
+ // UIKit's modifiers at a key or pointer event: a modifier it no longer reports
+ // is released, so the guest hears of that even when the key's own release was

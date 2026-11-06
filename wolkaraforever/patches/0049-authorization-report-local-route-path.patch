@@ -1,0 +1,91 @@
+# WolkaraForever layer patch 0049 - authorization: report how iOS classifies the local route
+#
+# Why: a launch on mobile data (no Wi-Fi) failed after the whole retry window with a
+# report that did not say why. Measured on 2026-11-05 (iPhone Duo, iOS 27.2, cable
+# plugged in, phone on mobile data): the route came up, the device's developer service
+# reset the connection, and Network.framework classified the route as
+# "utun12/0 cellular=1 expensive=1". Every report now carries that classification, so
+# a refused launch on mobile data names its cause. Read-only: nothing is sent.
+# Applies to: authorization/App/LocalAuthorization.m
+# Upstream: candidate (not submitted).
+#
+diff --git a/authorization/App/LocalAuthorization.m b/authorization/App/LocalAuthorization.m
+index 525f894..1a22cff 100644
+--- a/authorization/App/LocalAuthorization.m
++++ b/authorization/App/LocalAuthorization.m
+@@ -7,6 +7,7 @@
+ #import "AuthorizationBlockedState.h"
+ #include "Control/ArenaControl.h"
+ #import <NetworkExtension/NetworkExtension.h>
++#import <Network/Network.h>
+ #import <QuartzCore/QuartzCore.h>
+ #include <arpa/inet.h>
+ #include <errno.h>
+@@ -35,8 +36,46 @@ @interface TKLocalAuthorization ()
+ @property(nonatomic,readwrite,copy) NSString *localSessionBlockedState;
+ @property(nonatomic,strong) TKLocalServiceRetry *serviceRetry;
+ @property(nonatomic) NSUInteger serviceGeneration;
++// What iOS says the route runs over, read off the main queue by provider replies.
++@property(atomic,copy) NSString *tunnelPath;
+ @end
+ 
++// How iOS classifies the private route. A tunnel tagged with a cellular delegate
++// counts as cellular and expensive, and the device's own developer service refuses
++// connections that arrive on it (xnu's IFNET_IS_CELLULAR follows if_delegated).
++// A UDP connection sends nothing until written to, so this only reads the path.
++static void TKDescribeTunnelPath(void (^completion)(NSString *)) {
++    nw_endpoint_t endpoint=nw_endpoint_create_host(TK_AUTH_PEER.UTF8String,"49152");
++    nw_parameters_t parameters=nw_parameters_create_secure_udp(NW_PARAMETERS_DISABLE_PROTOCOL,NW_PARAMETERS_DEFAULT_CONFIGURATION);
++    nw_connection_t connection=nw_connection_create(endpoint,parameters);
++    __block BOOL finished=NO;
++    void (^finish)(NSString *)=^(NSString *text) {
++        if(finished)return;
++        finished=YES;
++        nw_connection_cancel(connection);
++        completion(text);
++    };
++    nw_connection_set_queue(connection,dispatch_get_main_queue());
++    nw_connection_set_state_changed_handler(connection,^(nw_connection_state_t state,nw_error_t error) {
++        (void)error;
++        if(state!=nw_connection_state_ready && state!=nw_connection_state_waiting && state!=nw_connection_state_failed)return;
++        nw_path_t path=nw_connection_copy_current_path(connection);
++        if(!path) {finish(@"Tunnel path: none.");return;}
++        NSMutableArray<NSString *> *interfaces=[NSMutableArray new];
++        nw_path_enumerate_interfaces(path,^bool(nw_interface_t interface) {
++            [interfaces addObject:[NSString stringWithFormat:@"%s/%d",nw_interface_get_name(interface),(int)nw_interface_get_type(interface)]];
++            return true;
++        });
++        finish([NSString stringWithFormat:@"Tunnel path: %@ cellular=%d expensive=%d constrained=%d.",
++            interfaces.count?[interfaces componentsJoinedByString:@","]:@"no interface",
++            nw_path_uses_interface_type(path,nw_interface_type_cellular),nw_path_is_expensive(path),nw_path_is_constrained(path)]);
++    });
++    nw_connection_start(connection);
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),dispatch_get_main_queue(),^{
++        finish(@"Tunnel path: not reported within 2 s.");
++    });
++}
++
+ static void TKWaitForRoute(NETunnelProviderManager *manager,CFTimeInterval deadline,void (^completion)(BOOL)) {
+     if(manager.connection.status==NEVPNStatusConnected) {completion(YES);return;}
+     if(CACurrentMediaTime()>=deadline) {completion(NO);return;}
+@@ -78,6 +117,11 @@ - (void)startAndProbeLocalRoute:(NSUInteger)mode completion:(void (^)(NSString *
+                 completion([NSString stringWithFormat:@"Route did not connect (status %ld). %@",(long)self.manager.connection.status,startResult]);return;
+             }
+             __weak TKLocalAuthorization *weakSelf=self;
++            self.tunnelPath=nil;
++            TKDescribeTunnelPath(^(NSString *path) {
++                if(weakSelf.serviceGeneration==generation)weakSelf.tunnelPath=path;
++                fprintf(stderr,"[local-launch] %s\n",path.UTF8String);
++            });
+             __block __weak TKLocalServiceRetry *weakRetry;
+             // The most recent attempt's cause, so a refusal names the step that
+             // failed rather than only the report text.
+@@ -101,6 +145,8 @@ - (void)startAndProbeLocalRoute:(NSUInteger)mode completion:(void (^)(NSString *
+                         NSString *helper=valid?state[@"helperProbe"]:nil;
+                         if([helper isKindOfClass:NSString.class] && helper.length<=1024)report=[report stringByAppendingFormat:@" Helper: %@",helper];
+                         if(valid) report=[report stringByAppendingFormat:@" Route status: running=%d, reflected=%llu, dropped=%llu.",[state[@"routeRunning"] boolValue],[state[@"reflectedPackets"] unsignedLongLongValue],[state[@"droppedPackets"] unsignedLongLongValue]];
++                        NSString *tunnelPath=self.tunnelPath;
++                        if(tunnelPath)report=[report stringByAppendingFormat:@" %@",tunnelPath];
+                         BOOL ready=valid && [state[@"readyForPreparation"] isEqual:@YES];
+                         // Only the helper can classify a failed initial TCP
+                         // connection. Never infer retryability from report text.

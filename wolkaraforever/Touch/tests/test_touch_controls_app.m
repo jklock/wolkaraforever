@@ -338,6 +338,13 @@ static void AKFixtureInputSource(void *context) {
                 [reference becomeFirstResponder];
                 return;
             }
+            // Not typing: the toolbar sits at the bottom centre, between the thumbs.
+            [host layoutIfNeeded];
+            CGRect resting = controls.frame;
+            if (selfTest) {
+                assert(fabs(CGRectGetMidX(resting) - CGRectGetMidX(host.bounds)) < 1);
+                assert(fabs(CGRectGetMaxY(resting) - (CGRectGetMaxY(host.bounds) - host.safeAreaInsets.bottom - 8)) < 1);
+            }
             [controls toggleKeyboard];
             if (!selfTest) return;
             [NSTimer scheduledTimerWithTimeInterval:1 repeats:NO block:^(NSTimer *timer) {
@@ -474,9 +481,13 @@ static void AKFixtureInputSource(void *context) {
                 assert(!controls.keyboardVisible && !input.text.length && input.superview.hidden);
                 [input insertText:@" background result"];
                 [host layoutIfNeeded];
-                assert(CGRectEqualToRect(toolbarFrame, controls.frame));
+                // The keyboard gone, the toolbar is back at the bottom, wherever the gamepad is.
+                assert(!CGRectEqualToRect(toolbarFrame, controls.frame));
+                CGRect down = controls.frame;
+                assert(fabs(CGRectGetMaxY(down) - (CGRectGetMaxY(host.bounds) - host.safeAreaInsets.bottom - 8)) < 1);
+                assert(fabs(CGRectGetMidX(down) - CGRectGetMidX(host.bounds)) < 1);
                 [controls setGamepadVisible:NO]; [host layoutIfNeeded];
-                assert(CGRectEqualToRect(toolbarFrame, controls.frame));
+                assert(CGRectEqualToRect(down, controls.frame));
 
                 // --- the optional performance HUD -----------------------------------
                 AKPerformanceOverlay *overlay = [host valueForKey:@"_performanceOverlay"];
