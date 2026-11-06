@@ -13,6 +13,17 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **A guest crash in a system library now names the function, not just the dylib.** Issue #13
+  arrived as `EXC_BAD_ACCESS: KERN_INVALID_ADDRESS at 0x198` with frame 0 in
+  `libsystem_pthread.dylib`. The client's own crash handler prints a frame outside the guest
+  arena as an image name and nothing else, and layer patch 0039 had stopped writing dlsym
+  resolution to the guest log, so a symbol that was not found left no trace either. The
+  guest's `dladdr` now answers a system frame as `image+offset symbol=name`, and a `dlsym`
+  that found nothing is logged without tracing; both are bounded to 64 lines and neither
+  changes what the guest is returned. Asking `dladdr` for the same distance from
+  `_pthread_start` in an iOS 27.2 runtime gives
+  `libsystem_pthread.dylib+0x88 symbol=pthread_rwlock_rdlock` — the line that report was
+  missing. It puts the fault in a read lock taken on a null object, not in the loader.
 - **Dictation interest no longer depends on the pad being connected.** The router told the
   controller inspector about the mapped button only for controllers already connected, so a mapping
   made for a pad that connected later left the inspector uninterested and the first press was
