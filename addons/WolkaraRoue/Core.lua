@@ -195,6 +195,36 @@ function ns.ClearPositions(db)
     if type(db.quests) == "table" then db.quests.pos = nil end
 end
 
+-- 0.6 : les sorts de la roue dorée 1 passent dans la roue qui tourne à gauche, aux places libres
+-- et sans doublon, et la roue dorée s'éteint. Elle garde ses sorts : la rallumer la retrouve.
+function ns.MigrateGoldenWheel(db)
+    local golden, left = db.wheels[1], db.freeLeft
+    local function Stored(index) return type(left.buttons[index]) == "table" and left.buttons[index].entry end
+    local last = 0
+    local function Has(entry)
+        for index = 1, ns.MAX_FREE do
+            local stored = Stored(index)
+            if stored and stored.kind == entry.kind and stored.id == entry.id then return true end
+        end
+        return false
+    end
+    for index = 1, ns.MAX_FREE do if Stored(index) then last = index end end
+    local slot = 1
+    for i = 1, golden.slots do
+        local entry = golden.entries[i]
+        if type(entry) == "table" and entry.kind and not Has(entry) then
+            while slot <= ns.MAX_FREE and Stored(slot) do slot = slot + 1 end
+            if slot > ns.MAX_FREE then break end
+            if type(left.buttons[slot]) ~= "table" then left.buttons[slot] = {} end
+            left.buttons[slot].entry = { kind = entry.kind, id = entry.id }
+            last = math.max(last, slot)
+        end
+    end
+    golden.enabled = false
+    left.turn = true
+    left.count = math.max(tonumber(left.count) or 0, 4, last)
+end
+
 -- Une position par défaut en proportion de l'écran : x et y de 0 à 1 depuis le bas à gauche.
 -- Calculée au moment de placer, donc juste quelle que soit la taille de l'interface.
 function ns.Spot(fx, fy, dx, dy)
@@ -304,9 +334,11 @@ end
 -- ---------------------------------------------------------------------------------------
 -- Réglages
 
-local function Wheel(index)
+-- Les roues dorées (un bouton qui ouvre un cercle de sorts) restent dans le panneau, éteintes :
+-- depuis la 0.6, la roue qui tourne à gauche fait leur travail.
+local function Wheel()
     return {
-        enabled = index == 1,
+        enabled = false,
         slots = 8,
         scale = 100,
         radius = 110,
@@ -323,10 +355,11 @@ local function Defaults()
         wheels = wheels,
         ui = { scale = 170 },
         free = { count = 4, scale = 100, spread = 100, turn = true, turnOffset = 0, buttons = {} },
-        freeLeft = { count = 0, scale = 100, spread = 100, buttons = {} },
+        freeLeft = { count = 4, scale = 100, spread = 100, turn = true, turnOffset = 0, buttons = {} },
         shortcuts = { enabled = true, scale = 100 },
         hud = { enabled = true, scale = 100 },
-        chat = { custom = true, fontSize = 16 },
+        chat = { custom = true, fontSize = 16, tab = "talk" },
+        minimap = { shown = true, scale = 60 },
         blizzard = { hideBars = true, hideUnitFrames = true },
         quests = { enabled = true, collapsed = false, shown = 3 },
         welcomed = false,
@@ -365,7 +398,8 @@ local function LoadSettings()
         wheel.radius = ns.Clamp(tonumber(wheel.radius) or 140, 80, 320)
     end
     saved.free.count = ns.Clamp(tonumber(saved.free.count) or 4, 0, ns.MAX_FREE)
-    saved.freeLeft.count = ns.Clamp(tonumber(saved.freeLeft.count) or 0, 0, ns.MAX_FREE)
+    saved.freeLeft.count = ns.Clamp(tonumber(saved.freeLeft.count) or 4, 0, ns.MAX_FREE)
+    saved.minimap.scale = ns.Clamp(tonumber(saved.minimap.scale) or 60, 30, 150)
     saved.free.spread = ns.Clamp(tonumber(saved.free.spread) or 100, 60, 180)
     saved.freeLeft.spread = ns.Clamp(tonumber(saved.freeLeft.spread) or 100, 60, 180)
     saved.ui.scale = ns.Clamp(tonumber(saved.ui.scale) or 170, 100, 220)
@@ -378,6 +412,13 @@ local function LoadSettings()
         end
         if saved.chat.fontSize == 15 then saved.chat.fontSize = 16 end
         saved.layoutVersion = 3
+    end
+    -- La disposition 4 (0.6) : la roue dorée devient la roue qui tourne à gauche, en miroir de
+    -- celle de droite. Ses sorts y passent, aux places libres, et le chat repart en bas.
+    if (tonumber(saved.layoutVersion) or 0) < 4 then
+        ns.MigrateGoldenWheel(saved)
+        saved.chat.pos = nil
+        saved.layoutVersion = 4
     end
     WolkaraRoueDB = saved
     ns.db = saved
@@ -421,7 +462,7 @@ ns.On("PLAYER_LOGIN", function()
     if ns.lastError then ns.Print("|cffff5555erreur au chargement|r : " .. ns.lastError) end
     if not ns.db.welcomed then
         ns.db.welcomed = true
-        ns.Print("touche le bouton doré Roue pour ouvrir ta roue, et l'engrenage des raccourcis pour tout régler.")
+        ns.Print("touche une case vide d'une roue pour y mettre un sort, glisse depuis un sort pour la faire tourner, et l'engrenage des raccourcis règle tout.")
     end
 end)
 
@@ -455,10 +496,19 @@ SlashCmdList.WOLKARAMOBILE = function(message)
         ns.SetEditing(not ns.editing)
     elseif command == "reset" then
         if InCombatLockdown() then ns.Print("pas en combat."); return end
-        local wheels = ns.db.wheels
+        local old = ns.db
         WolkaraRoueDB = nil
         LoadSettings()
-        for i = 1, ns.MAX_WHEELS do ns.db.wheels[i].entries = wheels[i] and wheels[i].entries or {} end
+        for i = 1, ns.MAX_WHEELS do ns.db.wheels[i].entries = old.wheels[i] and old.wheels[i].entries or {} end
+        -- Les sorts des roues qui tournent restent aussi, à leur place dans la roue.
+        for _, key in ipairs({ "free", "freeLeft" }) do
+            for index, button in pairs(old[key].buttons) do
+                if type(button) == "table" and button.entry and ns.db[key].buttons then
+                    ns.db[key].buttons[index] = { entry = button.entry }
+                    ns.db[key].count = math.max(ns.db[key].count, math.min(index, ns.MAX_FREE))
+                end
+            end
+        end
         ns.db.welcomed = true
         ns.MarkChanged()
         ns.Layout(); ns.Refresh()

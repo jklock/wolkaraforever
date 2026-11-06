@@ -3,7 +3,9 @@
 -- against stand-ins for their frames: the finger's angle they compute without a maths library
 -- is compared with the real one; a swipe that starts on a spell turns the wheel by the right
 -- number of notches and does not cast that spell; a touch casts it; nothing else is caught, so
--- a drag beside the spells stays the camera's; and in arc mode the snippets do nothing.
+-- a drag beside the spells stays the camera's; and in arc mode the snippets do nothing. The left
+-- wheel is the right one in a mirror: positions turned left for right, the same secure angle
+-- seen from its own corner, the same turning; and neither wheel draws a disc or a shadow.
 --
 -- usage: luajit test_mobile_addon_turn.lua <path to Turn.lua>
 
@@ -170,4 +172,63 @@ assert(Swipe(3, 120, 1.6) == nil and band:GetAttribute("offset") == 0)
 buttons[4].hooks.OnMouseDown()
 assert(band.scripts.OnUpdate() == nil and At(0))
 
-print(string.format("mobile add-on turning wheel: secure angle within %.2f deg; swipe on a spell turns without casting, touch casts, nothing else caught, arc mode inert: PASS", worst))
+-- The left wheel: the right one in a mirror, in the bottom-left corner. Nothing is drawn for
+-- either wheel (the right one used to lay a dark disc over the corner).
+local left
+for _, frame in ipairs(frames) do if frame.name == "WolkaraMobileTurnLeft" then left = frame end end
+assert(left and left.points[1] == "BOTTOMLEFT" and left.mouse == false, "the left wheel's band")
+assert(band.disc == nil and left.disc == nil, "a wheel still draws its shadow")
+ns.db.freeLeft = { count = 12, scale = 100, spread = 100, turn = true, turnOffset = 0 }
+local lefts = {}
+for i = 1, 12 do lefts[i] = Frame("WolkaraMobileFreeLeft" .. i) end
+Turn:Attach(lefts, "left")
+local wrappedBefore = wrapCalls
+Turn:Layout()
+assert(wrapCalls == wrappedBefore + 36 and left.shown and left:GetAttribute("turning") == true)
+assert(left:GetAttribute("mirror") == true and left:GetAttribute("corner") == "BOTTOMLEFT")
+local function AtLeft(offset)
+    for i = 1, 12 do
+        local x, y = Where(lefts[i]); local ex, ey = Expected(i, offset)
+        if lefts[i].points[3] ~= "BOTTOMLEFT" or math.abs(x + ex) > 1e-6 or math.abs(y - ey) > 1e-6 then return false end
+    end
+    return true
+end
+assert(AtLeft(0), "the left spells are not the mirror of the right ones")
+local function RunLeft(button, script) return button.wraps[script].run(button, left) end
+
+-- Its secure angle, seen from its own corner and turned in the mirror.
+local worstLeft, leftSize = 0, left:GetAttribute("size")
+for fx = 0.02, 0.98, 0.04 do
+    for fy = 0.02, 0.98, 0.04 do
+        left.GetMousePosition = function() return fx, fy end
+        RunLeft(lefts[1], "OnMouseDown")
+        local exact = math.deg(math.atan2(fy * leftSize, -fx * leftSize))
+        worstLeft = math.max(worstLeft, math.abs(left:GetAttribute("downangle") - exact))
+    end
+end
+assert(worstLeft < 0.4, "the left secure angle is off by " .. worstLeft .. " degrees")
+
+-- In combat: a swipe along the left wheel turns it by the rounded notches and does not cast; a
+-- touch casts. The right wheel, in arc mode, stays as it is.
+local function SwipeLeft(spell, from, steps)
+    local function at(angle) local a = math.rad(angle); return -math.cos(a) * 0.6, math.sin(a) * 0.6 end
+    left.GetMousePosition = function() return at(from) end; RunLeft(lefts[spell], "OnMouseDown")
+    left.GetMousePosition = function() return at(from + steps * step) end; RunLeft(lefts[spell], "OnMouseUp")
+    return RunLeft(lefts[spell], "OnClick")
+end
+combat = true
+assert(SwipeLeft(3, 120, 1.6) == false and left:GetAttribute("offset") == 2 and AtLeft(2), "the left wheel did not turn")
+assert(SwipeLeft(3, 130, 0.2) == nil and left:GetAttribute("offset") == 2 and AtLeft(2))
+handlers.PLAYER_REGEN_ENABLED()
+assert(ns.db.freeLeft.turnOffset == 2 and ns.db.free.turnOffset == 0)
+combat = false
+
+-- Out of combat its spells follow the finger in the mirror, then settle on the notch.
+local function CursorLeft(angle) local a = math.rad(angle); cursor = { -math.cos(a) * 200, math.sin(a) * 200 } end
+CursorLeft(110); lefts[4].hooks.OnMouseDown()
+CursorLeft(110 + step * 0.5); left.scripts.OnUpdate()
+assert(AtLeft(2.5), "the left spells did not follow the finger")
+lefts[4].hooks.OnMouseUp()
+assert(AtLeft(2) and ns.db.freeLeft.turnOffset == 2 and lefts[4].swiped == true)
+
+print(string.format("mobile add-on turning wheels: secure angle within %.2f deg (left %.2f); swipe on a spell turns without casting, touch casts, nothing else caught, arc mode inert, left is the mirror, no shadow: PASS", worst, worstLeft))

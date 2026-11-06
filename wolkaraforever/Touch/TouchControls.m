@@ -653,7 +653,10 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     [NSRunLoop.mainRunLoop addTimer:_toolbarCollapseTimer forMode:NSRunLoopCommonModes];
 }
 
-// Place the toolbar from the host's own bounds: centred horizontally, just below the top.
+// Place the toolbar from the host's own bounds: centred horizontally, at the bottom of the
+// screen, between the thumbs, where a phone player reaches it (asked for on the iPhone Duo,
+// 2026-11-06). While the keyboard is up it goes back just below the top: the keyboard and the
+// draft editor above it take the bottom, and the keyboard button is how typing is closed.
 //
 // Measured on the device: centring on host.safeAreaLayoutGuide put the toolbar 103pt right of
 // the screen centre, so the guide is not the screen here. The bounds are. Frame placement
@@ -674,13 +677,14 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     static unsigned logged;
     CGFloat width = _toolbarCollapsed ? 96 : 304, height = _toolbarCollapsed ? 34 : 44;
     CGRect bounds = host.bounds;
-    self.frame = CGRectMake(floor((bounds.size.width - width) / 2),
-                            host.safeAreaInsets.top + 8, width, height);
+    CGFloat y = self.keyboardVisible ? host.safeAreaInsets.top + 8
+                                     : bounds.size.height - host.safeAreaInsets.bottom - 8 - height;
+    self.frame = CGRectMake(floor((bounds.size.width - width) / 2), y, width, height);
     if (logged < 3) {
         logged++;
-        AKLog(@"toolbar host bounds=%.0fx%.0f insets top=%.0f left=%.0f placed x=%.0f centre=%.0f (screen centre %.0f)",
+        AKLog(@"toolbar host bounds=%.0fx%.0f insets top=%.0f left=%.0f bottom=%.0f placed x=%.0f y=%.0f centre=%.0f (screen centre %.0f)",
               bounds.size.width, bounds.size.height, host.safeAreaInsets.top, host.safeAreaInsets.left,
-              self.frame.origin.x, CGRectGetMidX(self.frame), bounds.size.width / 2);
+              host.safeAreaInsets.bottom, self.frame.origin.x, y, CGRectGetMidX(self.frame), bounds.size.width / 2);
     }
 }
 
@@ -798,6 +802,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 }
 - (void)updateKeyboardButton {
     _composer.hidden = !self.keyboardVisible;
+    if (self.superview) [self placeToolbarInHost:self.superview];
     [self updateDraftButtons];
     [_keyboardButton setImage:[UIImage systemImageNamed:self.keyboardVisible ? @"keyboard.chevron.compact.down" : @"keyboard"] forState:UIControlStateNormal];
     _keyboardButton.accessibilityLabel = self.keyboardVisible ? AKHostLocalized(@"touch.keyboard.hide") : AKHostLocalized(@"touch.keyboard.show");
