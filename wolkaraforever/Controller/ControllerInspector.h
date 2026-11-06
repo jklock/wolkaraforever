@@ -13,8 +13,14 @@
 
 #import <Foundation/Foundation.h>
 #import <GameController/GameController.h>
+#import "../Input/InputInterest.h"
 
 NS_ASSUME_NONNULL_BEGIN
+
+// Posted when the stored diagnostics preference changes. The router listens, because the
+// interest snapshot is what actually turns the stream on and off, and the two classes must not
+// have to import each other to say so.
+FOUNDATION_EXPORT NSNotificationName const AKInputDiagnosticsDidChangeNotification;
 
 /// A controller's *model* identity: vendor and product category. This is what a mapping is
 /// remembered against, and it is deliberately not claimed to be per-device. GameController
@@ -43,6 +49,38 @@ FOUNDATION_EXPORT NSString *AKControllerIdentity(GCController *pad);
 
 // Show the same events in a small panel over the game. Off unless asked for.
 - (void)showPanel:(BOOL)visible;
+
+#pragma mark - What is worth reporting at all
+
+// The router owns this and replaces it whenever the user's choices change. Reading it allocates
+// nothing, so a GameController callback can ask it before it has done any work: no event
+// object, no main-queue block, no log write for an element nobody is interested in.
+//
+// Default: AKInputInterestModeNone. Until something asks for input, everything is ignored.
+@property (atomic, copy, nullable) AKInputInterest *interest;
+
+// Diagnostics, and the only thing that may turn an event into a log line.
+//
+// Off in ordinary play, and stored, so a relaunch does not silently switch it back on. The
+// 2026-11-04 device log held 25,316 log lines for one five-minute run with voice off, because
+// every inspected event was written - twice - whether or not anyone wanted it. With this off, a
+// mapped trigger still works; nothing else is recorded.
+@property (atomic) BOOL diagnosticsEnabled;
+
+// Whether the panel is on screen. The panel's history is only maintained while it is: without
+// this the inspector scheduled a main-queue block for a panel that was not there, once per
+// event.
+@property (atomic) BOOL panelVisible;
+
+// Aggregation-only measurements. These are not logs and they are not cleared by reading them.
+//   callbackTiming - time spent inside the GameController callback, before it dispatches.
+//   handoffTiming  - from the callback starting to the main-queue block beginning.
+@property (nonatomic, readonly) AKTimingSamples *callbackTiming;
+@property (nonatomic, readonly) AKTimingSamples *handoffTiming;
+@property (nonatomic, readonly) NSUInteger admittedEvents;
+@property (nonatomic, readonly) NSUInteger ignoredEvents;
+@property (nonatomic, readonly) NSUInteger coalescedEvents;
+- (void)resetDiagnostics;
 
 // Which device reported the event currently being delivered, and what kind of source
 // it was. Read from inside the `onInput` block: it is set for the duration of the

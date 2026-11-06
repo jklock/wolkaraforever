@@ -39,7 +39,7 @@ WolkaraForever has two language settings, and they are separate.
 - **App language** (`English`, `Deutsch`, or `System Default`) changes the labels, alerts, menus
   and spoken (VoiceOver) descriptions that WolkaraForever itself draws — including the in-game
   performance overlay and the on-screen keyboard. The change applies immediately; the app does
-  not have to be restarted. **System Default** follows the iPad's own preferred-language list, and
+  not have to be restarted. **System Default** follows the device's own preferred-language list, and
   uses German when that list prefers German, English otherwise.
 - **Game language** (the row above it) changes the text and audio World of Warcraft downloads. It
   is the setting described above, and it is the only one of the two that costs a download.

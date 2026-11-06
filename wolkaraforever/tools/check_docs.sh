@@ -16,6 +16,13 @@ import sys
 
 root = os.getcwd()
 skip_dirs = {"platform", "build", "logs", ".git", "node_modules", ".github"}
+# Restored history is evidence, not documentation: every file under
+# development/archive/history is the last committed version before its deletion, kept
+# byte-identical so a claim can be traced to the record it rested on. Their links point at
+# paths that were current when they were written, and editing them to satisfy this check
+# would destroy the thing that makes them worth keeping. The directory's own README explains
+# the rule; see development/architecture/RESTORATION_MATRIX.md for the audit behind it.
+skip_prefixes = (os.path.join("development", "archive", "history"),)
 
 md_files = []
 for dirpath, dirnames, filenames in os.walk(root):
@@ -23,6 +30,8 @@ for dirpath, dirnames, filenames in os.walk(root):
     parts = [] if rel_dir == "." else rel_dir.split(os.sep)
     dirnames[:] = [d for d in dirnames if d not in skip_dirs]
     if any(p in skip_dirs for p in parts):
+        continue
+    if any(rel_dir == prefix or rel_dir.startswith(prefix + os.sep) for prefix in skip_prefixes):
         continue
     for name in filenames:
         if name.lower().endswith(".md"):

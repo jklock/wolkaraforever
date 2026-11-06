@@ -48,3 +48,21 @@ void WKPresentWhenFree(UIViewController *controller, void (^presentation)(void))
 /// presents these pages as popups now; the push path is kept because the layer's
 /// tests drive it and because a page must never become undismissable.
 void WKDismissPage(UIViewController *page);
+
+/// The most of the presenting screen a popup may occupy, in each dimension.
+///
+/// A `UIAlertController` on iPad is a popover whose size UIKit chooses, and it never consults
+/// the app; the same sheet that reads well at 540 points spills past a narrower container.
+/// Measured in the fixture on 2026-10-22. Everything this app presents is therefore constrained
+/// explicitly: at most 85 % of the presenting view in each dimension, with equal margins on all
+/// four sides, and the constraint is re-applied when the container changes size so rotation and
+/// a Dynamic Type change cannot undo it.
+FOUNDATION_EXPORT CGFloat const WKPopupMaximumScreenFraction;   // 0.85
+
+/// Apply that bound to a controller that is already presented inside `container`, or is about
+/// to be. Safe to call more than once. Returns the frame it settled on.
+CGRect WKConstrainPopupToScreen(UIViewController *presented, UIView *container);
+
+/// Set the popover layout margins UIKit needs *before* presentation, so a popover never even
+/// briefly draws wider than the bound.
+void WKPreparePopupForPresentation(UIViewController *presented, UIView *container);

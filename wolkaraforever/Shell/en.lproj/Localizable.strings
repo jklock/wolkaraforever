@@ -30,15 +30,17 @@
 /* ---- Home page ---- */
 "home.settings" = "Settings";
 "home.refresh" = "Check for updates";
-"home.box.edition" = "Game Edition";
+"home.box.edition" = "Game Settings Manager";
+"home.edition.row" = "Game Edition: %@";
+"home.preferences.row" = "Region / Locale: %@ %@";
 "home.box.addons" = "Add-On Manager";
-"home.box.voice" = "Voice & Input Manager";
+"home.box.voice" = "Dictation (V2T) Manager";
 "home.box.profile" = "Performance Manager";
 "home.box.performance" = "UI Manager";
 
 "home.addons.install" = "Install Addons (Curse & Direct)";
 "home.addons.install.needsgame" = "Install Addons (Curse & Direct) (install game first)";
-"home.addons.macever" = "Download Mac-Ever";
+"home.addons.macever" = "Download Mac-Ever (Perf Optimization)";
 "home.addons.directory" = "Open Add-on Directory";
 "home.addons.directory.needsgame" = "Open Add-on Directory (install game first)";
 "home.voice.keys" = "Key / Button Configuration";
@@ -52,13 +54,11 @@
 "home.performance.overlay" = "Performance Overlay";
 "home.performance.renderProfile" = "Render profile: %@";
 "home.performance.deviceProfile" = "Device profile: %@";
-"home.performance.restoreDefaults" = "Restore performance defaults";
 "home.render.performance" = "Performance";
 "home.render.balanced" = "Balanced";
 "home.render.quality" = "Quality";
 "home.diagnostics" = "Diagnostics and logs";
 "home.updates.note" = "Updates automatically. Keep this app open while downloading.";
-"home.compatibility.unverified" = "Compatibility with this edition is not yet verified.";
 
 "home.status.running" = "Running";
 "home.status.running.detail" = "The game is open. Quit from its own menu to return here.";
@@ -110,10 +110,6 @@
 "home.version.upToDate" = "Version %@ · Checked %@";
 "home.version.compare" = "Installed %@ · Available %@";
 
-"home.startup.developerService" = "Starting can take a few minutes each time.";
-"home.startup.localSigning" = "Startup requires a signed container matching this version.";
-"home.startup.externalJIT" = "Enable JIT before starting a new session.";
-"home.startup.unavailable" = "This build cannot start the game. See Diagnostics and logs.";
 
 "home.edition.title" = "Choose your edition";
 "home.preferences.title" = "Download preferences";
@@ -131,9 +127,10 @@
 
 "home.settings.title" = "Settings";
 "home.settings.message" = "Updates install automatically while this app is open. Settings and addons are preserved. Startup preparation is separate from downloading updates.";
-"home.settings.manageAddons" = "Manage add-ons";
 "home.settings.repair" = "Verify and repair game files";
 "home.settings.diagnostics" = "Diagnostics and logs";
+"home.settings.inputDiagnosticsOn" = "Turn on input diagnostics";
+"home.settings.inputDiagnosticsOff" = "Turn off input diagnostics";
 "home.settings.about" = "About and open-source licenses";
 "home.settings.technical" = "Technical details";
 "home.settings.details.title" = "Details";
@@ -175,16 +172,14 @@
 "home.render.confirm.title" = "Above the recommendation";
 "home.render.confirm.message" = "%1$@ renders at %2$@ on %3$@, which is more than this profile recommends. It was measured missing the frame budget there.";
 "home.render.confirm.yes" = "Use %@";
-"home.performance.restoreDefaults.title" = "Performance defaults restored";
-"home.performance.restoreDefaults.message" = "%@ is now in use again. Nothing in the game's own settings was changed.";
 "home.profile.title" = "Device profile";
-"home.profile.message" = "This iPad is %@. Automatic uses the profile that was measured for it; another device can be chosen to compare, and it is labelled as a preview everywhere it appears.";
+"home.profile.message" = "This device is %@. Automatic uses the profile that was measured for it; another device can be chosen to compare, and it is labelled as a preview everywhere it appears.";
 "home.profile.automatic" = "Automatic (recommended) — %@";
 "home.profile.automaticRow" = "Automatic — %@";
 "home.profile.overrideRow" = "Preview — %@";
 "home.profile.unknown" = "this device (unrecognised)";
 "home.profile.override.title" = "Preview profile";
-"home.profile.override.message" = "%1$@ is not this iPad (%2$@). It is kept for comparison, and rendering follows that profile's safe scale.";
+"home.profile.override.message" = "%1$@ is not this device (%2$@). It is kept for comparison, and rendering follows that profile's safe scale.";
 "home.addons.unavailable.title" = "Add-ons unavailable";
 "home.addons.unavailable.message" = "The game's folder could not be opened.";
 "home.addons.unavailable.reason" = "The game's folder could not be opened: %@";
@@ -440,7 +435,7 @@
 "addons.loading" = "Loading CurseForge…";
 "addons.loadingCategories" = "Loading CurseForge categories…";
 "addons.noCategories" = "CurseForge returned no add-on categories.";
-"addons.projectsShown" = "%lu of %lu projects · Forever compatibility is verified at install";
+"addons.projectsShown" = "%lu of %lu projects · compatibility is advisory, not a gate";
 "addons.projectsOfShown" = "%lu of %lu projects shown";
 "addons.by" = "By %@";
 "addons.downloads" = "%@ downloads on CurseForge";
@@ -457,7 +452,7 @@
 "addons.error.importMessage" = "The downloaded archive could not be imported.";
 "addons.installedStatus" = "Installed %@. Forever compatibility was verified from its TOC.";
 "addons.installed" = "Installed";
-"addons.installed.footer" = "Existing add-ons are preserved. WolkaraForever only removes package folders it installed and recorded.";
+"addons.installed.footer" = "Remove any listed add-on from this device. Removing an add-on deletes its package folder.";
 "addons.setUpAccess" = "Set up CurseForge access";
 "addons.setUpAccess.detail" = "Enter an approved Core API key to search and install from CurseForge.";
 "addons.key.title" = "CurseForge API key";
@@ -470,9 +465,8 @@
 "addons.count.other" = "%lu add-ons installed";
 "addons.count.none" = "No add-ons installed";
 "addons.state.disabled" = "Disabled";
-"addons.state.managed" = "Compatible · managed";
+"addons.state.managed" = "Managed";
 "addons.state.unverified" = "Unverified · existing";
-"addons.state.pinned" = " · pinned";
 "addons.restore" = "Restore";
 "addons.disable" = "Disable";
 "addons.source.existing" = "Existing";
@@ -480,6 +474,43 @@
 "addons.source.zip" = "Imported from ZIP";
 "addons.version.unknown" = "Unknown version";
 
+"addons.refreshing" = "Refreshing from CurseForge…";
+"addons.filters.forever" = "Forever (%@)";
+"addons.action.install" = "Install";
+"addons.action.installing" = "Installing…";
+"addons.action.installed" = "Installed";
+"addons.action.unavailable" = "Unavailable";
+"addons.action.retry" = "Retry";
+"addons.action.update" = "Update";
+"addons.action.updating" = "Updating…";
+"addons.action.upToDate" = "Up to date";
+"addons.select.one" = "Select this add-on";
+"addons.select.on" = "Selected";
+"addons.select.off" = "Not selected";
+"addons.select.all" = "Select All";
+"addons.select.clear" = "Clear";
+"addons.select.summary" = "%lu selected · %lu updatable";
+"addons.select.updateSelected" = "Update Selected";
+"addons.updateAll" = "Update All";
+"addons.update.selectedTitle" = "Update the selected add-ons?";
+"addons.update.allTitle" = "Update every add-on that has a newer file?";
+"addons.update.confirm" = "These packages will be replaced:
+• %@";
+"addons.update.none" = "Nothing is available to update.";
+"addons.update.partialFailure" = "%lu package(s) could not be updated. The others were updated.";
+"addons.update.working" = "Updating %@…";
+"addons.update.workingMany" = "Updating…";
+"addons.update.noProvider" = "This package has no CurseForge identity, so it cannot be updated from the provider.";
+"addons.installedUnverified" = "Installed %@. Its TOC does not declare Forever's interface version, so it is marked unverified. It is installed and usable.";
+"addons.state.pinnedShort" = "pinned";
+"addons.state.notVerifiedForForever" = "not verified for Forever";
+"addons.manage.note" = "Only this managed package can be changed. Existing folders are left alone.";
+"addons.manage.disabledNote" = "This package is stored privately and is not visible to World of Warcraft.";
+"addons.pin" = "Pin this version";
+"addons.unpin" = "Allow updates again";
+"addons.remove" = "Remove from device";
+"addons.action.manage" = "Manage";
+"addons.manage.unmanaged" = "This existing add-on will be removed from this device.";
 /* ---- Voice and dictation ---- */
 "voice.title" = "Key / Button Configuration";
 "voice.test.title" = "Test Voice";

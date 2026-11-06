@@ -1,10 +1,10 @@
 # WolkaraForever project map
 
-> **Current as of 2026-10-30 · branch `main`.**
+> **Current as of 2026-11-05 · branch `liveupdates-11042026`.**
 
 WolkaraForever is a WoW-focused product layer over Tolkara. Tolkara supplies the runtime,
 translation adapters, authorization, and generic launcher foundation; WolkaraForever supplies
-the branded launcher, Forever lifecycle, usable iPad input, user-data protection, performance
+the branded launcher, Forever lifecycle, usable iPad and iPhone input, user-data protection, performance
 observability, and safe device workflows.
 
 ## Assembly model
@@ -29,7 +29,7 @@ cross-module reach-in. Never edit `platform/` directly.
 | `Shell/` | Branded app shell and lifecycle | WolkaraForever branding, theme, icon, configuration recovery, redacted logging, execution-mode glue, app self-tests, the app's own language service and its `en`/`de` string tables. |
 | `WoW/` | Forever client lifecycle | CDN metadata, install/update/verify/resume, CASC handling, edition/region/locale choices, safe update lock, launcher UI. |
 | `WoW/` add-ons and UI | User-owned game files | Validated archive import, managed package state, device-Keychain CurseForge credentials, browse/download, UI backup/restore, graphics-only reset, locale and `GamePadEnable` writes. |
-| `Touch/` | iPad game interaction | In-game toolbar, trackpad, keyboard/draft path, on-screen gamepad, layout editor, haptics, performance overlay. |
+| `Touch/` | On-device game interaction | In-game toolbar, trackpad, keyboard/draft path, on-screen gamepad, layout editor, haptics, performance overlay. |
 | `Input/`, `Controller/`, `Voice/` | User-triggered input | Physical-controller inspection/routing, learned button/key triggers, Hold/Toggle dictation, speech lifecycle, Test Voice, permission flow, focused-field insertion. |
 | `Bridge/` | Product hooks into the platform | Background frame pacing, local-service retry, and product-owned integration hooks. |
 | `CoreAudio/` | Audio adapter support | Product test coverage for the host playback lease. |

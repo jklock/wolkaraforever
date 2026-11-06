@@ -3,18 +3,17 @@
 #import "InputRouter.h"
 
 #import "../App/WolkaraForeverLog.h"
+#import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
 
-// Both channels; see ControllerInspector.m for why.
-#if __has_include("AKSupport.h")
-#import "AKSupport.h"
-#define AKIRLog(...) do { AKLog(__VA_ARGS__); WKLog("input", __VA_ARGS__); } while (0)
-#else
-#define AKIRLog(...) do { NSLog(@"[ak] %@", [NSString stringWithFormat:__VA_ARGS__]); WKLog("input", __VA_ARGS__); } while (0)
-#endif
+// One sink, for the same reason as the inspector's: `AKLog` and `WKLog` both reach the same
+// file on device, so writing to both put every line there twice.
+#define AKIRLog(...) WKLog("input", __VA_ARGS__)
 
 #import "../Controller/ControllerInspector.h"
 #import "../Voice/VoiceSettings.h"
 #import "InputElement.h"
+#import "InputInterest.h"
 
 NSNotificationName const AKInputRouterLearningDidExpireNotification = @"AKInputRouterLearningDidExpire";
 
@@ -51,6 +50,30 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
 @implementation AKInputElementState
 @end
 
+// Read-write inside this file; the header exposes them read-only. `interest` is atomic so a
+// GameController callback on another thread sees one whole snapshot, never a half-replaced one.
+@interface AKInputRouter ()
+@property (atomic, copy, readwrite) AKInputInterest *interest;
+@property (atomic, strong, readwrite) AKTimingSamples *pointerTiming;
+@property (nonatomic) NSTimeInterval pointerStart;
+@end
+
+// A display link needs an object to send its selector to; a block would be tidier and this is
+// the smallest thing that works without one.
+@interface AKPointerTickBox : NSObject
+@property (nonatomic, copy) void (^block)(void);
++ (instancetype)boxWithBlock:(void (^)(void))block;
+- (void)tick:(CADisplayLink *)link;
+@end
+@implementation AKPointerTickBox
++ (instancetype)boxWithBlock:(void (^)(void))block {
+    AKPointerTickBox *box = [AKPointerTickBox new];
+    box.block = block;
+    return box;
+}
+- (void)tick:(CADisplayLink *)link { (void)link; if (self.block) self.block(); }
+@end
+
 @implementation AKInputRouter {
     NSMutableDictionary<NSString *, AKInputElementState *> *_states;  // "device|element"
     NSMutableSet<NSString *> *_down;                                  // "device|element", for chords
@@ -74,8 +97,78 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
         _states = [NSMutableDictionary dictionary];
         _down = [NSMutableSet set];
         _learningTimeout = 20.0;
+        self.interest = [AKInputInterest none];
+        self.pointerTiming = [AKTimingSamples new];
     }
     return self;
+}
+
+#pragma mark - What is worth reporting at all
+
+// The snapshot the inspector asks about, rebuilt whenever the answer can have changed.
+//
+// The order matters: diagnostics admits everything (so an engineer sees the stream), an armed
+// learner admits presses (so the user can choose a button), and otherwise only a mapped element
+// exists at all. With voice off there is no mapping, so nothing is admitted - which is the state
+// the app spends almost all of its time in.
+- (void)refreshInterest {
+    AKAssertInputQueue();
+    AKInputInterest *snapshot;
+    AKControllerInspector *inspector = AKControllerInspector.shared;
+    if (inspector.diagnosticsEnabled) {
+        snapshot = [AKInputInterest diagnostic];
+    } else if (_learning) {
+        snapshot = [AKInputInterest learning];
+    } else if (!AKVoiceSettings.shared.enabled) {
+        snapshot = [AKInputInterest none];
+    } else {
+        NSMutableSet<NSString *> *elements = [NSMutableSet set];
+        // Every mapping that could apply: one keyed to a specific pad, and the one keyed to any
+        // device. Being generous here is the safe direction - the router still checks the exact
+        // trigger before it fires, and a mapped button that never arrives is dictation that
+        // silently does not work.
+        AKTrigger *any = [AKVoiceSettings.shared triggerForDevice:nil];
+        if (any.element.length) [elements addObject:any.element];
+        for (GCController *pad in GCController.controllers) {
+            AKTrigger *trigger = [AKVoiceSettings.shared triggerForDevice:AKControllerIdentity(pad)];
+            if (trigger.element.length) [elements addObject:trigger.element];
+        }
+        snapshot = elements.count ? [AKInputInterest mappedWithElements:elements] : [AKInputInterest none];
+    }
+    self.interest = snapshot;
+    inspector.interest = snapshot;
+}
+
+#pragma mark - Pointer latency
+
+// Pointer dispatch to the next opportunity to draw.
+//
+// This is not the Metal present timestamp - the performance overlay owns that number, from the
+// adapter. It is the interval from the moment a pointer event reaches this app to the moment the
+// display link that drives its UI ticks next, which is the upper bound on when that event could
+// first have been on screen. It costs one display link while at most one pointer event is
+// outstanding and nothing at all when no pointer is moving.
+- (void)notePointerEvent {
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    @synchronized (self) {
+        if (_pointerStart > 0) {
+            // A second event inside the same window measures the same frame; only the first
+            // one is the interesting interval.
+            return;
+        }
+        _pointerStart = now;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        __block CADisplayLink *link = nil;
+        link = [CADisplayLink displayLinkWithTarget:[AKPointerTickBox boxWithBlock:^{
+            NSTimeInterval end = NSProcessInfo.processInfo.systemUptime;
+            NSTimeInterval start;
+            @synchronized (self) { start = self->_pointerStart; self->_pointerStart = 0; }
+            if (start > 0 && end >= start) [self->_pointerTiming record:(end - start) * 1000.0];
+            [link invalidate];
+        }] selector:@selector(tick:)];
+        [link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    });
 }
 
 - (BOOL)learning { return _learning; }
@@ -115,7 +208,11 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
     // ours to hold. This is the only place that decides it.
     [center addObserver:self selector:@selector(applyMappings)
                    name:AKVoiceSettingsDidChangeNotification object:nil];
+    // Switching diagnostics on or off changes what may reach the router at all.
+    [center addObserver:self selector:@selector(refreshInterest)
+                   name:AKInputDiagnosticsDidChangeNotification object:nil];
     [self applyMappings];
+    [self refreshInterest];
     AKIRLog(@"input: router watching every source");
 }
 
@@ -127,6 +224,7 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
 - (void)padConnected:(NSNotification *)notification {
     AKIRLog(@"input: %@", notification.name);
     [self applyMappings];
+    [self refreshInterest];
 }
 
 // A pad leaving does disarm it: the element that was being learned no longer exists.
@@ -134,6 +232,7 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
     AKIRLog(@"input: %@", notification.name);
     [self cancelLearning];
     [self applyMappings];
+    [self refreshInterest];
 }
 
 #pragma mark - Which system gestures are ours to hold
@@ -145,6 +244,7 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
     // user actually asked for. Any other order leaves a gesture released for a mapping
     // that no longer exists, or for a feature that is switched off.
     [inspector restoreAllSystemGestures];
+    [self refreshInterest];
     if (!AKVoiceSettings.shared.enabled) return;
 
     for (GCController *pad in GCController.controllers) {
@@ -187,6 +287,7 @@ static NSTimeInterval const AKLearningTimeoutDefault = 20.0;
     _learning = YES;
     _learningDevice = nil;
     _learningGeneration++;
+    [self refreshInterest];
     NSUInteger generation = _learningGeneration;
     NSTimeInterval timeout = _learningTimeout > 0 ? _learningTimeout : AKLearningTimeoutDefault;
     AKIRLog(@"input: learning — press the button you want to use");
@@ -212,6 +313,7 @@ static NSTimeInterval const AKLearningTimeoutDefault = 20.0;
     _learningDevice = nil;
     // Bumped so the outstanding deadline cannot fire against a later arming.
     _learningGeneration++;
+    [self refreshInterest];
     [AKControllerInspector.shared endReleasingForLearning];
     AKIRLog(@"input: learning cancelled; nothing was saved");
 }
@@ -225,6 +327,7 @@ static NSTimeInterval const AKLearningTimeoutDefault = 20.0;
                source:(AKInputSource)source {
     AKAssertInputQueue();
     if (!element.length) return;
+    if (source == AKInputSourceMouse || source == AKInputSourceTouchpad) [self notePointerEvent];
 
     AKInputEvent *event = [AKInputEvent new];
     event.source = source;
@@ -247,6 +350,7 @@ static NSTimeInterval const AKLearningTimeoutDefault = 20.0;
         _learningDevice = event.device;
         // The deadline that was armed for this mapping has nothing left to do.
         _learningGeneration++;
+        [self refreshInterest];
         // The mapped element keeps its release - applyMappings decides that - and everything
         // else that was lent out goes back to the system.
         [AKControllerInspector.shared endReleasingForLearning];

@@ -58,6 +58,11 @@ A passing layer gate proves assembly and upstream identity. It does not prove th
 the renderer works, or hardware input works. Simulator, source, and physical-device evidence
 must be reported separately.
 
+A simulator result counts only if it ran on one of the two matrix simulators — **iPhone Duo** or
+**iPad Pro 13-inch (M5)** — and a device result only if it ran on the **iPad Pro 12.9-inch
+(5th generation)**. Those three are the whole test matrix; the tools refuse anything else. Name
+the device in the report.
+
 ## Exact-SHA evidence and releases
 
 Run `wolkaraforever/tools/validate.sh` on a clean candidate after code is committed. It writes

@@ -9,9 +9,9 @@
 **World of Warcraft Forever on iPad, running locally through Tolkara.**
 
 WolkaraForever is a focused product layer for WoW Forever. It downloads, verifies, updates,
-and starts the client on the iPad, then supplies the launcher, touch and controller interface,
+and starts the client on an iPad or iPhone, then supplies the launcher, touch and controller interface,
 voice input, add-on tooling, UI recovery, and diagnostics around it. It is not streamed from a
-Mac. You provide the iPad, Apple development account, eligible WoW account, and game data;
+Mac. You provide the device (iPad or iPhone), Apple development account, eligible WoW account, and game data;
 this repository includes none of them.
 
 ## Credit and lineage
@@ -39,7 +39,7 @@ The upstream history, MIT licence, and third-party notices are retained. See
 | Area | Current behavior |
 | --- | --- |
 | **Forever lifecycle** | Select Forever, a Blizzard CDN region, and English, Spanish, or German game language; download, resume, verify, repair, update, and start the selected client. A language change writes both game locale settings and requires selected-language files before Play is available. |
-| **App language** | Read the launcher in English or German, or follow the iPad's preferred language. It applies without a relaunch to every label, alert, menu, accessibility string and status line — including the in-game overlay and touch keyboard — and the first German selection offers once to put the *game* into German. Game and app language are separate settings; see the [user guide](docs/USING_WOLKARAFOREVER.md#app-language). |
+| **App language** | Read the launcher in English or German, or follow the device's preferred language. It applies without a relaunch to every label, alert, menu, accessibility string and status line — including the in-game overlay and touch keyboard — and the first German selection offers once to put the *game* into German. Game and app language are separate settings; see the [user guide](docs/USING_WOLKARAFOREVER.md#app-language). |
 | **Data integrity** | Reuses verified unchanged game data and stages updates so a partial replacement does not become a playable-looking broken installation. The original executable remains verified data, never a patched or re-signed repository artifact. |
 | **Add-ons** | Browse installed packages, import a validated archive, open the add-on directory, and manage only packages the app recorded. CurseForge browsing/download uses an approved Core API key stored in the device Keychain. |
 | **UI protection** | Create verified backups of `WTF` and `Interface`, restore through staging and a recovery journal, reset only graphics/display CVars, and write only `GamePadEnable` for the game's native gamepad UI switch. |
@@ -98,8 +98,8 @@ The translation layer adapts macOS APIs to iPadOS where the operating systems di
 
 - **AppKit** becomes UIKit-backed application, window, event, pointer, keyboard, text, cursor,
   image, menu, alert, screen, and nib behavior.
-- **Metal** uses the iPad GPU. Shader libraries are validated and rewrapped around unchanged AIR
-  bitcode for the iPad's compiler; unsupported shader input stops with a diagnostic rather than
+- **Metal** uses the device GPU. Shader libraries are validated and rewrapped around unchanged AIR
+  bitcode for the target device's compiler; unsupported shader input stops with a diagnostic rather than
   silently substituting graphics work.
 - **Audio, display, keyboard-layout, Security, and related APIs** are bridged to the appropriate
   iPadOS frameworks or narrowly implemented where required.
@@ -114,7 +114,7 @@ service.
 
 | Mode | Mechanism | Boundary |
 | --- | --- | --- |
-| **Developer service** | The app's tunnel reaches the iPad developer service to prepare a bounded memory region, verifies it, and confirms debugger detachment before guest bytes are copied or run. | The tunnel carries one private route; pairing material stays in the device-only Keychain. No game code is signed. |
+| **Developer service** | The app's tunnel reaches the device's developer service to prepare a bounded memory region, verifies it, and confirms debugger detachment before guest bytes are copied or run. | The tunnel carries one private route; pairing material stays in the device-only Keychain. No game code is signed. |
 | **Local signing** | A locally built page container holds the final code pages and is signed with the user's own identity. The runtime verifies the container's size, header, load commands, and byte relationship to the executable before mapping pages. | The container is derived locally and remains ignored build/device output. No debugger is involved. |
 | **External JIT** | The unsigned generic Diagnostics build is signed by the user's sideloading tool; a JIT enabler prepares executable memory at launch. | Entry is refused while a debugger remains attached or the arena is not executable. This is an engineering route, not a general consumer install. |
 
@@ -150,7 +150,7 @@ not accept or provide:
 - bots, trainers, macros, or other gameplay automation; or
 - anti-cheat, licence, account, or integrity-check workarounds.
 
-The project does not hide the iPad, operating system, process state, or debugger status from the
+The project does not hide the device, operating system, process state, or debugger status from the
 client. Before guest entry, temporary debugger involvement used for memory preparation must be
 gone; nothing attaches afterwards. Use your own account and comply with the game's licence and
 service terms. Blizzard does not support or endorse this project, and successful execution is

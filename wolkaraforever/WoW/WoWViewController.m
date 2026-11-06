@@ -11,6 +11,8 @@
 #import "ForeverUI.h"
 #import "Updater.h"
 #import "../App/LaunchProgressView.h"
+#import "../Controller/ControllerInspector.h"
+#import "../Input/InputRouter.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 static UIColor *Gold(void) { return [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1]; }
@@ -151,11 +153,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSLayoutConstraint *_markWidth;
     UIStackView *_gridRow1, *_gridRow2, *_gridRow3, *_topRow;
     UIView *_gridSpacer;
-    UILabel *_stateLabel, *_detailLabel, *_versionLabel, *_startupLabel, *_compatibilityLabel;
+    UILabel *_stateLabel, *_detailLabel, *_versionLabel;
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_voiceTestButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
-        *_renderProfileButton, *_deviceProfileButton, *_restoreDefaultsButton;
+        *_renderProfileButton, *_deviceProfileButton;
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
@@ -211,20 +213,21 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _headings[identifier]=heading;
     UIStackView *stack=Stack([@[heading] arrayByAddingObjectsFromArray:rows],8);
     stack.translatesAutoresizingMaskIntoConstraints=NO;
-    // A box in the taller row is stretched to match its neighbour; without a
-    // spacer the extra height would be shared out among the rows and drift them
-    // apart. The spacer takes all of it, so the rows stay together at the top.
-    UIView *spacer=[UIView new];
-    spacer.accessibilityIdentifier=@"wow.box.spacer";
-    [spacer setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisVertical];
-    [spacer setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisVertical];
-    [stack addArrangedSubview:spacer];
     [box addSubview:stack];
+    // The rows decide the card's height. There used to be a flexible spacer at the foot of this
+    // stack, added so that a card stretched to match a taller neighbour kept its rows together at
+    // the top; that reserved blank space at the bottom of every card even when nothing needed it.
+    // The same result now comes from the bottom constraint: it is satisfied exactly while the
+    // card is its natural height, and gives way (priority 250) when a two-column row stretches
+    // the card, which leaves the rows where they were - at the top.
+    NSLayoutConstraint *exact=[stack.bottomAnchor constraintEqualToAnchor:box.bottomAnchor constant:-14];
+    exact.priority=250;
     [NSLayoutConstraint activateConstraints:@[
         [stack.topAnchor constraintEqualToAnchor:box.topAnchor constant:14],
         [stack.leadingAnchor constraintEqualToAnchor:box.leadingAnchor constant:16],
         [stack.trailingAnchor constraintEqualToAnchor:box.trailingAnchor constant:-16],
-        [stack.bottomAnchor constraintEqualToAnchor:box.bottomAnchor constant:-14],
+        [stack.bottomAnchor constraintLessThanOrEqualToAnchor:box.bottomAnchor constant:-14],
+        exact,
     ]];
     return box;
 }
@@ -326,7 +329,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _permissionsButton=[self button:@"wow.permissions" action:@selector(openPermissions)];
     _voiceButton=[self button:@"wow.voice" action:@selector(manageVoice)];
     _voiceTestButton=[self button:@"wow.voice.test" action:@selector(testVoice)];
-    _compatibilityLabel=Label(17,UIFontWeightRegular,Muted());
     _backupButton=[self button:@"wow.performance.backup" action:@selector(backupUI)];
     _resetButton=[self button:@"wow.performance.reset" action:@selector(resetGraphics)];
     _restoreButton=[self button:@"wow.performance.restore" action:@selector(restoreUI)];
@@ -336,7 +338,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         target:self action:@selector(overlayChanged:)];
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
-    _restoreDefaultsButton=[self button:@"wow.performance.restoreDefaults" action:@selector(restorePerformanceDefaults)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
 
     // Five sections, as boxes, in the order they are read. The compatibility note belongs to
@@ -346,13 +347,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // files, and keeping them apart is what makes either safe to press. Every word in them
     // comes from -localize, below, which is also what a language change runs.
     UIView *editionBox=[self sectionBoxWithIdentifier:@"wow.box.edition"
-        rows:@[_editionButton,_preferencesButton,_languageButton,_compatibilityLabel]];
+        rows:@[_editionButton,_preferencesButton,_languageButton]];
     UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
         rows:@[_addonsButton,_macEverButton,_addonsDirectoryButton]];
     UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
         rows:@[_permissionsButton,_voiceButton,_voiceTestButton]];
     UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
-        rows:@[_deviceProfileButton,_renderProfileButton,_restoreDefaultsButton,_overlayRow]];
+        rows:@[_deviceProfileButton,_renderProfileButton,_overlayRow]];
     // The retained card, narrower: Backup, Restore, Reset, Settings Folder, Gamepad - in the
     // order a person needs them when something has gone wrong.
     UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
@@ -383,8 +384,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _primaryButton=[self button:@"wow.primary" action:@selector(primaryAction)];
     [_primaryButton.heightAnchor constraintGreaterThanOrEqualToConstant:52].active=YES;
     _updatesLabel=Label(17,UIFontWeightRegular,Muted()); _updatesLabel.accessibilityIdentifier=@"wow.updates";
-    _startupLabel=Label(17,UIFontWeightRegular,Muted()); _startupLabel.accessibilityIdentifier=@"wow.startup";
-    UIStackView *right=Stack(@[status,_primaryButton,_updatesLabel,_startupLabel],12);
+    // Exactly one supporting line below Play in the idle state. The startup note that used to
+    // sit under it was a second line of passive copy on a page whose own status panel already
+    // says how starting works; it is gone rather than hidden, so nothing reserves space for it.
+    UIStackView *right=Stack(@[status,_primaryButton,_updatesLabel],12);
     // The top of the page: the mark on the left, what the launcher is doing and
     // the Play button on the right. The boxes go underneath both.
     UIStackView *top=[[UIStackView alloc] initWithArrangedSubviews:@[_markView,right]];
@@ -761,10 +764,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)render {
     if (!self.isViewLoaded) return;
-    [self configureButton:_editionButton title:[_product[@"name"] stringByAppendingString:@"  ▾"] filled:NO];
+    [self configureButton:_editionButton title:WKLocalizedFormat(@"home.edition.row",_product[@"name"]) filled:NO];
     _editionButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _editionButton.backgroundColor=[UIColor colorWithWhite:1 alpha:0.055]; _editionButton.layer.cornerRadius=10;
-    [self configureButton:_preferencesButton title:[NSString stringWithFormat:@"%@  ·  %@  ▾",_region.uppercaseString,TKWoWLocaleName(_locale)] filled:NO];
+    // Region and locale in one row, in the shape the request asked for: a prefix a reader can
+    // scan, then the two values. No centred dot and no bare "EU · English".
+    [self configureButton:_preferencesButton title:WKLocalizedFormat(@"home.preferences.row",_region.uppercaseString,TKWoWLocaleName(_locale)) filled:NO];
     _preferencesButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     // The app's own language. It reads in the same shape as the row above so the two are
     // seen as the two settings they are, and it says which language is in use rather than
@@ -830,22 +835,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_renderProfileButton title:WKLocalizedFormat(@"home.performance.renderProfile",[self renderProfileDescription]) filled:NO];
     _renderProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _renderProfileButton.enabled=preferencesIdle;
-    [self configureButton:_restoreDefaultsButton title:WKLocalized(@"home.performance.restoreDefaults") filled:NO];
-    _restoreDefaultsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    // Only offered when there is something to put back, so it cannot look like a reset for a
-    // page that is already at its defaults.
-    _restoreDefaultsButton.enabled=preferencesIdle && [self performanceSettingsAreCustomised];
-    _compatibilityLabel.text=([_product[@"id"] isEqual:@"wow"] || [_product[@"id"] isEqual:@"wow_beta"] || [_product[@"id"] isEqual:@"wow_classic"])?
-        WKLocalized(@"home.compatibility.unverified"):
-        @"";
-    _compatibilityLabel.hidden=!_compatibilityLabel.text.length;
     _editionButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _preferencesButton.enabled=_editionButton.enabled;
     _languageButton.enabled=_editionButton.enabled;
     self.navigationItem.rightBarButtonItem.enabled=!_updating && !_starting && !_running;
     _primaryButton.hidden=_starting || _running;
     _updatesLabel.hidden=_starting || _running;
-    _startupLabel.hidden=_starting || _running;
     _progressBar.hidden=!_updating || !_updateTotal;
     _progressBar.progress=_updateTotal?(float)((double)_updateDone/_updateTotal):0;
     NSString *title=nil, *detail=nil, *action=nil;
@@ -959,16 +954,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             WKLocalizedFormat(@"home.version.compare",_installation.installedVersion?:@"—",available);
     } else _versionLabel.text=nil;
     _versionLabel.hidden=!_versionLabel.text.length;
-    switch (_executionMode) {
-    case TKExecutionModeDeveloperService:
-        _startupLabel.text=WKLocalized(@"home.startup.developerService"); break;
-    case TKExecutionModeLocalSigning:
-        _startupLabel.text=WKLocalized(@"home.startup.localSigning"); break;
-    case TKExecutionModeExternalJIT:
-        _startupLabel.text=WKLocalized(@"home.startup.externalJIT"); break;
-    case TKExecutionModeNone:
-        _startupLabel.text=WKLocalized(@"home.startup.unavailable"); break;
-    }
 }
 // The launcher's own pages open over it rather than being pushed away to. The
 // columns behind stay where they are, closing one puts the user back on the page
@@ -1035,19 +1020,28 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.preferences.language") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:NO]; }]];
     [self presentSheet:sheet anchor:_preferencesButton];
 }
-- (void)settings {
+- (UIAlertController *)settingsSheet {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.title")
         message:WKLocalized(@"home.settings.message") preferredStyle:UIAlertControllerStyleActionSheet];
     if(!_busy && !_starting && !_sessionUsed && _installation.app) {
-        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.manageAddons") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-            (void)a; [self manageAddons];
-        }]];
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.repair") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             (void)a; [self repairInstallation];
         }]];
     }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.diagnostics") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a; [self diagnostics];
+    }]];
+    // Input diagnostics: the one switch that lets the controller inspector write anything at
+    // all during play. Off by default, stored, and off again after the next launch unless the
+    // user leaves it on - which is what makes "no controller-inspector event-log growth during
+    // ordinary play" a measurable statement rather than a hope.
+    BOOL inputDiagnostics=AKControllerInspector.shared.diagnosticsEnabled;
+    [sheet addAction:[UIAlertAction actionWithTitle:(inputDiagnostics?WKLocalized(@"home.settings.inputDiagnosticsOff"):WKLocalized(@"home.settings.inputDiagnosticsOn"))
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        (void)a;
+        AKControllerInspector.shared.diagnosticsEnabled=!inputDiagnostics;
+        [AKInputRouter.shared refreshInterest];
+        [AKControllerInspector.shared showPanel:!inputDiagnostics];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.about") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a; [self about];
@@ -1059,7 +1053,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [self presentMessage:WKLocalized(@"home.settings.details.title")
                      message:self->_startupFailure?:(self->_error?:self->_installation.error).localizedDescription];
     }]];
-    [self presentSheet:sheet anchor:nil];
+    return sheet;
+}
+- (void)settings {
+    [self presentSheet:[self settingsSheet] anchor:nil];
 }
 // Everything about dictation lives on its own screen: the button, the mode, and
 // what happens to the words afterwards.
@@ -1440,17 +1437,6 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
           device.identifier, [TKDeviceProfile currentModelIdentifier]?:@"unknown",
           [TKDeviceProfile nameForQuality:quality], scale);
 }
-- (BOOL)performanceSettingsAreCustomised {
-    if ([self deviceProfileOverrideIdentifier]) return YES;
-    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
-    TKDeviceProfile *device=[self selectedDeviceProfile];
-    NSNumber *stored=[TKDeviceProfile qualityForName:[defaults stringForKey:TKRenderProfileDefaultsKey]];
-    if (stored) return stored.integerValue!=[device recommendedQuality];
-    if ([defaults objectForKey:TKBackingScaleDefaultsKey])
-        return [TKDeviceProfile qualityForBackingScale:[defaults doubleForKey:TKBackingScaleDefaultsKey]]
-            !=[device recommendedQuality];
-    return NO;
-}
 // Which device this is, and which profile it is rendering with. An override is named as one on
 // every surface it appears on, because it is a comparison and not a claim about this iPad.
 - (void)chooseDeviceProfile {
@@ -1540,25 +1526,6 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
             message:WKLocalizedFormat(@"home.render.ready.message",title)];
     }]];
     [self presentSheet:sheet anchor:_renderProfileButton];
-}
-// The way back, and the only one that is not a choice between values: automatic for the device
-// we are actually on, with the quality that device was measured at. It removes this page's own
-// keys and writes the derived scale; the game's settings are not in its reach.
-- (void)restorePerformanceDefaults {
-    if (_busy || _starting || _running || _sessionUsed) return;
-    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
-    [defaults removeObjectForKey:TKDeviceProfileDefaultsKey];
-    [defaults removeObjectForKey:TKRenderProfileDefaultsKey];
-    TKDeviceProfile *device=[self thisDeviceProfile];
-    TKRenderQuality quality=device.recommendedQuality;
-    [defaults setObject:@([device backingScaleForQuality:quality]) forKey:TKBackingScaleDefaultsKey];
-    WKLog("ui", @"performance defaults: profile=%@ model=%@ quality=%@ scale=%.2f",
-          device.identifier, [TKDeviceProfile currentModelIdentifier]?:@"unknown",
-          [TKDeviceProfile nameForQuality:quality], [device backingScaleForQuality:quality]);
-    [self render];
-    [self presentMessage:WKLocalized(@"home.performance.restoreDefaults.title")
-        message:WKLocalizedFormat(@"home.performance.restoreDefaults.message",
-                                  TKRenderQualityTitle(device,quality))];
 }
 // Navigation only: the Files browser opens at Forever's WTF folder. The folder is
 // created only here, only for a ready Forever installation, and nothing else is.

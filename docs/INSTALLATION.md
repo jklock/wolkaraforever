@@ -1,17 +1,21 @@
 # Install WolkaraForever
 
-> **Current as of 2026-10-30 · branch `main`.**
+> **Current as of 2026-11-05 · branch `liveupdates-11042026`.**
 
 WolkaraForever is installed from source. It is not an App Store, TestFlight, or public-IPA
-release. The supported integrated route uses the iPad Developer service.
+release. The supported integrated route uses the device's Developer service, on an iPad or
+an iPhone. The behaviour contract for both form factors is
+[the supported-device contract](../development/architecture/DEVICE_CONTRACT.md), and the iPhone
+page is [iPhone support](IPHONE.md).
 
 ## Requirements
 
 - Apple-silicon Mac with current Xcode and command-line tools, XcodeGen, and Python 3.
 - A paid Apple Developer membership. The required tunnel and memory capabilities are not
   available to a Personal Team.
-- An unlocked iPad in Developer Mode that trusts the Mac and has sufficient free storage.
-  A Forever installation needs roughly 70 GB.
+- An unlocked device in Developer Mode that trusts the Mac and has sufficient free storage:
+an  iPad or an iPhone. A Forever installation needs roughly 70 GB, which in practice means an
+iPad.
 - Your own eligible WoW account. This repository contains no game files or account access.
 
 ## Configure the local build
@@ -30,15 +34,15 @@ Set the values requested in the ignored `local.env` file:
 DEVELOPMENT_TEAM=YOUR_TEAM_ID
 TOLKARA_BUNDLE_ID=your.unique.bundle.id
 TOLKARA_KEYCHAIN_GROUP=your.unique.bundle.id.authorization
-DEVICE=YOUR_CONNECTED_IPAD
+DEVICE=YOUR_CONNECTED_DEVICE
 ```
 
 Keep the bundle ID and Keychain group stable. They allow later builds to replace the app
 without erasing its data or enrollment. Never commit or share `local.env`.
 
-## Install on the iPad
+## Install on the device
 
-Keep the iPad unlocked and connected, then run:
+Keep the device unlocked and connected, then run:
 
 ```sh
 wolkaraforever/tools/preflight.sh
@@ -47,7 +51,11 @@ wolkaraforever/tools/install.sh
 
 The installer prepares the project, builds and signs it, installs the app, performs
 Developer-service enrollment when needed, verifies the installed bundle, and returns the
-app to its launcher. Approve any iPadOS pairing or tunnel prompt.
+app to its launcher. Approve any pairing or tunnel prompt.
+
+The same commands install on an iPhone. `wolkaraforever/tools/device_variables.sh --write`
+reads `DEVICE` from whichever device is attached, so a build that was aimed at an iPad does not
+silently overwrite the app on a phone or the other way round.
 
 The installer refuses to replace an active game session. Quit the game first, or explicitly
 request a clean stop:
@@ -91,9 +99,9 @@ Continue with [Using WolkaraForever](USING_WOLKARAFOREVER.md).
 
 | Problem | Action |
 | --- | --- |
-| Mac cannot see the iPad | Unlock and reconnect it, accept **Trust**, confirm Developer Mode, then rerun `device_variables.sh --write`. |
+| Mac cannot see the device | Unlock and reconnect it, accept **Trust**, confirm Developer Mode, then rerun `device_variables.sh --write`. |
 | App will not install | Run `preflight.sh` and inspect the exact Xcode signing error for both app targets. |
-| Enrollment or tunnel fails | Keep the iPad connected and unlocked, then rerun `install.sh`. |
+| Enrollment or tunnel fails | Keep the device connected and unlocked, then rerun `install.sh`. |
 | Play is unavailable | Let download or verification finish; use **Settings → Technical details** for the reason. |
 | Startup appears stalled | Keep the app foregrounded for several minutes. If it fails, reopen the app rather than deleting it. |
 

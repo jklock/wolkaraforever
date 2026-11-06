@@ -138,6 +138,8 @@ wolkaraforever/Voice/tests/test_voice_app.m tests/test_voice_app.m add
 # Input: any button, on any controller, in one stream (see docs/INPUT_TRIGGERS.md)
 wolkaraforever/Input/InputElement.h launcher/Input/InputElement.h add
 wolkaraforever/Input/InputElement.m launcher/Input/InputElement.m add
+wolkaraforever/Input/InputInterest.h launcher/Input/InputInterest.h add
+wolkaraforever/Input/InputInterest.m launcher/Input/InputInterest.m add
 wolkaraforever/Input/InputRouter.h launcher/Input/InputRouter.h add
 wolkaraforever/Input/InputRouter.m launcher/Input/InputRouter.m add
 wolkaraforever/Input/Trigger.h launcher/Input/Trigger.h add

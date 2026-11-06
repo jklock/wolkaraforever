@@ -8,12 +8,17 @@
 #import "SelfTest.h"
 #import "WolkaraForeverLog.h"
 #import "../WoW/ForeverUI.h"
+#import "../App/WolkaraForeverTheme.h"
+#import "../App/WKLocalization.h"
 #import "../WoW/WoWViewController.h"
 #import "../WoW/AddonCredentialStore.h"
+#import "../WoW/AddonManager.h"
+#import "../WoW/AddonStore.h"
 #import "../WoW/CurseForgeClient.h"
 #import <CommonCrypto/CommonDigest.h>
 #import "../Input/InputElement.h"
 #import "../Input/InputRouter.h"
+#import "../Controller/ControllerInspector.h"
 #import "../Input/Trigger.h"
 #import "../Voice/Dictation.h"
 #import "../Voice/AudioSessionCoordinator.h"
@@ -30,6 +35,9 @@ NSString *const AKSelfTestForeverUIClean = @"forever-ui-clean";
 NSString *const AKSelfTestRenderProfile = @"render-profile";
 NSString *const AKSelfTestCurseForge = @"curseforge";
 NSString *const AKSelfTestSpeechFile = @"speech-file";
+NSString *const AKSelfTestAddonsPage = @"addons-page";
+NSString *const AKSelfTestLanguage = @"language";
+NSString *const AKSelfTestLatency = @"latency";
 
 #pragma mark - Recording what happened
 
@@ -1076,6 +1084,259 @@ static void AKSelfTestRenderProfilePress(AKSelfTestRecorder *recorder, NSInteger
     AKSelfTestRenderProfileStage(recorder, page, defaults, scaleBefore, directory, configBefore);
 }
 
+// The Add-ons page, built and laid out on the device.
+//
+// The store is pointed at a temporary directory, so this never reads or writes the iPad's own
+// add-ons, never adopts a folder the user already had, and leaves nothing behind. What it does
+// prove is the part a compile cannot: that the page's own controls exist, that a package row and
+// the selection toolbar are built, and that nothing is drawn outside the table.
+static UIView *AKSelfTestFind(UIView *view, NSString *identifier) {
+    if ([view.accessibilityIdentifier isEqual:identifier]) return view;
+    for (UIView *child in view.subviews) {
+        UIView *found = AKSelfTestFind(child, identifier);
+        if (found) return found;
+    }
+    return nil;
+}
+
+static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:@"selftest-addons"];
+    [files removeItemAtPath:root error:NULL];
+    NSString *addons = [root stringByAppendingPathComponent:@"Interface/AddOns"];
+    NSString *folder = [addons stringByAppendingPathComponent:@"SelftestFixture"];
+    [files createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:NULL];
+    [[NSString stringWithFormat:@"## Title: Selftest Fixture\n## Version: 9.9\n## Interface: 11509\n"]
+        writeToFile:[folder stringByAppendingPathComponent:@"SelftestFixture.toc"]
+         atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    // A second package, recorded as managed by this app, so the row's own actions can be
+    // exercised. It is a fixture in a temporary directory: nothing on the iPad is read or
+    // changed, and the folder and the manifest are removed at the end.
+    NSString *ownedFolder = [addons stringByAppendingPathComponent:@"SelftestOwned"];
+    [files createDirectoryAtPath:ownedFolder withIntermediateDirectories:YES attributes:nil error:NULL];
+    [[NSString stringWithFormat:@"## Title: Selftest Owned\n## Version: 1\n## Interface: 16001\n"]
+        writeToFile:[ownedFolder stringByAppendingPathComponent:@"SelftestOwned.toc"]
+         atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    NSDictionary *manifest = @{ @"format": @2, @"version": @1, @"packages": @[
+        @{ @"identifier": @"SelftestOwned", @"uuid": @"selftest-owned", @"name": @"Selftest Owned",
+           @"version": @"1", @"source": @"zip", @"folders": @[@"SelftestOwned"],
+           @"pinned": @NO, @"disabled": @NO, @"tocInterface": @[@"16001"],
+           @"compatibility": @"verified" } ] };
+    NSData *manifestData = [NSJSONSerialization dataWithJSONObject:manifest options:0 error:NULL];
+    [manifestData writeToFile:[addons stringByAppendingPathComponent:@".wolkaraforever-addons.json"]
+                   atomically:YES];
+
+    TKWoWAddonManagerViewController *page =
+        [[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:addons edition:@"Forever"];
+    UIView *view = page.view;                      // loads the page
+    view.frame = CGRectMake(0, 0, 834, 1100);      // the iPad's portrait width
+    [view layoutIfNeeded];
+    [page.tableView layoutIfNeeded];
+
+    [recorder check:view != nil _:@"the Add-ons page builds and lays out"];
+    [recorder check:page.tableView.tableHeaderView.bounds.size.height > 100
+                   _:@"its header is built, which is where the toolbar lives"];
+    [recorder check:AKSelfTestFind(view, @"wow.addons.sort") != nil &&
+                   AKSelfTestFind(view, @"wow.addons.filters") != nil &&
+                   AKSelfTestFind(view, @"wow.addons.columns") != nil
+                    _:@"the Browse toolbar exists"];
+    [recorder check:AKSelfTestFind(view, @"wow.addons.selectAll") != nil &&
+                   AKSelfTestFind(view, @"wow.addons.clearSelection") != nil &&
+                   AKSelfTestFind(view, @"wow.addons.updateSelected") != nil &&
+                   AKSelfTestFind(view, @"wow.addons.updateAll") != nil
+                    _:@"the selection toolbar exists"];
+    [recorder check:AKSelfTestFind(view, @"wow.addons.refresh") != nil ||
+                   page.navigationItem.rightBarButtonItems.count >= 2
+                    _:@"the refresh control is on the bar"];
+
+    // A folder the user already had is shown and is not adopted: no provider identity, not
+    // managed, and unverified because its TOC names an older interface.
+    // The store is private to the page; the fixture reaches it the same way, by name.
+    TKAddonStore *store = [page valueForKey:@"store"];
+    TKAddonRecord *fixture = nil;
+    for (TKAddonRecord *record in store.records)
+        if ([record.identifier isEqual:@"SelftestFixture"]) fixture = record;
+    [recorder check:fixture != nil _:@"the existing folder is listed"];
+    [recorder check:fixture != nil && !fixture.managed _:@"and is not managed"];
+    [recorder check:fixture != nil && !fixture.providerUpdatable
+                    _:@"and is not offered a provider update"];
+    [recorder check:store.manifestFormat == 2 _:@"the manifest the page read is format 2"];
+
+    // Removing a package is reachable: the row's own sheet offers it, and it is the destructive
+    // action. Losing this route is what made "can I delete anything?" a real question, so it is
+    // asserted rather than assumed.
+    TKAddonRecord *owned = nil;
+    for (TKAddonRecord *record in store.records)
+        if ([record.identifier isEqual:@"SelftestOwned"]) owned = record;
+    [recorder check:owned != nil && owned.managed _:@"the package this app recorded is managed"];
+    UIAlertController *manage = owned ? [page manageSheetForRecord:owned] : nil;
+    [recorder check:manage != nil _:@"tapping a managed package builds its action sheet"];
+    BOOL hasRemove = NO, hasDisable = NO, hasPin = NO, hasCancel = NO;
+    for (UIAlertAction *action in manage.actions) {
+        if (action.style == UIAlertActionStyleDestructive) hasRemove = YES;
+        if ([action.title isEqual:WKLocalized(@"addons.disable")]) hasDisable = YES;
+        if ([action.title isEqual:WKLocalized(@"addons.pin")]) hasPin = YES;
+        if (action.style == UIAlertActionStyleCancel) hasCancel = YES;
+    }
+    [recorder check:hasRemove _:@"and the sheet offers Remove, as its destructive action"];
+    [recorder check:hasDisable && hasPin && hasCancel _:@"with Disable, Pin and Cancel beside it"];
+
+    // No toolbar title is clipped. They are localized sentences ("Filters: Forever (1.60.1)",
+    // and longer in German), and a fixed width cut one off on the iPad on 2026-11-05.
+    BOOL clipped = NO;
+    for (NSString *identifier in @[@"wow.addons.sort", @"wow.addons.filters", @"wow.addons.columns"]) {
+        UIButton *button = (id)AKSelfTestFind(page.tableView.tableHeaderView, identifier);
+        if (!button || button.hidden) continue;
+        CGFloat needed = [button.titleLabel intrinsicContentSize].width;
+        if (needed > CGRectGetWidth(button.bounds) + 0.5) clipped = YES;
+    }
+    [recorder check:!clipped _:@"no toolbar title is clipped"];
+
+    // Nothing is drawn outside the list.
+    CGFloat width = page.tableView.bounds.size.width;
+    BOOL overflow = NO;
+    for (UIView *cell in page.tableView.visibleCells) {
+        CGRect frame = [cell convertRect:cell.bounds toView:page.tableView];
+        if (CGRectGetMaxX(frame) > width + 0.5 || CGRectGetMinX(frame) < -0.5) overflow = YES;
+    }
+    [recorder check:!overflow _:@"no row is drawn outside the list"];
+
+    // The popup bound, which every sheet in the app goes through.
+    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1000, 800)];
+    UIViewController *oversized = [UIViewController new];
+    oversized.view.frame = CGRectMake(0, 0, 1000, 800);
+    [container addSubview:oversized.view];
+    CGRect bounded = WKConstrainPopupToScreen(oversized, container);
+    [recorder check:WKPopupMaximumScreenFraction == 0.85 &&
+                   CGRectGetWidth(bounded) <= 850.5 && CGRectGetHeight(bounded) <= 680.5
+                    _:@"a popup is bounded to 85 % of the presenting view"];
+
+    [files removeItemAtPath:root error:NULL];
+}
+
+// The app's own language, on the device, in both directions.
+//
+// The localization table check runs on the Mac; this is the other half - that the strings the
+// app actually reads on the iPad are the German ones, that the home page redraws into them
+// without a relaunch, and that the choice the user had is exactly what it was afterwards.
+@interface TKWoWViewController (AKSelfTestLanguage)
+- (void)render;
+@end
+
+static void AKSelfTestRunLanguage(AKSelfTestRecorder *recorder, NSInteger attempts) {
+    WKLocalization *localization = WKLocalization.shared;
+    TKWoWViewController *page = AKSelfTestHomePage();
+    // The page is built during launch. What this checks is what the page *says*, not whether it
+    // has been composited, so the view merely has to exist - a window is not required and
+    // waiting for one only made the result depend on launch ordering.
+    BOOL ready = page != nil;
+    if (!ready && attempts == 175) {
+        // One line, once, so a failure says whether the page was missing or never drew.
+        WKLog("selftest", @"language: waiting for the home page (scenes=%lu)",
+              (unsigned long)UIApplication.sharedApplication.connectedScenes.count);
+    }
+    if (!ready && attempts > 0) {
+        // No check is recorded while waiting, so a retry cannot count anything twice.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            AKSelfTestRunLanguage(recorder, attempts - 1);
+        });
+        return;
+    }
+    [recorder check:ready _:@"the home page exists, so its words can be read"];
+    if (!ready) { AKSelfTestLogVerdict(recorder, AKSelfTestLanguage); return; }
+    [page loadViewIfNeeded];
+
+    WKAppLanguage before = localization.language;
+
+    localization.language = WKAppLanguageGerman;
+    [recorder check:localization.resolvedLanguage == WKAppLanguageGerman
+                    _:@"German is the language in use"];
+    // The strings this change added or renamed, read the way the app reads them.
+    [recorder check:[WKLocalized(@"home.box.edition") isEqual:@"Spielverwaltung"]
+                    _:@"the Game Settings Manager heading is German"];
+    [recorder check:[WKLocalized(@"home.box.voice") isEqual:@"Diktatverwaltung (V2T)"]
+                    _:@"the Dictation (V2T) Manager heading is German"];
+    [recorder check:[WKLocalized(@"addons.action.install") isEqual:@"Installieren"]
+                    _:@"the row's Install action is German"];
+    [recorder check:[WKLocalized(@"addons.select.all") isEqual:@"Alle auswählen"]
+                    _:@"the Select All action is German"];
+    [recorder check:[WKLocalizedFormat(@"home.edition.row", @"Forever") isEqual:@"Spieledition: Forever"]
+                    _:@"the edition row reads as a German sentence with the edition in it"];
+    [recorder check:[WKLocalizedFormat(@"addons.filters.forever", @"1.60.1") isEqual:@"Forever (Fassung 1.60.1)"]
+                    _:@"the Forever filter names its version in German"];
+    // The change posts its notification, and the page that is already up rewrites its own
+    // words through -localize. Asking the label is the check; asking the table again would
+    // only prove the table.
+    UILabel *heading = (UILabel *)AKSelfTestFind(page.view, @"wow.heading.edition");
+    [recorder check:heading != nil && [heading.text isEqual:@"SPIELVERWALTUNG"]
+                    _:@"the live home page shows the German heading"];
+    UIButton *edition = (UIButton *)AKSelfTestFind(page.view, @"wow.edition");
+    [recorder check:edition != nil &&
+                   [[edition configuration].title hasPrefix:@"Spieledition: "]
+                    _:@"and the live edition row reads in German"];
+
+    localization.language = WKAppLanguageEnglish;
+    [recorder check:localization.resolvedLanguage == WKAppLanguageEnglish
+                    _:@"English comes back"];
+    heading = (UILabel *)AKSelfTestFind(page.view, @"wow.heading.edition");
+    [recorder check:heading != nil && [heading.text isEqual:@"GAME SETTINGS MANAGER"]
+                    _:@"and the live page reads English again"];
+
+    // Put the user's own choice back, whatever it was.
+    localization.language = before;
+    heading = (UILabel *)AKSelfTestFind(page.view, @"wow.heading.edition");
+    [recorder check:localization.language == before
+                    _:@"the language the user had is restored"];
+    (void)heading;
+    AKSelfTestLogVerdict(recorder, AKSelfTestLanguage);
+}
+
+// The pointer-latency counters, made readable.
+//
+// The plan's gate is three five-minute sweeps and a p95/p99 per sweep, and that gate needs the
+// numbers written down, not inferred from a log of events. The counters are aggregation-only by
+// design, so this is the one call that prints them: one line per counter, in milliseconds, with
+// the sample count beside it so a sweep with nothing in it cannot pass for a fast one.
+static NSString *AKSelfTestLatencyLine(NSString *name, AKTimingSamples *samples) {
+    return [NSString stringWithFormat:@"latency: %@ n=%lu p50=%.2fms p95=%.2fms p99=%.2fms max=%.2fms",
+            name, (unsigned long)samples.count, [samples percentile:0.50],
+            [samples percentile:0.95], [samples percentile:0.99], samples.maximum];
+}
+
+static void AKSelfTestRunLatency(AKSelfTestRecorder *recorder) {
+    AKControllerInspector *inspector = AKControllerInspector.shared;
+    AKInputRouter *router = AKInputRouter.shared;
+    AKTimingSamples *callback = inspector.callbackTiming;
+    AKTimingSamples *handoff = inspector.handoffTiming;
+    AKTimingSamples *pointer = router.pointerTiming;
+
+    [recorder check:callback != nil && handoff != nil && pointer != nil
+                    _:@"the three latency counters exist"];
+
+    // A percentile that is out of order would mean the ring is being read wrong, which is the
+    // one arithmetic mistake that would silently flatter every sweep.
+    BOOL ordered = YES;
+    for (AKTimingSamples *samples in @[callback, handoff, pointer]) {
+        if (!samples.count) continue;
+        double p50 = [samples percentile:0.50], p95 = [samples percentile:0.95];
+        double p99 = [samples percentile:0.99], maximum = samples.maximum;
+        if (!(p50 <= p95 && p95 <= p99 && p99 <= maximum)) ordered = NO;
+    }
+    [recorder check:ordered _:@"p50 <= p95 <= p99 <= max on every counter"];
+
+    // These lines are the sweep's result. They are written whatever the checks above say, so a
+    // sweep is never reported without its numbers.
+    WKLog("selftest", @"%@", AKSelfTestLatencyLine(@"controller.callback", callback));
+    WKLog("selftest", @"%@", AKSelfTestLatencyLine(@"controller.handoff", handoff));
+    WKLog("selftest", @"%@", AKSelfTestLatencyLine(@"pointer.dispatchToNextFrame", pointer));
+    [recorder check:YES _:@"the counters are printed for the sweep record"];
+
+    // Clear them, so one sweep never carries another's samples.
+    [inspector resetDiagnostics];
+    [pointer reset];
+}
+
 void AKRunSelfTest(NSString *name) {
     AKSelfTestRecorder *recorder = [AKSelfTestRecorder new];
     recorder.detail = @"";
@@ -1085,6 +1346,23 @@ void AKRunSelfTest(NSString *name) {
         // which is main-queue work, and none of it waits. The attempts cover the automatic
         // check that runs the moment the home page appears, during which the row declines.
         AKSelfTestRenderProfilePress(recorder, 150);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestLatency]) {
+        // On the main queue: the counters are read and reset where the input path writes them.
+        AKSelfTestOnMain(^{ AKSelfTestRunLatency(recorder); });
+        AKSelfTestLogVerdict(recorder, name);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestLanguage]) {
+        // On the main queue, and it logs its own verdict once the page is up.
+        AKSelfTestRunLanguage(recorder, 175);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestAddonsPage]) {
+        // On the main queue: it builds and lays out UIKit views and changes none.
+        AKSelfTestOnMain(^{ AKSelfTestRunAddonsPage(recorder); });
+        AKSelfTestLogVerdict(recorder, name);
         return;
     }
     if ([name isEqualToString:AKSelfTestInput]) {

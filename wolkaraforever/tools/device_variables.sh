@@ -18,6 +18,7 @@
 #   (default)            Show the device and the variables, change nothing.
 #   --write              Update DEVICE in local.env (created if absent).
 #   --force              With --write, replace a different existing DEVICE.
+#   --list               List physical iPhone and iPad candidates without exposing identifiers.
 #   --export             Print shell assignments (eval-able) for scripting.
 #   --json               Print the chosen device as JSON.
 #   --device NAME|UDID   Choose one device when several are attached.
@@ -40,12 +41,13 @@ from pathlib import Path
 
 ROOT = Path.cwd()
 
-HELP = """usage: device_variables.sh [--write [--force]] [--export] [--json]
+HELP = """usage: device_variables.sh [--write [--force]] [--list] [--export] [--json]
                           [--device NAME|UDID] [--include-simulators]
 
 Prints the variables for a connected iPad (USB or paired network).
   --write            update DEVICE in local.env
   --force            allow --write to replace a different DEVICE
+  --list             list physical iPhone and iPad candidates without identifiers
   --export           print shell assignments
   --json             print the chosen device as JSON
   --device X         choose X (name, UDID or CoreDevice identifier)
@@ -59,7 +61,7 @@ def fail(message, code=2):
 
 # ---------------------------------------------------------------- arguments
 args = sys.argv[1:]
-write = force = export = as_json = include_sim = False
+write = force = export = as_json = include_sim = list_devices = False
 want = None
 i = 0
 while i < len(args):
@@ -68,6 +70,7 @@ while i < len(args):
         print(HELP); sys.exit(0)
     elif a == "--write": write = True
     elif a == "--force": force = True
+    elif a == "--list": list_devices = True
     elif a == "--export": export = True
     elif a == "--json": as_json = True
     elif a == "--include-simulators": include_sim = True
@@ -140,7 +143,7 @@ for dev in (data.get("result") or {}).get("devices", []):
     d = normalise(dev)
     # Keep automatic discovery iPad-only, but honor an explicit iPhone target.
     if not (d["device_type"].startswith("iPad") or
-            (want and d["device_type"].startswith("iPhone"))):
+            ((want or list_devices) and d["device_type"].startswith("iPhone"))):
         continue
     if d["platform"] not in ("iOS", "iPadOS"):
         continue
@@ -154,9 +157,19 @@ for dev in (data.get("result") or {}).get("devices", []):
 devices.sort(key=lambda d: (d["state"] != "connected", d["name"]))
 
 if not devices:
-    fail("no physical iPad found. Connect one by cable (unlock and tap Trust), "
+    fail("no physical iPhone or iPad found. Connect one by cable (unlock and tap Trust), "
          "or pair it over the network in Xcode > Window > Devices and Simulators, "
          "and enable Developer Mode on the device.")
+
+if list_devices:
+    if write or export or as_json or want:
+        fail("--list cannot be combined with --write, --export, --json, or --device")
+    for d in devices:
+        link = {"wired": "USB", "localNetwork": "Network", "sameMachine": "Simulator"}.get(
+            d["transport"], d["transport"] or "unknown")
+        print("%s | %s | %s | %s | %s" %
+              (d["device_type"], d["name"], d["model"], d["os"], link))
+    sys.exit(0)
 
 # ---------------------------------------------------------------- choose one
 chosen = None

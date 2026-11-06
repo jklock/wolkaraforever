@@ -51,6 +51,20 @@ extern NSString *const AKSelfTestCurseForge;
 /// without a person speaking into the microphone.
 extern NSString *const AKSelfTestSpeechFile;
 
+/// The Add-ons page, built and laid out on the device against a temporary directory. It
+/// proves the page's own controls exist and that nothing is drawn outside the list; it reads
+/// and writes nothing of the user's.
+extern NSString *const AKSelfTestAddonsPage;
+
+/// The pointer-latency counters, printed as one line each and then cleared. This is what the
+/// three pointer sweeps read; the counters are aggregation-only, so this is the only place the
+/// numbers are written down.
+extern NSString *const AKSelfTestLatency;
+
+/// English and German on the live home page: the strings, the choice, and that a page that is
+/// already up rewrites its words without a relaunch. It puts the user's own choice back.
+extern NSString *const AKSelfTestLanguage;
+
 // Runs one self-test and logs the verdict the matrix greps:
 //   selftest: <name> PASS <passed>/<total> checks (<what was exercised>)
 //   selftest: <name> FAIL <passed>/<total> checks: <the first thing that was wrong>

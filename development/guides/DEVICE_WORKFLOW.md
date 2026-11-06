@@ -57,6 +57,7 @@ required piece is still missing.
 
 ```bash
 wolkaraforever/tools/device_variables.sh                # show the device and the variables
+wolkaraforever/tools/device_variables.sh --list         # list physical iPhone and iPad candidates
 wolkaraforever/tools/device_variables.sh --write        # also set DEVICE in local.env
 wolkaraforever/tools/device_variables.sh --export       # eval-able shell assignments
 wolkaraforever/tools/device_variables.sh --json         # machine-readable
