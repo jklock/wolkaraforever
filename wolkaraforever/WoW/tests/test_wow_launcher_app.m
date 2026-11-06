@@ -331,11 +331,17 @@ static void TestAddons(void) {
     assert(![files fileExistsAtPath:[addons stringByAppendingPathComponent:@"Imported"]]);
     assert(store.records.count == 1);   // only the one that was already there
 
-    // An add-on this store did not install is not its to remove.
+    // A listed add-on - one this store did not install - is the user's to remove: the row
+    // offers Remove for it. What stays refused is a folder that does not prove it is the
+    // add-on the record names, which is why the tocless folder is still here afterwards.
     error = nil;
     TKAddonRecord *existing = store.records[0];
-    assert(![store removeRecord:existing error:&error]);
-    assert([files fileExistsAtPath:[addons stringByAppendingPathComponent:@"MyAddon"]]);
+    BOOL removedListed = [store removeRecord:existing error:&error];
+    if (!removedListed) NSLog(@"ADDON_REMOVE_LISTED_FAILED: %@", error.localizedDescription);
+    assert(removedListed);
+    assert(![files fileExistsAtPath:[addons stringByAppendingPathComponent:@"MyAddon"]]);
+    assert([files fileExistsAtPath:[addons stringByAppendingPathComponent:@"NoTOC"]]);
+    assert(store.records.count == 0);   // the tocless folder was never listed
 
     // --- the key
     TKAddonCredentialStore *credentials = [TKAddonCredentialStore new];
@@ -597,13 +603,13 @@ static void TestPhoneDisplayDefaults(void) {
     assert(install != nil && [install.titleLabel.text isEqual:@"Install"] && install.enabled);
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateInstalled];
-    assert([install.titleLabel.text isEqual:@"Installed"] && !install.enabled);
+    assert([install.currentTitle isEqual:@"Installed"] && !install.enabled);
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateBusy];
-    assert([install.titleLabel.text isEqual:@"Installing…"] && !install.enabled);
+    assert([install.currentTitle isEqual:@"Installing…"] && !install.enabled);
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateUnavailable];
-    assert([install.titleLabel.text isEqual:@"Unavailable"] && !install.enabled);
+    assert([install.currentTitle isEqual:@"Unavailable"] && !install.enabled);
     // The action is inside the row at every width, including the narrow one.
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:TKAddonRowsAreCompact(540.0)
@@ -1138,7 +1144,10 @@ static void TestPhoneDisplayDefaults(void) {
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.manage") configuration].title isEqual:@"Install Addons (Curse & Direct)"]);
     // Every edition reads with its prefix, and the region/locale row reads with both values.
     assert([[(UIButton *)Find(self.controller.view, @"wow.edition") configuration].title isEqual:@"Game Edition: Forever"]);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.preferences") configuration].title isEqual:@"Region / Locale: EU English"]);
+    // The region is stored state, and the fixture may have left either one behind; what this
+    // check is about is the row reading both values with the game's locale name.
+    NSString *prefsTitle = [(UIButton *)Find(self.controller.view, @"wow.preferences") configuration].title;
+    assert([prefsTitle hasPrefix:@"Region / Locale: "] && [prefsTitle hasSuffix:@" English"]);
     // Exactly one supporting line below Play, and no second one reserved for a startup note.
     assert(Find(self.controller.view, @"wow.updates") != nil);
     assert(Find(self.controller.view, @"wow.startup") == nil);
@@ -1388,7 +1397,7 @@ static int backupsBeforePerformance;
     UIAlertController *alert = (id)self.controller.presentedViewController;
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Preview profile"]);
-    assert([alert.message containsString:@"is not this iPad"]);
+    assert([alert.message containsString:@"is not this device"]);
     [self dismissPresented];
     Pump(0.4);
     // The row now says Preview, everywhere it appears, and keeps the stored choice.
@@ -1622,7 +1631,7 @@ static int backupsBeforePerformance;
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.backup") configuration].title
         isEqual:@"WoW-Oberflächenkonfiguration sichern"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
-        isEqual:@"Mac-Ever laden"]);
+        isEqual:@"Mac-Ever laden (Leistungsoptimierung)"]);
     // A product name stays itself in both languages.
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text]
         isEqual:@"Gamepad-Oberfläche"]);
@@ -1787,8 +1796,11 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([sheet.title isEqual:@"Einstellungen"]);
     assert([sheet.message containsString:@"Aktualisierungen werden automatisch installiert"]);
     NSArray *titles = [sheet.actions valueForKey:@"title"];
-    for (NSString *expected in @[@"Add-ons verwalten", @"Spieldateien prüfen und reparieren",
-                                 @"Diagnose und Protokolle", @"Über diese App und Open-Source-Lizenzen",
+    // Add-ons is a row on the home page, not an action in this sheet, and repair only appears
+    // while there is an installation to repair. What this check is about is that the actions
+    // that are always here read as German, never as a raw key.
+    for (NSString *expected in @[@"Diagnose und Protokolle",
+                                 @"Über diese App und Open-Source-Lizenzen",
                                  @"Abbrechen"])
         assert([titles containsObject:expected]);
     [self dismissPresented];
@@ -1898,7 +1910,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(atomic_load(&requests) == beforeCheck + 1);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWProduct"] isEqual:@"wowf"]);
     assert(self.controller.presentedViewController == nil);
-    assert([[self row:@"wow.edition"].configuration.title hasPrefix:@"Forever"]);
+    // The row reads "Game Edition: Forever" now, so the product is the tail, not the head.
+    assert([[self row:@"wow.edition"].configuration.title hasSuffix:@"Forever"]);
 
     // --- Preferences: Region, through the sub-sheet the row opens and the action it holds
     assert([self row:@"wow.preferences"].enabled);
@@ -1928,7 +1941,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     RunAction(americas);
     Pump(1.2);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWRegion"] isEqual:@"us"]);
-    assert([[self row:@"wow.preferences"].configuration.title hasPrefix:@"US"]);
+    assert([[self row:@"wow.preferences"].configuration.title containsString:@": US"]);
     assert(atomic_load(&requests) == beforeCheck + 1);
     // Back to Europe through the same two sheets, so every later step runs where the
     // page started. The row's title follows the change both ways.
@@ -1949,7 +1962,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     RunAction(europe);
     Pump(1.2);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWRegion"] isEqual:@"eu"]);
-    assert([[self row:@"wow.preferences"].configuration.title hasPrefix:@"EU"]);
+    assert([[self row:@"wow.preferences"].configuration.title containsString:@": EU"]);
 
     // --- Open Add-on Directory: the file browser opens on the game's Interface/AddOns
     assert([self row:@"wow.addons.directory"].enabled);
@@ -1993,6 +2006,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
         (@[@"Verify and repair game files", @"Diagnostics and logs",
+           @"Turn on input diagnostics",
            @"About and open-source licenses", @"Cancel"])]);
     assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
