@@ -443,7 +443,20 @@ static void TestTrackingPump(void) {
     CFRunLoopAddObserver(loop,observer,(__bridge CFStringRef)UITrackingRunLoopMode);
     AKPumpTouchEvents(NO);
     assert(!trackingTimer && !defaultCompletion && !trackingCompletion);
-    AKPumpTouchEvents(YES);
+    // What this checks is that a turn in each mode reaches the work queued for it: the timer
+    // in UITrackingRunLoopMode, and the before-waiting observers in both modes. A turn that
+    // finds a ready source fires it and returns without ever sleeping, so before-waiting is
+    // not guaranteed by a single call on a loaded machine - this assertion failed twice under
+    // load and passed five times when idle before it was bounded. The pump is called
+    // repeatedly in production for the same reason, so pump until the loop has slept in both
+    // modes, with a ceiling so a genuine hang fails here rather than sitting in the run loop.
+    for (int turn = 0; turn < 200 && !(trackingTimer && defaultCompletion && trackingCompletion); turn++)
+        AKPumpTouchEvents(YES);
+    // Said out loud, as the insert check in the touch-controls fixture is: which of the three
+    // the loop never reached is the whole diagnosis.
+    if (!(trackingTimer && defaultCompletion && trackingCompletion))
+        fprintf(stderr, "TOUCH_TRACKING_PUMP_MISSING: timer=%d default=%d tracking=%d\n",
+                (int)trackingTimer, (int)defaultCompletion, (int)trackingCompletion);
     assert(trackingTimer && defaultCompletion && trackingCompletion);
     CFRunLoopTimerInvalidate(timer); CFRelease(timer);
     CFRunLoopObserverInvalidate(observer); CFRelease(observer);
