@@ -305,29 +305,36 @@ static UIImage *TKAddonPlaceholderIcon(void) {
     // pressed again; an installed row says it is installed; an author who does not allow API
     // downloads gets an action that explains rather than a button that would 403.
     _installButton.hidden=NO;
+    NSString *actionTitle=WKLocalized(@"addons.action.install");
+    BOOL actionEnabled=YES;
     switch (state) {
         case TKAddonInstallStateBusy:
-            [_installButton setTitle:WKLocalized(@"addons.action.installing") forState:UIControlStateNormal];
-            _installButton.enabled=NO;
+            actionTitle=WKLocalized(@"addons.action.installing");
+            actionEnabled=NO;
             break;
         case TKAddonInstallStateInstalled:
-            [_installButton setTitle:WKLocalized(@"addons.action.installed") forState:UIControlStateNormal];
-            _installButton.enabled=NO;
+            actionTitle=WKLocalized(@"addons.action.installed");
+            actionEnabled=NO;
             break;
         case TKAddonInstallStateUnavailable:
-            [_installButton setTitle:WKLocalized(@"addons.action.unavailable") forState:UIControlStateNormal];
-            _installButton.enabled=NO;
+            actionTitle=WKLocalized(@"addons.action.unavailable");
+            actionEnabled=NO;
             break;
         case TKAddonInstallStateFailed:
-            [_installButton setTitle:WKLocalized(@"addons.action.retry") forState:UIControlStateNormal];
-            _installButton.enabled=YES;
+            actionTitle=WKLocalized(@"addons.action.retry");
+            actionEnabled=YES;
             break;
         case TKAddonInstallStateIdle:
         default:
-            [_installButton setTitle:WKLocalized(@"addons.action.install") forState:UIControlStateNormal];
-            _installButton.enabled=YES;
+            actionTitle=WKLocalized(@"addons.action.install");
+            actionEnabled=YES;
             break;
     }
+    // The word is set for the disabled state as well: three of these five states disable the
+    // button, and a button carrying only a Normal title shows nothing once it is disabled.
+    [_installButton setTitle:actionTitle forState:UIControlStateNormal];
+    [_installButton setTitle:actionTitle forState:UIControlStateDisabled];
+    _installButton.enabled=actionEnabled;
     NSNumber *identifier=[project[@"id"] isKindOfClass:NSNumber.class]?project[@"id"]:nil;
     _installButton.accessibilityIdentifier=identifier
         ? [NSString stringWithFormat:@"wow.addons.project.%@.install", identifier]
@@ -811,6 +818,12 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _countLabel.hidden=!browse; _sortButton.hidden=!browse; _filterButton.hidden=!browse; _columnsButton.hidden=!browse;
     _selectionLabel.hidden=browse; _selectAllButton.hidden=browse; _clearSelectionButton.hidden=browse;
     _updateSelectedButton.hidden=browse; _updateAllButton.hidden=browse;
+    // The menus are built for both lists. They are cheap, they describe the current sort and
+    // filter rather than the current rows, and building them only while Browse is showing left
+    // the two controls half-built - a button with no menu - for as long as the other list was up.
+    _sortButton.menu=[self sortMenu];
+    _filterButton.menu=[self filterMenu];
+    _columnsButton.menu=[self columnsMenu];
     self.navigationItem.rightBarButtonItems[0].enabled=!self.bulkUpdating;
     _refreshItem.enabled=!_refreshing && !self.bulkUpdating;
     if (!browse) {
@@ -838,9 +851,6 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     // label a person reads, never a raw version id.
     NSString *filterValue = _categoryLabel ?: (_gameVersion.length ? WKLocalizedFormat(@"addons.filters.forever", _gameVersion) : nil);
     [_filterButton setTitle:filterValue?WKLocalizedFormat(@"addons.filters.active",filterValue):WKLocalized(@"addons.filters") forState:UIControlStateNormal];
-    _sortButton.menu=[self sortMenu];
-    _filterButton.menu=[self filterMenu];
-    _columnsButton.menu=[self columnsMenu];
     BOOL ready=[self hasKey] && !_refreshing;
     _sortButton.enabled=ready; _filterButton.enabled=ready; _columnsButton.enabled=ready;
 }

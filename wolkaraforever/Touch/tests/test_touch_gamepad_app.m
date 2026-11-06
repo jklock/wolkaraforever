@@ -363,6 +363,9 @@ static void TestTrackingPump(void) {
             CFRelease(mode);
         });
     CFRunLoopAddObserver(loop,observer,kCFRunLoopCommonModes);
+    // UITrackingRunLoopMode is not one of the common modes, so an observer registered only for
+    // common modes never sees the tracking turn this test is about.
+    CFRunLoopAddObserver(loop,observer,(__bridge CFStringRef)UITrackingRunLoopMode);
     AKPumpTouchEvents(NO);
     assert(!trackingTimer && !defaultCompletion && !trackingCompletion);
     AKPumpTouchEvents(YES);
