@@ -69,7 +69,7 @@ end
 
 function Shortcuts:Init()
     bar = CreateFrame("Frame", "WolkaraMobileShortcuts", UIParent)
-    bar:SetFrameStrata("MEDIUM")
+    bar:SetFrameStrata("LOW")  -- sous les fenêtres du jeu
     bar:SetSize(16 + #LIST * (SIZE + GAP) - GAP, SIZE + 30)
     -- La barre ne prend les touchers qu'en mode Personnaliser : entre deux boutons, le
     -- toucher va au jeu.

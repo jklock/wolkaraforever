@@ -129,7 +129,7 @@ local CLICK = [=[
 
 function Turn:Init()
     band = CreateFrame("Frame", "WolkaraMobileTurn", UIParent, "SecureHandlerBaseTemplate")
-    band:SetFrameStrata("LOW")
+    band:SetFrameStrata("BACKGROUND")  -- sous les sorts, eux-mêmes sous les fenêtres du jeu
     band:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT")
     band:EnableMouse(false)
     band.disc = band:CreateTexture(nil, "BACKGROUND")

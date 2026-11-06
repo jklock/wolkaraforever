@@ -63,7 +63,8 @@ local function BuildWheel(index)
     -- Le bouton doré.
     local toggle = CreateFrame("Button", "WolkaraMobileToggle" .. index, UIParent, "SecureHandlerClickTemplate")
     toggle:SetSize(TOGGLE_SIZE, TOGGLE_SIZE)
-    toggle:SetFrameStrata("HIGH")
+    -- Sous les fenêtres du jeu : il restait par-dessus la fiche du personnage ouverte.
+    toggle:SetFrameStrata("LOW")
     toggle:RegisterForClicks("AnyUp")
     toggle:SetFrameRef("ring", ring)
     toggle:SetAttribute("_onclick", [=[
