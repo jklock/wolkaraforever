@@ -214,14 +214,16 @@ static BOOL hardwareKeyboardAttached(void) {
 - (BOOL)textView:(UITextView *)textView shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text {
     (void)textView; (void)range;
     if ([text isEqual:@"\n"]) {
-        // Send puts the draft in the game's chat (Replace is the button that only fills
-        // the selected field). Defer until UIKit finishes this edit; do not mutate its
-        // document here.
+        // The system keyboard's Done replaces the selected field, as it always has: it is
+        // the same action as the Replace button and it does not press Return in the game.
+        // Sending a line to chat is the explicit Return key's job (sendDraftToChat), so a
+        // mobile chat gets its line without changing what Done means everywhere else.
+        // Defer until UIKit finishes this edit; do not mutate its document here.
         NSUInteger session = _session;
         __weak AKKeyboardTextView *weakSelf = self;
         [NSRunLoop.mainRunLoop performInModes:@[NSRunLoopCommonModes] block:^{
             AKKeyboardTextView *input = weakSelf;
-            if (input && input->_session == session) [input sendDraftToChat];
+            if (input && input->_session == session) [input forwardCommittedText];
         }];
         return NO;
     }

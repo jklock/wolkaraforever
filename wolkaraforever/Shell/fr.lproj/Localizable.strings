@@ -51,13 +51,11 @@
 "home.performance.overlay" = "Affichage des performances";
 "home.performance.renderProfile" = "Profil de rendu : %@";
 "home.performance.deviceProfile" = "Profil de l’appareil : %@";
-"home.performance.restoreDefaults" = "Rétablir les performances par défaut";
 "home.render.performance" = "Performances";
 "home.render.balanced" = "Équilibré";
 "home.render.quality" = "Qualité";
 "home.diagnostics" = "Diagnostics et journaux";
 "home.updates.note" = "Mises à jour automatiques. Gardez l’app ouverte pendant le téléchargement.";
-"home.compatibility.unverified" = "La compatibilité avec cette édition n’est pas encore vérifiée.";
 
 "home.status.running" = "En cours";
 "home.status.running.detail" = "Le jeu est ouvert. Quittez-le depuis son propre menu pour revenir ici.";
@@ -109,10 +107,8 @@
 "home.version.upToDate" = "Version %@ · Vérifiée : %@";
 "home.version.compare" = "Installée : %@ · Disponible : %@";
 
-"home.startup.developerService" = "Le démarrage peut prendre quelques minutes à chaque fois.";
-"home.startup.localSigning" = "Le démarrage exige un conteneur signé correspondant à cette version.";
-"home.startup.externalJIT" = "Activez le JIT avant de démarrer une nouvelle session.";
-"home.startup.unavailable" = "Cette version de l’app ne peut pas lancer le jeu. Voir Diagnostics et journaux.";
+"home.edition.row" = "Édition du jeu : %@";
+"home.preferences.row" = "Région / Langue : %@ %@";
 
 "home.edition.title" = "Choisissez votre édition";
 "home.preferences.title" = "Préférences de téléchargement";
@@ -131,9 +127,10 @@
 
 "home.settings.title" = "Réglages";
 "home.settings.message" = "Les mises à jour s’installent automatiquement tant que l’app est ouverte. Vos réglages et vos addons sont conservés. La préparation au démarrage est distincte du téléchargement des mises à jour.";
-"home.settings.manageAddons" = "Gérer les addons";
 "home.settings.repair" = "Vérifier et réparer les fichiers du jeu";
 "home.settings.diagnostics" = "Diagnostics et journaux";
+"home.settings.inputDiagnosticsOn" = "Activer les diagnostics d’entrée";
+"home.settings.inputDiagnosticsOff" = "Désactiver les diagnostics d’entrée";
 "home.settings.about" = "À propos et licences open source";
 "home.settings.technical" = "Détails techniques";
 "home.settings.details.title" = "Détails";
@@ -175,8 +172,6 @@
 "home.render.confirm.title" = "Au-delà de la recommandation";
 "home.render.confirm.message" = "%1$@ fait le rendu à %2$@ sur %3$@, plus que ce que ce profil recommande. Mesuré sur cet appareil, il dépassait le temps disponible par image.";
 "home.render.confirm.yes" = "Utiliser %@";
-"home.performance.restoreDefaults.title" = "Performances par défaut rétablies";
-"home.performance.restoreDefaults.message" = "%@ est de nouveau utilisé. Aucun réglage du jeu n’a été modifié.";
 "home.profile.title" = "Profil de l’appareil";
 "home.profile.message" = "Appareil détecté : %@. Le mode automatique utilise le profil mesuré pour lui ; vous pouvez choisir un autre appareil pour comparer, il est alors signalé comme aperçu partout où il apparaît.";
 "home.profile.automatic" = "Automatique (recommandé) · %@";
@@ -476,13 +471,50 @@
 "addons.state.disabled" = "Désactivé";
 "addons.state.managed" = "Compatible · géré";
 "addons.state.unverified" = "Non vérifié · existant";
-"addons.state.pinned" = " · épinglé";
 "addons.restore" = "Restaurer";
 "addons.disable" = "Désactiver";
 "addons.source.existing" = "Existant";
 "addons.source.import" = "Import WolkaraForever";
 "addons.source.zip" = "Importé depuis un ZIP";
 "addons.version.unknown" = "Version inconnue";
+"addons.refreshing" = "Actualisation depuis CurseForge…";
+
+"addons.filters.forever" = "Forever (%@)";
+"addons.action.install" = "Installer";
+"addons.action.installing" = "Installation…";
+"addons.action.installed" = "Installé";
+"addons.action.unavailable" = "Indisponible";
+"addons.action.retry" = "Réessayer";
+"addons.action.update" = "Mettre à jour";
+"addons.action.updating" = "Mise à jour…";
+"addons.action.upToDate" = "À jour";
+"addons.action.manage" = "Gérer";
+"addons.select.one" = "Sélectionner cet addon";
+"addons.select.on" = "Sélectionné";
+"addons.select.off" = "Non sélectionné";
+"addons.select.all" = "Tout sélectionner";
+"addons.select.clear" = "Effacer";
+"addons.select.summary" = "%lu sélectionnés · %lu à mettre à jour";
+"addons.select.updateSelected" = "Mettre à jour la sélection";
+"addons.updateAll" = "Tout mettre à jour";
+"addons.update.selectedTitle" = "Mettre à jour les addons sélectionnés ?";
+"addons.update.allTitle" = "Mettre à jour tous les addons qui ont un fichier plus récent ?";
+"addons.update.confirm" = "Ces paquets seront remplacés :
+• %@";
+"addons.update.none" = "Aucune mise à jour disponible.";
+"addons.update.partialFailure" = "%lu paquet(s) n’ont pas pu être mis à jour. Les autres ont été mis à jour.";
+"addons.update.working" = "Mise à jour de %@…";
+"addons.update.workingMany" = "Mise à jour…";
+"addons.update.noProvider" = "Ce paquet n’a pas d’identité CurseForge : il ne peut pas être mis à jour depuis le fournisseur.";
+"addons.installedUnverified" = "%@ installé. Son TOC ne déclare pas la version d’interface de Forever : il est marqué non vérifié. Il est installé et utilisable.";
+"addons.state.pinnedShort" = "épinglé";
+"addons.state.notVerifiedForForever" = "non vérifié pour Forever";
+"addons.manage.note" = "Seul ce paquet géré peut être modifié. Les dossiers existants ne sont pas touchés.";
+"addons.manage.disabledNote" = "Ce paquet est stocké en privé et n’est pas visible par World of Warcraft.";
+"addons.manage.unmanaged" = "Cet addon existant sera retiré de cet appareil.";
+"addons.pin" = "Épingler cette version";
+"addons.unpin" = "Autoriser à nouveau les mises à jour";
+"addons.remove" = "Retirer de l’appareil";
 
 /* ---- Voix et dictée ---- */
 "voice.title" = "Configuration des touches et boutons";
