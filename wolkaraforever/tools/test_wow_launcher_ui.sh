@@ -3,37 +3,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
+. wolkaraforever/tools/simulators.sh
 wolkaraforever/tools/prepare.sh
 cd build/platform
-SIM=${SIMULATOR:-iPad Pro 13-inch (M5)}
-# The named device, or the best ones this machine actually has: iPads first, then iPhones. The
-# page is laid out for both - two columns of cards where there is room, one where there is not -
-# and which device ran is printed, because "the fixture passed" without a device name is a
-# sentence nobody can check.
-#
-# Each candidate is booted before it is chosen, and a device that cannot boot is skipped. A
-# simulator whose data has been removed answers the listing and then refuses to start, and that
-# has taken this script down on a machine where the device list was being rewritten underneath
-# it. Refusing to boot is a reason to try the next device, not a reason to fail the suite.
-CANDIDATES=$(xcrun simctl list devices available -j | python3 -c '
-import json, sys
-wanted = sys.argv[1]
-devices = [d for group in json.load(sys.stdin)["devices"].values() for d in group]
-match = [d for d in devices if wanted in (d["name"], d["udid"])]
-if not match:
-    match = [d for d in devices if "iPad" in d["name"]] or [d for d in devices if "iPhone" in d["name"]]
-match.sort(key=lambda d: d["state"] != "Booted")
-print("\n".join(d["udid"] for d in match))' "$SIM")
-SIM_ID=""
-while read -r candidate; do
-    [ -n "$candidate" ] || continue
-    if xcrun simctl bootstatus "$candidate" -b > /dev/null 2>&1; then
-        SIM_ID=$candidate
-        break
-    fi
-    echo "test_wow_launcher_ui: a simulator would not boot; trying the next one" >&2
-done <<< "$CANDIDATES"
-[ -n "$SIM_ID" ] || { echo "No simulator on this machine would boot; open Xcode once, or set SIMULATOR."; exit 2; }
+# The matrix iPad, or the matrix iPhone with `SIMULATOR=iphone`. There is no fallback to
+# whatever else this Mac happens to have: the page is laid out for both form factors, so a
+# device that is not on the matrix is not a substitute, and the resolver says which device ran
+# because "the fixture passed" without a device name is a sentence nobody can check.
+simulator_use "${SIMULATOR:-ipad}"
+xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/wow-launcher/WoWFixture.app
 mkdir -p "$APP"
 # The launcher is not a page on its own: it opens the add-on and voice pages, so the

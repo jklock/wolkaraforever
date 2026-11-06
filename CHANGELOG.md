@@ -13,6 +13,17 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **One test matrix: three devices, enforced by the tools.** The suites used to take whichever
+  iPad or iPhone happened to be installed, and to keep trying devices until one booted. Now
+  `wolkaraforever/tools/simulators.sh` names the only devices this project measures —
+  **iPhone Duo** and **iPad Pro 13-inch (M5)** in the simulator, and the **iPad Pro 12.9-inch
+  (5th generation)** on hardware — and every simulator suite and both platform wrappers resolve
+  through it. Anything else is refused, including a `SIMULATOR=` value, so a fixture can no
+  longer pass on a device nobody chose. `setup_simulators.sh` no longer resets the simulator set:
+  it creates at most those two, reuses them if they exist, and deletes nothing. Its mount probe
+  also stopped reading a mounted image as unmounted (`hdiutil info | grep -q` reports failure
+  under `pipefail` when grep exits early and hdiutil dies of SIGPIPE), which had sent it down the
+  branch that moves a live mount point aside.
 - **Add-ons: install, update and select from the list.** A Browse row now has its own
   **Install** action with a stable accessibility identifier, so installing is one tap instead of a
   trip through a details sheet. The installed list has a checkbox, an inline **Update** that only

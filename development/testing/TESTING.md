@@ -34,10 +34,10 @@ ASan and UBSan where configured. A failing layer suite fails the run.
 | Platform suite (`test_emulation.sh`) | Memory semantics, malformed Mach-O input, fixups, packaging, the pairing/tunnel/debug protocols against independent peers, the page-container contract, the signer, a macOS end-to-end container load, shader containers, keyboard/text input, and crypto parity with macOS. |
 | Adapter simulator suite (`test_translation_sim.sh`) | The UIKit-backed adapters: touch controls, gamepad, haptics and fonts, exercised in the simulator with the layer overlaid. |
 | Launcher (`test_wow_launcher.sh`) | The WoW launcher's suites: editions, download, verification, resume, updates. |
-| Launcher UI (`test_wow_launcher_ui.sh`) | Our own synthetic launcher fixture - no game files, accounts or network. Set `SIMULATOR`. |
-| Touch controls UI (`test_touch_controls_ui.sh`) | Automated toolbar, trackpad and layout fixture; `--stay` opens it for visual inspection. |
-| Gamepad UI (`test_touch_gamepad_ui.sh`) | Automated on-screen controller fixture; `--stay` opens it for visual inspection. |
-| Voice (`test_voice.sh`) | Input, dictation and configuration rules, as a tiny app in the simulator. |
+| Launcher UI (`test_wow_launcher_ui.sh`) | Our own synthetic launcher fixture - no game files, accounts or network. Runs on the matrix iPad; `SIMULATOR=iphone` runs it on the matrix iPhone. |
+| Touch controls UI (`test_touch_controls_ui.sh`) | Automated toolbar, trackpad and layout fixture; `--stay` opens it for visual inspection. Matrix iPad, or `SIMULATOR=iphone`. |
+| Gamepad UI (`test_touch_gamepad_ui.sh`) | Automated on-screen controller fixture; `--stay` opens it for visual inspection. Matrix iPad, or `SIMULATOR=iphone`. |
+| Voice (`test_voice.sh`) | Input, dictation and configuration rules, as a tiny app in the simulator. Matrix iPad, or `SIMULATOR=iphone`. |
 | Forever UI (`test_forever_ui.sh`) | The `Config.wtf` rules and the Forever UI archive (backup/reset/restore). |
 | Localization (`test_localization.sh`) | The app language: resolution, stored values, both tables, fallback, formatting, plurals and the change notice. |
 | Add-on archive (`test_addon_archive.sh`) | The production Swift extractor and the app's pinned ZIPFoundation. |
@@ -48,13 +48,38 @@ ASan and UBSan where configured. A failing layer suite fails the run.
 
 The UI fixtures build and open *our* input fixtures, never an imported application.
 
+## The devices we test on
+
+Three, and no others:
+
+| # | Device | Kind | What it carries |
+| --- | --- | --- | --- |
+| 1 | iPhone Duo | simulator | The phone form factor: single column, Dynamic Island, the compact pages |
+| 2 | iPad Pro 13-inch (M5) | simulator | The tablet form factor: two-column page, iPad popups, pointer |
+| 3 | iPad Pro 12.9-inch (5th generation) | the physical iPad | Developer service, real Metal, real input, the installed build |
+
+A simulator suite never substitutes a device it found lying around. `test_wow_launcher_ui.sh`,
+`test_touch_controls_ui.sh`, `test_touch_gamepad_ui.sh`, `test_voice.sh`,
+`test_translation_sim.sh` and `run.sh sim` all resolve their device through
+`wolkaraforever/tools/simulators.sh`, which knows these two names and refuses anything else —
+`SIMULATOR="iPad Air 13-inch (M4)" wolkaraforever/tools/test_voice.sh` stops before it builds.
+The point is not strictness for its own sake: a fixture that passes on a device nobody chose is
+a result nobody can repeat.
+
+`wolkaraforever/tools/setup_simulators.sh --apply` is how the two simulators come to exist. It
+creates only those two, reuses them if they are already there, and deletes nothing.
+
+There is no iPhone hardware in the matrix and no iPad other than the 12.9-inch. A result from a
+fourth device is not evidence, and a report that does not name which of the three ran is not a
+report.
+
 ## The device matrix
 
 ```bash
 wolkaraforever/tools/device_matrix.sh
 ```
 
-This is the part of the physical-iPad matrix a Mac can drive on its own:
+This is the part of the physical-iPad checklist a Mac can drive on its own:
 
 1. the device can be inspected at all;
 2. a fresh install, and a user's file surviving it;

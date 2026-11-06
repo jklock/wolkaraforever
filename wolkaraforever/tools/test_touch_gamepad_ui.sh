@@ -4,15 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
+. wolkaraforever/tools/simulators.sh
 wolkaraforever/tools/prepare.sh
 cd build/platform
-SIM=${SIMULATOR:-iPad Pro 13-inch (M5)}
-SIM_ID=$(xcrun simctl list devices available -j | python3 -c '
-import json, sys
-devices = [d for group in json.load(sys.stdin)["devices"].values() for d in group if sys.argv[1] in (d["name"], d["udid"])]
-devices.sort(key=lambda d: d["state"] != "Booted")
-print(devices[0]["udid"] if devices else "")' "$SIM")
-[ -n "$SIM_ID" ] || { echo "No matching simulator; set SIMULATOR."; exit 2; }
+# The matrix iPad, or the matrix iPhone with `SIMULATOR=iphone`; anything else is refused.
+simulator_use "${SIMULATOR:-ipad}"
 xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/touch-gamepad-fixture/TouchGamepad.app
 mkdir -p "$APP"

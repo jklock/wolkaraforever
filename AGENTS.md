@@ -73,6 +73,24 @@ platform-facing changes, `wolkaraforever/tools/check_docs.sh` for documentation,
 focused suite that owns the changed behavior. `validate.sh` records exact-SHA evidence;
 physical claims require the installed build, device, iPadOS, client build, and execution mode.
 
+## Test devices
+
+**We test on three devices and nothing else.** One change is measured on these three, and a
+result from any other device is not evidence:
+
+1. **iPhone Duo** — simulator.
+2. **iPad Pro 13-inch (M5)** — simulator.
+3. **iPad Pro 12.9-inch (5th generation)** — the physical iPad, reached through
+   `wolkaraforever/tools/` (never raw `devicectl`).
+
+Do not create a simulator. `wolkaraforever/tools/setup_simulators.sh --apply` creates at most
+those two simulators and never deletes one. Every suite resolves its device through
+`wolkaraforever/tools/simulators.sh`, which refuses anything off this list rather than
+substituting the nearest iPad or iPhone, so `SIMULATOR=` cannot widen the matrix either.
+When a result is reported, name which of the three ran; a fixture pass with no device name is
+a sentence nobody can check. Adding a fourth device is a decision for the maintainer, not a
+local convenience.
+
 ## Runtime & Security Constraints
 
 No game-code reverse engineering, binary patches, debugger attachment after

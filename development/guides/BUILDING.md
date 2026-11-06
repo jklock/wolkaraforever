@@ -33,23 +33,28 @@ to a running application.
 
 For simulator work, the supported storage layout keeps *device data* on the
 external Storage volume without asking CoreSimulator to use an unsupported
-external directory. Install Xcode's iOS 27.0 and 27.1 simulator runtimes from
-Xcode Components, then run this once:
+external directory. Install an iOS simulator runtime from Xcode Components,
+then run this once:
 
 ```bash
 wolkaraforever/tools/setup_simulators.sh --apply
 ```
 
-This is a destructive reset of the default simulator set. It shuts down and
-deletes existing simulators, creates `/Volumes/Storage/Simulators.sparsebundle`,
-and mounts that APFS disk image at
-`~/Library/Developer/CoreSimulator`. CoreSimulator therefore sees its required
-native local APFS mount while the image and all simulator device data live on
-Storage. The script creates and boot-checks these clean devices:
+It creates `/Volumes/Storage/Simulators.sparsebundle` and mounts that APFS disk
+image at `~/Library/Developer/CoreSimulator`. CoreSimulator therefore sees its
+required native local APFS mount while the image and all simulator device data
+live on Storage.
 
-- `Wolkara iPad Pro 13 M5` (iOS 27.0)
-- `Wolkara iPhone 18 Pro` (iOS 27.0)
-- `Wolkara iPhone Duo` (iOS 27.1)
+The test matrix is three devices and no others, and the script ensures only the
+two simulators among them:
+
+- `iPad Pro 13-inch (M5)` — simulator
+- `iPhone Duo` — simulator
+- `iPad Pro 12.9-inch (5th generation)` — the physical iPad, no simulator
+
+It creates each one only if it is not already there. A device it creates is boot-checked once
+and shut down again; a device that already exists is reported and left exactly as it is. It
+deletes nothing and shuts nothing else down: every other simulator on the Mac is left alone.
 
 It also installs a per-user LaunchAgent that reattaches the image at login.
 Keep the Storage volume connected and mounted before opening Xcode; if it was

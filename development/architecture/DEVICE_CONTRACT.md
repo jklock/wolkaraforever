@@ -127,7 +127,28 @@ narrow it is, which is the assumption that produced the overflowing table header
 A source or fixture result never becomes a device result, and a device result on one form
 factor never becomes a claim about the other.
 
-## 9. What would make this contract wrong
+## 9. The test matrix
+
+Three devices, and nothing else. A result was measured on one of these or it is a source-only
+result:
+
+| # | Device | Kind | What it is evidence for |
+| --- | --- | --- | --- |
+| 1 | iPhone Duo | simulator | The phone layout and the compact pages, against stand-ins |
+| 2 | iPad Pro 13-inch (M5) | simulator | The iPad layout, popups and the UIKit adapters, against stand-ins |
+| 3 | iPad Pro 12.9-inch (5th generation) | the physical iPad | Developer service, physical Metal, real input, the installed build |
+
+The physical iPad is reached only through `wolkaraforever/tools/`; raw `devicectl` game
+operations are not part of the matrix and never produce evidence. No other iPad, no iPhone
+hardware, and no fourth simulator is in it, and a result from one is not evidence for any of
+the three.
+
+`wolkaraforever/tools/simulators.sh` is the matrix in code: the simulator suites and both
+platform wrappers resolve their device through it, and it refuses a device that is not on this
+list instead of substituting the nearest one. Adding a device changes this contract, because a
+wider matrix is a wider promise about what *tested* means.
+
+## 10. What would make this contract wrong
 
 Change one of these and the contract must be re-measured, not re-worded:
 

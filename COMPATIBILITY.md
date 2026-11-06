@@ -29,6 +29,13 @@ Every result is at one of four levels (see
 device script, or human full-game. A result never moves up a level without a new run at that
 level.
 
+The devices those levels are measured on are fixed: **iPhone Duo** and **iPad Pro 13-inch (M5)**
+in the simulator, and the **iPad Pro 12.9-inch (5th generation)** on hardware. That is the whole
+test matrix — see
+[the device contract](development/architecture/DEVICE_CONTRACT.md#9-the-test-matrix). A result
+from any other device, including the 2026-10-02 iPhone 16 Pro Max session recorded below, is
+dated history rather than current coverage.
+
 | Level | What ran | What it proves |
 | --- | --- | --- |
 | Source | The layer gate, the documentation links, the per-module suites, the platform emulation suite, and the developer-service handoff against a synthetic local peer | That the code and its contracts do what the tests assert on a Mac. Nothing about an iPad. |

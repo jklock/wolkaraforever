@@ -1,30 +1,37 @@
 #!/bin/bash
-# Put mutable CoreSimulator device data in an APFS sparse bundle on Storage.
+# Put mutable CoreSimulator device data in an APFS sparse bundle on Storage, and
+# make sure the two matrix simulators exist.
 # usage: wolkaraforever/tools/setup_simulators.sh --apply
 #
 # CoreSimulatorService cannot write directly to an external USB path, even via a
 # symlink or simctl --set. A native APFS disk-image mount works: the sparse
 # bundle's blocks live on Storage while CoreSimulator sees an APFS mount at its
 # required local path. Xcode's sealed simulator runtimes remain Apple-managed.
+#
+# The test matrix is three devices and no others (see
+# development/architecture/DEVICE_CONTRACT.md):
+#
+#   1. iPhone Duo                    - simulator, ensured here
+#   2. iPad Pro 13-inch (M5)         - simulator, ensured here
+#   3. iPad Pro 12.9-inch (5th gen)  - the physical iPad, no simulator involved
+#
+# So this script creates, at most, those two simulators. It deletes nothing and
+# shuts nothing down: a simulator already carrying a matrix name is reused as it
+# is, and every other simulator on this Mac is left alone. `simctl create` is the
+# only simulator creation in this repository, and it is called from here for
+# these two names only.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+. wolkaraforever/tools/simulators.sh
 
 storage_image=/Volumes/Storage/Simulators.sparsebundle
 mount_root="$HOME/Library/Developer/CoreSimulator"
 launch_agent="$HOME/Library/LaunchAgents/com.wolkaraforever.coresimulator-storage.plist"
-base_runtime=com.apple.CoreSimulator.SimRuntime.iOS-27-0
-duo_runtime=com.apple.CoreSimulator.SimRuntime.iOS-27-1
 
 if [ "${1:-}" != --apply ] || [ "$#" -ne 1 ]; then
     echo "usage: wolkaraforever/tools/setup_simulators.sh --apply" >&2
     exit 2
 fi
-for runtime in "$base_runtime" "$duo_runtime"; do
-    xcrun simctl list runtimes | grep -q "$runtime" || {
-        echo "setup_simulators: install the required iOS 27 runtimes in Xcode Components" >&2
-        exit 1
-    }
-done
 [ -d /Volumes/Storage ] && [ -w /Volumes/Storage ] || {
     echo "setup_simulators: /Volumes/Storage is not writable" >&2
     exit 1
@@ -48,48 +55,93 @@ rollback() {
 }
 trap rollback ERR
 
-# The clean recreation is performed through simctl, not by deleting directories.
-xcrun simctl shutdown all >/dev/null 2>&1 || true
-xcrun simctl delete all
-killall -9 com.apple.CoreSimulator.CoreSimulatorService >/dev/null 2>&1 || true
+# `hdiutil info | grep -q` reads as a mount test and is not one under pipefail:
+# grep -q exits at the first match, hdiutil then dies of SIGPIPE, and the
+# pipeline reports failure for an image that is attached - which sent the old
+# script down the unattach branch to move a live mount point aside. Match in the
+# shell instead, where there is no pipe to break.
+amount=$(hdiutil info 2>/dev/null || true)
+case "$amount" in
+    *"$storage_image"*) ;;
+    *)
+        backup_root="$HOME/Library/Developer/CoreSimulator.pre-storage-$(date +%Y%m%d-%H%M%S)"
+        mv "$mount_root" "$backup_root"
+        mkdir "$mount_root"
+        if [ ! -e "$storage_image" ]; then
+            hdiutil create -size 150g -type SPARSEBUNDLE -fs APFS \
+                -volname WolkaraSimulatorStorage "$storage_image" >/dev/null
+        fi
+        hdiutil attach -nobrowse -mountpoint "$mount_root" "$storage_image" >/dev/null
+        mounted=1
+        ;;
+esac
 
-if ! hdiutil info | grep -Fq "$storage_image"; then
-    backup_root="$HOME/Library/Developer/CoreSimulator.pre-storage-$(date +%Y%m%d-%H%M%S)"
-    mv "$mount_root" "$backup_root"
-    mkdir "$mount_root"
-    if [ ! -e "$storage_image" ]; then
-        hdiutil create -size 150g -type SPARSEBUNDLE -fs APFS \
-            -volname WolkaraSimulatorStorage "$storage_image" >/dev/null
-    fi
-    hdiutil attach -nobrowse -mountpoint "$mount_root" "$storage_image" >/dev/null
-    mounted=1
-fi
+case "$(diskutil info "$mount_root" 2>/dev/null || true)" in
+    *Protocol:*"Disk Image"*) ;;
+    *)
+        echo "setup_simulators: $mount_root is not the Storage-backed disk image" >&2
+        exit 1
+        ;;
+esac
 
-diskutil info "$mount_root" | grep -q 'Protocol:.*Disk Image' || {
-    echo "setup_simulators: $mount_root is not the Storage-backed disk image" >&2
-    exit 1
-}
-
-create() {
-    local name=$1 type=$2 runtime=$3 udid
-    udid=$(xcrun simctl list devices "$runtime" --json | python3 -c '
+# The UDID of a device whose name starts with this one, or nothing.
+device_udid() {
+    xcrun simctl list devices -j | python3 -c '
 import json, sys
-for entries in json.load(sys.stdin).get("devices", {}).values():
-    for device in entries:
-        if device.get("name") == sys.argv[1]:
+prefix = sys.argv[1].lower()
+for group in json.load(sys.stdin)["devices"].values():
+    for device in group:
+        if device["name"].lower().startswith(prefix):
             print(device["udid"])
             raise SystemExit
-' "$name")
-    if [ -z "$udid" ]; then udid=$(xcrun simctl create "$name" "$type" "$runtime"); fi
-    xcrun simctl boot "$udid"
-    xcrun simctl bootstatus "$udid" -b
-    xcrun simctl shutdown "$udid"
+print("")' "$1"
+}
+
+# The newest installed iOS runtime that can host this form factor.
+newest_runtime() {
+    xcrun simctl list runtimes -j | python3 -c '
+import json, sys
+want = sys.argv[1]
+runtimes = [
+    r for r in json.load(sys.stdin)["runtimes"]
+    if r.get("platform") == "iOS" and r.get("isAvailable", True)
+]
+phones = [r for r in runtimes if "iPhone" in r["identifier"]]
+if want == "iphone":
+    runtimes = phones or runtimes
+else:
+    runtimes = [r for r in runtimes if "iPhone" not in r["identifier"]] or runtimes
+if not runtimes:
+    raise SystemExit
+runtimes.sort(key=lambda r: [int(p) for p in r["version"].split(".")])
+print(runtimes[-1]["identifier"])' "$1"
+}
+
+# Ensure one matrix simulator. A device that already exists is reported and left
+# exactly as it is; a device this run creates is boot-checked once, so a broken
+# runtime is found here instead of in the middle of a suite, and then shut down.
+ensure_device() {
+    local key=$1 type=$2 name=$3 udid runtime
+    udid=$(device_udid "$name")
+    if [ -n "$udid" ]; then
+        echo "setup_simulators: $name already exists ($udid); left as it is"
+        printf '%s %s\n' "$name" "$udid"
+        return
+    fi
+    runtime=$(newest_runtime "$key")
+    [ -n "$runtime" ] || {
+        echo "setup_simulators: install an iOS simulator runtime for $name in Xcode Components" >&2
+        exit 1
+    }
+    udid=$(xcrun simctl create "$name" "$type" "$runtime")
+    echo "setup_simulators: created $name on $runtime ($udid)"
+    xcrun simctl bootstatus "$udid" -b >/dev/null
+    xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
     printf '%s %s\n' "$name" "$udid"
 }
 
-create "Wolkara iPad Pro 13 M5" com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB "$base_runtime"
-create "Wolkara iPhone 18 Pro" com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro "$base_runtime"
-create "Wolkara iPhone Duo" com.apple.CoreSimulator.SimDeviceType.iPhone-Duo "$duo_runtime"
+ensure_device ipad com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-16GB "$WOLKARA_MATRIX_IPAD"
+ensure_device iphone com.apple.CoreSimulator.SimDeviceType.iPhone-Duo "$WOLKARA_MATRIX_IPHONE"
 
 mkdir -p "$(dirname "$launch_agent")"
 cat > "$launch_agent" <<PLIST
@@ -105,7 +157,14 @@ cat > "$launch_agent" <<PLIST
 </dict></plist>
 PLIST
 
-# Keep the old clean-reset device set recoverable until the user empties Trash.
+# Keep the old device set recoverable until the user empties Trash.
 if [ -n "$backup_root" ]; then mv "$backup_root" "$HOME/.Trash/$(basename "$backup_root")"; fi
 trap - ERR
-echo "setup_simulators: device data is in $storage_image (mounted at $mount_root)"
+cat <<EOF
+setup_simulators: device data is in $storage_image (mounted at $mount_root)
+
+The test matrix is these three devices and no others:
+  1. $WOLKARA_MATRIX_IPHONE  (simulator)
+  2. $WOLKARA_MATRIX_IPAD  (simulator)
+  3. $WOLKARA_MATRIX_PHYSICAL  (hardware, through device_matrix.sh)
+EOF
