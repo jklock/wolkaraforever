@@ -13,6 +13,12 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **Dictation interest no longer depends on the pad being connected.** The router told the
+  controller inspector about the mapped button only for controllers already connected, so a mapping
+  made for a pad that connected later left the inspector uninterested and the first press was
+  missed. `AKTrigger +mappedElementsInDefaults:` reads every stored mapping instead, which is what
+  `DEVICE_CONTRACT.md` §5 already promised. Found by `test_voice.sh` the moment the simulator
+  worked again: 2 of 341 checks, now `VOICE PASS: 341 checks`.
 - **Simulator device data is no longer moved onto a disk image.**
   `setup_simulators.sh` used to mount an APFS sparse bundle on `/Volumes/Storage` at
   `~/Library/Developer/CoreSimulator`. Every device booted from it hung on the Apple logo: SpringBoard

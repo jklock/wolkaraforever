@@ -63,6 +63,9 @@ extern NSString *const AKTriggerAnyElement;
 // wrote under the vendor name alone is moved onto the identity first, by
 // -[AKVoiceSettings adoptLegacyMappingForDevice:vendor:], not guessed at here.
 + (nullable instancetype)savedTriggerForDevice:(nullable NSString *)device defaults:(NSUserDefaults *)defaults;
+// Every mapped element, whatever device it belongs to and whether or not that device is
+// connected. The router tells the controller inspector what to admit from this.
++ (NSArray<NSString *> *)mappedElementsInDefaults:(NSUserDefaults *)defaults;
 - (void)saveForDevice:(nullable NSString *)device defaults:(NSUserDefaults *)defaults;
 + (void)forgetTriggerForDevice:(nullable NSString *)device defaults:(NSUserDefaults *)defaults;
 
