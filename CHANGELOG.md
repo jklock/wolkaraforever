@@ -24,6 +24,16 @@ This changelog records release history. It is not a compatibility guarantee: rea
   `_pthread_start` in an iOS 27.2 runtime gives
   `libsystem_pthread.dylib+0x88 symbol=pthread_rwlock_rdlock` — the line that report was
   missing. It puts the fault in a read lock taken on a null object, not in the loader.
+- **A first run no longer starts in Europe whatever the device is.** The launcher's region
+  defaulted to `eu` on every device, and the first install writes that portal into the
+  client's own `Config.wtf` once and never rewrites it. An account outside Europe then sat
+  at "Connecting" for ever with nothing on screen saying why (issue #16, a US iPhone Duo
+  player, resolved by changing the region by hand). `TKWoWDefaultRegion` now takes the
+  region from the device's own locale: the US portal for the Americas and Oceania, `kr` and
+  `tw` for their own regions, Europe for everywhere else and for a locale with no country.
+  A region the user chose is still never replaced, and an unusable stored value still falls
+  back to Europe. Covered by `test_wow_launcher_ui.sh`, which now stands a locale in for
+  the device so the assertion means the same thing on any Mac.
 - **Dictation interest no longer depends on the pad being connected.** The router told the
   controller inspector about the mapped button only for controllers already connected, so a mapping
   made for a pad that connected later left the inspector uninterested and the first press was
