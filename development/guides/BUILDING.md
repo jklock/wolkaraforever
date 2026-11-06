@@ -29,21 +29,13 @@ to a running application.
   devices or OS versions.
 - A macOS arm64 application that you own, installed on the Mac.
 
-## Storage-backed simulator devices
+## Simulator devices
 
-For simulator work, the supported storage layout keeps *device data* on the
-external Storage volume without asking CoreSimulator to use an unsupported
-external directory. Install an iOS simulator runtime from Xcode Components,
-then run this once:
+Install an iOS simulator runtime from Xcode Components, then run this once:
 
 ```bash
 wolkaraforever/tools/setup_simulators.sh --apply
 ```
-
-It creates `/Volumes/Storage/Simulators.sparsebundle` and mounts that APFS disk
-image at `~/Library/Developer/CoreSimulator`. CoreSimulator therefore sees its
-required native local APFS mount while the image and all simulator device data
-live on Storage.
 
 The test matrix is three devices and no others, and the script ensures only the
 two simulators among them:
@@ -56,26 +48,30 @@ It creates each one only if it is not already there. A device it creates is boot
 and shut down again; a device that already exists is reported and left exactly as it is. It
 deletes nothing and shuts nothing else down: every other simulator on the Mac is left alone.
 
-It also installs a per-user LaunchAgent that reattaches the image at login.
-Keep the Storage volume connected and mounted before opening Xcode; if it was
-not available at login, attach the image before starting CoreSimulator:
+### Device data stays on the boot volume
+
+`~/Library/Developer/CoreSimulator` must be a real directory on the boot volume. Do not move it
+to the external Storage volume, by symlink, by `simctl --set`, or by mounting a disk image there.
+
+A disk image there looks like it works — devices list, `simctl` starts them — and then every
+device hangs on the Apple logo forever: SpringBoard gets a PID but never registers
+`com.apple.springboard.services`, the screen never leaves the logo, and the writes stop. The
+same device on the boot volume reaches the home screen in seconds. That was measured on
+2026-11-06 with both matrix simulators, and it is why this repository no longer relocates the
+data root.
+
+The space it would save is small: device data is under a gigabyte, while the runtime images
+beside it are tens of gigabytes and live on the boot volume either way.
+
+If an image is already mounted there, the setup script refuses to run and prints the way back:
 
 ```bash
-hdiutil attach -nobrowse -mountpoint "$HOME/Library/Developer/CoreSimulator" \
-  /Volumes/Storage/Simulators.sparsebundle
+xcrun simctl shutdown all
+launchctl bootout gui/$(id -u)/com.wolkaraforever.coresimulator-storage
+diskutil unmount force ~/Library/Developer/CoreSimulator
+mkdir -p ~/Library/Developer/CoreSimulator
+cp -a <backup>/Devices ~/Library/Developer/CoreSimulator/Devices
 ```
-
-Confirm the live mount and devices with:
-
-```bash
-diskutil info "$HOME/Library/Developer/CoreSimulator"
-xcrun simctl list devices available
-```
-
-`diskutil` must report `Protocol: Disk Image` and `Device Location: External`.
-Do not replace this mount with a symlink or point `simctl --set` directly at the
-external USB path: CoreSimulator rejects those layouts. Do not rename or remove
-the sparse bundle while CoreSimulator is running; use `simctl` to reset devices.
 
 The sealed iOS and iPadOS simulator runtimes are Apple-managed Cryptex content
 and remain where Xcode installs them. macOS does not use a CoreSimulator runtime:

@@ -13,6 +13,14 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **Simulator device data is no longer moved onto a disk image.**
+  `setup_simulators.sh` used to mount an APFS sparse bundle on `/Volumes/Storage` at
+  `~/Library/Developer/CoreSimulator`. Every device booted from it hung on the Apple logo: SpringBoard
+  got a PID but never registered `com.apple.springboard.services`, the screen never changed and the
+  writes stopped. The same device on the boot volume reaches the home screen in seconds — measured
+  2026-11-06 on both matrix simulators. The script now only ensures the two matrix simulators exist,
+  refuses to run while such an image is mounted, and prints the way back; `BUILDING.md` documents
+  why device data has to stay on the boot volume.
 - **One test matrix: three devices, enforced by the tools.** The suites used to take whichever
   iPad or iPhone happened to be installed, and to keep trying devices until one booted. Now
   `wolkaraforever/tools/simulators.sh` names the only devices this project measures —
