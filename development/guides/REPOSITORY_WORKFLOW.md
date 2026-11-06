@@ -10,7 +10,11 @@ engine and evidence that must remain tied to the exact build that ran.
 Apply these rules to `main` in GitHub. GitHub branch protection cannot be committed to this
 repository; this page is the authoritative configuration record.
 
-- Require a pull request before merging, with at least one approval.
+- Require a pull request before merging. **No approving review is required**, and that is
+deliberate: there is one maintainer, GitHub does not let a pull request's author approve their own
+work, and requiring an approval therefore turned every merge into an admin override (PR #11,
+2026-11-06). The rule still enforces the pull request, which is the part that carries the
+verification and risk record.
 - Dismiss stale approvals when new commits are pushed; require conversation resolution and
   the branch to be current with `main`.
 - No hosted CI. The verification is `wolkaraforever/tools/check_docs.sh` and
@@ -24,9 +28,13 @@ repository; this page is the authoritative configuration record.
   the checks that run on Linux.
 - Require linear history; allow squash merges for ordinary PRs. Reserve merge commits for
   intentional integration branches.
-- Block force-pushes and branch deletion. The repository owner has the intentionally selected
-  normal bypass; every bypassed merge must still carry the PR's verification and risk record.
-- Enforce `.github/CODEOWNERS` for protected paths.
+- Block force-pushes and branch deletion. The repository owner keeps the intentionally selected
+  normal bypass for the cases that need it (a hotfix during an incident, for example); it is a
+  fallback, not the ordinary path, and every bypassed merge must still carry the PR's
+  verification and risk record.
+- `.github/CODEOWNERS` names who owns a protected path, so a change there reaches the right
+  person. It is a routing record rather than a merge gate; a code-owner approval requirement has
+  the same self-approval problem as a required approval.
 - Enable GitHub secret scanning, push protection, Dependabot alerts, and private
   vulnerability reporting.
 
