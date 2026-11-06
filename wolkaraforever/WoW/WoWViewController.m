@@ -203,7 +203,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     _product=TKWoWProducts()[0];
     for (NSDictionary *p in TKWoWProducts()) if ([p[@"id"] isEqual:[defaults stringForKey:@"WoWProduct"]]) _product=p;
-    _region=[defaults stringForKey:@"WoWRegion"]?:@"eu";
+    // A region the user has not chosen follows the device rather than being Europe
+    // whatever the device is. The first install writes the portal into the client's own
+    // settings once and never rewrites it, so a portal that does not match the account
+    // leaves sign-in at "Connecting" for ever with nothing on screen saying why. A
+    // region the user chose is never replaced.
+    _region=[defaults stringForKey:@"WoWRegion"]?:TKWoWDefaultRegion(NSLocale.currentLocale);
     if (![@[@"eu",@"us",@"kr",@"tw"] containsObject:_region]) _region=@"eu";
     _locale=[defaults stringForKey:@"WoWLocale"]?:TKWoWDefaultLocale(_product);
     if (![@[@"enUS",@"frFR",@"esES",@"deDE"] containsObject:_locale]) _locale=@"enUS";

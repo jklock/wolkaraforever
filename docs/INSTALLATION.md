@@ -82,7 +82,11 @@ Select **Tolkara** and **LocalAuthorizationTunnel**, choose your team under
 ## First launch
 
 1. Open **WolkaraForever**.
-2. Choose **Forever**, a region, and a language.
+2. Choose **Forever**, then check the region and the language. The region starts as the one
+   this device is set to, and it must match the region of the account you sign in with: the
+   launcher writes it into the client's own settings at install and never rewrites them, so
+   the wrong region leaves sign-in at **Connecting**. The region/locale row on the home
+   screen changes it before you install.
 3. Select **Install**, then keep the app open while it downloads and verifies the client.
 4. Select **Play**. Allow the private tunnel if asked and keep the app foregrounded while
    memory preparation completes; it can take several minutes.

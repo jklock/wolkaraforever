@@ -410,6 +410,14 @@ static void TestAddons(void) {
 @end
 static NSString *displayFixtureModel;
 static NSString *DisplayFixtureModel(id self, SEL selector) { (void)self; (void)selector; return displayFixtureModel; }
+// The launcher's first-run region comes from the device's own locale, and the simulator's
+// locale is whatever this Mac was configured with. Stand one in for the duration of the
+// check, the same way the model identifier is stood in for above, so the assertion says
+// what it means on any machine instead of agreeing with a hard-coded Europe.
+static NSString *defaultRegionLocale;
+static NSLocale *DefaultRegionLocale(id self, SEL selector) {
+    (void)self; (void)selector; return [NSLocale localeWithLocaleIdentifier:defaultRegionLocale];
+}
 static void TestPhoneDisplayDefaults(void) {
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     NSArray *keys=@[@"WolkaraForeverDeviceProfile",@"WolkaraForeverRenderProfile",@"WolkaraForeverBackingScale",@"WolkaraForeverPhoneDisplayV1"];
@@ -494,6 +502,45 @@ static void TestPhoneDisplayDefaults(void) {
     // from a manager that never focuses its search field.
     [NSNotificationCenter.defaultCenter addObserverForName:UIKeyboardDidShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { (void)note; keyboardShown=YES; }];
     fixture=[TKFixtureLibrary new];
+    // --- The region a first run starts in, before the user has chosen one
+    // Every device used to start in Europe, and the first install writes that region into
+    // the client's own settings once and never rewrites it - so an account outside Europe
+    // sat at "Connecting" for ever with nothing on screen saying why (issue #16). The
+    // default follows the device now; a region the user chose is never replaced.
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_US"]) isEqual:@"us"]);
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_CA"]) isEqual:@"us"]);
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"pt_BR"]) isEqual:@"us"]);
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_AU"]) isEqual:@"us"]);
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"ko_KR"]) isEqual:@"kr"]);
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"zh_TW"]) isEqual:@"tw"]);
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"zh_HK"]) isEqual:@"tw"]);
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"de_DE"]) isEqual:@"eu"]);
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_GB"]) isEqual:@"eu"]);
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"ja_JP"]) isEqual:@"eu"]);
+    // A locale with no country at all is the old value rather than a guess.
+    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en"]) isEqual:@"eu"]);
+    assert([TKWoWDefaultRegion(nil) isEqual:@"eu"]);
+    Method currentLocale=class_getClassMethod(NSLocale.class,@selector(currentLocale));
+    IMP originalLocale=method_setImplementation(currentLocale,(IMP)DefaultRegionLocale);
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWRegion"];
+    for (NSArray *pair in @[@[@"en_US",@"us"],@[@"ko_KR",@"kr"],@[@"zh_TW",@"tw"],@[@"de_DE",@"eu"]]) {
+        defaultRegionLocale=pair[0];
+        TKDisplayFixtureController *firstRun=[[TKDisplayFixtureController alloc] initWithLibrary:(id)fixture];
+        assert([[firstRun valueForKey:@"region"] isEqual:pair[1]]);
+    }
+    // A region the user did choose is kept, including one the default would not have picked.
+    [NSUserDefaults.standardUserDefaults setObject:@"kr" forKey:@"WoWRegion"];
+    defaultRegionLocale=@"en_US";
+    TKDisplayFixtureController *chosen=[[TKDisplayFixtureController alloc] initWithLibrary:(id)fixture];
+    assert([[chosen valueForKey:@"region"] isEqual:@"kr"]);
+    // A stored value the client cannot use falls back instead of reaching a request.
+    [NSUserDefaults.standardUserDefaults setObject:@"xx" forKey:@"WoWRegion"];
+    chosen=[[TKDisplayFixtureController alloc] initWithLibrary:(id)fixture];
+    assert([[chosen valueForKey:@"region"] isEqual:@"eu"]);
+    method_setImplementation(currentLocale,originalLocale);
+    // The rest of the run starts in Europe, so its region assertions mean what they say
+    // however this Mac is configured and whatever a previous run left behind.
+    [NSUserDefaults.standardUserDefaults setObject:@"eu" forKey:@"WoWRegion"];
     self.window=[[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.controller=[[TKWoWViewController alloc] initWithLibrary:(id)fixture];
     __weak TKWoWFixtureDelegate *weakSelf=self;
@@ -2062,7 +2109,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     for (UIBarButtonItem *item in @[gear, refresh])
         assert(item.target != nil && item.action != NULL);
 
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); the region a first run starts in (the device's region, a chosen region kept, an unusable one refused); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.
