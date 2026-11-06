@@ -62,6 +62,37 @@ function ns.ApplyButton(button)
     return true
 end
 
+-- Le temps qui reste avant de pouvoir relancer, écrit en grand sur le sort, et son icône en
+-- gris jusque-là : le balayage seul ne se lisait pas sur un petit bouton rond, et les chiffres
+-- du jeu dépendent d'une option souvent désactivée. Le recharge global (moins de 2 s, après
+-- chaque sort) garde son balayage, sans chiffre ni gris.
+local GLOBAL_COOLDOWN = 2
+local ticking = {}
+
+function ns.CooldownText(remaining)
+    if remaining >= 60 then return math.ceil(remaining / 60) .. "m" end
+    if remaining >= 3 then return tostring(math.ceil(remaining)) end
+    return string.format("%.1f", remaining)
+end
+
+local function StopTimer(button)
+    ticking[button] = nil
+    if button.timer then button.timer:SetText("") end
+    button.icon:SetDesaturated(false)
+end
+
+local ticker = CreateFrame("Frame")
+local sinceTick = 0
+ticker:SetScript("OnUpdate", function(_, elapsed)
+    sinceTick = sinceTick + elapsed
+    if sinceTick < 0.1 then return end
+    sinceTick = 0
+    local now = GetTime()
+    for button, ends in pairs(ticking) do
+        if ends - now <= 0 then StopTimer(button) else button.timer:SetText(ns.CooldownText(ends - now)) end
+    end
+end)
+
 function ns.UpdateCooldown(button)
     local entry = button:GetEntry()
     local start, duration, enable
@@ -77,9 +108,17 @@ function ns.UpdateCooldown(button)
             button.cooldown:SetCooldown(start, duration)
             button.cooldown:Show()
         end
+        if duration > GLOBAL_COOLDOWN and button.timer then
+            ticking[button] = start + duration
+            button.timer:SetText(ns.CooldownText(math.max(0, start + duration - GetTime())))
+            button.icon:SetDesaturated(true)
+        else
+            StopTimer(button)
+        end
     else
         if button.cooldown.Clear then button.cooldown:Clear() end
         button.cooldown:Hide()
+        StopTimer(button)
     end
 end
 
@@ -175,6 +214,16 @@ function ns.CreateActionButton(name, parent, size, getEntry, setEntry)
     button.cooldown:SetAllPoints(button.icon)
     if round and button.cooldown.SetSwipeTexture then button.cooldown:SetSwipeTexture(ns.CIRCLE) end
     if button.cooldown.SetUseCircularEdge then button.cooldown:SetUseCircularEdge(true) end
+    if button.cooldown.SetSwipeColor then button.cooldown:SetSwipeColor(0, 0, 0, 0.75) end
+    if button.cooldown.SetHideCountdownNumbers then button.cooldown:SetHideCountdownNumbers(true) end
+    -- Au-dessus du balayage : le temps qui reste.
+    local over = CreateFrame("Frame", nil, button)
+    over:SetAllPoints()
+    over:SetFrameLevel(button.cooldown:GetFrameLevel() + 2)
+    button.timer = over:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    button.timer:SetPoint("CENTER")
+    button.timer:SetTextColor(1, 1, 1)
+    button.timer:SetShadowOffset(1, -1)
 
     button.editGlow = ns.Disc(button, "OVERLAY", 1, 0.8, 0.2, 0.28, 0)
     button.editGlow:Hide()

@@ -47,7 +47,8 @@ local function BuildGroup(side, key, prefix)
         local button = ns.CreateActionButton(prefix .. index, UIParent, SIZE,
             function() return store(index).entry end,
             function(entry) store(index).entry = entry end)
-        button:SetFrameStrata("MEDIUM")
+        -- Sous les fenêtres du jeu (fiche, sacs, sorts), qui s'ouvrent par-dessus.
+        button:SetFrameStrata("LOW")
         button:RegisterForDrag("LeftButton")
         ns.Movable(button, function() return store(index) end, "pos",
             function() return Arc(side, index, settings().count, settings().spread)() end)

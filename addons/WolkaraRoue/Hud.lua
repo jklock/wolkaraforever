@@ -45,18 +45,44 @@ end
 local function Unit(name, unit, width, default)
     local frame = CreateFrame("Button", name, UIParent, "SecureUnitButtonTemplate")
     frame:SetSize(width, unit == "player" and 66 or 58)
-    frame:SetFrameStrata("MEDIUM")
+    -- Sous les fenêtres du jeu (fiche, sacs, sorts), qui s'ouvrent par-dessus.
+    frame:SetFrameStrata("LOW")
     frame:RegisterForClicks("AnyUp")
     frame:SetAttribute("unit", unit)
     frame:SetAttribute("type1", "target")
     frame.unit = unit
     ns.Box(frame, "BACKGROUND", 0, 0, 0, 0.4)
+    -- Ton portrait, à gauche de tes barres : le toucher ouvre la fiche du personnage sans passer
+    -- par le menu, par un clic sur le bouton Personnage du jeu (le combat le permet).
+    local left = 0
+    if unit == "player" then
+        local portrait = CreateFrame("Button", "WolkaraMobilePortrait", frame, "SecureActionButtonTemplate")
+        portrait:SetSize(60, 60)
+        portrait:SetPoint("LEFT", frame, "LEFT", 3, 0)
+        portrait:RegisterForClicks("AnyUp", "AnyDown")
+        if _G.CharacterMicroButton then
+            portrait:SetAttribute("type", "click")
+            portrait:SetAttribute("clickbutton", _G.CharacterMicroButton)
+        else
+            portrait:SetScript("PostClick", function(_, _, down)
+                if not down and ToggleCharacter then ToggleCharacter("PaperDollFrame") end
+            end)
+        end
+        ns.Disc(portrait, "BACKGROUND", 0.05, 0.05, 0.08, 0.9, 2)
+        portrait.texture = portrait:CreateTexture(nil, "ARTWORK")
+        portrait.texture:SetAllPoints()
+        ns.Circle(portrait, portrait.texture)
+        local highlight = ns.Disc(portrait, "HIGHLIGHT", 1, 1, 1, 0.18, 0)
+        highlight:SetBlendMode("ADD")
+        frame.portrait = portrait
+        left = 66
+    end
     frame.name = ns.Label(frame, "GameFontNormal")
-    frame.name:SetPoint("TOPLEFT", 6, -3)
+    frame.name:SetPoint("TOPLEFT", 6 + left, -3)
     frame.name:SetPoint("TOPRIGHT", -6, -3)
     frame.name:SetJustifyH("LEFT")
     frame.health = Bar(frame, 24, 0.15, 0.75, 0.2)
-    frame.health:SetPoint("TOPLEFT", 4, -20)
+    frame.health:SetPoint("TOPLEFT", 4 + left, -20)
     frame.health:SetPoint("TOPRIGHT", -4, -20)
     frame.power = Bar(frame, 12, 0.2, 0.4, 1)
     frame.power:SetPoint("TOPLEFT", frame.health, "BOTTOMLEFT", 0, -2)
@@ -174,7 +200,7 @@ local function Update(frame)
 end
 
 function Hud:Init()
-    player = Unit("WolkaraMobilePlayer", "player", 300, { "TOPLEFT", "TOPLEFT", 12, -10 })
+    player = Unit("WolkaraMobilePlayer", "player", 366, { "TOPLEFT", "TOPLEFT", 12, -10 })
     target = Unit("WolkaraMobileTarget", "target", 330, { "TOP", "TOP", 0, -96 })
     target:Hide()
 end
@@ -200,8 +226,13 @@ function Hud:Layout()
     self:Refresh()
 end
 
+local function Portrait()
+    if player and player.portrait and SetPortraitTexture then SetPortraitTexture(player.portrait.texture, "player") end
+end
+
 function Hud:Refresh()
     if not player then return end
+    Portrait()
     Update(player)
     Update(target)
 end
@@ -224,4 +255,5 @@ end
 ns.On("PLAYER_TARGET_CHANGED", function() Changed("target") end)
 ns.On("PLAYER_XP_UPDATE", function() Changed("player") end)
 ns.On("UNIT_COMBO_POINTS", function() Changed("target") end)
-ns.On("PLAYER_ENTERING_WORLD", function() Changed(nil) end)
+ns.On("PLAYER_ENTERING_WORLD", function() Portrait(); Changed(nil) end)
+ns.On("UNIT_PORTRAIT_UPDATE", function(unit) if unit == "player" then Portrait() end end)
