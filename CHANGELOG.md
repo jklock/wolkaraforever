@@ -13,51 +13,6 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
-- **The iPhone interface work is on `main`.** French as both an app and a game language, the
-  WolkaraRoue mobile add-on (turning wheels, cooldowns, bags, minimap, windows, chat), direct
-  touch as tap/hold/drag/pinch, the mobile keyboard, and the device-safe helper scripts
-  (`push_addon.sh`, `forget_login.sh`). Rebased onto `main` rather than merged as it stood:
-  the French table predated #11 (35 keys added, 10 that #17 removed), the keyboard's system
-  Done key had been rerouted from Replace to chat — contradicting `docs/TOUCH_INPUT.md` and
-  the touch-controls assertion, which now says Done replaces and the explicit Return key
-  sends — and `0048` needs a two-finger pinch, so `multipleTouchEnabled` assertions that pinned
-  single-touch were updated (patch 0053). `test_touch_gamepad_ui.sh` no longer depends on
-  machine speed: one pump call is not guaranteed to reach a before-waiting observer.
-- **A guest crash in a system library now names the function, not just the dylib.** Issue #13
-  arrived as `EXC_BAD_ACCESS: KERN_INVALID_ADDRESS at 0x198` with frame 0 in
-  `libsystem_pthread.dylib`. The client's own crash handler prints a frame outside the guest
-  arena as an image name and nothing else, and layer patch 0039 had stopped writing dlsym
-  resolution to the guest log, so a symbol that was not found left no trace either. The
-  guest's `dladdr` now answers a system frame as `image+offset symbol=name`, and a `dlsym`
-  that found nothing is logged without tracing; both are bounded to 64 lines and neither
-  changes what the guest is returned. Asking `dladdr` for the same distance from
-  `_pthread_start` in an iOS 27.2 runtime gives
-  `libsystem_pthread.dylib+0x88 symbol=pthread_rwlock_rdlock` — the line that report was
-  missing. It puts the fault in a read lock taken on a null object, not in the loader.
-- **A first run no longer starts in Europe whatever the device is.** The launcher's region
-  defaulted to `eu` on every device, and the first install writes that portal into the
-  client's own `Config.wtf` once and never rewrites it. An account outside Europe then sat
-  at "Connecting" for ever with nothing on screen saying why (issue #16, a US iPhone Duo
-  player, resolved by changing the region by hand). `TKWoWDefaultRegion` now takes the
-  region from the device's own locale: the US portal for the Americas and Oceania, `kr` and
-  `tw` for their own regions, Europe for everywhere else and for a locale with no country.
-  A region the user chose is still never replaced, and an unusable stored value still falls
-  back to Europe. Covered by `test_wow_launcher_ui.sh`, which now stands a locale in for
-  the device so the assertion means the same thing on any Mac.
-- **Dictation interest no longer depends on the pad being connected.** The router told the
-  controller inspector about the mapped button only for controllers already connected, so a mapping
-  made for a pad that connected later left the inspector uninterested and the first press was
-  missed. `AKTrigger +mappedElementsInDefaults:` reads every stored mapping instead, which is what
-  `DEVICE_CONTRACT.md` §5 already promised. Found by `test_voice.sh` the moment the simulator
-  worked again: 2 of 341 checks, now `VOICE PASS: 341 checks`.
-- **Simulator device data is no longer moved onto a disk image.**
-  `setup_simulators.sh` used to mount an APFS sparse bundle on `/Volumes/Storage` at
-  `~/Library/Developer/CoreSimulator`. Every device booted from it hung on the Apple logo: SpringBoard
-  got a PID but never registered `com.apple.springboard.services`, the screen never changed and the
-  writes stopped. The same device on the boot volume reaches the home screen in seconds — measured
-  2026-11-06 on both matrix simulators. The script now only ensures the two matrix simulators exist,
-  refuses to run while such an image is mounted, and prints the way back; `BUILDING.md` documents
-  why device data has to stay on the boot volume.
 - **One test matrix: three devices, enforced by the tools.** The suites used to take whichever
   iPad or iPhone happened to be installed, and to keep trying devices until one booted. Now
   `wolkaraforever/tools/simulators.sh` names the only devices this project measures —

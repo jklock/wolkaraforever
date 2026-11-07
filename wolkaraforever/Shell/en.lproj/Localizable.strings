@@ -122,7 +122,6 @@
 "region.kr" = "Korea";
 "region.tw" = "Taiwan";
 "locale.enUS" = "English";
-"locale.frFR" = "French";
 "locale.esES" = "Spanish";
 "locale.deDE" = "German";
 
@@ -329,14 +328,12 @@
 /* ---- On-screen controls and keyboard ---- */
 "touch.draft.label" = "Replacement text";
 "touch.draft.hint" = "Tap Replace to replace the selected game field, or leave this empty to clear it. Existing game text is not shown here.";
-"touch.draft.placeholder" = "Return sends to the chat · Replace writes into the selected field";
+"touch.draft.placeholder" = "Draft · Replaces the field; empty clears it";
 "touch.draft.replace" = "Replace";
 "touch.draft.replace.hint" = "Replaces the whole selected game field. An empty draft clears it. Does not press Return.";
 "touch.draft.clear" = "Clear draft";
 "touch.keyboard.show" = "Show keyboard";
 "touch.keyboard.hide" = "Hide keyboard";
-"touch.toolbar.show" = "Show toolbar";
-"touch.toolbar.hide" = "Hide toolbar";
 "touch.trackpad.enable" = "Enable touch trackpad";
 "touch.trackpad.disable" = "Disable touch trackpad";
 "touch.trackpad.hint" = "One finger moves; tap to click. Two fingers scroll or tap for right click. Three fingers tap for middle click. Hold then slide to drag. Long-press this button for mouse buttons.";
@@ -350,7 +347,6 @@
 "touch.gamepad.button" = "Controller %@";
 "touch.gamepad.leftStick" = "Controller left stick";
 "touch.gamepad.rightStick" = "Controller right stick";
-"touch.gamepad.jump" = "Jump";
 "touch.gamepad.doneEditing" = "Done editing";
 "touch.gamepad.dragHint" = "Drag controls to move them";
 "touch.settings" = "Touch control settings";
@@ -362,7 +358,6 @@
 "touch.settings.stickSize" = "Sticks and face button size";
 "touch.settings.stickSize.value" = "Sticks and face button size · %.0f%%";
 "touch.settings.outerTriggers" = "Triggers on the outside";
-"touch.settings.sticksOnly" = "Sticks and jump only (hide the other buttons)";
 "touch.settings.haptics" = "Haptic feedback";
 "touch.settings.overlay" = "Performance overlay";
 "touch.settings.overlay.detail" = "Performance overlay (FPS & Thermals)";

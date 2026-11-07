@@ -123,11 +123,12 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
         snapshot = [AKInputInterest none];
     } else {
         NSMutableSet<NSString *> *elements = [NSMutableSet set];
-        // Every mapping that could apply, whether or not its pad is connected yet.
-        // Being generous here is the safe direction - the router still checks the
-        // exact trigger before it fires, and a mapped button that never arrives is
-        // dictation that silently does not work.
-        [elements addObjectsFromArray:AKVoiceSettings.shared.mappedElements];
+        // Every mapping that could apply: one keyed to a specific pad, and the one keyed to any
+        // device. Being generous here is the safe direction - the router still checks the exact
+        // trigger before it fires, and a mapped button that never arrives is dictation that
+        // silently does not work.
+        AKTrigger *any = [AKVoiceSettings.shared triggerForDevice:nil];
+        if (any.element.length) [elements addObject:any.element];
         for (GCController *pad in GCController.controllers) {
             AKTrigger *trigger = [AKVoiceSettings.shared triggerForDevice:AKControllerIdentity(pad)];
             if (trigger.element.length) [elements addObject:trigger.element];

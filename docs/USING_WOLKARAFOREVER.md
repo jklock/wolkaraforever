@@ -9,12 +9,8 @@ the selected client, download state, and iPad permissions change.
 
 ![Current WolkaraForever home screen in the simulator](screenshots/launcher-home.jpg)
 
-On the home screen, choose **Forever**, then check the region and game language. Regions are
+On the home screen, choose **Forever**, then select a region and game language. Regions are
 Europe, Americas, Korea, and Taiwan; game languages are English, Spanish, and German. The
-region starts as the one this device is set to, and the first install writes it into the
-game's own settings once; it has to match the region of the account you sign in with, or
-the client waits at **Connecting** for ever. Change it in the region/locale row before
-installing if it is not your account's region. The
 launcher itself can be read in English or German: see [App language](#app-language) below.
 Choose **Install** to download and verify the client, or let the app complete a required
 update before playing. Keep WolkaraForever foregrounded while it downloads, verifies, or

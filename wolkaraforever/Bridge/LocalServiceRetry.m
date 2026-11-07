@@ -9,8 +9,6 @@
     dispatch_source_t _timer;
     NSUInteger _generation;
     BOOL _started, _finished, _pending, _notified;
-    // The newest unavailable attempt's own report, so a timeout says what failed.
-    NSString *_lastReport;
 }
 - (instancetype)initWithTimeout:(NSTimeInterval)timeout interval:(NSTimeInterval)interval
                         attempt:(void (^)(TKLocalServiceReply))attempt {
@@ -35,7 +33,7 @@
     _timer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,dispatch_get_main_queue());
     dispatch_source_set_timer(_timer,dispatch_time(DISPATCH_TIME_NOW,(int64_t)(_timeout*NSEC_PER_SEC)),DISPATCH_TIME_FOREVER,0);
     dispatch_source_set_event_handler(_timer,^{
-        [weakSelf timedOut];
+        [weakSelf finish:NO report:@"Local service remains unavailable. If you disabled mobile data, turn it back on. No memory preparation was started."];
     });
     dispatch_resume(_timer);
     [self attempt];
@@ -51,7 +49,6 @@
             if (!self || self->_finished || !self->_pending || self->_generation!=generation) return;
             self->_pending=NO;
             if (result!=TKLocalServiceUnavailable) { [self finish:result==TKLocalServiceReady report:report]; return; }
-            if (report.length) self->_lastReport=[report copy];
             if (!self->_notified) { self->_notified=YES; if (self->_waiting) self->_waiting(); }
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(self->_interval*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
                 TKLocalServiceRetry *self=weakSelf;
@@ -59,11 +56,6 @@
             });
         });
     });
-}
-- (void)timedOut {
-    NSString *report=@"Local service remains unavailable. If you disabled mobile data, turn it back on. No memory preparation was started.";
-    if (_lastReport.length) report=[report stringByAppendingFormat:@" Last attempt: %@",_lastReport];
-    [self finish:NO report:report];
 }
 - (void)cancel {
     NSAssert(NSThread.isMainThread, @"Main thread only");

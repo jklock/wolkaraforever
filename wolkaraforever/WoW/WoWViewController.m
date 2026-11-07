@@ -25,37 +25,8 @@ static UIColor *Muted(void) { return [UIColor colorWithRed:0.66 green:0.72 blue:
 // is the same row in the same language.
 static NSString *TKWoWLocaleName(NSString *locale) {
     static NSArray<NSString *> *known; static dispatch_once_t once;
-    dispatch_once(&once, ^{ known = @[@"enUS", @"frFR", @"esES", @"deDE"]; });
+    dispatch_once(&once, ^{ known = @[@"enUS", @"esES", @"deDE"]; });
     return WKLocalized([@"locale." stringByAppendingString:[known containsObject:locale] ? locale : @"enUS"]);
-}
-// No saved choice yet: start from the language the installed game is already in (a copy
-// pushed from a Mac keeps its Config.wtf), then from the device's own language, then
-// English. Starting from English would make the first check plan an English download
-// over a French or German installation.
-static NSString *TKWoWDefaultLocale(NSDictionary *product) {
-    NSArray<NSString *> *supported=@[@"enUS", @"frFR", @"esES", @"deDE"];
-    NSString *documents=NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
-    NSString *folder=[product[@"folder"] isKindOfClass:NSString.class] ? product[@"folder"] : nil;
-    if (documents.length && folder.length) {
-        NSString *config=[[[[documents stringByAppendingPathComponent:@"World of Warcraft"]
-            stringByAppendingPathComponent:folder] stringByAppendingPathComponent:@"WTF"]
-            stringByAppendingPathComponent:@"Config.wtf"];
-        NSString *text=[NSString stringWithContentsOfFile:config encoding:NSUTF8StringEncoding error:nil];
-        for (NSString *line in [text componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
-            if (![line hasPrefix:@"SET textLocale "]) continue;
-            NSArray<NSString *> *parts=[line componentsSeparatedByString:@"\""];
-            if (parts.count>=2 && [supported containsObject:parts[1]]) return parts[1];
-        }
-    }
-    for (NSString *identifier in NSLocale.preferredLanguages) {
-        NSString *primary=[[identifier stringByReplacingOccurrencesOfString:@"_" withString:@"-"]
-            componentsSeparatedByString:@"-"].firstObject.lowercaseString;
-        if ([primary isEqual:@"fr"]) return @"frFR";
-        if ([primary isEqual:@"de"]) return @"deDE";
-        if ([primary isEqual:@"es"]) return @"esES";
-        if ([primary isEqual:@"en"]) return @"enUS";
-    }
-    return @"enUS";
 }
 static NSString *TKWoWRegionName(NSString *region) {
     static NSArray<NSString *> *known; static dispatch_once_t once;
@@ -203,15 +174,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     _product=TKWoWProducts()[0];
     for (NSDictionary *p in TKWoWProducts()) if ([p[@"id"] isEqual:[defaults stringForKey:@"WoWProduct"]]) _product=p;
-    // A region the user has not chosen follows the device rather than being Europe
-    // whatever the device is. The first install writes the portal into the client's own
-    // settings once and never rewrites it, so a portal that does not match the account
-    // leaves sign-in at "Connecting" for ever with nothing on screen saying why. A
-    // region the user chose is never replaced.
-    _region=[defaults stringForKey:@"WoWRegion"]?:TKWoWDefaultRegion(NSLocale.currentLocale);
+    _region=[defaults stringForKey:@"WoWRegion"]?:@"eu";
     if (![@[@"eu",@"us",@"kr",@"tw"] containsObject:_region]) _region=@"eu";
-    _locale=[defaults stringForKey:@"WoWLocale"]?:TKWoWDefaultLocale(_product);
-    if (![@[@"enUS",@"frFR",@"esES",@"deDE"] containsObject:_locale]) _locale=@"enUS";
+    _locale=[defaults stringForKey:@"WoWLocale"]?:@"enUS";
+    if (![@[@"enUS",@"esES",@"deDE"] containsObject:_locale]) _locale=@"enUS";
     return self;
 }
 - (UIButton *)button:(NSString *)identifier action:(SEL)action {
@@ -757,7 +723,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         // is most likely to recognise - and only the "follow the iPad" choice is translated.
         NSString *title=language==WKAppLanguageSystem
             ? [NSString stringWithFormat:@"%@ (%@)", WKLocalized(@"lang.system"), localization.resolvedLanguageName]
-            : [WKLocalization nativeNameForLanguage:language];
+            : (language==WKAppLanguageGerman?@"Deutsch":@"English");
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
             (void)action;
             [self applyAppLanguage:language];
@@ -780,17 +746,15 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 // the Game language row is always there for a later change of mind.
 - (void)offerGermanGameLanguage {
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
-    WKAppLanguage appLanguage=WKLocalization.shared.resolvedLanguage;
-    NSString *gameLocale=appLanguage==WKAppLanguageGerman?@"deDE":appLanguage==WKAppLanguageFrench?@"frFR":nil;
-    if (!gameLocale) return;
-    if ([_locale isEqual:gameLocale]) return;
+    if (WKLocalization.shared.resolvedLanguage!=WKAppLanguageGerman) return;
+    if ([_locale isEqual:@"deDE"]) return;
     if ([defaults boolForKey:@"WolkaraForeverGameLanguageOfferShown"]) return;
     [defaults setBool:YES forKey:@"WolkaraForeverGameLanguageOfferShown"];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"lang.confirm.title")
         message:WKLocalized(@"lang.confirm.message") preferredStyle:UIAlertControllerStyleActionSheet];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"lang.confirm.yes") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         (void)action;
-        [self setGameLocale:gameLocale];
+        [self setGameLocale:@"deDE"];
         [self presentMessage:WKLocalized(@"lang.gameChanged.title") message:WKLocalized(@"lang.confirm.changed")];
     }]];
     // Declining is an answer, not a cancellation: the app language stays German, and only
@@ -1041,7 +1005,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)choosePreference:(BOOL)region {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:region?WKLocalized(@"home.preferences.region"):WKLocalized(@"home.preferences.downloadLanguage") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    NSArray *values=region?@[@"eu",@"us",@"kr",@"tw"]:@[@"enUS",@"frFR",@"esES",@"deDE"];
+    NSArray *values=region?@[@"eu",@"us",@"kr",@"tw"]:@[@"enUS",@"esES",@"deDE"];
     for (NSString *value in values) [sheet addAction:[UIAlertAction actionWithTitle:region?TKWoWRegionName(value):TKWoWLocaleName(value) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         (void)action;
         if (region) { self->_region=value; [NSUserDefaults.standardUserDefaults setObject:value forKey:@"WoWRegion"]; [self refresh]; }

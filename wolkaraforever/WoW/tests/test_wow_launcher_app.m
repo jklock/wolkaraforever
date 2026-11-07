@@ -331,17 +331,11 @@ static void TestAddons(void) {
     assert(![files fileExistsAtPath:[addons stringByAppendingPathComponent:@"Imported"]]);
     assert(store.records.count == 1);   // only the one that was already there
 
-    // A listed add-on - one this store did not install - is the user's to remove: the row
-    // offers Remove for it. What stays refused is a folder that does not prove it is the
-    // add-on the record names, which is why the tocless folder is still here afterwards.
+    // An add-on this store did not install is not its to remove.
     error = nil;
     TKAddonRecord *existing = store.records[0];
-    BOOL removedListed = [store removeRecord:existing error:&error];
-    if (!removedListed) NSLog(@"ADDON_REMOVE_LISTED_FAILED: %@", error.localizedDescription);
-    assert(removedListed);
-    assert(![files fileExistsAtPath:[addons stringByAppendingPathComponent:@"MyAddon"]]);
-    assert([files fileExistsAtPath:[addons stringByAppendingPathComponent:@"NoTOC"]]);
-    assert(store.records.count == 0);   // the tocless folder was never listed
+    assert(![store removeRecord:existing error:&error]);
+    assert([files fileExistsAtPath:[addons stringByAppendingPathComponent:@"MyAddon"]]);
 
     // --- the key
     TKAddonCredentialStore *credentials = [TKAddonCredentialStore new];
@@ -410,14 +404,6 @@ static void TestAddons(void) {
 @end
 static NSString *displayFixtureModel;
 static NSString *DisplayFixtureModel(id self, SEL selector) { (void)self; (void)selector; return displayFixtureModel; }
-// The launcher's first-run region comes from the device's own locale, and the simulator's
-// locale is whatever this Mac was configured with. Stand one in for the duration of the
-// check, the same way the model identifier is stood in for above, so the assertion says
-// what it means on any machine instead of agreeing with a hard-coded Europe.
-static NSString *defaultRegionLocale;
-static NSLocale *DefaultRegionLocale(id self, SEL selector) {
-    (void)self; (void)selector; return [NSLocale localeWithLocaleIdentifier:defaultRegionLocale];
-}
 static void TestPhoneDisplayDefaults(void) {
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     NSArray *keys=@[@"WolkaraForeverDeviceProfile",@"WolkaraForeverRenderProfile",@"WolkaraForeverBackingScale",@"WolkaraForeverPhoneDisplayV1"];
@@ -502,45 +488,6 @@ static void TestPhoneDisplayDefaults(void) {
     // from a manager that never focuses its search field.
     [NSNotificationCenter.defaultCenter addObserverForName:UIKeyboardDidShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { (void)note; keyboardShown=YES; }];
     fixture=[TKFixtureLibrary new];
-    // --- The region a first run starts in, before the user has chosen one
-    // Every device used to start in Europe, and the first install writes that region into
-    // the client's own settings once and never rewrites it - so an account outside Europe
-    // sat at "Connecting" for ever with nothing on screen saying why (issue #16). The
-    // default follows the device now; a region the user chose is never replaced.
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_US"]) isEqual:@"us"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_CA"]) isEqual:@"us"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"pt_BR"]) isEqual:@"us"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_AU"]) isEqual:@"us"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"ko_KR"]) isEqual:@"kr"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"zh_TW"]) isEqual:@"tw"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"zh_HK"]) isEqual:@"tw"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"de_DE"]) isEqual:@"eu"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_GB"]) isEqual:@"eu"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"ja_JP"]) isEqual:@"eu"]);
-    // A locale with no country at all is the old value rather than a guess.
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en"]) isEqual:@"eu"]);
-    assert([TKWoWDefaultRegion(nil) isEqual:@"eu"]);
-    Method currentLocale=class_getClassMethod(NSLocale.class,@selector(currentLocale));
-    IMP originalLocale=method_setImplementation(currentLocale,(IMP)DefaultRegionLocale);
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWRegion"];
-    for (NSArray *pair in @[@[@"en_US",@"us"],@[@"ko_KR",@"kr"],@[@"zh_TW",@"tw"],@[@"de_DE",@"eu"]]) {
-        defaultRegionLocale=pair[0];
-        TKDisplayFixtureController *firstRun=[[TKDisplayFixtureController alloc] initWithLibrary:(id)fixture];
-        assert([[firstRun valueForKey:@"region"] isEqual:pair[1]]);
-    }
-    // A region the user did choose is kept, including one the default would not have picked.
-    [NSUserDefaults.standardUserDefaults setObject:@"kr" forKey:@"WoWRegion"];
-    defaultRegionLocale=@"en_US";
-    TKDisplayFixtureController *chosen=[[TKDisplayFixtureController alloc] initWithLibrary:(id)fixture];
-    assert([[chosen valueForKey:@"region"] isEqual:@"kr"]);
-    // A stored value the client cannot use falls back instead of reaching a request.
-    [NSUserDefaults.standardUserDefaults setObject:@"xx" forKey:@"WoWRegion"];
-    chosen=[[TKDisplayFixtureController alloc] initWithLibrary:(id)fixture];
-    assert([[chosen valueForKey:@"region"] isEqual:@"eu"]);
-    method_setImplementation(currentLocale,originalLocale);
-    // The rest of the run starts in Europe, so its region assertions mean what they say
-    // however this Mac is configured and whatever a previous run left behind.
-    [NSUserDefaults.standardUserDefaults setObject:@"eu" forKey:@"WoWRegion"];
     self.window=[[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.controller=[[TKWoWViewController alloc] initWithLibrary:(id)fixture];
     __weak TKWoWFixtureDelegate *weakSelf=self;
@@ -580,9 +527,7 @@ static void TestPhoneDisplayDefaults(void) {
     [self.controller choosePreference:NO];
     UIAlertController *languages=(id)self.controller.presentedViewController;
     assert([languages isKindOfClass:UIAlertController.class]);
-    // French is a game language now, between English and Spanish as the downloader's own
-    // list orders it, and it is named in the launcher's language rather than the game's.
-    assert(([[languages.actions valueForKey:@"title"] isEqual:@[@"English",@"French",@"Spanish",@"German",@"Cancel"]]));
+    assert(([[languages.actions valueForKey:@"title"] isEqual:@[@"English",@"Spanish",@"German",@"Cancel"]]));
     [languages dismissViewControllerAnimated:NO completion:nil];
     [self.controller setValue:@"enUS" forKey:@"_locale"];
     [self.controller render];
@@ -652,13 +597,13 @@ static void TestPhoneDisplayDefaults(void) {
     assert(install != nil && [install.titleLabel.text isEqual:@"Install"] && install.enabled);
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateInstalled];
-    assert([install.currentTitle isEqual:@"Installed"] && !install.enabled);
+    assert([install.titleLabel.text isEqual:@"Installed"] && !install.enabled);
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateBusy];
-    assert([install.currentTitle isEqual:@"Installing…"] && !install.enabled);
+    assert([install.titleLabel.text isEqual:@"Installing…"] && !install.enabled);
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateUnavailable];
-    assert([install.currentTitle isEqual:@"Unavailable"] && !install.enabled);
+    assert([install.titleLabel.text isEqual:@"Unavailable"] && !install.enabled);
     // The action is inside the row at every width, including the narrow one.
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:TKAddonRowsAreCompact(540.0)
@@ -1193,10 +1138,7 @@ static void TestPhoneDisplayDefaults(void) {
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.manage") configuration].title isEqual:@"Install Addons (Curse & Direct)"]);
     // Every edition reads with its prefix, and the region/locale row reads with both values.
     assert([[(UIButton *)Find(self.controller.view, @"wow.edition") configuration].title isEqual:@"Game Edition: Forever"]);
-    // The region is stored state, and the fixture may have left either one behind; what this
-    // check is about is the row reading both values with the game's locale name.
-    NSString *prefsTitle = [(UIButton *)Find(self.controller.view, @"wow.preferences") configuration].title;
-    assert([prefsTitle hasPrefix:@"Region / Locale: "] && [prefsTitle hasSuffix:@" English"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.preferences") configuration].title isEqual:@"Region / Locale: EU English"]);
     // Exactly one supporting line below Play, and no second one reserved for a startup note.
     assert(Find(self.controller.view, @"wow.updates") != nil);
     assert(Find(self.controller.view, @"wow.startup") == nil);
@@ -1446,7 +1388,7 @@ static int backupsBeforePerformance;
     UIAlertController *alert = (id)self.controller.presentedViewController;
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Preview profile"]);
-    assert([alert.message containsString:@"is not this device"]);
+    assert([alert.message containsString:@"is not this iPad"]);
     [self dismissPresented];
     Pump(0.4);
     // The row now says Preview, everywhere it appears, and keeps the stored choice.
@@ -1578,22 +1520,11 @@ static int backupsBeforePerformance;
     // it, and a German setting that cannot be exported is not a German setting.
     assert([accepted[@"WoWLocale"] isEqual:@"deDE"]);
     assert(problem == nil);
-    // French is accepted for both settings now, and survives export like German: a language
-    // the app and the downloader both offer cannot be refused by the file it is written to.
-    problem = nil;
-    accepted = [TKWolkaraForeverConfig
-        validatedSettingsFromFile:@{@"version": @1,
-                                    @"settings": @{@"WolkaraForeverAppLanguage": @"fr",
-                                                   @"WoWLocale": @"frFR"}}
-                           problem:&problem];
-    assert([accepted[@"WolkaraForeverAppLanguage"] isEqual:@"fr"]);
-    assert([accepted[@"WoWLocale"] isEqual:@"frFR"]);
-    assert(problem == nil);
     // An invented language is refused, and the rest of the file still stands.
     problem = nil;
     accepted = [TKWolkaraForeverConfig
         validatedSettingsFromFile:@{@"version": @1,
-                                    @"settings": @{@"WolkaraForeverAppLanguage": @"it",
+                                    @"settings": @{@"WolkaraForeverAppLanguage": @"fr",
                                                    @"WoWLocale": @"deDE"}}
                            problem:&problem];
     assert(accepted[@"WolkaraForeverAppLanguage"] == nil);
@@ -1691,7 +1622,7 @@ static int backupsBeforePerformance;
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.backup") configuration].title
         isEqual:@"WoW-Oberflächenkonfiguration sichern"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
-        isEqual:@"Mac-Ever laden (Leistungsoptimierung)"]);
+        isEqual:@"Mac-Ever laden"]);
     // A product name stays itself in both languages.
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text]
         isEqual:@"Gamepad-Oberfläche"]);
@@ -1856,11 +1787,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([sheet.title isEqual:@"Einstellungen"]);
     assert([sheet.message containsString:@"Aktualisierungen werden automatisch installiert"]);
     NSArray *titles = [sheet.actions valueForKey:@"title"];
-    // Add-ons is a row on the home page, not an action in this sheet, and repair only appears
-    // while there is an installation to repair. What this check is about is that the actions
-    // that are always here read as German, never as a raw key.
-    for (NSString *expected in @[@"Diagnose und Protokolle",
-                                 @"Über diese App und Open-Source-Lizenzen",
+    for (NSString *expected in @[@"Add-ons verwalten", @"Spieldateien prüfen und reparieren",
+                                 @"Diagnose und Protokolle", @"Über diese App und Open-Source-Lizenzen",
                                  @"Abbrechen"])
         assert([titles containsObject:expected]);
     [self dismissPresented];
@@ -1970,8 +1898,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(atomic_load(&requests) == beforeCheck + 1);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWProduct"] isEqual:@"wowf"]);
     assert(self.controller.presentedViewController == nil);
-    // The row reads "Game Edition: Forever" now, so the product is the tail, not the head.
-    assert([[self row:@"wow.edition"].configuration.title hasSuffix:@"Forever"]);
+    assert([[self row:@"wow.edition"].configuration.title hasPrefix:@"Forever"]);
 
     // --- Preferences: Region, through the sub-sheet the row opens and the action it holds
     assert([self row:@"wow.preferences"].enabled);
@@ -2001,7 +1928,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     RunAction(americas);
     Pump(1.2);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWRegion"] isEqual:@"us"]);
-    assert([[self row:@"wow.preferences"].configuration.title containsString:@": US"]);
+    assert([[self row:@"wow.preferences"].configuration.title hasPrefix:@"US"]);
     assert(atomic_load(&requests) == beforeCheck + 1);
     // Back to Europe through the same two sheets, so every later step runs where the
     // page started. The row's title follows the change both ways.
@@ -2022,7 +1949,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     RunAction(europe);
     Pump(1.2);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWRegion"] isEqual:@"eu"]);
-    assert([[self row:@"wow.preferences"].configuration.title containsString:@": EU"]);
+    assert([[self row:@"wow.preferences"].configuration.title hasPrefix:@"EU"]);
 
     // --- Open Add-on Directory: the file browser opens on the game's Interface/AddOns
     assert([self row:@"wow.addons.directory"].enabled);
@@ -2066,7 +1993,6 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
         (@[@"Verify and repair game files", @"Diagnostics and logs",
-           @"Turn on input diagnostics",
            @"About and open-source licenses", @"Cancel"])]);
     assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
@@ -2109,7 +2035,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     for (UIBarButtonItem *item in @[gear, refresh])
         assert(item.target != nil && item.action != NULL);
 
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); the region a first run starts in (the device's region, a chosen region kept, an unusable one refused); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.
