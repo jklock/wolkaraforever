@@ -358,7 +358,7 @@ local function Defaults()
         freeLeft = { count = 4, scale = 100, spread = 100, turn = true, turnOffset = 0, buttons = {} },
         shortcuts = { enabled = true, scale = 100 },
         hud = { enabled = true, scale = 100 },
-        chat = { custom = true, fontSize = 16, tab = "talk" },
+        chat = { custom = true, fontSize = 16, tab = "talk", hidden = false },
         minimap = { shown = true, scale = 60 },
         blizzard = { hideBars = true, hideUnitFrames = true },
         quests = { enabled = true, collapsed = false, shown = 3 },

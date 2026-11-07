@@ -2,7 +2,7 @@
 ## Title: Interface mobile |cff66ccff(WolkaraForever)|r
 ## Notes: Roues de sorts, boutons libres, raccourcis, barres de vie et chat pensés pour le tactile.
 ## Author: ExoGroupe
-## Version: 0.6.0
+## Version: 0.6.1
 ## SavedVariablesPerCharacter: WolkaraRoueDB
 
 Core.lua

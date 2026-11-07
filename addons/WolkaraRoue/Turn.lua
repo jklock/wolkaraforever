@@ -17,6 +17,12 @@
 -- La roue de gauche se calcule comme celle de droite vue dans un miroir : mêmes angles, mêmes
 -- crans, positions retournées de gauche à droite. Rien ne dessine les roues : ni disque ni
 -- ombre, seuls leurs sorts sont à l'écran.
+--
+-- Un glissé finit toujours. Les sorts d'une roue qui tourne ne se « glissent-déposent » pas :
+-- le jeu aurait pris le glissé pour un glisser-déposer, qui peut ne jamais rendre au sort le
+-- relâchement du doigt. La roue suivait alors le curseur après coup, et les deux roues
+-- tournaient ensemble (2026-11-07). Hors combat, un glissé dont le doigt s'est relevé sans
+-- que le jeu le dise se termine quand même, et en commencer un sur une roue arrête l'autre.
 
 local _, ns = ...
 
@@ -87,6 +93,28 @@ local function CursorAngle(wheel)
     return math.deg(math.atan2(y, -inward))
 end
 
+-- Hors combat : un glissé laissé ouvert s'arrête, la roue revient au cran retenu.
+local function Drop(wheel)
+    wheel.dragging = false
+    Place(wheel, wheel.band:GetAttribute("offset") or 0)
+end
+
+-- Hors combat : le doigt s'est relevé sans que le jeu le dise au sort. Le glissé se finit comme
+-- le code sécurisé l'aurait fait : au cran le plus proche, retenu pour le prochain lancement.
+local function Release(wheel)
+    local band = wheel.band
+    wheel.dragging = false
+    local count = band:GetAttribute("count") or 0
+    local turns = (CursorAngle(wheel) - wheel.dragFrom) / (band:GetAttribute("step") or 20)
+    local offset = wheel.dragOffset or 0
+    if count > 0 and (turns >= SWIPE or turns <= -SWIPE) then
+        offset = (offset + math.floor(turns + 0.5)) % count
+    end
+    band:SetAttribute("offset", offset)
+    Place(wheel, offset)
+    Settings(wheel).turnOffset = offset
+end
+
 -- Le même angle dans le code sécurisé, qui n'a que l'arithmétique : la position du doigt sur
 -- la bande (0 à 1 depuis son coin bas-gauche) devient un angle entre 90 et 180 degrés, par une
 -- approximation de l'arc tangente juste à un tiers de degré près. Ces extraits sont accrochés
@@ -140,12 +168,19 @@ local UP = [=[
     end
 ]=]
 
--- Un glissé a tourné la roue : le sort sous le doigt n'est pas lancé.
+-- Un glissé a tourné la roue : le sort sous le doigt n'est pas lancé. Si le jeu passe le clic
+-- avant le relâchement, le glissé se mesure ici aussi.
 local CLICK = [=[
     if owner:GetAttribute("swiped") then
         owner:SetAttribute("swiped", nil)
         return false
     end
+    local from = owner:GetAttribute("downangle")
+    if down or not from or not owner:GetAttribute("turning") then return end
+]=] .. ANGLE .. [=[
+    if not angle then return end
+    local turns = (angle - from) / owner:GetAttribute("step")
+    if turns >= ]=] .. SWIPE .. [=[ or turns <= -]=] .. SWIPE .. [=[ then return false end
 ]=]
 
 function Turn:Init()
@@ -159,6 +194,16 @@ function Turn:Init()
         local wheel = { side = side, key = info.key, corner = info.corner, mirror = info.mirror, band = band }
         band:SetScript("OnUpdate", function()
             if not wheel.dragging or InCombatLockdown() then return end
+            -- Le doigt relevé, d'après le jeu : cru seulement s'il l'a d'abord vu posé pendant ce
+            -- glissé (l'état des boutons passe par la traduction de l'app, qu'on ne suppose pas).
+            if IsMouseButtonDown then
+                if IsMouseButtonDown("LeftButton") then
+                    wheel.held = true
+                elseif wheel.held then
+                    Release(wheel)
+                    return
+                end
+            end
             local turns = (CursorAngle(wheel) - wheel.dragFrom) / (band:GetAttribute("step") or 20)
             if turns < SWIPE and turns > -SWIPE then turns = 0 end
             Place(wheel, wheel.dragOffset + turns)
@@ -181,8 +226,14 @@ local function Wrap(wheel)
         SecureHandlerWrapScript(button, "OnMouseUp", band, UP)
         SecureHandlerWrapScript(button, "OnClick", band, CLICK)
         button:HookScript("OnMouseDown", function()
+            button.swiped = nil
             if InCombatLockdown() or not Turn:Enabled(wheel.side) then return end
+            -- Un seul doigt tourne une roue : l'autre, si elle suivait encore, s'arrête.
+            for _, other in pairs(wheels) do
+                if other ~= wheel and other.dragging then Drop(other) end
+            end
             wheel.dragging, wheel.dragFrom, wheel.dragOffset = true, CursorAngle(wheel), band:GetAttribute("offset") or 0
+            wheel.held = false
         end)
         button:HookScript("OnMouseUp", function()
             if not wheel.dragging then return end
@@ -207,9 +258,16 @@ local function LayoutWheel(wheel)
     Wrap(wheel)
     local turning = Turn:Enabled(wheel.side)
     band:SetAttribute("turning", turning)
-    -- Un sort de la roue part au relâchement du doigt, pour qu'un glissé puisse l'annuler.
+    -- Un sort de la roue part au relâchement du doigt, pour qu'un glissé puisse l'annuler, et ne
+    -- se glisse-dépose pas : le relâchement doit lui revenir (voir en tête).
     for _, button in ipairs(buttons) do
-        if turning then button:SetAttribute("useOnKeyDown", false) else button:SetAttribute("useOnKeyDown", nil) end
+        if turning then
+            button:SetAttribute("useOnKeyDown", false)
+            pcall(button.RegisterForDrag, button)
+        else
+            button:SetAttribute("useOnKeyDown", nil)
+            pcall(button.RegisterForDrag, button, "LeftButton")
+        end
     end
     if not turning then band:Hide(); return end
     local settings = Settings(wheel)

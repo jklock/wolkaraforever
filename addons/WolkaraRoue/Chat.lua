@@ -13,6 +13,9 @@
 -- conversation choisie, Dire par défaut, parce que l'app appuie d'abord sur F12, que ce module
 -- relie à « ouvrir la saisie sur la conversation choisie ». Une commande (/…) passe par la
 -- touche / du jeu, sans conversation.
+-- « Masquer », à droite des onglets rapides, range le chat dans un bouton posé juste à gauche
+-- du clavier de la barre de l'app : il compte ce que les joueurs disent entre-temps, et le
+-- toucher rouvre le fil. Écrire reste possible chat masqué.
 
 local _, ns = ...
 
@@ -24,12 +27,19 @@ local OPEN_KEY = "F12"
 local PAD, GAP, ROW, HINT, ARROW, QUICK_H = 8, 6, 36, 20, 44, 28
 local BOTTOM = 0.12      -- en hauteur d'écran : sous le chat, la barre de l'app
 local STRIP = 0.36       -- en largeur d'écran : le fil, entre les sorts les plus bas des roues
+local HIDE_W = 84        -- le bouton Masquer
+-- La barre de l'app repliée, mesurée sur l'iPhone Duo (2026-11-06) : 96 x 34 pt au centre d'un
+-- écran de 669 pt de haut, à 42 pt du bas, son clavier à gauche. Le chat masqué devient un
+-- bouton de 44 x 34 pt, 8 pt à gauche de ce clavier, à sa hauteur. En hauteur d'écran :
+local BAR_HALF, BAR_BOTTOM, BAR_HEIGHT, BAR_GAP, MINI_WIDTH = 48 / 669, 42 / 669, 34 / 669, 8 / 669, 44 / 669
 
 local messages = {}
 local target = { kind = "say" }
 local lastWhisper
 local unread = 0
+local pending = 0        -- ce que les joueurs ont dit depuis que le chat est masqué
 local ticker, panel, list, tabButtons, quick, chips, to, hint, badge, opener, close, arrows, holder
+local hideButton, mini, miniCount
 local hider = CreateFrame("Frame")
 hider:Hide()
 
@@ -139,6 +149,10 @@ local function Add(event, text, author, _, _, _, _, _, channelIndex, channelBase
     Store({ line = Format(info, text, author, channelIndex, channelBase), r = r, g = g, b = b, tabs = info.tabs })
     if badge then Chat:UpdateBadge() end
     if info.incoming and UpdateChips then UpdateChips() end
+    if mini and info.tabs.talk and ns.db and ns.db.chat.hidden then
+        pending = pending + 1
+        Chat:UpdateMini()
+    end
 end
 
 -- Le panneau reprend tout l'onglet ; le fil, ses derniers messages, qui s'effacent comme les autres.
@@ -308,6 +322,23 @@ local function ArrowButton(parent, texture, onClick)
     return button
 end
 
+-- Ce qui se voit : le fil, ou le panneau ouvert, ou, chat masqué, son bouton près du clavier.
+-- Le mode Personnaliser montre toujours le fil, pour qu'on puisse le déplacer.
+local function Arrange()
+    local settings = ns.db.chat
+    if not settings.custom then
+        ticker:Hide(); panel:Hide(); mini:Hide()
+        return
+    end
+    if settings.hidden and not ns.editing then
+        panel:Hide(); ticker:Hide(); mini:Show()
+    else
+        mini:Hide()
+        if not panel:IsShown() then ticker:Show() end
+    end
+    Chat:UpdateMini()
+end
+
 local function Open()
     if ns.editing then return end
     panel:Show()
@@ -320,13 +351,28 @@ end
 
 local function Close()
     panel:Hide()
-    if ns.db.chat.custom then ticker:Show() end
+    Arrange()
     Rebuild()
 end
 Chat.Open, Chat.Close = Open, Close
 
+-- Comme l'onglet, l'état masqué est retenu au prochain enregistrement, sans en provoquer un :
+-- recharger l'interface pour si peu se verrait plus que le chat.
+local function SetHidden(on)
+    ns.db.chat.hidden = on and true or false
+    pending = 0
+    Arrange()
+    if not on then Rebuild() end
+end
+Chat.SetHidden = SetHidden
+
 function Chat:UpdateBadge()
     badge:SetText(unread > 0 and (unread .. (unread == 1 and " nouveau privé" or " nouveaux privés")) or "")
+end
+
+function Chat:UpdateMini()
+    if not miniCount then return end
+    miniCount:SetText(pending > 99 and "99+" or pending > 0 and tostring(pending) or "")
 end
 
 -- Le panneau ouvert : onglets et croix en haut, messages et flèches au milieu, conversation en bas.
@@ -355,11 +401,26 @@ local function LayoutPanel(width, height)
     end
 end
 
--- Au-dessus du fil : les deux onglets rapides à gauche, les privés non lus à droite.
+-- Au-dessus du fil : les deux onglets rapides à gauche, Masquer à droite, et au-dessus de lui
+-- les privés non lus.
 local function LayoutStrip(width)
     Row(ticker, quick, "TOPLEFT", 0, QUICK_H + 4, width * 0.6 - GAP, QUICK_H)
+    local hideWidth = math.min(HIDE_W, width * 0.4 - GAP)
+    hideButton:SetSize(hideWidth, QUICK_H)
+    hideButton.text:SetWidth(math.max(1, hideWidth - 8))
+    hideButton:ClearAllPoints()
+    hideButton:SetPoint("TOPRIGHT", ticker, "TOPRIGHT", 0, QUICK_H + 4)
     badge:ClearAllPoints()
-    badge:SetPoint("BOTTOMRIGHT", ticker, "TOPRIGHT", 0, 10)
+    badge:SetPoint("BOTTOMRIGHT", hideButton, "TOPRIGHT", 0, 4)
+end
+
+-- Le chat masqué : son bouton, juste à gauche du clavier de la barre de l'app.
+local function LayoutMini(height)
+    local size = height * BAR_HEIGHT
+    mini:SetSize(height * MINI_WIDTH, size)
+    mini:ClearAllPoints()
+    mini:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOM", -height * (BAR_HALF + BAR_GAP), height * BAR_BOTTOM)
+    mini.icon:SetSize(size * 0.8, size * 0.8)
 end
 
 function Chat:Init()
@@ -388,10 +449,26 @@ function Chat:Init()
         button.key = info.key
         quick[i] = button
     end
+    hideButton = ns.UIButton(ticker, "Masquer", HIDE_W, QUICK_H, function() SetHidden(true) end)
+    hideButton.text:SetFontObject("GameFontHighlight")
+    if hideButton.text.SetWordWrap then hideButton.text:SetWordWrap(false) end
     badge = ns.Label(ticker, "GameFontNormal")
     badge:SetTextColor(1, 0.5, 1)
     ns.Movable(ticker, function() return ns.db.chat end, "pos",
         function() return { "BOTTOM", "BOTTOM", 0, UIParent:GetHeight() * BOTTOM } end)
+
+    -- Le chat masqué : une bulle, et en rose ce qui a été dit depuis.
+    mini = ns.UIButton(UIParent, "", 44, 34, function() SetHidden(false) end)
+    mini:SetFrameStrata("LOW")
+    mini.back:SetVertexColor(0.05, 0.05, 0.08, 0.7)
+    mini.icon = mini:CreateTexture(nil, "ARTWORK")
+    mini.icon:SetTexture("Interface\\ChatFrame\\UI-ChatIcon-Chat-Up")
+    mini.icon:SetPoint("CENTER")
+    miniCount = ns.Label(mini, "GameFontNormal")
+    miniCount:SetTextColor(1, 0.5, 1)
+    miniCount:SetPoint("TOPRIGHT", mini, "TOPRIGHT", -2, -2)
+    mini:Hide()
+    Chat.mini = mini
 
     -- Le panneau ouvert, posé sur le fil.
     panel = CreateFrame("Frame", "WolkaraMobileChat", UIParent)
@@ -478,19 +555,18 @@ function Chat:Layout()
     local side = W * ns.STICK_X + H * 0.10
     LayoutPanel(ns.Clamp(W - 2 * side, W * 0.5, W - 16), H * 0.55)
     SetFont(list, size)
+    LayoutMini(H)
     ticker:PlaceSaved()
     UpdateTabs()
     UpdateChips()
     if settings.custom then
         TuckGameChat(true)
-        if not panel:IsShown() then ticker:Show() end
     else
         TuckGameChat(false)
-        ticker:Hide()
-        panel:Hide()
         local frame = ChatFrame1
         if frame and FCF_SetChatWindowFontSize then pcall(FCF_SetChatWindowFontSize, nil, frame, size) end
     end
+    Arrange()
     -- La touche d'ouverture sert dans les deux cas : l'app envoie F12 avant chaque message.
     if SetOverrideBindingClick then
         ClearOverrideBindings(opener)
@@ -501,7 +577,8 @@ end
 function Chat:SetEditing(on)
     ticker.glow:SetShown(on)
     ticker.back:SetVertexColor(0, 0, 0, on and 0.45 or 0.25)
-    if on then panel:Hide(); ticker:Show() end
+    if on then panel:Hide() end
+    Arrange()
 end
 
 for event in pairs(EVENTS) do

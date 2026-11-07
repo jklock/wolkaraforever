@@ -6,6 +6,9 @@
 -- a drag beside the spells stays the camera's; and in arc mode the snippets do nothing. The left
 -- wheel is the right one in a mirror: positions turned left for right, the same secure angle
 -- seen from its own corner, the same turning; and neither wheel draws a disc or a shadow.
+-- Turning one wheel never moves the other (reported on the iPhone, 2026-11-07), even when the
+-- game never tells a spell its swipe ended, and a swipe still does not cast when the game
+-- passes the click before the release.
 --
 -- usage: luajit test_mobile_addon_turn.lua <path to Turn.lua>
 
@@ -29,6 +32,7 @@ local function Frame(name)
         "SetAllPoints", "AddMaskTexture" }) do frame[method] = function() end end
     function frame:Hide() self.shown = false end
     function frame:Show() self.shown = true end
+    function frame:RegisterForDrag(...) self.drag = { ... } end
     return frame
 end
 
@@ -45,6 +49,10 @@ UIParent = { GetWidth = function() return W end, GetHeight = function() return H
     GetEffectiveScale = function() return 1 end }
 local cursor = { 0, 0 }
 GetCursorPosition = function() return cursor[1], cursor[2] end
+-- The left button as the game reports it. Down only where a test says so: by default the
+-- game is taken to say nothing useful, as an untranslated query would.
+local mouseDown = false
+IsMouseButtonDown = function(button) return button == "LeftButton" and mouseDown end
 
 local handlers = {}
 local ns = { STICK_X = 0.12, STICK_Y = 0.222, WHITE = "white" }
@@ -72,6 +80,8 @@ for i = 1, 12 do
         assert(buttons[i].wraps[script] and buttons[i].wraps[script].header == band, script)
     end
     assert(buttons[i]:GetAttribute("useOnKeyDown") == false) -- a spell casts on release
+    -- and is not the game's to drag: a drag would keep the finger's release from the spell.
+    assert(buttons[i].drag and #buttons[i].drag == 0, "a turning spell is still registered for drag")
 end
 Turn:Layout()
 assert(wrapCalls == 36) -- wrapped once
@@ -168,6 +178,7 @@ assert(buttons[6].swiped == nil)
 ns.db.free.turn = false
 Turn:Layout()
 assert(not band.shown and band:GetAttribute("turning") == false and buttons[1]:GetAttribute("useOnKeyDown") == nil)
+assert(buttons[1].drag[1] == "LeftButton", "an arc spell can no longer be moved in Customise mode")
 assert(Swipe(3, 120, 1.6) == nil and band:GetAttribute("offset") == 0)
 buttons[4].hooks.OnMouseDown()
 assert(band.scripts.OnUpdate() == nil and At(0))
@@ -230,5 +241,49 @@ CursorLeft(110 + step * 0.5); left.scripts.OnUpdate()
 assert(AtLeft(2.5), "the left spells did not follow the finger")
 lefts[4].hooks.OnMouseUp()
 assert(AtLeft(2) and ns.db.freeLeft.turnOffset == 2 and lefts[4].swiped == true)
+-- A new touch forgets the last swipe, so an empty slot's next touch still opens the picker.
+lefts[4].hooks.OnMouseDown(); lefts[4].hooks.OnMouseUp()
+assert(lefts[4].swiped == nil)
 
-print(string.format("mobile add-on turning wheels: secure angle within %.2f deg (left %.2f); swipe on a spell turns without casting, touch casts, nothing else caught, arc mode inert, left is the mirror, no shadow: PASS", worst, worstLeft))
+-- Both wheels turning. Reported on the iPhone (2026-11-07): turning one wheel moved the other.
+-- A swipe whose release never reached its spell left that wheel following the cursor, so the
+-- next swipe, on the other wheel, turned both.
+ns.db.free.turn = true
+Turn:Layout()
+assert(band.shown and At(0) and AtLeft(2))
+-- The release that never comes: the left wheel's finger lifts and nothing tells its spell.
+CursorLeft(120); lefts[2].hooks.OnMouseDown()
+-- Then a swipe on the right wheel: the left one stops where it was, the right one alone follows.
+Cursor(120); buttons[3].hooks.OnMouseDown()
+Cursor(120 + step * 1.6)
+band.scripts.OnUpdate(); left.scripts.OnUpdate()
+assert(AtLeft(2), "turning the right wheel moved the left one")
+assert(At(1.6), "the right wheel did not follow the finger")
+-- Its release does not reach the spell either, but the game has seen the finger down and now
+-- up: the swipe ends on the nearest notch, kept, and the wheel no longer follows the cursor.
+mouseDown = true; band.scripts.OnUpdate()
+mouseDown = false; band.scripts.OnUpdate()
+assert(At(2) and band:GetAttribute("offset") == 2 and ns.db.free.turnOffset == 2, "the unreleased swipe did not settle")
+Cursor(170); band.scripts.OnUpdate(); left.scripts.OnUpdate()
+assert(At(2) and AtLeft(2), "a wheel still follows the cursor after the finger lifted")
+-- The other way round: a swipe on the left wheel leaves the right one alone.
+CursorLeft(120); lefts[3].hooks.OnMouseDown()
+CursorLeft(120 + step * 0.5); left.scripts.OnUpdate(); band.scripts.OnUpdate()
+assert(AtLeft(2.5) and At(2), "turning the left wheel moved the right one")
+lefts[3].hooks.OnMouseUp()
+assert(AtLeft(2))
+
+-- In combat, should the game pass the click before the release, a swipe still does not cast,
+-- and the release still turns the wheel; a touch still casts.
+combat = true
+local function at(angle) local a = math.rad(angle); return 1 + math.cos(a) * 0.6, math.sin(a) * 0.6 end
+band.GetMousePosition = function() return at(120) end; Run(buttons[3], "OnMouseDown")
+band.GetMousePosition = function() return at(120 + step * 1.6) end
+assert(Run(buttons[3], "OnClick") == false, "a swipe cast its spell when the click came first")
+Run(buttons[3], "OnMouseUp")
+assert(band:GetAttribute("offset") == 4 and At(4))
+band.GetMousePosition = function() return at(130) end; Run(buttons[3], "OnMouseDown")
+assert(Run(buttons[3], "OnClick") == nil, "a touch no longer casts")
+combat = false
+
+print(string.format("mobile add-on turning wheels: secure angle within %.2f deg (left %.2f); swipe on a spell turns without casting, touch casts, nothing else caught, arc mode inert, left is the mirror, no shadow, one wheel turns at a time even when a release goes unreported: PASS", worst, worstLeft))

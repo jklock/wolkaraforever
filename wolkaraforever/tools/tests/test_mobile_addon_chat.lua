@@ -45,6 +45,7 @@ function Mock:EnableMouse(on) self.mouse = on end
 function Mock:SetFrameStrata(strata) self.strata = strata end
 function Mock:HasFocus() return rawget(self, "focus") end
 function Mock:GetFont() return "font", 12, "" end
+function Mock:CreateTexture() return New("Texture", nil, self) end
 
 CreateFrame = function(kind, name, parent) return New(kind, name, parent) end
 UIParent = New("Frame", "UIParent")
@@ -135,12 +136,22 @@ local function Check(label)
     -- The strip: at the bottom, above the app's toolbar, between the wheels' lowest spells.
     local p = ticker.points[1]
     assert(p[1] == "BOTTOM" and p[3] == "BOTTOM" and p[5] >= H * 0.10 and ticker.width <= W * 0.4, label .. ": the strip")
-    local quick = Buttons(ticker, 28)
-    assert(#quick == 2, label .. ": the quick tabs")
+    local quick, hide = {}, nil
+    for _, button in ipairs(Buttons(ticker, 28)) do
+        if button.text.text == "Masquer" then hide = button else quick[#quick + 1] = button end
+    end
+    assert(#quick == 2 and hide, label .. ": the quick tabs and Masquer")
+    local quickEnd = 0
     for _, button in ipairs(quick) do
         local x, width = Edge(button)
         assert(x >= 0 and x + width <= ticker.width and button.points[1][5] > 0, label .. ": a quick tab is off the strip")
+        quickEnd = math.max(quickEnd, x + width)
     end
+    -- Masquer, on the same row at the right, clear of the quick tabs; the unread count above it.
+    local h = hide.points[1]
+    assert(h[1] == "TOPRIGHT" and h[3] == "TOPRIGHT" and h[4] == 0 and h[5] == quick[1].points[1][5], label .. ": Masquer's row")
+    assert(ticker.width - hide.width >= quickEnd + 1, label .. ": Masquer runs into the quick tabs")
+    assert(hide.text.width <= hide.width, label .. ": Masquer's text is wider than its button")
 end
 Check("wide screen")
 W = 760
@@ -205,4 +216,39 @@ assert(panel.shown and not ticker.shown and #WolkaraMobileChatList.lines >= 2)
 Tap("X", panel)
 assert(not panel.shown and ticker.shown)
 
-print("mobile add-on chat: no tab or chip overflows on two widths, panel between the sticks, strip at the bottom, talk/system one touch apart, whisper counted and answered, F12 on the chosen conversation, input hidden until typed in: PASS")
+-- Masquer: the strip goes, and a chat button waits just left of the app's keyboard - the folded
+-- toolbar is 96 x 34 pt, centred, 42 pt up a 669 pt screen, its keyboard on the left - level
+-- with it. It counts what the players say meanwhile, not the loot.
+local mini = Chat.mini
+assert(mini and not mini.shown, "the chat button shows while the chat is on screen")
+Tap("Masquer", ticker)
+assert(ns.db.chat.hidden == true and not ticker.shown and not panel.shown and mini.shown, "Masquer did not hide the chat")
+local spot = mini.points[1]
+assert(spot[1] == "BOTTOMRIGHT" and spot[2] == UIParent and spot[3] == "BOTTOM", "the chat button's anchor")
+local keyboardLeft = W / 2 - 48 / 669 * H
+local right = W / 2 + spot[4]
+assert(right <= keyboardLeft - 1 and right >= keyboardLeft - 20, "the chat button is not just left of the keyboard")
+assert(math.abs(spot[5] - 42 / 669 * H) < 0.5 and math.abs(mini.height - 34 / 669 * H) < 0.5, "the chat button is not level with the toolbar")
+local count
+for _, frame in ipairs(frames) do
+    if frame.ftype == "FontString" and frame.parent == mini and frame ~= mini.text then count = frame end
+end
+handlers.CHAT_MSG_SAY("encore là ?", "Ana-Realm")
+handlers.CHAT_MSG_LOOT("Vous recevez le butin : [Étoffe de laine].")
+handlers.CHAT_MSG_WHISPER("ohé", "Bob-Realm")
+assert(count and count.text == "2", "the chat button counts " .. tostring(count and count.text))
+-- It stays hidden through a layout; Customise shows the strip to move it, then hides it again.
+Chat:Layout()
+assert(not ticker.shown and mini.shown)
+ns.editing = true; Chat:SetEditing(true)
+assert(ticker.shown and not mini.shown, "Customise cannot reach the hidden strip")
+ns.editing = false; Chat:SetEditing(false)
+assert(not ticker.shown and mini.shown)
+-- Writing still works, and touching the bubble brings the strip back, up to date, count cleared.
+WolkaraMobileChatOpener.scripts.OnClick()
+assert(opened == "/w Bob-Realm ")
+mini.scripts.OnClick(mini)
+assert(ns.db.chat.hidden == false and ticker.shown and not mini.shown and count.text == "")
+assert(ticker.lines[#ticker.lines]:find("ohé"), "the strip missed what was said while hidden")
+
+print("mobile add-on chat: no tab or chip overflows on two widths, panel between the sticks, strip at the bottom, talk/system one touch apart, whisper counted and answered, F12 on the chosen conversation, input hidden until typed in, Masquer leaves a counting button left of the keyboard: PASS")

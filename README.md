@@ -27,7 +27,8 @@ it adds:
   wheels, one by each stick (the left one mirrors the right), that you turn by dragging a spell
   (a tap casts), with adjustable spacing; shortcuts and a tile menu, health bars with your
   portrait, a quest card, and a chat at the bottom between the wheels that switches between the
-  players' talk and the system's messages with one touch. The game's windows (world map,
+  players' talk and the system's messages with one touch, and can be put away into a button
+  beside the app's keyboard that counts what players say meanwhile. The game's windows (world map,
   quests, merchants, journal) shrink to fit the screen and stay clear of the sticks, so the
   map's close button and "Complete quest" can be reached; the minimap's size can be set, or it
   can be put away. Its settings save themselves after each change: WoW only writes add-on
