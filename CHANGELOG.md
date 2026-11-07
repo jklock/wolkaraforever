@@ -13,6 +13,16 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **The iPhone interface work is on `main`.** French as both an app and a game language, the
+  WolkaraRoue mobile add-on (turning wheels, cooldowns, bags, minimap, windows, chat), direct
+  touch as tap/hold/drag/pinch, the mobile keyboard, and the device-safe helper scripts
+  (`push_addon.sh`, `forget_login.sh`). Rebased onto `main` rather than merged as it stood:
+  the French table predated #11 (35 keys added, 10 that #17 removed), the keyboard's system
+  Done key had been rerouted from Replace to chat — contradicting `docs/TOUCH_INPUT.md` and
+  the touch-controls assertion, which now says Done replaces and the explicit Return key
+  sends — and `0048` needs a two-finger pinch, so `multipleTouchEnabled` assertions that pinned
+  single-touch were updated (patch 0053). `test_touch_gamepad_ui.sh` no longer depends on
+  machine speed: one pump call is not guaranteed to reach a before-waiting observer.
 - **A guest crash in a system library now names the function, not just the dylib.** Issue #13
   arrived as `EXC_BAD_ACCESS: KERN_INVALID_ADDRESS at 0x198` with frame 0 in
   `libsystem_pthread.dylib`. The client's own crash handler prints a frame outside the guest
