@@ -12,11 +12,10 @@
 # Measured on 2026-11-05 (iPhone Duo, iOS 27.2, WoW Forever 1.60.1.70790, developer
 # service): the game turns secure input on when its login screen's password field appears,
 # off when the app resigns active and on again when it returns. With this patch the
-# password went to the field as text and Return, and the 17:14 login reached the game.
-# Earlier refusals of the same login (BLZ51914400 and BLZ51914500 at the logon form
-# submission) happened with and without this patch and came from Blizzard's side: the same
-# client on the Mac was accepted at that step, and the iPhone was accepted later with
-# unchanged input.
+# password went to the field as text and Return, and the login reached the game. Refusals
+# earlier that day at the logon form submission (BLZ51914400 and BLZ51914500) happened with
+# and without this patch and came from Blizzard's side: a Mac client was accepted at that
+# step, and the iPhone was accepted later with unchanged input.
 #
 # Applies to: translation/Carbon/SecureEventInput.m (new)
 #             tests/test_secure_event_input.m (new)

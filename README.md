@@ -14,14 +14,13 @@ voice input, add-on tooling, UI recovery, and diagnostics around it. It is not s
 Mac. You provide the device (iPad or iPhone), Apple development account, eligible WoW account, and game data;
 this repository includes none of them.
 
-## This fork: playing on an iPhone
+## Playing on an iPhone
 
-This fork of [jklock/wolkaraforever](https://github.com/jklock/wolkaraforever) is tuned for
-playing on a phone. It was tested on an **iPhone Duo with iOS 27.2**, Developer service mode,
-WoW Forever 1.60.1.70790: login, character selection and an in-world session on Wi-Fi
-(2026-11-05). On mobile data the developer service needs the app's documented recovery (turn
-mobile data off while it waits for the local connection, back on once the game starts). What
-it adds:
+The app also plays on a phone. It was tested on an **iPhone Duo with iOS 27.2**, Developer
+service mode, WoW Forever 1.60.1.70790: login, character selection and an in-world session on
+Wi-Fi (2026-11-05). On mobile data the developer service needs the app's documented recovery
+(turn mobile data off while it waits for the local connection, back on once the game starts).
+For a phone it brings:
 
 - **Interface mobile**, a touch add-on in [addons/WolkaraRoue](addons/WolkaraRoue): two spell
   wheels, one by each stick (the left one mirrors the right), that you turn by dragging a spell
