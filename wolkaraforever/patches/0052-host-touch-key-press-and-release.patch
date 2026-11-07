@@ -1,0 +1,31 @@
+# WolkaraForever layer patch 0052 - host: one key pressed or released, for a held control
+#
+# Why: the host could only type a key as a press and an immediate release
+# (touchSpecialKey:characters:). The touch gamepad's jump needs the game's Space held as long
+# as the finger is down - a held Space is how WoW swims or flies up - and released when it
+# lifts. touchKey:characters:pressed: posts exactly one key-down or one key-up through the
+# same event queue as every other key. The layer's TouchControls.h declares it as an optional
+# delegate method, so a host without it keeps working.
+#
+# Applies to: translation/AppKit/AppKit.m (after patch 0048)
+# Upstream: candidate.
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -483,6 +483,16 @@
+ }
+ - (void)touchSpecialKey:(unsigned short)code characters:(NSString *)characters {
+     [self postTextKey:code characters:characters unmodified:characters modifiers:0];
++}
++// One key, pressed or released, for a control that holds it as long as the finger does - the
++// touch gamepad's jump, whose Space must stay down while swimming up.
++- (void)touchKey:(unsigned short)code characters:(NSString *)characters pressed:(BOOL)pressed {
++    NSEvent *event = [NSEvent new];
++    event.type = pressed ? NSEventTypeKeyDown : NSEventTypeKeyUp;
++    event.window = self.nsWindow; event.keyCode = code; event.modifierFlags = 0;
++    event.characters = characters; event.charactersIgnoringModifiers = characters;
++    event.timestamp = NSProcessInfo.processInfo.systemUptime;
++    [NSApp postEvent:event atStart:NO];
+ }
+ - (BOOL)usesRelativeMouse { return AKMouseIsCaptured() && GCMouse.mice.count>0; }
+ - (void)captureChanged:(NSNotification *)notification {

@@ -30,6 +30,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 TABLES = {
     "en": ROOT / "wolkaraforever/Shell/en.lproj/Localizable.strings",
     "de": ROOT / "wolkaraforever/Shell/de.lproj/Localizable.strings",
+    "fr": ROOT / "wolkaraforever/Shell/fr.lproj/Localizable.strings",
 }
 # Where product code lives.  platform/ is upstream's and is checked byte-for-byte by
 # check_layers.sh; the tables are ours alone.
@@ -139,6 +140,27 @@ def main():
                             f"de {conversions(german[key])}")
         if not german[key].strip():
             failures.append(f"{key}: the German string is empty")
+
+    # Every other table (French) is held to the same rules as German.
+    for code in [c for c in tables if c not in ("en", "de")]:
+        other = tables[code]
+        for key in order["en"]:
+            if has_key(other, key):
+                continue
+            if key.endswith(PLURAL_SUFFIXES) and has_key(other, key.rsplit(".", 1)[0]):
+                continue
+            failures.append(f"{key} is in en but not in {code}")
+        for key in order[code]:
+            if not has_key(english, key):
+                failures.append(f"{key} is in {code} but not in en")
+        for key in order["en"]:
+            if key not in other or not english[key]:
+                continue
+            if conversions(english[key]) != conversions(other[key]):
+                failures.append(f"{key}: conversions differ: en {conversions(english[key])} "
+                                f"{code} {conversions(other[key])}")
+            if not other[key].strip():
+                failures.append(f"{key}: the {code} string is empty")
 
     # Every key the source asks for, and where.
     used, literals, prefixes = {}, set(), set()

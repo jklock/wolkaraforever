@@ -1,0 +1,6 @@
+<Bindings>
+	<Binding name="CLICK WolkaraMobileToggle1:LeftButton" header="WOLKARAMOBILE"/>
+	<Binding name="CLICK WolkaraMobileToggle2:LeftButton"/>
+	<Binding name="CLICK WolkaraMobileToggle3:LeftButton"/>
+	<Binding name="CLICK WolkaraMobileToggle4:LeftButton"/>
+</Bindings>

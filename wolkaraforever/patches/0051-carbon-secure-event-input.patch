@@ -1,0 +1,123 @@
+# WolkaraForever layer patch 0051 - Carbon: secure event input, reference counted
+#
+# Why: EnableSecureEventInput and DisableSecureEventInput were generated stubs, so nothing
+# knew when a game's password field had the keyboard, and the mobile keyboard sent a
+# password the way it sends chat: F12 (the Interface mobile add-on's chat key), the text,
+# Return. A chat key has no business in a password field. The functions are now real,
+# reference counted as on macOS, with IsSecureEventInputEnabled, and each change is
+# announced once by name (AKSecureEventInputDidChangeNotification, userInfo "enabled") so
+# the host's keyboard can type exactly what was written there. iOS already isolates
+# keystrokes, so nothing is locked, and nothing typed is seen here.
+#
+# Measured on 2026-11-05 (iPhone Duo, iOS 27.2, WoW Forever 1.60.1.70790, developer
+# service): the game turns secure input on when its login screen's password field appears,
+# off when the app resigns active and on again when it returns. With this patch the
+# password went to the field as text and Return, and the login reached the game. Refusals
+# earlier that day at the logon form submission (BLZ51914400 and BLZ51914500) happened with
+# and without this patch and came from Blizzard's side: a Mac client was accepted at that
+# step, and the iPhone was accepted later with unchanged input.
+#
+# Applies to: translation/Carbon/SecureEventInput.m (new)
+#             tests/test_secure_event_input.m (new)
+#             tools/test_emulation.sh (after patch 0015)
+# Upstream: candidate.
+#
+--- a/tools/test_emulation.sh
++++ b/tools/test_emulation.sh
+@@ -637,6 +637,11 @@
+ build/emulation/test_text_input
+ 
+ xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined \
++    -Itranslation/AKSupport -framework Foundation translation/Carbon/SecureEventInput.m tests/test_secure_event_input.m \
++    -o build/emulation/test_secure_event_input
++build/emulation/test_secure_event_input
++
++xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined \
+     -Itranslation/AppKit -framework Foundation translation/AppKit/EventMonitors.m tests/test_event_monitors.m \
+     -o build/emulation/test_event_monitors
+ build/emulation/test_event_monitors
+diff --git a/translation/Carbon/SecureEventInput.m b/translation/Carbon/SecureEventInput.m
+new file mode 100644
+index 0000000..69905d9
+--- /dev/null
++++ b/translation/Carbon/SecureEventInput.m
+@@ -0,0 +1,39 @@
++#import <Foundation/Foundation.h>
++#import "AKSupport.h"
++#include <stdatomic.h>
++
++// Carbon's secure event input. A Mac game calls EnableSecureEventInput when one of its
++// password fields takes the keyboard and DisableSecureEventInput when it lets go; the
++// calls are reference counted, and IsSecureEventInputEnabled answers whether a request is
++// still open. iOS already keeps other apps away from keystrokes, so there is nothing to
++// lock here. The state is what is useful: a host keyboard that types for the user must put
++// exactly what was written into a password field, with no other key in front of it, and
++// this is how it knows that one has the keyboard. Each change is announced once, by name,
++// so the host needs no link to this library. Nothing typed is seen here.
++NSString *const AKSecureEventInputDidChangeNotification = @"AKSecureEventInputDidChangeNotification";
++
++static _Atomic long requests;
++
++static void announce(BOOL enabled) {
++    AKLog(@"secure event input %s", enabled ? "on" : "off");
++    void (^post)(void) = ^{
++        [NSNotificationCenter.defaultCenter postNotificationName:AKSecureEventInputDidChangeNotification
++                                                          object:nil userInfo:@{@"enabled": @(enabled)}];
++    };
++    if (NSThread.isMainThread) post(); else dispatch_async(dispatch_get_main_queue(), post);
++}
++
++OSStatus EnableSecureEventInput(void) {
++    if (atomic_fetch_add(&requests, 1) == 0) announce(YES);
++    return noErr;
++}
++
++OSStatus DisableSecureEventInput(void) {
++    // An unbalanced call leaves the count at zero, as on macOS.
++    long open = atomic_load(&requests);
++    while (open > 0 && !atomic_compare_exchange_weak(&requests, &open, open - 1)) {}
++    if (open == 1) announce(NO);
++    return noErr;
++}
++
++Boolean IsSecureEventInputEnabled(void) { return atomic_load(&requests) > 0; }
+diff --git a/tests/test_secure_event_input.m b/tests/test_secure_event_input.m
+new file mode 100644
+index 0000000..bc36ec1
+--- /dev/null
++++ b/tests/test_secure_event_input.m
+@@ -0,0 +1,34 @@
++#import <Foundation/Foundation.h>
++#import "AKSupport.h"
++#include <assert.h>
++OSStatus EnableSecureEventInput(void);
++OSStatus DisableSecureEventInput(void);
++Boolean IsSecureEventInputEnabled(void);
++extern NSString *const AKSecureEventInputDidChangeNotification;
++// The adapter's log, kept: SecureEventInput.m is built here without AKSupport.m.
++static NSMutableArray<NSString *> *logged;
++void AKLog(NSString *fmt, ...) {
++    va_list ap; va_start(ap, fmt);
++    NSString *line = [[NSString alloc] initWithFormat:fmt arguments:ap];
++    va_end(ap);
++    [logged addObject:line];
++}
++int main(void) { @autoreleasepool {
++    logged = [NSMutableArray new];
++    NSMutableArray<NSNumber *> *changes = [NSMutableArray new];
++    id observer = [NSNotificationCenter.defaultCenter addObserverForName:AKSecureEventInputDidChangeNotification
++        object:nil queue:nil usingBlock:^(NSNotification *note) { [changes addObject:note.userInfo[@"enabled"]]; }];
++    assert(!IsSecureEventInputEnabled());
++    // An unbalanced disable is harmless and announces nothing.
++    assert(DisableSecureEventInput() == noErr && !IsSecureEventInputEnabled() && changes.count == 0);
++    // Reference counted: only the first enable and the last disable are changes.
++    assert(EnableSecureEventInput() == noErr && IsSecureEventInputEnabled());
++    assert(EnableSecureEventInput() == noErr && IsSecureEventInputEnabled());
++    assert(DisableSecureEventInput() == noErr && IsSecureEventInputEnabled());
++    assert(DisableSecureEventInput() == noErr && !IsSecureEventInputEnabled());
++    assert(DisableSecureEventInput() == noErr && !IsSecureEventInputEnabled());
++    assert(changes.count == 2 && [changes[0] boolValue] && ![changes[1] boolValue]);
++    assert(logged.count == 2 && [logged[0] hasSuffix:@"on"] && [logged[1] hasSuffix:@"off"]);
++    [NSNotificationCenter.defaultCenter removeObserver:observer];
++    puts("Carbon secure event input: reference count, unbalanced disable, one announcement per change: PASS");
++} }

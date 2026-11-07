@@ -137,6 +137,11 @@ on-screen keyboard includes text, symbols, and dictation entry; the gamepad has 
 size, opacity, grid, and haptic controls. Physical keyboard and controller input can also be
 mapped in the app.
 
+What you type goes to a draft first. The keyboard's **Send** puts the line in the game's
+chat: F12, which the Interface mobile add-on binds to its chosen conversation, then the words
+and Return (a line that starts with `/` is a command and skips F12). **Replace** instead fills
+the selected game field and does not press Return; **↵** on the accessory bar is a plain Return.
+
 Touch settings use two columns when there is enough width and remain scrollable in smaller
 windows. **Triggers on the outside** swaps LT/LB and RT/RB positions without changing their
 inputs. New or reset layouts put the triggers inside; existing saved layouts keep their

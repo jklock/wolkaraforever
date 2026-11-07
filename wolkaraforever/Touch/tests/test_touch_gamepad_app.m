@@ -109,6 +109,21 @@ static void TestHaptics(void) {
 @end
 
 
+@interface AKFixtureHostView : UIView
+@property BOOL recordsKeys;
+@property(readonly) NSMutableArray<NSString *> *keys;
+@end
+@implementation AKFixtureHostView { NSMutableArray<NSString *> *_keys; }
+- (NSMutableArray<NSString *> *)keys { if (!_keys) _keys=[NSMutableArray new]; return _keys; }
+- (BOOL)respondsToSelector:(SEL)selector {
+    if (selector==@selector(touchKey:characters:pressed:)) return self.recordsKeys;
+    return [super respondsToSelector:selector];
+}
+- (void)touchKey:(unsigned short)code characters:(NSString *)characters pressed:(BOOL)pressed {
+    [self.keys addObject:[NSString stringWithFormat:@"%u'%@'%@",code,characters,pressed?@"down":@"up"]];
+}
+@end
+
 static UIView *Find(UIView *view, NSString *identifier) {
     if ([view.accessibilityIdentifier isEqual:identifier]) return view;
     for (UIView *child in view.subviews) { UIView *found=Find(child,identifier); if (found) return found; }
@@ -172,12 +187,58 @@ static void TestPreferences(void) {
     assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:frame inBounds:bounds],frame));
     [defaults removePersistentDomainForName:suite];
 }
+// With sticks only, the jump is the one button under the camera stick, and its reach is the
+// lower half of the space around that stick: the drawn ring, the gap next to the stick and a
+// band below the ring. Above or beside the stick, and far below it, the touch is the game's.
+static void TestJumpReach(UIView *host, AKPreviewGamepad *manager) {
+    [manager toggleSettings];
+    UISwitch *sticksOnly=(id)Find(host,@"wolkaraforever.controls.sticksOnly");
+    sticksOnly.on=YES; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    UIControl *jump=Button(host,GCInputButtonA);
+    UIView *rightStick=Find(host,@"tolkara.gamepad.rightStick"), *ring=rightStick.superview;
+    CGPoint centre=CGPointMake(CGRectGetMidX(ring.bounds),CGRectGetMidY(ring.bounds));
+    CGPoint (^at)(CGFloat, CGFloat)=^CGPoint(CGFloat radius, CGFloat degreesFromDown) {
+        CGFloat angle=M_PI_2+degreesFromDown*M_PI/180;
+        return [ring convertPoint:CGPointMake(centre.x+radius*cos(angle),centre.y+radius*sin(angle)) toView:host];
+    };
+    assert([host hitTest:at(0,0) withEvent:nil]==rightStick);
+    assert([host hitTest:at(82,0) withEvent:nil]==jump);    // the drawn ring
+    assert([host hitTest:at(56,0) withEvent:nil]==jump);    // the gap next to the stick
+    assert([host hitTest:at(118,0) withEvent:nil]==jump);   // just under the ring
+    assert([host hitTest:at(118,-50) withEvent:nil]==jump); // down and to the left
+    assert([host hitTest:at(118,50) withEvent:nil]==jump);  // down and to the right
+    assert([host hitTest:at(118,-90) withEvent:nil]!=jump); // beside the stick
+    assert([host hitTest:at(82,180) withEvent:nil]!=jump);  // above it
+    assert([host hitTest:at(160,0) withEvent:nil]!=jump);   // far below
+    [jump sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert(manager.created.controller.extendedGamepad.buttonA.pressed); // a host without keys
+    [jump sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    assert(!manager.created.controller.extendedGamepad.buttonA.pressed);
+    AKFixtureHostView *keyed=(id)host;
+    keyed.recordsKeys=YES;
+    [jump sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert([keyed.keys isEqual:@[@"49' 'down"]] && !manager.created.controller.extendedGamepad.buttonA.pressed);
+    [jump sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert(keyed.keys.count==1); // still held: no second press
+    [jump sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    assert([keyed.keys isEqual:(@[@"49' 'down",@"49' 'up"])]);
+    [jump sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    manager.keyboardVisible=YES; Drain();
+    assert([keyed.keys.lastObject isEqual:@"49' 'up"] && keyed.keys.count==4);
+    [jump sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    assert(keyed.keys.count==4); // released once only
+    manager.keyboardVisible=NO; Drain();
+    keyed.recordsKeys=NO;
+    puts("TOUCH_GAMEPAD_JUMP_REACH_PASS: with sticks only the jump takes the ring, the gap by the stick and the band below, not beside, above or far below; it holds Space while pressed and always releases it.");
+}
 static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     GCExtendedGamepad *pad=manager.created.controller.extendedGamepad;
     assert(pad && manager.visible);
     [host layoutIfNeeded];
-    // Ring sectors own their visible area, leave the stick and separator gaps
-    // untouched, and put + on the same row as the bottom labels.
+    // Ring sectors own their visible area and leave the stick and separator gaps untouched.
+    // + used to share the bottom labels' row; the app's toolbar now has the bottom centre
+    // (44 pt tall, 8 pt up), so + is centred just above it.
     UIButton *top=(id)Button(host,@"dpad.up");
     CALayer *guestSurface=[CALayer layer];
     guestSurface.frame=host.bounds; [host.layer addSublayer:guestSurface];
@@ -188,7 +249,9 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(![top pointInside:CGPointMake(26,108) withEvent:nil]);
     assert(![top pointInside:CGPointMake(166,50) withEvent:nil]);
     UIButton *a=(id)Button(host,GCInputButtonA), *plus=(id)Button(host,GCInputButtonMenu);
-    assert(fabs([a convertPoint:a.titleLabel.center toView:host].y-[plus convertPoint:plus.titleLabel.center toView:host].y)<1);
+    CGRect plusFrame=[plus convertRect:plus.bounds toView:host];
+    assert(a && fabs(CGRectGetMidX(plusFrame)-CGRectGetMidX(host.bounds))<1);
+    assert(CGRectGetMaxY(plusFrame)<=CGRectGetMaxY(UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets))-8-44-4);
     assert(Find(host,@"tolkara.gamepad.minus")==nil);
     NSArray *names=@[GCInputButtonA,GCInputButtonB,GCInputButtonX,GCInputButtonY,GCInputLeftShoulder,
         GCInputRightShoulder,GCInputLeftTrigger,GCInputRightTrigger,GCInputButtonMenu];
@@ -238,6 +301,10 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(Find(host,@"wolkaraforever.controls.settings"));
     UIView *panel=Find(host,@"wolkaraforever.controls.settings");
     if (UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets).size.width>=620) assert(panel.bounds.size.width>390);
+    // The app's toolbar sits at the bottom centre, 44 pt tall and 8 pt up: the sheet hangs from
+    // the top and leaves that strip free.
+    CGFloat toolbarTop=CGRectGetMaxY(UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets))-8-44;
+    assert(CGRectGetMaxY([panel convertRect:panel.bounds toView:host])<=toolbarTop+0.5);
     CGRect normalBounds=host.bounds;
     host.bounds=CGRectMake(0,0,390,600); [host layoutIfNeeded];
     assert(CGRectContainsRect(host.bounds,[panel convertRect:panel.bounds toView:host]));
@@ -320,7 +387,14 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     [(UIButton *)Find(host,@"wolkaraforever.controls.reset") sendActionsForControlEvents:UIControlEventTouchUpInside];
     assert(((UISwitch *)Find(host,@"wolkaraforever.controls.haptics")).on);
     assert(!((UISwitch *)Find(host,@"wolkaraforever.controls.performanceOverlay")).on);
+    UISwitch *sticksOnly=(id)Find(host,@"wolkaraforever.controls.sticksOnly");
+    assert(sticksOnly.on);
+    sticksOnly.on=NO; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
     [manager toggleSettings]; [host layoutIfNeeded];
+    // The full layout's menu button waits above the app's toolbar, not under it.
+    UIControl *menu=Button(host,GCInputButtonMenu);
+    assert(!menu.hidden && CGRectGetMaxY([menu convertRect:menu.bounds toView:host])<=
+        CGRectGetMaxY(UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets))-8-44-4);
     [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchDown];
     [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchUpInside];
     assert(manager.feedback.buttons==silentButtons+1 && manager.feedback.enabled);
@@ -328,6 +402,7 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(CGRectGetMidX(Button(host,GCInputLeftTrigger).frame)>CGRectGetMidX(Button(host,GCInputLeftShoulder).frame));
     assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)<CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
     TestPreferences();
+    TestJumpReach(host,manager);
     manager.keyboardVisible=YES; Drain();
     assert(!manager.visible && !pad.leftShoulder.pressed && !pad.buttonA.pressed);
     assert(!manager.feedback.enabled);
@@ -365,7 +440,20 @@ static void TestTrackingPump(void) {
     CFRunLoopAddObserver(loop,observer,kCFRunLoopCommonModes);
     AKPumpTouchEvents(NO);
     assert(!trackingTimer && !defaultCompletion && !trackingCompletion);
-    AKPumpTouchEvents(YES);
+    // What this checks is that a turn in each mode reaches the work queued for it: the timer
+    // in UITrackingRunLoopMode, and the before-waiting observers in both modes. A turn that
+    // finds a ready source fires it and returns without ever sleeping, so before-waiting is
+    // not guaranteed by a single call on a loaded machine - this assertion failed twice under
+    // load and passed five times when idle before it was bounded. The pump is called
+    // repeatedly in production for the same reason, so pump until the loop has slept in both
+    // modes, with a ceiling so a genuine hang fails here rather than sitting in the run loop.
+    for (int turn = 0; turn < 200 && !(trackingTimer && defaultCompletion && trackingCompletion); turn++)
+        AKPumpTouchEvents(YES);
+    // Said out loud, as the insert check in the touch-controls fixture is: which of the three
+    // the loop never reached is the whole diagnosis.
+    if (!(trackingTimer && defaultCompletion && trackingCompletion))
+        fprintf(stderr, "TOUCH_TRACKING_PUMP_MISSING: timer=%d default=%d tracking=%d\n",
+                (int)trackingTimer, (int)defaultCompletion, (int)trackingCompletion);
     assert(trackingTimer && defaultCompletion && trackingCompletion);
     CFRunLoopTimerInvalidate(timer); CFRelease(timer);
     CFRunLoopObserverInvalidate(observer); CFRelease(observer);
@@ -431,7 +519,7 @@ static void TestLifecycle(UIView *host) {
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
     self.window=[[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
-    UIViewController *vc=[UIViewController new]; vc.view.backgroundColor=[UIColor colorWithRed:.04 green:.07 blue:.12 alpha:1];
+    UIViewController *vc=[UIViewController new]; vc.view=[AKFixtureHostView new]; vc.view.backgroundColor=[UIColor colorWithRed:.04 green:.07 blue:.12 alpha:1];
     self.window.rootViewController=vc;
     self.status=[UILabel new]; self.input=[UILabel new];
     for (UILabel *label in @[self.status,self.input]) {
@@ -456,6 +544,11 @@ static void TestLifecycle(UIView *host) {
     BOOL test=[NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
     if (test || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test-input"])
         [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverTouchLayoutV1"];
+    // Sticks only is the default layout; the input checks below are about every button, so
+    // they start from the full gamepad, with the shoulders where an empty layout puts them.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--self-test-input"])
+        [NSUserDefaults.standardUserDefaults setObject:@{@"sticksOnly":@NO,@"swapShoulders":@YES}
+            forKey:@"WolkaraForeverTouchLayoutV1"];
     if (test) { TestLifecycle(self.window.rootViewController.view); fflush(stdout); exit(0); }
     // A plain launch is for looking at the fixture. Without --stay it closes itself
     // after a minute anyway, so a headless run cannot sit on it for ever. (The

@@ -12,6 +12,10 @@
 # the file to read for a device run. Fetching it is a file copy, so this can be run as
 # often as wanted while the app keeps running; it does not attach a console, which would
 # restart the app and lose the guest's session.
+#
+# DEVICE_LOG_FILE names another log under Documents/ to read the same way, for instance the
+# game's own "World of Warcraft/_forever_/Logs/Aurora.log" (its Battle.net login). Still a
+# read-only copy: nothing on the device is written.
 set -eu
 cd "$(dirname "$0")/../.." || exit 2
 
@@ -37,7 +41,7 @@ DEVICE_LOG_TIMEOUT=${DEVICE_LOG_TIMEOUT:-60}
 device_copy_log() {
     xcrun devicectl device copy from --device "$device" \
         --domain-type appDataContainer --domain-identifier "$bundle" \
-        --source "Documents/$logname" --destination "$out/$logname" &
+        --source "Documents/$logname" --destination "$out/$localname" &
     child=$!
     elapsed=0
     while kill -0 "$child" 2>/dev/null; do
@@ -53,8 +57,14 @@ device_copy_log() {
     wait "$child"
 }
 
-logname=native-guest.log
+logname=${DEVICE_LOG_FILE:-native-guest.log}
+case "$logname" in
+    ''|/*|*..*) echo "device_log: DEVICE_LOG_FILE must be a path inside Documents/" >&2; exit 2;;
+esac
+localname=$(basename "$logname")
 out=build/device-log
+# Another file lands beside the guest log, never over the copy other tools read from here.
+[ "$logname" = native-guest.log ] || out=build/device-log-files
 rm -rf "$out"
 mkdir -p "$out"
 # The source is a single file, so the destination has to name a file too - devicectl
@@ -66,7 +76,7 @@ if ! device_copy_log; then
     exit 1
 fi
 
-log="$out/$logname"
+log="$out/$localname"
 [ -f "$log" ] || { echo "device_log: the copy did not produce $log" >&2; exit 1; }
 echo "device_log: $log ($(wc -l < "$log" | tr -d ' ') lines)"
 grep -E -- "$pattern" "$log" | tail -n "$lines"
