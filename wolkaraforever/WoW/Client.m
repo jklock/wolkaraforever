@@ -206,31 +206,53 @@
     }
     return row;
 }
-- (NSString *)cdn:(NSString *)product region:(NSString *)region error:(NSError **)error {
+static NSArray<NSString *> *Words(NSString *text) {
+    if (![text isKindOfClass:NSString.class]) return @[];
+    return [[text componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet]
+        filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
+}
+static BOOL SupportedCDNHost(NSString *host) {
+    return [host hasSuffix:@".blizzard.com"] || [host hasSuffix:@".akamaihd.net"];
+}
+- (NSDictionary *)cdnInfo:(NSString *)product region:(NSString *)region error:(NSError **)error {
     NSDictionary *row=[self rowAt:[self endpoint:product region:region name:@"cdns"] field:@"Name" value:region error:error];
     if (!row) return nil;
     if (![row[@"Path"] isEqualToString:@"tpr/wow"]) {
         if (error) *error=TKWoWError(@"Unsupported CDN path."); return nil;
     }
-    for (NSString *server in [row[@"Servers"] componentsSeparatedByString:@" "]) {
+    NSMutableArray<NSString *> *servers=[NSMutableArray new], *derivedHosts=[NSMutableArray new];
+    NSString *cdn=nil;
+    for (NSString *server in Words(row[@"Servers"])) {
         NSURL *url=[NSURL URLWithString:server];
         NSString *host=url.host.lowercaseString;
-        if ([url.scheme isEqualToString:@"https"] && !url.user && !url.password && !url.port &&
-            ([host hasSuffix:@".blizzard.com"] || [host hasSuffix:@".akamaihd.net"]))
-            return [NSString stringWithFormat:@"https://%@/tpr/wow",host];
+        if ((![url.scheme isEqualToString:@"https"] && ![url.scheme isEqualToString:@"http"]) ||
+            url.user || url.password || url.port || !SupportedCDNHost(host)) continue;
+        [servers addObject:server];
+        if (![derivedHosts containsObject:host]) [derivedHosts addObject:host];
+        if (!cdn && [url.scheme isEqualToString:@"https"])
+            cdn=[NSString stringWithFormat:@"https://%@/tpr/wow",host];
     }
-    if (error) *error=TKWoWError(@"No supported HTTPS CDN is advertised.");
-    return nil;
+    if (!cdn || !servers.count) {
+        if (error) *error=TKWoWError(@"No supported HTTPS CDN is advertised.");
+        return nil;
+    }
+    NSMutableArray<NSString *> *hosts=[NSMutableArray new];
+    for (NSString *host in Words(row[@"Hosts"])) {
+        NSString *lower=host.lowercaseString;
+        if (SupportedCDNHost(lower) && ![hosts containsObject:lower]) [hosts addObject:lower];
+    }
+    if (!hosts.count) hosts=derivedHosts;
+    return @{@"cdn":cdn, @"servers":[servers componentsJoinedByString:@" "],
+        @"hosts":[hosts componentsJoinedByString:@" "]};
+}
+- (NSString *)cdn:(NSString *)product region:(NSString *)region error:(NSError **)error {
+    NSDictionary *info=[self cdnInfo:product region:region error:error];
+    return info[@"cdn"];
 }
 - (NSData *)object:(NSString *)key kind:(NSString *)kind cdn:(NSString *)cdn limit:(NSUInteger)limit error:(NSError **)error {
     if (!TKWoWHashValid(key)) { if (error) *error=TKWoWError(@"Invalid content hash."); return nil; }
     NSString *url=[NSString stringWithFormat:@"%@/%@/%@/%@/%@",cdn,kind,[key substringToIndex:2],[key substringWithRange:NSMakeRange(2,2)],key];
     return [self fetch:[NSURL URLWithString:url] limit:limit error:error];
-}
-static NSArray *Words(NSString *text) {
-    if (![text isKindOfClass:NSString.class]) return @[];
-    return [[text componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet]
-        filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
 }
 static NSUInteger ManifestSize(NSString *text) {
     if (![text isKindOfClass:NSString.class] || !text.length || text.length>10 ||
@@ -254,8 +276,12 @@ static NSUInteger ManifestSize(NSString *text) {
     }
     NSDictionary *version=[self versionForProduct:product region:region error:error];
     if (!version) return nil;
-    NSString *cdn=[self cdn:product region:region error:error];
-    if (!cdn) return nil;
+    // Preserve the verified CDN record in the plan. The downloader needs one
+    // HTTPS endpoint, while a newly installed client needs the complete
+    // server list in .build.info to construct its patch-index state.
+    NSDictionary *cdnInfo=[self cdnInfo:product region:region error:error];
+    if (!cdnInfo) return nil;
+    NSString *cdn=cdnInfo[@"cdn"];
     NSData *data=[self object:version[@"BuildConfig"] kind:@"config" cdn:cdn limit:2*1024*1024 error:error];
     if (!data) return nil;
     if (![TKWoWMD5(data) isEqualToString:version[@"BuildConfig"]]) {
@@ -281,6 +307,7 @@ static NSUInteger ManifestSize(NSString *text) {
     }
     if (!selected.count) { if (error) *error=TKWoWError(@"No macOS ARM64 install files in this build."); return nil; }
     return @{@"product":product,@"region":region,@"locale":locale,@"version":version,@"cdn":cdn,
+        @"cdnServers":cdnInfo[@"servers"],@"cdnHosts":cdnInfo[@"hosts"],
         @"config":config,@"files":selected,@"installFileBytes":@(total),@"complete":@NO};
 }
 - (NSString *)stageFile:(NSDictionary *)file plan:(NSDictionary *)plan directory:(NSString *)directory error:(NSError **)error {

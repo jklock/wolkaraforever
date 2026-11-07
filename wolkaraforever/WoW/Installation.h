@@ -12,6 +12,8 @@ typedef NS_ENUM(NSInteger, TKWoWInstallationState) {
 // The installed build is current, but its selected-language content differs
 // from the plan. The launcher uses this to explain why it is updating.
 @property(nonatomic) BOOL localeNeedsUpdate;
+// A current installation created by an older launcher lacks required TACT CDN metadata.
+@property(nonatomic) BOOL metadataNeedsRepair;
 @property(nonatomic, strong, nullable) TKApp *app;
 @property(nonatomic, strong, nullable) NSError *error;
 @end

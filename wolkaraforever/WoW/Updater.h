@@ -9,5 +9,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) uint64_t verificationBytesReused;
 - (BOOL)updatePlan:(NSDictionary *)plan root:(NSString *)root
     progress:(void (^)(NSString *phase, uint64_t done, uint64_t total))progress error:(NSError **)error;
+// Repairs only launcher-owned .build.info metadata for an already verified installation.
+// It never downloads, replaces, or removes game files.
+- (BOOL)repairBuildInfoForPlan:(NSDictionary *)plan root:(NSString *)root error:(NSError **)error;
 @end
 NS_ASSUME_NONNULL_END

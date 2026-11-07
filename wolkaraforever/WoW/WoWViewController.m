@@ -568,6 +568,18 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         NSError *error=nil;
         NSDictionary *plan=[client planForProduct:product[@"id"] region:region locale:locale error:&error];
         TKWoWInstallation *installation=plan?TKWoWInspectInstallation(self->_library,product,plan):nil;
+        // Releases before CDN Servers existed can look current to the launcher
+        // but crash before the first frame. Repair that one metadata file before
+        // offering Play; no game content is downloaded or replaced.
+        if(installation.state==TKWoWInstallationReady && installation.metadataNeedsRepair && installation.app) {
+            NSString *directory=[self->_library workingDirectoryForApp:installation.app error:&error];
+            NSString *root=directory?directory.stringByDeletingLastPathComponent:nil;
+            TKWoWUpdater *updater=[[TKWoWUpdater alloc] initWithClient:client];
+            if(root && [updater repairBuildInfoForPlan:plan root:root error:&error]) {
+                [self->_library discover];
+                installation=TKWoWInspectInstallation(self->_library,product,plan);
+            }
+        }
         BOOL updateAttempted=plan && (install || installation.state==TKWoWInstallationOutdated) && !client.cancelled;
         if(updateAttempted) {
             __block NSString *lastPhase=nil;

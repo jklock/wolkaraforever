@@ -342,6 +342,8 @@ int main(void) {
         NSError *error=nil;
         NSDictionary *plan=[client planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error];
         assert(plan && !error && [plan[@"files"] count]==1 && ![plan[@"complete"] boolValue]);
+        assert([plan[@"cdnServers"] isEqual:@"https://level3.ssl.blizzard.com/?fallback=1"]);
+        assert([plan[@"cdnHosts"] isEqual:@"level3.ssl.blizzard.com"]);
         NSDictionary *file=plan[@"files"][0];
         NSString *directory=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
         NSString *path=[client stageFile:file plan:plan directory:directory error:&error];
