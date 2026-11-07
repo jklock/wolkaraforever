@@ -43,6 +43,8 @@ TKWoWInstallation *TKWoWInspectInstallation(TKAppLibrary *library, NSDictionary 
         if (!TKWoWBuildCurrent(rows,product[@"id"],plan[@"version"])) {
             result.state=TKWoWInstallationOutdated; return result;
         }
+        if (![match[@"CDN Hosts"] length] || ![match[@"CDN Servers"] length])
+            result.metadataNeedsRepair=YES;
         if (!TKWoWTagsContainLocale(match[@"Tags"],plan[@"locale"])) {
             result.state=TKWoWInstallationOutdated;
             result.localeNeedsUpdate=YES;
