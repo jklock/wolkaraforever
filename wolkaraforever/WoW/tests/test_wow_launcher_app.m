@@ -527,7 +527,9 @@ static void TestPhoneDisplayDefaults(void) {
     [self.controller choosePreference:NO];
     UIAlertController *languages=(id)self.controller.presentedViewController;
     assert([languages isKindOfClass:UIAlertController.class]);
-    assert(([[languages.actions valueForKey:@"title"] isEqual:@[@"English",@"Spanish",@"German",@"Cancel"]]));
+    // French is a game language now, between English and Spanish as the downloader's own
+    // list orders it, and it is named in the launcher's language rather than the game's.
+    assert(([[languages.actions valueForKey:@"title"] isEqual:@[@"English",@"French",@"Spanish",@"German",@"Cancel"]]));
     [languages dismissViewControllerAnimated:NO completion:nil];
     [self.controller setValue:@"enUS" forKey:@"_locale"];
     [self.controller render];
@@ -1520,11 +1522,22 @@ static int backupsBeforePerformance;
     // it, and a German setting that cannot be exported is not a German setting.
     assert([accepted[@"WoWLocale"] isEqual:@"deDE"]);
     assert(problem == nil);
-    // An invented language is refused, and the rest of the file still stands.
+    // French is accepted for both settings now, and survives export like German: a language
+    // the app and the downloader both offer cannot be refused by the file it is written to.
     problem = nil;
     accepted = [TKWolkaraForeverConfig
         validatedSettingsFromFile:@{@"version": @1,
                                     @"settings": @{@"WolkaraForeverAppLanguage": @"fr",
+                                                   @"WoWLocale": @"frFR"}}
+                           problem:&problem];
+    assert([accepted[@"WolkaraForeverAppLanguage"] isEqual:@"fr"]);
+    assert([accepted[@"WoWLocale"] isEqual:@"frFR"]);
+    assert(problem == nil);
+    // An invented language is refused, and the rest of the file still stands.
+    problem = nil;
+    accepted = [TKWolkaraForeverConfig
+        validatedSettingsFromFile:@{@"version": @1,
+                                    @"settings": @{@"WolkaraForeverAppLanguage": @"it",
                                                    @"WoWLocale": @"deDE"}}
                            problem:&problem];
     assert(accepted[@"WolkaraForeverAppLanguage"] == nil);
