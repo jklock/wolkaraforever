@@ -164,6 +164,9 @@ static BOOL hardwareKeyboardAttached(void) {
     if (![self canModifyDraft]) return NO;
     NSString *text = [[[self.text componentsSeparatedByCharactersInSet:NSCharacterSet.controlCharacterSet]
         componentsJoinedByString:@" "] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    // Once a line has gone, a repeated or queued Return has nothing to send: a bare Return
+    // would open the game's chat box again. A first Return with nothing typed still is one.
+    if (!text.length && _didSubmitDraft) return NO;
     [self discardDraft];
     _didSubmitDraft = YES;
     [self.inputOwner sendChatText:text];
@@ -214,16 +217,14 @@ static BOOL hardwareKeyboardAttached(void) {
 - (BOOL)textView:(UITextView *)textView shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text {
     (void)textView; (void)range;
     if ([text isEqual:@"\n"]) {
-        // The system keyboard's Done replaces the selected field, as it always has: it is
-        // the same action as the Replace button and it does not press Return in the game.
-        // Sending a line to chat is the explicit Return key's job (sendDraftToChat), so a
-        // mobile chat gets its line without changing what Done means everywhere else.
-        // Defer until UIKit finishes this edit; do not mutate its document here.
+        // Send puts the draft in the game's chat (Replace is the button that only fills
+        // the selected field). Defer until UIKit finishes this edit; do not mutate its
+        // document here.
         NSUInteger session = _session;
         __weak AKKeyboardTextView *weakSelf = self;
         [NSRunLoop.mainRunLoop performInModes:@[NSRunLoopCommonModes] block:^{
             AKKeyboardTextView *input = weakSelf;
-            if (input && input->_session == session) [input forwardCommittedText];
+            if (input && input->_session == session) [input sendDraftToChat];
         }];
         return NO;
     }
