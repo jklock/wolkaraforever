@@ -1,6 +1,6 @@
-# Enforce these paths through the main-branch ruleset described in
-# development/guides/REPOSITORY_WORKFLOW.md. Replace @jklock with the maintainer account
-# or team that has accepted review responsibility before enabling required CODEOWNERS review.
+# Enforced by the main-branch ruleset described in
+# development/guides/REPOSITORY_WORKFLOW.md: required code-owner review is on, and @jklock is
+# the code owner for every path, so no pull request merges without the maintainer's approval.
 
 * @jklock
 

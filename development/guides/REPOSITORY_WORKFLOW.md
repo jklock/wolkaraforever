@@ -10,9 +10,14 @@ engine and evidence that must remain tied to the exact build that ran.
 Apply these rules to `main` in GitHub. GitHub branch protection cannot be committed to this
 repository; this page is the authoritative configuration record.
 
-- Require a pull request before merging, with at least one approval.
-- Dismiss stale approvals when new commits are pushed; require conversation resolution and
-  the branch to be current with `main`.
+- Require a pull request before merging, with one approval **from the code owner**.
+  `.github/CODEOWNERS` names `@jklock` for every path and required code-owner review is on, so
+  no pull request reaches `main` without the maintainer's approval. Dismiss stale approvals when
+  new commits are pushed; require conversation resolution and the branch to be current with
+  `main`.
+- Enforced on the `main` ruleset since 2026-11-08: `required_approving_review_count` 1,
+  `require_code_owner_review` on, `dismiss_stale_reviews_on_push` on,
+  `required_review_thread_resolution` on, linear history, no force-push, no deletion.
 - No hosted CI. The verification is `wolkaraforever/tools/check_docs.sh` and
   `wolkaraforever/tools/check_layers.sh`, run locally before the PR is opened, with the results
   and the exact source SHA written into the PR. The **Verify** workflow was deleted on
@@ -24,8 +29,12 @@ repository; this page is the authoritative configuration record.
   the checks that run on Linux.
 - Require linear history; allow squash merges for ordinary PRs. Reserve merge commits for
   intentional integration branches.
-- Block force-pushes and branch deletion. The repository owner has the intentionally selected
-  normal bypass; every bypassed merge must still carry the PR's verification and risk record.
+- Block force-pushes and branch deletion for everyone, the owner included.
+- The maintainer (`@jklock`) is the only bypass actor, with bypass mode **pull requests only**:
+  the owner must still open a pull request, and inside it the review requirement does not apply
+  to them, so the owner can accept and merge their own work. Nobody else has a bypass; a
+  collaborator's pull request stays unmergeable until the owner approves it, and every bypassed
+  merge still carries the PR's verification and risk record.
 - Enforce `.github/CODEOWNERS` for protected paths.
 - Enable GitHub secret scanning, push protection, Dependabot alerts, and private
   vulnerability reporting.
