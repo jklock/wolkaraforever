@@ -1,5 +1,14 @@
 #import "Client.h"
 #import "CASC.h"
+// The app links the WolkaraForever log; the Mac test harness compiles this file without
+// it. This weak fallback is replaced by the app's strong WKLogLine at link time.
+void WKLogLine(const char *tag, NSString *format, ...) NS_FORMAT_FUNCTION(2, 3);
+__attribute__((weak)) void WKLogLine(const char *tag, NSString *format, ...) {
+    va_list args; va_start(args, format);
+    NSLogv([NSString stringWithFormat:@"[%s] %@", tag, format], args);
+    va_end(args);
+}
+#define TKWoWLog(...) WKLogLine("wow", __VA_ARGS__)
 
 // A client reuses one connection pool with bounded concurrent transfers. No cookies,
 // credentials, redirects, HTTP fallback, or application-installation writes.
@@ -135,7 +144,40 @@
 - (NSData *)range:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size error:(NSError **)error {
     return [self transferURL:url offset:offset size:size limit:size error:error];
 }
+// A single dropped CDN connection used to fail the whole update, so a long install on a
+// flaky link kept only ~1 GB per attempt. Retry transient transport errors per request
+// with a short backoff; anything else (cancellation, bad range, limit) fails as before.
+static BOOL TKWoWTransientNetworkError(NSError *error) {
+    if (![error.domain isEqualToString:NSURLErrorDomain]) return NO;
+    switch (error.code) {
+        case NSURLErrorNetworkConnectionLost:
+        case NSURLErrorTimedOut:
+        case NSURLErrorCannotConnectToHost:
+        case NSURLErrorNotConnectedToInternet:
+        case NSURLErrorDNSLookupFailed:
+        case NSURLErrorCannotFindHost:
+        case NSURLErrorSecureConnectionFailed:
+            return YES;
+        default:
+            return NO;
+    }
+}
 - (NSData *)transferURL:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size limit:(NSUInteger)limit error:(NSError **)error {
+    const NSUInteger attempts=6;
+    NSError *failure=nil;
+    for (NSUInteger attempt=1;;attempt++) {
+        failure=nil;
+        NSData *data=[self transferOnceURL:url offset:offset size:size limit:limit error:&failure];
+        if (data) return data;
+        [_lock lock]; BOOL stop=_cancelled || _downloadFailure; [_lock unlock];
+        if (stop || attempt>=attempts || !TKWoWTransientNetworkError(failure)) break;
+        TKWoWLog(@"download retry %lu/%lu after: %@",(unsigned long)attempt,(unsigned long)(attempts-1),failure.localizedDescription);
+        [NSThread sleepForTimeInterval:MIN(30.0,2.0*(double)(1u<<(attempt-1)))];
+    }
+    if (error) *error=failure;
+    return nil;
+}
+- (NSData *)transferOnceURL:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size limit:(NSUInteger)limit error:(NSError **)error {
     if (![url.scheme isEqualToString:@"https"] || !url.host.length || url.user || url.password ||
         (size && offset>UINT64_MAX-(size-1))) {
         if (error) *error=TKWoWError(@"A valid HTTPS download URL and range are required.");
