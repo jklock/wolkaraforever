@@ -122,6 +122,33 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 @end
 
+typedef struct {
+    double time;
+    uint64_t bytes;
+} DownloadSample;
+
+typedef struct {
+    DownloadSample samples[31];
+    unsigned count;
+} DownloadWindow;
+
+// Keep at most one sample per second and measure verified payload throughput.
+static double DownloadMBPerSecond(DownloadWindow *window, double now, uint64_t bytes) {
+    unsigned count=window->count;
+    unsigned first=0;
+    while (first+1<count && window->samples[first+1].time<=now-30) first++;
+    if (first) {
+        count-=first;
+        memmove(window->samples,window->samples+first,count*sizeof(DownloadSample));
+    }
+    DownloadSample start=count?window->samples[0]:(DownloadSample){now,bytes};
+    if (!count || now-window->samples[count-1].time>=1) {
+        window->samples[count++]=(DownloadSample){now,bytes};
+    }
+    window->count=count;
+    return now-start.time>=1 ? (bytes-start.bytes)/(now-start.time)/1e6 : -1;
+}
+
 @interface TKWoWViewController () <UIDocumentPickerDelegate>
 @end
 
@@ -147,6 +174,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UILabel *_updatesLabel;
     NSString *_updatePhase;
     uint64_t _updateDone, _updateTotal;
+    double _downloadMBps;
     UIProgressView *_progressBar;
     CAGradientLayer *_background;
     UIStackView *_columns;
@@ -584,14 +612,22 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         if(updateAttempted) {
             __block NSString *lastPhase=nil;
             __block NSTimeInterval lastProgressLog=0;
+            __block DownloadWindow speedWindow={0};
             void (^progress)(NSString *,uint64_t,uint64_t)=^(NSString *phase,uint64_t done,uint64_t total) {
                 NSTimeInterval now=NSDate.timeIntervalSinceReferenceDate;
                 if(![lastPhase isEqual:phase] || now-lastProgressLog>=5) {
                     lastPhase=phase;lastProgressLog=now;
                     WKLog("wow", @"update progress: %@ %llu/%llu",phase,done,total);
                 }
+                double speed=-1;
+                if ([phase isEqual:@"download"]) {
+                    speed=DownloadMBPerSecond(&speedWindow,NSProcessInfo.processInfo.systemUptime,done);
+                } else {
+                    speedWindow.count=0;
+                }
                 dispatch_async(dispatch_get_main_queue(),^{
                     if(generation!=self->_generation)return;
+                    self->_downloadMBps=speed;
                     self->_plan=plan;self->_installation=installation;self->_updating=YES;
                     self->_updatePhase=phase;self->_updateDone=done;self->_updateTotal=total;[self render];
                 });
@@ -912,6 +948,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             NSString *total=counted?[bytes stringFromByteCount:(int64_t)_updateTotal]
                 :[number stringFromNumber:@(_updateTotal)];
             detail=[detail stringByAppendingFormat:@" · %@ / %@",done,total];
+            if ([_updatePhase isEqual:@"download"] && _downloadMBps>=0) {
+                number.minimumFractionDigits=1; number.maximumFractionDigits=1;
+                detail=[detail stringByAppendingFormat:@" · %@ MB/s",[number stringFromNumber:@(_downloadMBps)]];
+            }
         }
         action=WKLocalized(@"home.action.updating");
     } else if (_busy) {
