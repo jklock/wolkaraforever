@@ -13,6 +13,11 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **A dropped connection no longer stops the game download.** One request that lost its
+  connection, timed out, or briefly could not reach the CDN used to fail the whole update, so
+  on an unsteady link each attempt kept about 1 GB and a full Forever install took dozens of
+  retries by hand. That request is now retried up to five times, 2 to 30 seconds apart; any
+  other failure, and cancellation, still stop the update as before.
 - **One test matrix: three devices, enforced by the tools.** The suites used to take whichever
   iPad or iPhone happened to be installed, and to keep trying devices until one booted. Now
   `wolkaraforever/tools/simulators.sh` names the only devices this project measures —
