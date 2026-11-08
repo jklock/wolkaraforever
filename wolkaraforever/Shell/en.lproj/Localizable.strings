@@ -101,6 +101,7 @@
 "home.phase.verify" = "Checking existing data";
 "home.phase.reuse" = "Comparing installed content";
 "home.phase.indices" = "Locating download files";
+"home.download.remaining" = "~%@ left";
 "home.phase.download" = "Downloading new data";
 "home.phase.files" = "Installing game files";
 "home.phase.activate" = "Finishing the update";

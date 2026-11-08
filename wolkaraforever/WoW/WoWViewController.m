@@ -951,6 +951,19 @@ static double DownloadMBPerSecond(DownloadWindow *window, double now, uint64_t b
             if ([_updatePhase isEqual:@"download"] && _downloadMBps>=0) {
                 number.minimumFractionDigits=1; number.maximumFractionDigits=1;
                 detail=[detail stringByAppendingFormat:@" · %@ MB/s",[number stringFromNumber:@(_downloadMBps)]];
+                if (_downloadMBps>0 && _updateTotal>_updateDone) {
+                    double seconds=(_updateTotal-_updateDone)/(_downloadMBps*1e6);
+                    if (seconds<=7*24*3600) {
+                        NSDateComponentsFormatter *duration=[NSDateComponentsFormatter new];
+                        duration.unitsStyle=NSDateComponentsFormatterUnitsStyleAbbreviated;
+                        duration.allowedUnits=seconds>=60 ? NSCalendarUnitHour|NSCalendarUnitMinute : NSCalendarUnitSecond;
+                        NSCalendar *calendar=[NSCalendar.currentCalendar copy];
+                        calendar.locale=number.locale;
+                        duration.calendar=calendar;
+                        NSString *estimate=[duration stringFromTimeInterval:MAX(1,ceil(seconds))];
+                        if (estimate.length) detail=[detail stringByAppendingFormat:@" · %@",WKLocalizedFormat(@"home.download.remaining",estimate)];
+                    }
+                }
             }
         }
         action=WKLocalized(@"home.action.updating");
