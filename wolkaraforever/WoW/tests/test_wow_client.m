@@ -8,6 +8,7 @@
 - (NSData *)fetch:(NSURL *)url limit:(NSUInteger)limit error:(NSError **)error;
 - (NSData *)range:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size error:(NSError **)error;
 - (NSURLSessionConfiguration *)sessionConfiguration;
+- (NSTimeInterval)retryDelayAfterAttempt:(NSUInteger)attempt;
 @end
 @interface TKFixtureClient : TKWoWClient
 @property(nonatomic) NSMutableDictionary<NSString *,NSData *> *responses;
@@ -45,6 +46,7 @@ static NSUInteger ActiveRequests,PeakRequests,StartedRequests,StoppedRequests;
 static uint64_t ActiveBytes,PeakBytes;
 static dispatch_semaphore_t FourStarted;
 static dispatch_group_t ProtocolDeliveries;
+static NSMutableDictionary<NSString *,NSNumber *> *ProtocolAttempts;
 @interface TKDownloadProtocol : NSURLProtocol
 @property(nonatomic) BOOL finished;
 @property(nonatomic) NSUInteger bytes;
@@ -60,7 +62,22 @@ static dispatch_group_t ProtocolDeliveries;
     }
 }
 - (void)startLoading {
-    NSDictionary *reply=ProtocolResponses[self.request.URL.lastPathComponent]?:@{@"data":NSData.data,@"status":@404};
+    NSString *key=self.request.URL.lastPathComponent;
+    NSDictionary *reply=ProtocolResponses[key]?:@{@"data":NSData.data,@"status":@404};
+    NSUInteger attempt;
+    @synchronized(TKDownloadProtocol.class) {
+        attempt=ProtocolAttempts[key].unsignedIntegerValue;ProtocolAttempts[key]=@(attempt+1);
+    }
+    // A transport failure before any response, as a dropped CDN connection reports it.
+    if(reply[@"failCode"] && attempt<[reply[@"failTimes"] unsignedIntegerValue]) {
+        NSError *failure=[NSError errorWithDomain:NSURLErrorDomain code:[reply[@"failCode"] integerValue] userInfo:nil];
+        _finished=YES;dispatch_group_enter(ProtocolDeliveries);
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+            @try { @synchronized(self) { [self.client URLProtocol:self didFailWithError:failure]; } }
+            @finally { dispatch_group_leave(ProtocolDeliveries); }
+        });
+        return;
+    }
     NSData *body=reply[@"data"];NSString *range=[self.request valueForHTTPHeaderField:@"Range"];
     NSUInteger status=[reply[@"status"] unsignedIntegerValue]?:200;NSString *contentRange=nil;
     if(range) {
@@ -115,7 +132,7 @@ static void ResetProtocol(NSDictionary *responses) {
     @synchronized(TKDownloadProtocol.class) {
         if(!ProtocolDeliveries)ProtocolDeliveries=dispatch_group_create();
         assert(!ActiveRequests);ProtocolResponses=responses;PeakRequests=StartedRequests=StoppedRequests=0;
-        ActiveBytes=PeakBytes=0;FourStarted=nil;
+        ActiveBytes=PeakBytes=0;FourStarted=nil;ProtocolAttempts=[NSMutableDictionary new];
     }
 }
 static NSData *ArchiveIndex(NSArray<NSData *> *objects,NSArray<NSNumber *> *offsets) {
@@ -324,6 +341,39 @@ static void TestConcurrentDownloads(void) {
     FourStarted=nil;
     assert([NSFileManager.defaultManager removeItemAtPath:indices error:NULL]);
 }
+// A dropped connection retries the one request instead of failing the whole update.
+@interface TKRetryClient : TKSessionClient
+@end
+@implementation TKRetryClient
+- (NSTimeInterval)retryDelayAfterAttempt:(NSUInteger)attempt { (void)attempt; return 0; }
+@end
+static NSUInteger Attempts(NSString *key) {
+    @synchronized(TKDownloadProtocol.class) { return ProtocolAttempts[key].unsignedIntegerValue; }
+}
+static void TestTransientRetry(void) {
+    NSData *body=Text(@"retry payload");
+    NSURL *url=[NSURL URLWithString:@"https://fixture.invalid/tpr/wow/retry"];
+    TKRetryClient *client=[TKRetryClient new];NSError *error=nil;
+    // Two dropped connections, then the full object and a ranged read both arrive.
+    ResetProtocol(@{@"retry":@{@"data":body,@"failCode":@(NSURLErrorNetworkConnectionLost),@"failTimes":@2}});
+    assert([[client fetch:url limit:1024 error:&error] isEqual:body] && Attempts(@"retry")==3);
+    ResetProtocol(@{@"retry":@{@"data":body,@"failCode":@(NSURLErrorTimedOut),@"failTimes":@2}});
+    assert([[client range:url offset:6 size:7 error:&error] isEqual:Text(@"payload")] && Attempts(@"retry")==3);
+    // A connection that keeps dropping gives up after six attempts with the transport error.
+    ResetProtocol(@{@"retry":@{@"data":body,@"failCode":@(NSURLErrorNetworkConnectionLost),@"failTimes":@100}});
+    error=nil;assert(![client fetch:url limit:1024 error:&error]);
+    assert(Attempts(@"retry")==6 && [error.domain isEqual:NSURLErrorDomain] && error.code==NSURLErrorNetworkConnectionLost);
+    // A failure that is not transient is reported at once.
+    ResetProtocol(@{@"retry":@{@"data":body,@"failCode":@(NSURLErrorBadServerResponse),@"failTimes":@1}});
+    error=nil;assert(![client fetch:url limit:1024 error:&error]);
+    assert(Attempts(@"retry")==1 && error.code==NSURLErrorBadServerResponse);
+    // Cancellation is never retried.
+    ResetProtocol(@{@"retry":@{@"data":body}});
+    [client cancel];error=nil;assert(![client fetch:url limit:1024 error:&error]);
+    assert(Attempts(@"retry")==0 && [error.localizedDescription containsString:@"cancelled"]);
+    assert(!dispatch_group_wait(ProtocolDeliveries,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC)));
+    assert(!ActiveRequests);
+}
 int main(void) {
     @autoreleasepool {
         TKFixtureClient *client=[TKFixtureClient new]; client.responses=[NSMutableDictionary new];
@@ -379,6 +429,7 @@ int main(void) {
     TestTransferBudget();
     TestReadyRanges();
     TestConcurrentDownloads();
-    puts("WoW client tests PASS: bounded concurrent transfers, serial consumption, range validation, cancellation, verified staging, cache repair, patch invalidation, malformed metadata and failed transport.");
+    TestTransientRetry();
+    puts("WoW client tests PASS: transient network retry, bounded concurrent transfers, serial consumption, range validation, cancellation, verified staging, cache repair, patch invalidation, malformed metadata and failed transport.");
     return 0;
 }

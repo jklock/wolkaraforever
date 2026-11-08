@@ -162,6 +162,10 @@ static BOOL TKWoWTransientNetworkError(NSError *error) {
             return NO;
     }
 }
+// 2, 4, 8, 16, then 30 seconds. Tests override this to run without sleeping.
+- (NSTimeInterval)retryDelayAfterAttempt:(NSUInteger)attempt {
+    return MIN(30.0,2.0*(double)(1u<<(attempt-1)));
+}
 - (NSData *)transferURL:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size limit:(NSUInteger)limit error:(NSError **)error {
     const NSUInteger attempts=6;
     NSError *failure=nil;
@@ -172,7 +176,7 @@ static BOOL TKWoWTransientNetworkError(NSError *error) {
         [_lock lock]; BOOL stop=_cancelled || _downloadFailure; [_lock unlock];
         if (stop || attempt>=attempts || !TKWoWTransientNetworkError(failure)) break;
         TKWoWLog(@"download retry %lu/%lu after: %@",(unsigned long)attempt,(unsigned long)(attempts-1),failure.localizedDescription);
-        [NSThread sleepForTimeInterval:MIN(30.0,2.0*(double)(1u<<(attempt-1)))];
+        [NSThread sleepForTimeInterval:[self retryDelayAfterAttempt:attempt]];
     }
     if (error) *error=failure;
     return nil;
