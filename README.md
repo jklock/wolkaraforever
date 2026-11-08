@@ -32,7 +32,8 @@ platform/                 Tolkara, vendored byte-identical to upstream
 ```
 
 The upstream history, MIT licence, and third-party notices are retained. See
-[NOTICE.md](NOTICE.md) for source and reference attributions.
+[NOTICE.md](NOTICE.md) for source and reference attributions and
+[CONTRIBUTORS.md](CONTRIBUTORS.md) for the people behind the work.
 
 ## What WolkaraForever provides
 
@@ -167,6 +168,8 @@ The public user guide is under [docs/](docs/README.md). Engineering material is 
 - [Tooling](development/guides/TOOLING.md) and [Testing](development/testing/TESTING.md) — command
   reference and what each test proves.
 - [Contributing](development/guides/CONTRIBUTING.md) — code and data boundaries.
+- [Contributors](CONTRIBUTORS.md) — the people whose work this carries, and how a
+  contribution is recorded.
 
 `platform/` must remain byte-identical to Tolkara upstream. Product changes belong in
 `wolkaraforever/` through a layer file, patch, and/or `overlay.map` entry.
