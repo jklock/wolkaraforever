@@ -31,9 +31,11 @@ repository; this page is the authoritative configuration record.
   intentional integration branches.
 - Block force-pushes and branch deletion for everyone, the owner included.
 - The maintainer (`@jklock`) is the only bypass actor, with bypass mode **pull requests only**:
-  the owner must still open a pull request, and inside it the review requirement does not apply
-  to them, so the owner can accept and merge their own work. Nobody else has a bypass; a
-  collaborator's pull request stays unmergeable until the owner approves it, and every bypassed
+  the owner must still open a pull request — a direct push to `main` is refused for the owner
+  too, measured 2026-11-08 — and merges it with the admin override
+  (`gh pr merge <n> --squash --admin`, or the bypass option in the web UI), because GitHub does
+  not let anyone approve their own pull request. Nobody else has a bypass; a collaborator's
+  pull request stays unmergeable until the owner approves it, and every bypassed
   merge still carries the PR's verification and risk record.
 - Enforce `.github/CODEOWNERS` for protected paths.
 - Enable GitHub secret scanning, push protection, Dependabot alerts, and private
