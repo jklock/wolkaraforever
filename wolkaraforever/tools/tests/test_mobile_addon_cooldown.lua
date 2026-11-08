@@ -18,6 +18,7 @@ InCombatLockdown = function() return false end
 
 local cooldown = { start = 0, duration = 0, enabled = true }
 local ns = {}
+ns.T = ns.T or function(text) return text end
 function ns.SpellCooldown() return cooldown.start, cooldown.duration, cooldown.enabled end
 assert(loadfile(path))("WolkaraRoue", ns)
 

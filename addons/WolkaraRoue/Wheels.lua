@@ -16,7 +16,7 @@ local DEFAULT_TOGGLES = {
     ns.Spot(0.20, 0.50),
 }
 
-local Wheels = ns.Register("Roues", {})
+local Wheels = ns.Register("Wheels", {})
 ns.Wheels = Wheels
 local wheels = {}
 
@@ -78,7 +78,7 @@ local function BuildWheel(index)
     wheel.toggleIcon:SetAllPoints()
     wheel.toggleIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     ns.Circle(toggle, wheel.toggleIcon)
-    local label = ns.Label(toggle, "GameFontNormal", index == 1 and "Roue" or ("Roue " .. index))
+    local label = ns.Label(toggle, "GameFontNormal", index == 1 and ns.T("Wheel") or (ns.T("Wheel ") .. index))
     label:SetPoint("TOP", toggle, "BOTTOM", 0, -4)
     local toggleHighlight = ns.Disc(toggle, "HIGHLIGHT", 1, 1, 1, 0.2, 0)
     toggleHighlight:SetBlendMode("ADD")
@@ -163,7 +163,7 @@ function Wheels:Init()
 end
 
 function Wheels:Layout()
-    for _, wheel in ipairs(wheels) do ns.Guard("roue " .. wheel.index, wheel.Layout, wheel) end
+    for _, wheel in ipairs(wheels) do ns.Guard(ns.T("wheel ") .. wheel.index, wheel.Layout, wheel) end
 end
 
 function Wheels:Refresh()

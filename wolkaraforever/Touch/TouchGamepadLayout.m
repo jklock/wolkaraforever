@@ -1,5 +1,7 @@
 #import "TouchGamepadLayout.h"
 #include <math.h>
+#include <string.h>
+#include <sys/utsname.h>
 
 static NSString *const LayoutKey = @"WolkaraForeverTouchLayoutV1";
 NSNotificationName const AKGamepadLayoutDidChangeNotification = @"AKGamepadLayoutDidChange";
@@ -8,6 +10,11 @@ static CGFloat Clamp(CGFloat value, CGFloat minimum, CGFloat maximum, CGFloat fa
 }
 static CGFloat Number(id value, CGFloat fallback) {
     return [value isKindOfClass:NSNumber.class] ? [value doubleValue] : fallback;
+}
+static BOOL AKIsIPhoneDuo(void) {
+    struct utsname system;
+    if (uname(&system) != 0) return NO;
+    return strcmp(system.machine, "iPhone19,4") == 0;
 }
 @implementation AKGamepadLayout {
     NSUserDefaults *_defaults;
@@ -35,6 +42,7 @@ static CGFloat Number(id value, CGFloat fallback) {
         self.swapShoulders = Number(values[@"swapShoulders"],values.count ? 0 : 1) != 0;
         self.performanceOverlayEnabled = Number(values[@"performanceOverlayEnabled"],0) != 0;
         self.sticksOnly = Number(values[@"sticksOnly"],1) != 0;
+        self.floatingSticks = Number(values[@"floatingSticks"],AKIsIPhoneDuo() ? 1 : 0) != 0;
         _positions = [NSMutableDictionary new];
         id positions = values[@"positions"];
         if ([positions isKindOfClass:NSDictionary.class]) for (NSString *key in positions) {
@@ -68,7 +76,7 @@ static CGFloat Number(id value, CGFloat fallback) {
 - (void)save {
     [_defaults setObject:@{@"opacity":@(_opacity),@"rearScale":@(_rearScale),
         @"frontScale":@(_frontScale),@"hapticsEnabled":@(_hapticsEnabled),@"swapShoulders":@(_swapShoulders),
-        @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),@"positions":_positions} forKey:LayoutKey];
+        @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),@"floatingSticks":@(_floatingSticks),@"positions":_positions} forKey:LayoutKey];
     [NSNotificationCenter.defaultCenter postNotificationName:AKGamepadLayoutDidChangeNotification object:_defaults];
 }
 - (void)reset {
@@ -76,6 +84,7 @@ static CGFloat Number(id value, CGFloat fallback) {
     self.hapticsEnabled = YES; self.swapShoulders = YES;
     self.performanceOverlayEnabled = NO;
     self.sticksOnly = YES;
+    self.floatingSticks = AKIsIPhoneDuo();
     [_positions removeAllObjects]; [self save];
 }
 @end

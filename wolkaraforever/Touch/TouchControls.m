@@ -7,6 +7,10 @@
 #import "TouchHaptics.h"
 #import <objc/message.h>
 
+static BOOL AKDuoInterface(void) {
+    return [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults].floatingSticks;
+}
+
 // Null until the app's shell says which keys are the user's; null means "nothing is owned",
 // which is the behaviour without the feature and what a fixture that links only the adapter
 // gets.
@@ -223,7 +227,10 @@ static BOOL hardwareKeyboardAttached(void) {
         __weak AKKeyboardTextView *weakSelf = self;
         [NSRunLoop.mainRunLoop performInModes:@[NSRunLoopCommonModes] block:^{
             AKKeyboardTextView *input = weakSelf;
-            if (input && input->_session == session) [input forwardCommittedText];
+            if (input && input->_session == session) {
+                if (AKDuoInterface()) [input sendDraftToChat];
+                else [input forwardCommittedText];
+            }
         }];
         return NO;
     }
@@ -446,6 +453,8 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
 @implementation AKTouchControls {
     UIButton *_keyboardButton, *_trackpadButton, *_gamepadButton, *_settingsButton, *_leaveButton;
     UIButton *_toolbarHandle;
+    UIButton *_loginKeyboard;
+    BOOL _inGame, _sawSecureInput, _duoComposer;
     BOOL _toolbarCollapsed;
     NSTimer *_toolbarCollapseTimer;
     UIButton *_insertDraftButton, *_clearDraftButton;
@@ -560,6 +569,10 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         // The handle folds the five buttons away so they do not sit over the game, and
         // brings them back with one tap.
         _toolbarHandle = [self buttonWithSymbol:@"chevron.compact.down" label:AKHostLocalized(@"touch.toolbar.show") action:@selector(toggleToolbar)];
+        _loginKeyboard = [self buttonWithSymbol:@"keyboard" label:AKHostLocalized(@"touch.keyboard.show") action:@selector(toggleKeyboard)];
+        _loginKeyboard.accessibilityIdentifier = @"wolkaraforever.loginKeyboard";
+        [_loginKeyboard removeFromSuperview];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(gameUp:) name:@"AKTouchGamepadChatButtonNotification" object:nil];
         _toolbarHandle.accessibilityIdentifier = @"wolkaraforever.toolbarHandle";
         NSNumber *collapsed = [NSUserDefaults.standardUserDefaults objectForKey:AKTouchToolbarCollapsedDefaultsKey];
         _toolbarCollapsed = [collapsed isKindOfClass:NSNumber.class] ? collapsed.boolValue : YES;
@@ -618,7 +631,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     // Folded, the keyboard stays: it is the button a player reaches for most (the chat).
     for (UIButton *button in @[_trackpadButton, _gamepadButton, _settingsButton, _leaveButton])
         button.hidden = _toolbarCollapsed;
-    _keyboardButton.hidden = NO;
+    _keyboardButton.hidden = AKDuoInterface() ? _toolbarCollapsed : NO;
     [_toolbarHandle setImage:[UIImage systemImageNamed:_toolbarCollapsed ? @"chevron.compact.down" : @"chevron.compact.up"]
                     forState:UIControlStateNormal];
     _toolbarHandle.accessibilityLabel = AKHostLocalized(_toolbarCollapsed ? @"touch.toolbar.show" : @"touch.toolbar.hide");
@@ -677,11 +690,23 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         self.translatesAutoresizingMaskIntoConstraints = YES;
     }
     static unsigned logged;
-    CGFloat width = _toolbarCollapsed ? 96 : 304, height = _toolbarCollapsed ? 34 : 44;
+    BOOL duo = AKDuoInterface();
+    CGFloat width = _toolbarCollapsed ? (duo ? 44 : 96) : 304, height = _toolbarCollapsed ? (duo ? 28 : 34) : 44;
     CGRect bounds = host.bounds;
-    CGFloat y = self.keyboardVisible ? host.safeAreaInsets.top + 8
-                                     : bounds.size.height - host.safeAreaInsets.bottom - 8 - height;
+    CGFloat y = duo ? host.safeAreaInsets.top + 2
+                    : (self.keyboardVisible ? host.safeAreaInsets.top + 8
+                                            : bounds.size.height - host.safeAreaInsets.bottom - 8 - height);
     self.frame = CGRectMake(floor((bounds.size.width - width) / 2), y, width, height);
+    if (duo) {
+        self.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleBottomMargin;
+        if (_loginKeyboard.superview != host) [host addSubview:_loginKeyboard];
+        _loginKeyboard.frame = CGRectMake(floor(bounds.size.width * 0.60 - 22), bounds.size.height - host.safeAreaInsets.bottom - 8 - 34, 44, 34);
+        _loginKeyboard.layer.cornerRadius = 17;
+        _loginKeyboard.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleTopMargin;
+    } else if (_loginKeyboard.superview) {
+        [_loginKeyboard removeFromSuperview];
+    }
+    [self updateLoginKeyboard];
     if (logged < 3) {
         logged++;
         AKLog(@"toolbar host bounds=%.0fx%.0f insets top=%.0f left=%.0f bottom=%.0f placed x=%.0f y=%.0f centre=%.0f (screen centre %.0f)",
@@ -690,18 +715,18 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     }
 }
 
-
 - (void)layoutSubviews {
     [super layoutSubviews];
     if (self.superview) [self placeToolbarInHost:self.superview];
     _trackpadButton.frame = CGRectMake(0, 0, 44, 44);
-    _keyboardButton.frame = _toolbarCollapsed ? CGRectMake(0, 0, 44, 34) : CGRectMake(52, 0, 44, 44);
-    _keyboardButton.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
+    BOOL duo = AKDuoInterface();
+    _keyboardButton.frame = (_toolbarCollapsed && !duo) ? CGRectMake(0, 0, 44, 34) : CGRectMake(52, 0, 44, 44);
+    _keyboardButton.layer.cornerRadius = (_toolbarCollapsed && !duo) ? 17 : 22;
     _gamepadButton.frame = CGRectMake(104, 0, 44, 44);
     _settingsButton.frame = CGRectMake(156, 0, 44, 44);
     _leaveButton.frame = CGRectMake(208, 0, 44, 44);
-    _toolbarHandle.frame = _toolbarCollapsed ? CGRectMake(52, 0, 44, 34) : CGRectMake(260, 0, 44, 44);
-    _toolbarHandle.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
+    _toolbarHandle.frame = _toolbarCollapsed ? (duo ? CGRectMake(0, 0, 44, 28) : CGRectMake(52, 0, 44, 34)) : CGRectMake(260, 0, 44, 44);
+    _toolbarHandle.layer.cornerRadius = _toolbarCollapsed ? (duo ? 14 : 17) : 22;
 }
 - (void)setTrackpadEnabled:(BOOL)enabled {
     [self cancelTouches];
@@ -807,6 +832,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     if (self.superview) [self placeToolbarInHost:self.superview];
     [self updateDraftButtons];
     [_keyboardButton setImage:[UIImage systemImageNamed:self.keyboardVisible ? @"keyboard.chevron.compact.down" : @"keyboard"] forState:UIControlStateNormal];
+    [self updateLoginKeyboard];
     _keyboardButton.accessibilityLabel = self.keyboardVisible ? AKHostLocalized(@"touch.keyboard.hide") : AKHostLocalized(@"touch.keyboard.show");
     _gamepad.keyboardVisible = self.keyboardVisible;
     if ([self.delegate respondsToSelector:@selector(touchKeyboardVisibilityChanged:)])
@@ -935,6 +961,26 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 static const unsigned short AKKeyF12 = 111;
 - (void)secureEventInputChanged:(NSNotification *)note {
     _protectedField = [note.userInfo[@"enabled"] boolValue];
+    if (!AKDuoInterface()) return;
+    BOOL enabled = _protectedField;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (enabled) {
+            self->_sawSecureInput = YES;
+            if (!self.keyboardVisible) [self becomeFirstResponder];
+        } else if (self->_sawSecureInput) {
+            self->_inGame = YES;
+        }
+        [self updateLoginKeyboard];
+    });
+}
+- (void)gameUp:(NSNotification *)note {
+    (void)note;
+    _inGame = YES;
+    [self updateLoginKeyboard];
+}
+- (void)updateLoginKeyboard {
+    _loginKeyboard.hidden = _inGame || self.keyboardVisible || self.hidden;
+    _loginKeyboard.alpha = _keyboardButton.alpha;
 }
 - (void)sendChatText:(NSString *)text {
     if (!text.length) {
@@ -942,7 +988,7 @@ static const unsigned short AKKeyF12 = 111;
         [self.delegate touchSpecialKey:36 characters:@"\r"];
         return;
     }
-    if (_protectedField) {
+    if (_protectedField && !(AKDuoInterface() && _inGame)) {
         // A password field has the keyboard (the game asked for secure event input), so this
         // line is not chat: type exactly what was written, then Return - the old keyboard's
         // sequence without its leading Return. A chat key has no business in a password
@@ -950,6 +996,41 @@ static const unsigned short AKKeyF12 = 111;
         [self.delegate touchInsertText:text];
         [self.delegate touchSpecialKey:36 characters:@"\r"];
         AKLog(@"keyboard: a line went to a protected field");
+        [self dismissKeyboard];
+        return;
+    }
+    if (AKDuoInterface()) {
+        BOOL command = [text hasPrefix:@"/"];
+        NSString *rest = text;
+        if (command) {
+            [self.delegate touchInsertText:@"/"];
+            rest = [text substringFromIndex:1];
+        } else {
+            [self.delegate touchSpecialKey:AKKeyF12 characters:@"\uF70F"];
+        }
+        NSMutableArray<NSString *> *chunks = [NSMutableArray array];
+        NSUInteger index = 0, start = 0, count = 0;
+        while (index < rest.length) {
+            index = NSMaxRange([rest rangeOfComposedCharacterSequenceAtIndex:index]);
+            if (++count == 8 || index >= rest.length) {
+                [chunks addObject:[rest substringWithRange:NSMakeRange(start, index - start)]];
+                start = index; count = 0;
+            }
+        }
+        __weak AKTouchControls *weakSelf = self;
+        double delay = 0.25;
+        for (NSString *chunk in chunks) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                AKTouchControls *controls = weakSelf;
+                if (controls) [controls.delegate touchInsertText:chunk];
+            });
+            delay += 0.05;
+        }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((delay + 0.1) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            AKTouchControls *controls = weakSelf;
+            if (controls) [controls.delegate touchSpecialKey:36 characters:@"\r"];
+        });
+        AKLog(@"keyboard: a line went to the chat (%@, %lu part(s))", command ? @"command" : @"message", (unsigned long)chunks.count);
         [self dismissKeyboard];
         return;
     }
@@ -961,12 +1042,14 @@ static const unsigned short AKKeyF12 = 111;
 }
 
 - (UIView *)inputAccessoryView {
+    if (_composer && _duoComposer) return nil;
     if (!_accessory) {
         UIStackView *row = [[UIStackView alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
         row.distribution = UIStackViewDistributionFillEqually;
         row.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.96];
         NSArray<NSString *> *titles = @[@"Esc", @"Tab", @"←", @"→", @"⌫", @"↵", @"⌄"];
         for (NSUInteger i = 0; i < titles.count; i++) {
+            if (_duoComposer && i >= 1 && i <= 5) continue;
             UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
             button.tag = (NSInteger)i;
             button.tintColor = UIColor.whiteColor;
@@ -999,11 +1082,70 @@ static const unsigned short AKKeyF12 = 111;
     BOOL ready = [_keyboardInput canModifyDraft];
     _insertDraftButton.enabled = [_keyboardInput canReplaceField];
     _clearDraftButton.enabled = ready && _keyboardInput.hasText;
+    if (_duoComposer) _composerLabel.hidden = _keyboardInput.hasText;
     for (UIButton *button in ((UIStackView *)_accessory).arrangedSubviews) {
         button.enabled = button.tag == 6 || (ready && !_keyboardInput.hasText);
     }
 }
 - (void)buildComposer {
+    _duoComposer = AKDuoInterface();
+    if (_duoComposer) [self buildDuoComposer];
+    else [self buildStandardComposer];
+}
+- (void)buildDuoComposer {
+    _composer = [[UIView alloc] initWithFrame:CGRectZero];
+    _composer.hidden = YES;
+    _composer.translatesAutoresizingMaskIntoConstraints = NO;
+    _composer.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.98];
+    _composer.layer.cornerRadius = 14;
+    _composer.layer.zPosition = self.layer.zPosition;
+    _keyboardInput.layer.cornerRadius = 18;
+    _keyboardInput.textContainerInset = UIEdgeInsetsMake(9, 10, 9, 10);
+    UILabel *label = _composerLabel = [UILabel new];
+    label.text = AKHostLocalized(@"touch.composer.message");
+    label.font = [UIFont systemFontOfSize:17];
+    label.textColor = [UIColor colorWithWhite:1 alpha:0.35];
+    label.userInteractionEnabled = NO;
+    label.accessibilityHint = AKComposerDefaultLabel();
+    UIButton *send = _clearDraftButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIImageSymbolConfiguration *big = [UIImageSymbolConfiguration configurationWithPointSize:30];
+    [send setImage:[UIImage systemImageNamed:@"arrow.up.circle.fill" withConfiguration:big] forState:UIControlStateNormal];
+    send.tintColor = UIColor.systemBlueColor;
+    send.accessibilityLabel = AKHostLocalized(@"touch.composer.send");
+    send.accessibilityIdentifier = @"wolkaraforever.keyboard.send";
+    [send addTarget:self action:@selector(sendDraft) forControlEvents:UIControlEventTouchUpInside];
+    send.accessibilityHint = AKHostLocalized(@"touch.composer.send.hint");
+    UILongPressGestureRecognizer *hold = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(sendHeld:)];
+    hold.minimumPressDuration = 0.6;
+    [send addGestureRecognizer:hold];
+    UIButton *hide = [UIButton buttonWithType:UIButtonTypeSystem];
+    [hide setImage:[UIImage systemImageNamed:@"keyboard.chevron.compact.down"] forState:UIControlStateNormal];
+    hide.tintColor = UIColor.lightGrayColor;
+    hide.accessibilityLabel = AKHostLocalized(@"touch.keyboard.hide");
+    hide.accessibilityIdentifier = @"wolkaraforever.keyboard.hide";
+    [hide addTarget:self action:@selector(dismissKeyboard) forControlEvents:UIControlEventTouchUpInside];
+    for (UIView *view in @[hide, _keyboardInput, label, send]) {
+        view.translatesAutoresizingMaskIntoConstraints = NO;
+        [_composer addSubview:view];
+    }
+    [NSLayoutConstraint activateConstraints:@[
+        [hide.leadingAnchor constraintEqualToAnchor:_composer.leadingAnchor constant:4],
+        [hide.centerYAnchor constraintEqualToAnchor:_composer.centerYAnchor],
+        [hide.widthAnchor constraintEqualToConstant:40],
+        [hide.heightAnchor constraintEqualToConstant:44],
+        [_keyboardInput.leadingAnchor constraintEqualToAnchor:hide.trailingAnchor constant:2],
+        [_keyboardInput.topAnchor constraintEqualToAnchor:_composer.topAnchor constant:8],
+        [_keyboardInput.bottomAnchor constraintEqualToAnchor:_composer.bottomAnchor constant:-8],
+        [_keyboardInput.trailingAnchor constraintEqualToAnchor:send.leadingAnchor constant:-6],
+        [label.leadingAnchor constraintEqualToAnchor:_keyboardInput.leadingAnchor constant:15],
+        [label.centerYAnchor constraintEqualToAnchor:_keyboardInput.centerYAnchor],
+        [send.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-6],
+        [send.centerYAnchor constraintEqualToAnchor:_composer.centerYAnchor],
+        [send.widthAnchor constraintEqualToConstant:44],
+        [send.heightAnchor constraintEqualToConstant:44],
+    ]];
+}
+- (void)buildStandardComposer {
     _composer = [[UIView alloc] initWithFrame:CGRectZero];
     _composer.hidden = YES;
     _composer.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1050,6 +1192,12 @@ static const unsigned short AKKeyF12 = 111;
         [insert.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-8],
     ]];
 }
+- (void)sendDraft { [_keyboardInput sendDraftToChat]; }
+- (void)sendHeld:(UILongPressGestureRecognizer *)hold {
+    if (hold.state != UIGestureRecognizerStateBegan) return;
+    [_haptics buttonPressed];
+    [self insertDraft];
+}
 - (void)didMoveToSuperview {
     [super didMoveToSuperview];
     [_composer removeFromSuperview];
@@ -1064,7 +1212,7 @@ static const unsigned short AKKeyF12 = 111;
         [_composer.bottomAnchor constraintEqualToAnchor:host.keyboardLayoutGuide.topAnchor constant:-4],
         [_composer.centerXAnchor constraintEqualToAnchor:host.safeAreaLayoutGuide.centerXAnchor],
         width, [_composer.widthAnchor constraintLessThanOrEqualToConstant:800],
-        [_composer.heightAnchor constraintEqualToConstant:82],
+        [_composer.heightAnchor constraintEqualToConstant:_duoComposer ? 56 : 82],
     ]];
 
     // Placement happens in layoutSubviews, by frame, from the host's own bounds - see
@@ -1129,7 +1277,8 @@ static const unsigned short AKKeyF12 = 111;
     _systemKeyboardHeight = [frame CGRectValue].size.height;
     _systemKeyboardSeen = YES;
     // With the keys on screen the microphone is one tap away again.
-    if (_systemKeyboardHeight >= AKKeyboardKeysHeight) _composerLabel.text = AKComposerDefaultLabel();
+    if (_systemKeyboardHeight >= AKKeyboardKeysHeight)
+        _composerLabel.text = _duoComposer ? AKHostLocalized(@"touch.composer.message") : AKComposerDefaultLabel();
     AKLog(@"system keyboard shown draftFirstResponder=%d markedText=%d height=%.0f", _keyboardInput.isFirstResponder, _keyboardInput.markedTextRange != nil, _systemKeyboardHeight);
 }
 - (void)systemKeyboardHidden:(NSNotification *)notification {

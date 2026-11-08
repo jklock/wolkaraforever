@@ -21,6 +21,7 @@ DEFAULT_CHAT_FRAME = { AddMessage = function() end }
 InCombatLockdown = function() return false end
 
 local ns = {}
+ns.T = ns.T or function(text) return text end
 assert(loadfile(path))("WolkaraRoue", ns)
 local function Load(saved)
     WolkaraRoueDB = saved

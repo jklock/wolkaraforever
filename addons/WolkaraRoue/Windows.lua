@@ -14,7 +14,7 @@
 
 local _, ns = ...
 
-local Windows = ns.Register("Fenêtres du jeu", {})
+local Windows = ns.Register("Game windows", {})
 ns.Windows = Windows
 
 local MARGIN = 10

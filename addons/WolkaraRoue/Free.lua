@@ -12,7 +12,7 @@ ns.STICK_X, ns.STICK_Y = STICK_X, STICK_Y
 -- Première rangée serrée autour du stick, deuxième rangée au-delà.
 local INNER, OUTER = 0.165, 0.275
 
-local Free = ns.Register("Boutons libres", {})
+local Free = ns.Register("Free buttons", {})
 local groups = {}
 
 local function Arc(side, index, count, spread)
@@ -107,7 +107,7 @@ function Free:Init()
 end
 
 function Free:Layout()
-    for _, group in ipairs(groups) do ns.Guard("boutons " .. group.side, group.Layout, group) end
+    for _, group in ipairs(groups) do ns.Guard(ns.T("buttons ") .. group.side, group.Layout, group) end
     self:Refresh()
 end
 

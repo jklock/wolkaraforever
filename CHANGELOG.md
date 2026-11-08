@@ -13,6 +13,20 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **iPhone Duo layout.** On an iPhone Duo (`iPhone19,4`) the touch controls and the WolkaraRoue
+  add-on switch to a layout made for its screen. The app: sticks that appear under the thumb, an
+  L-shaped move area and a camera area that curve around a corner skill fan, a corner Jump, auto-run
+  (hold forward, slide onto the lock), a toolbar folded into a handle at the top, and a typing bar
+  with Send. The add-on: a corner skill fan with a slot edit mode and three presets, a quick bar
+  (5 slots, 5 pages), a chat button with a peek and a full chat in WoW's own layout, a quick menu,
+  a buff row and panel, party frames, cast bars, and one Mobile UI settings window that holds
+  pookee's options and the new ones. Everything Duo-specific sits behind the layout switch, which
+  is on by default only on the Duo: other devices keep the existing layout, and the system Done key
+  still replaces, as [the iPhone guide](docs/IPHONE.md#iphone-duo-layout) and the touch-controls
+  assertion say. Health, auras, cooldowns and names that newer clients return as secret values no
+  longer stop the HUD. The add-on's source strings are now English, with French, Spanish and German
+  tables, and its tests read the English source text. Duo UI by scarrdi94, built on pookee's Mobile
+  Interface.
 - **The iPhone interface work is on `main`.** French as both an app and a game language, the
   WolkaraRoue mobile add-on (turning wheels, cooldowns, bags, minimap, windows, chat), direct
   touch as tap/hold/drag/pinch, the mobile keyboard, and the device-safe helper scripts

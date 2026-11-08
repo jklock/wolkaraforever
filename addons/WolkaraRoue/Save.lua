@@ -39,7 +39,7 @@ function ns.SaveTick(now)
     if now - changedAt < AFTER_CHANGE or now - idleSince < AFTER_IDLE then return false end
     changedAt, idleSince = nil, nil
     ns.db.justSaved = true
-    ns.Print("enregistrement de tes réglages : l'interface se recharge.")
+    ns.Print(ns.T("saving your settings: the interface is reloading."))
     ReloadUI()
     return true
 end
@@ -56,6 +56,6 @@ end)
 ns.On("PLAYER_LOGIN", function()
     if ns.db and ns.db.justSaved then
         ns.db.justSaved = nil
-        ns.Print("réglages enregistrés.")
+        ns.Print(ns.T("settings saved."))
     end
 end)

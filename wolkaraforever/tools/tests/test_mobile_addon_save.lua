@@ -22,6 +22,7 @@ CreateFrame = function()
 end
 
 local ns = { db = {}, editing = false }
+ns.T = ns.T or function(text) return text end
 function ns.Print(message) printed[#printed + 1] = message end
 function ns.On(event, fn) handlers[event] = fn end
 ns.Picker = { IsOpen = function() return open.picker end }
@@ -39,7 +40,7 @@ now = 1000; ns.MarkChanged()
 assert(ns.SavePending())
 assert(not tick(1001) and not tick(1003.9) and reloads == 0)
 assert(tick(1004) and reloads == 1 and ns.db.justSaved == true and not ns.SavePending())
-assert(printed[#printed]:find("recharge"))
+assert(printed[#printed]:find("reload"))
 assert(not tick(1100) and reloads == 1)  -- once per change
 
 -- Every new change starts the wait again.
@@ -75,7 +76,7 @@ assert(reloads == before + 1)
 
 -- After the reload the add-on says it saved, once, and does not save again for that.
 handlers.PLAYER_LOGIN()
-assert(ns.db.justSaved == nil and printed[#printed] == "réglages enregistrés.")
+assert(ns.db.justSaved == nil and printed[#printed] == "settings saved.")
 assert(not ns.SavePending() and not tick(5000))
 
 -- Before the settings are loaded a change is not recorded.

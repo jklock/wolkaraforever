@@ -12,7 +12,7 @@
 
 local _, ns = ...
 
-local Blizzard = ns.Register("Interface du jeu", {})
+local Blizzard = ns.Register("Game interface", {})
 local hider = CreateFrame("Frame")
 hider:Hide()
 

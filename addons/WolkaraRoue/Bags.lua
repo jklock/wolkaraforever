@@ -8,7 +8,7 @@
 
 local _, ns = ...
 
-local Bags = ns.Register("Sacs", {})
+local Bags = ns.Register("Bags", {})
 local pending = false
 local SHIFT = 0.36  -- de la largeur de l'écran
 

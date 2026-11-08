@@ -34,6 +34,7 @@ hooksecurefunc = function(name, fn) assert(name == "UpdateContainerFrameAnchors"
 -- The module registers its table through ns.Register; keep it to call Init as the add-on does.
 local handlers, registered = {}, nil
 local ns = {}
+ns.T = ns.T or function(text) return text end
 function ns.Register(_, module) registered = module; return module end
 function ns.On(event, fn) handlers[event] = fn end
 assert(loadfile(path))("WolkaraRoue", ns)

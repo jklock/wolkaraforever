@@ -28,6 +28,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 @property(nonatomic, copy) NSString *element;
 @property(nonatomic, readonly) BOOL pressed;
 @property(nonatomic) NSInteger sector;
+@property(nonatomic) BOOL acceptsAnywhere;
 - (void)releaseInput;
 @end
 @implementation AKGamepadButton { CAShapeLayer *_sectorLayer; UIBezierPath *_sectorPath; }
@@ -71,6 +72,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     self.titleLabel.textAlignment = NSTextAlignmentCenter;
 }
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    if (_acceptsAnywhere) return YES;
     if (_sector >= 0) return [_sectorPath containsPoint:point];
     return [super pointInside:point withEvent:event];
 }
@@ -86,9 +88,43 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 @interface AKGamepadStick : UIControl
 @property(nonatomic, copy) NSString *element;
 @property(nonatomic, readonly) CGPoint position;
+@property(nonatomic) BOOL floating;
+@property(nonatomic) CGFloat idleAlpha, activeAlpha;
+@property(nonatomic, readonly) BOOL held;
+@property(nonatomic) BOOL autoRunAllowed;
+@property(nonatomic, copy) void (^autoRunStage)(NSInteger stage);
+- (void)pollAutoRun:(NSTimeInterval)now;
 - (void)reset;
 @end
-@implementation AKGamepadStick { UIView *_knob; }
+static const CGFloat AKFloatTapSlop = 12;
+static const NSTimeInterval AKFloatTapTime = 0.30;
+static const NSTimeInterval AKAutoRunHold = 2;
+static const CGFloat AKAutoRunLockGap = 96, AKAutoRunArm = 60;
+@implementation AKGamepadStick {
+    UIView *_knob; CGPoint _floatStart; NSTimeInterval _floatTime; BOOL _floatMoved;
+    NSTimeInterval _forwardSince; NSInteger _autoStage; BOOL _autoRunning, _stoppedRun;
+}
+- (void)setAutoStage:(NSInteger)stage {
+    if (_autoStage == stage) return;
+    _autoStage = stage;
+    if (self.autoRunStage) self.autoRunStage(stage);
+}
+- (BOOL)pushedForward { return _position.y >= 0.85 && fabs(_position.x) <= 0.4; }
+- (void)pollAutoRun:(NSTimeInterval)now {
+    if (!_autoRunAllowed || !_held || _autoStage != 0) return;
+    if (![self pushedForward]) { _forwardSince = 0; return; }
+    if (_forwardSince == 0) _forwardSince = now;
+    else if (now - _forwardSince >= AKAutoRunHold) [self setAutoStage:1];
+}
+- (void)trackAutoRun:(UITouch *)touch {
+    if (!_autoRunAllowed) return;
+    if (_autoStage == 0) { [self pollAutoRun:touch.timestamp]; return; }
+    if (_autoStage == 1 || _autoStage == 2) {
+        CGFloat scale = self.superview.transform.d > 0 ? self.superview.transform.d : 1;
+        BOOL above = [touch locationInView:self].y < -AKAutoRunArm / scale;
+        [self setAutoStage:above ? 2 : 1];
+    }
+}
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
         self.exclusiveTouch = NO;
@@ -116,14 +152,51 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     _position = position; [self setNeedsLayout]; [self sendActionsForControlEvents:UIControlEventValueChanged];
 }
 - (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    (void)event; [self updatePosition:AKTouchGamepadStickPosition([touch locationInView:self],self.bounds.size)]; return YES;
+    (void)event;
+    UIView *ring = self.superview;
+    _held = YES;
+    _forwardSince = 0;
+    _stoppedRun = _autoRunning;
+    if (_autoRunning) { _autoRunning = NO; [self setAutoStage:0]; }
+    if (_floating && ring.superview) {
+        _floatStart = [touch locationInView:ring.superview]; _floatTime = touch.timestamp; _floatMoved = NO;
+        ring.center = _floatStart;
+    }
+    [self updatePosition:AKTouchGamepadStickPosition([touch locationInView:self],self.bounds.size)]; return YES;
 }
 - (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    (void)event; [self updatePosition:AKTouchGamepadStickPosition([touch locationInView:self],self.bounds.size)]; return YES;
+    (void)event;
+    if (_floating && !_floatMoved && self.superview.superview) {
+        CGPoint here = [touch locationInView:self.superview.superview];
+        if (hypot(here.x - _floatStart.x, here.y - _floatStart.y) > AKFloatTapSlop) { _floatMoved = YES; self.superview.alpha = _activeAlpha; }
+    }
+    [self updatePosition:AKTouchGamepadStickPosition([touch locationInView:self],self.bounds.size)];
+    [self trackAutoRun:touch];
+    return YES;
 }
-- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event { (void)touch; (void)event; [self reset]; }
-- (void)cancelTrackingWithEvent:(UIEvent *)event { (void)event; [self reset]; }
-- (void)reset { [self updatePosition:CGPointZero]; }
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    _held = NO;
+    if (_autoStage == 2 && _autoRunAllowed) {
+        _autoRunning = YES; [self setAutoStage:3];
+        [self updatePosition:CGPointMake(0, 1)];
+        [self fadeOut];
+        return;
+    }
+    [self reset]; [self fadeOut];
+    if (_stoppedRun) { _stoppedRun = NO; return; }
+    if (!_floating || _floatMoved || touch.timestamp - _floatTime > AKFloatTapTime) return;
+    UIView *host = self.superview.superview.superview;
+    if (![host respondsToSelector:@selector(touchesBegan:withEvent:)]) return;
+    NSSet<UITouch *> *touches = [NSSet setWithObject:touch];
+    [host touchesBegan:touches withEvent:event];
+    [host touchesEnded:touches withEvent:event];
+}
+- (void)cancelTrackingWithEvent:(UIEvent *)event { (void)event; _held = NO; [self reset]; [self fadeOut]; }
+- (void)fadeOut { if (_floating) self.superview.alpha = _idleAlpha; }
+- (void)reset {
+    _autoRunning = NO; _forwardSince = 0; [self setAutoStage:0];
+    [self updatePosition:CGPointZero];
+}
 @end
 
 @interface AKGamepadOverlay : UIView <UIGestureRecognizerDelegate>
@@ -139,6 +212,23 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 - (void)toggleSettings;
 - (void)finishConfiguration;
 @end
+@interface AKTouchSink : UIView
+@end
+@implementation AKTouchSink
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { (void)touches; (void)event; }
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { (void)touches; (void)event; }
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { (void)touches; (void)event; }
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { (void)touches; (void)event; }
+@end
+static const CGFloat AKFloatIdleAlpha = 0.02;
+static const CGFloat AKFloatJumpRadius = 0.16, AKFloatFanRadius = 0.36;
+static const CGFloat AKFloatIslandRadius = 0.43, AKFloatIslandSize = 0.056;
+static const CGFloat AKFloatIslandAngles[] = {58, 82};
+static const CGFloat AKFloatInnerRadius = 0.20, AKFloatInnerSize = 0.05;
+static const CGFloat AKFloatInnerAngles[] = {13, 45};
+static const CGFloat AKFloatLeftMinX = 0.10, AKFloatLeftMaxX = 0.42, AKFloatLeftMinY = 0.42, AKFloatLeftLowY = 0.86;
+static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRightMaxY = 0.92;
+static const CGFloat AKChatButtonHalfWidth = 0.068, AKChatButtonTop = 0.925;
 @implementation AKGamepadOverlay {
     NSDictionary<NSString *,UIView *> *_items;
     NSMutableDictionary<NSString *,NSValue *> *_dragOrigins;
@@ -150,6 +240,15 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     NSArray<UISlider *> *_sliders;
     NSArray<UILabel *> *_values;
     CAShapeLayer *_editGrid, *_editAxes;
+    CAShapeLayer *_cornerJump;
+    UILabel *_cornerJumpLabel;
+    UISwitch *_floatingSwitch;
+    AKTouchSink *_sink;
+    BOOL _chatOpen;
+    NSTimeInterval _chatTouchTime;
+    __weak UIGestureRecognizer *_hostPinch;
+    UIView *_autoLock;
+    UILabel *_autoBadge;
 }
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
@@ -209,6 +308,35 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
         _hint.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
         _hint.textColor = UIColor.whiteColor; _hint.textAlignment = NSTextAlignmentCenter;
         _hint.userInteractionEnabled = NO; [self addSubview:_hint];
+        _cornerJump = [CAShapeLayer layer]; _cornerJump.name = @"WolkaraForeverCornerJump";
+        _cornerJump.fillColor = [UIColor colorWithWhite:0.13 alpha:0.64].CGColor;
+        _cornerJump.strokeColor = [UIColor colorWithWhite:1 alpha:0.3].CGColor; _cornerJump.lineWidth = 1;
+        [self.layer addSublayer:_cornerJump];
+        _cornerJumpLabel = [UILabel new]; _cornerJumpLabel.text = AKHostLocalized(@"touch.gamepad.jump");
+        _cornerJumpLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+        _cornerJumpLabel.textColor = [UIColor colorWithWhite:1 alpha:0.95]; _cornerJumpLabel.textAlignment = NSTextAlignmentCenter;
+        _cornerJumpLabel.userInteractionEnabled = NO; [self addSubview:_cornerJumpLabel];
+        [buttons[GCInputButtonA] addTarget:self action:@selector(cornerJumpChanged) forControlEvents:UIControlEventValueChanged];
+        _sink = [AKTouchSink new]; [self addSubview:_sink];
+        _autoLock = [UIView new]; _autoLock.userInteractionEnabled = NO; _autoLock.hidden = YES;
+        _autoLock.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.7]; _autoLock.layer.cornerRadius = 24;
+        _autoLock.layer.borderWidth = 1; _autoLock.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.35].CGColor;
+        UIImageView *lockImage = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"lock.fill"]];
+        lockImage.tintColor = UIColor.whiteColor; lockImage.frame = CGRectMake(12, 12, 24, 24); lockImage.contentMode = UIViewContentModeScaleAspectFit;
+        [_autoLock addSubview:lockImage]; [self addSubview:_autoLock];
+        _autoBadge = [UILabel new]; _autoBadge.userInteractionEnabled = NO; _autoBadge.hidden = YES;
+        _autoBadge.text = AKHostLocalized(@"touch.autorun"); _autoBadge.textAlignment = NSTextAlignmentCenter;
+        _autoBadge.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold]; _autoBadge.textColor = UIColor.whiteColor;
+        _autoBadge.backgroundColor = [UIColor colorWithRed:0.1 green:0.45 blue:0.55 alpha:0.8];
+        _autoBadge.layer.cornerRadius = 12; _autoBadge.clipsToBounds = YES; [self addSubview:_autoBadge];
+        __weak AKGamepadOverlay *weakOverlay = self;
+        _leftStick.autoRunStage = ^(NSInteger stage) { [weakOverlay showAutoRun:stage]; };
+        __weak AKGamepadOverlay *weakSelf = self;
+        [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer) {
+            AKGamepadOverlay *overlay = weakSelf;
+            if (!overlay) { [timer invalidate]; return; }
+            [overlay hideIdleRings];
+        }];
         [self updateAppearance];
     }
     return self;
@@ -239,9 +367,53 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     _leftStick.enabled = _rightStick.enabled = !self.configuring;
     _editDone.hidden = _hint.hidden = !_editing;
     _editGrid.hidden = _editAxes.hidden = !_editing;
+    BOOL floating = [self floatingActive];
+    _leftStick.floating = _rightStick.floating = floating;
+    _leftStick.autoRunAllowed = floating;
+    _leftStick.activeAlpha = _rightStick.activeAlpha = _preferences.opacity;
+    _leftStick.idleAlpha = _rightStick.idleAlpha = AKFloatIdleAlpha;
+    if (floating && !_leftStick.held) _items[@"left"].alpha = AKFloatIdleAlpha;
+    if (floating && !_rightStick.held) _items[@"right"].alpha = AKFloatIdleAlpha;
+    AKGamepadButton *jump = _buttons[GCInputButtonA];
+    jump.acceptsAnywhere = floating; jump.alpha = floating ? AKFloatIdleAlpha : 1;
+    _cornerJump.hidden = YES; _cornerJumpLabel.hidden = YES;
+    _cornerJump.opacity = _preferences.opacity; _cornerJumpLabel.alpha = _preferences.opacity;
     [self setNeedsLayout];
 }
+- (void)showAutoRun:(NSInteger)stage {
+    UIView *ring = _items[@"left"];
+    CGFloat stickSize = 104 * ring.transform.d;
+    _autoLock.frame = CGRectMake(ring.center.x - 24, ring.center.y - stickSize / 2 - AKAutoRunLockGap - 24, 48, 48);
+    _autoLock.hidden = !(stage == 1 || stage == 2);
+    _autoLock.backgroundColor = stage == 2 ? [UIColor colorWithRed:0.85 green:0.65 blue:0.15 alpha:0.9] : [UIColor colorWithWhite:0.1 alpha:0.7];
+    _autoLock.transform = stage == 2 ? CGAffineTransformMakeScale(1.15, 1.15) : CGAffineTransformIdentity;
+    CGSize size = self.bounds.size;
+    _autoBadge.frame = CGRectMake(size.width * 0.12, size.height * 0.80, 96, 26);
+    _autoBadge.hidden = stage != 3;
+    if (stage == 3) AKGamepadLog(@"touch gamepad: auto-run on");
+}
+- (void)hideIdleRings {
+    [_leftStick pollAutoRun:NSProcessInfo.processInfo.systemUptime];
+    if (![self floatingActive]) return;
+    NSArray *pairs = @[@[_leftStick, @"left"], @[_rightStick, @"right"]];
+    for (NSArray *pair in pairs) {
+        AKGamepadStick *stick = pair[0]; UIView *ring = _items[pair[1]];
+        if (!stick.held && ring.alpha > AKFloatIdleAlpha + 0.01) {
+            AKGamepadLog(@"touch gamepad: %@ ring visible (alpha %.2f) with no finger on it; hidden", pair[1], ring.alpha);
+            ring.alpha = AKFloatIdleAlpha;
+        }
+    }
+}
+- (BOOL)floatingActive {
+    return _preferences.floatingSticks && _preferences.sticksOnly && _controlsVisible && !self.configuring;
+}
+- (void)cornerJumpChanged {
+    BOOL pressed = _buttons[GCInputButtonA].pressed;
+    _cornerJump.fillColor = (pressed ? [UIColor colorWithRed:0.1 green:0.55 blue:0.65 alpha:0.8]
+                                     : [UIColor colorWithWhite:0.13 alpha:0.64]).CGColor;
+}
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if ([self floatingActive]) return [self floatingHit:point event:event];
     UIView *hit = [super hitTest:point withEvent:event];
     if (self.configuring) return hit; // Editing/settings must never click the game.
     if (hit == self || hit == _items[@"left"] || hit == _items[@"right"]) {
@@ -273,6 +445,50 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     }
     return jump;
 }
+- (BOOL)stickHeld:(AKGamepadStick *)stick event:(UIEvent *)event {
+    if (!stick.held) return NO;
+    if (!event) return YES;
+    for (UITouch *touch in event.allTouches)
+        if (touch.view == stick && touch.phase != UITouchPhaseEnded && touch.phase != UITouchPhaseCancelled) return YES;
+    AKGamepadLog(@"touch gamepad: %@ stick was held with no finger on it; released", stick == _leftStick ? @"left" : @"right");
+    [stick cancelTrackingWithEvent:nil];
+    return NO;
+}
+- (UIView *)floatingHit:(CGPoint)point event:(UIEvent *)event {
+    CGSize size = self.bounds.size;
+    if (size.width <= 0 || size.height <= 0) return nil;
+    CGFloat h = size.height, corner = hypot(size.width - point.x, size.height - point.y);
+    CGFloat cx = point.x / size.width - 0.5, cy = point.y / h;
+    if (fabs(cx) <= AKChatButtonHalfWidth && cy >= AKChatButtonTop) {
+        if (event && event.timestamp != _chatTouchTime) {
+            _chatTouchTime = event.timestamp; _chatOpen = !_chatOpen;
+            AKGamepadLog(@"touch gamepad: chat %@", _chatOpen ? @"opened" : @"closed");
+            [NSNotificationCenter.defaultCenter postNotificationName:@"AKTouchGamepadChatButtonNotification" object:self];
+        }
+        return nil;
+    }
+    for (size_t i = 0; i < sizeof(AKFloatInnerAngles) / sizeof(AKFloatInnerAngles[0]); i++) {
+        CGFloat angle = AKFloatInnerAngles[i] * M_PI / 180;
+        CGFloat x = size.width - AKFloatInnerRadius * h * cos(angle), y = size.height - AKFloatInnerRadius * h * sin(angle);
+        if (hypot(point.x - x, point.y - y) <= AKFloatInnerSize * h) return nil;
+    }
+    if (corner <= AKFloatJumpRadius * h) {
+        AKGamepadButton *jump = _buttons[GCInputButtonA];
+        return jump.enabled ? jump : nil;
+    }
+    if (corner <= AKFloatFanRadius * h) return nil;
+    for (size_t i = 0; i < sizeof(AKFloatIslandAngles) / sizeof(AKFloatIslandAngles[0]); i++) {
+        CGFloat angle = AKFloatIslandAngles[i] * M_PI / 180;
+        CGFloat x = size.width - AKFloatIslandRadius * h * cos(angle), y = size.height - AKFloatIslandRadius * h * sin(angle);
+        if (hypot(point.x - x, point.y - y) <= AKFloatIslandSize * h) return nil;
+    }
+    CGFloat fx = point.x / size.width, fy = point.y / h;
+    if (fx <= AKFloatLeftMaxX && (fy >= AKFloatLeftLowY || (fx >= AKFloatLeftMinX && fy >= AKFloatLeftMinY)))
+        return [self stickHeld:_leftStick event:event] ? _sink : _leftStick;
+    if (fx >= AKFloatRightMinX && fy >= AKFloatRightMinY && fy <= AKFloatRightMaxY)
+        return [self stickHeld:_rightStick event:event] ? _sink : _rightStick;
+    return nil;
+}
 - (CGRect)usableBounds { return UIEdgeInsetsInsetRect(self.bounds,self.safeAreaInsets); }
 - (NSString *)positionName:(NSString *)name {
     if (!_preferences.swapShoulders) return name;
@@ -293,8 +509,21 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     CGFloat w = 56*_preferences.rearScale, h = 44*_preferences.rearScale;
     CGFloat left = CGRectGetMinX(safe)+6, right = CGRectGetMaxX(safe)-6;
     CGFloat bottom = CGRectGetMaxY(safe)-6, top = CGRectGetMinY(safe)+8;
-    [self place:@"left" frame:CGRectMake(left,bottom-side,side,side) baseSize:CGSizeMake(216,216) safe:safe];
-    [self place:@"right" frame:CGRectMake(right-side,bottom-side,side,side) baseSize:CGSizeMake(216,216) safe:safe];
+    BOOL floating = [self floatingActive];
+    if (!(floating && _leftStick.held))
+        [self place:@"left" frame:CGRectMake(left,bottom-side,side,side) baseSize:CGSizeMake(216,216) safe:safe];
+    if (!(floating && _rightStick.held))
+        [self place:@"right" frame:CGRectMake(right-side,bottom-side,side,side) baseSize:CGSizeMake(216,216) safe:safe];
+    CGPoint corner = CGPointMake(CGRectGetMaxX(self.bounds), CGRectGetMaxY(self.bounds));
+    CGFloat jumpRadius = AKFloatJumpRadius * self.bounds.size.height;
+    UIBezierPath *quarter = [UIBezierPath bezierPath];
+    [quarter moveToPoint:corner];
+    [quarter addArcWithCenter:corner radius:jumpRadius startAngle:M_PI endAngle:M_PI * 1.5 clockwise:YES];
+    [quarter closePath];
+    [CATransaction begin]; [CATransaction setDisableActions:YES];
+    _cornerJump.frame = self.bounds; _cornerJump.path = quarter.CGPath;
+    [CATransaction commit];
+    _cornerJumpLabel.frame = CGRectMake(corner.x - jumpRadius * 0.55 - 34, corner.y - jumpRadius * 0.42 - 12, 68, 24);
     _leftStick.frame = _rightStick.frame = CGRectMake(56,56,104,104);
     NSArray *leftNames = @[@"dpad.up",@"dpad.right",@"dpad.down",@"dpad.left"];
     NSArray *rightNames = @[GCInputButtonY,GCInputButtonB,GCInputButtonA,GCInputButtonX];
@@ -347,7 +576,21 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [CATransaction commit];
 }
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer {
-    (void)gestureRecognizer; return _editing;
+    if (gestureRecognizer == _hostPinch) return YES;
+    return _editing;
+}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    if (gestureRecognizer == _hostPinch) return ![touch.view isDescendantOfView:self];
+    return YES;
+}
+- (void)didMoveToSuperview {
+    [super didMoveToSuperview];
+    for (UIGestureRecognizer *gesture in self.superview.gestureRecognizers) {
+        if ([gesture isKindOfClass:UIPinchGestureRecognizer.class] && !gesture.delegate) {
+            gesture.delegate = self; _hostPinch = gesture;
+            AKGamepadLog(@"touch gamepad: the camera pinch ignores fingers on the controls");
+        }
+    }
 }
 - (void)drag:(UIPanGestureRecognizer *)pan {
     NSString *name = [_items allKeysForObject:pan.view].firstObject;
@@ -412,6 +655,13 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     UIStackView *sticksRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.sticksOnly")],_sticksOnlySwitch]];
     sticksRow.axis = UILayoutConstraintAxisHorizontal; sticksRow.alignment = UIStackViewAlignmentCenter;
     [options addArrangedSubview:sticksRow];
+    _floatingSwitch = [UISwitch new]; _floatingSwitch.on = _preferences.floatingSticks;
+    _floatingSwitch.accessibilityLabel = @"iPhone Duo layout";
+    _floatingSwitch.accessibilityIdentifier = @"wolkaraforever.controls.floatingSticks";
+    [_floatingSwitch addTarget:self action:@selector(floatingChanged:) forControlEvents:UIControlEventValueChanged];
+    UIStackView *floatingRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:@"iPhone Duo layout (floating sticks, corner Jump)"],_floatingSwitch]];
+    floatingRow.axis = UILayoutConstraintAxisHorizontal; floatingRow.alignment = UIStackViewAlignmentCenter;
+    [options addArrangedSubview:floatingRow];
     _swapShouldersSwitch = [UISwitch new]; _swapShouldersSwitch.on = !_preferences.swapShoulders;
     _swapShouldersSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.outerTriggers");
     _swapShouldersSwitch.accessibilityIdentifier = @"wolkaraforever.controls.swapShoulders";
@@ -482,6 +732,10 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [self reset]; _preferences.sticksOnly = sender.on; [_preferences save];
     [self updateAppearance];
 }
+- (void)floatingChanged:(UISwitch *)sender {
+    [self reset]; _preferences.floatingSticks = sender.on; [_preferences save];
+    [self updateAppearance];
+}
 - (void)hapticsChanged:(UISwitch *)sender {
     _preferences.hapticsEnabled = sender.on; [_preferences save];
     if (self.configurationChanged) self.configurationChanged();
@@ -493,7 +747,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
 - (void)beginEditing:(UISwitch *)sender {
     if (!sender.on) return;
     [self reset]; _editing = YES; [_settings removeFromSuperview]; _settings = nil;
-    _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _settingsColumns = nil;
+    _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _floatingSwitch = nil; _settingsColumns = nil;
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
 }
 - (void)resetLayout {
@@ -501,12 +755,12 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     _sliders[0].value = 1-_preferences.opacity; _sliders[1].value = _preferences.rearScale; _sliders[2].value = _preferences.frontScale;
     _hapticsSwitch.on = _preferences.hapticsEnabled; _swapShouldersSwitch.on = !_preferences.swapShoulders;
     _overlaySwitch.on = _preferences.performanceOverlayEnabled;
-    _sticksOnlySwitch.on = _preferences.sticksOnly;
+    _sticksOnlySwitch.on = _preferences.sticksOnly; _floatingSwitch.on = _preferences.floatingSticks;
     [self updateValues]; [self updateAppearance];
 }
 - (void)finishConfiguration {
     [self reset]; [_preferences save]; _editing = NO; [_dragOrigins removeAllObjects];
-    [_settings removeFromSuperview]; _settings = nil; _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _settingsColumns = nil;
+    [_settings removeFromSuperview]; _settings = nil; _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _floatingSwitch = nil; _settingsColumns = nil;
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
 }
 - (void)reset {

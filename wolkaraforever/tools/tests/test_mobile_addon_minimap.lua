@@ -25,6 +25,7 @@ C_Timer = { After = function(_, fn) fn() end }
 
 local handlers, module = {}, nil
 local ns = {}
+ns.T = ns.T or function(text) return text end
 function ns.Register(_, m) module = m; return m end
 function ns.On(event, fn) handlers[event] = fn end
 function ns.Guard(_, fn, ...) return fn(...) end

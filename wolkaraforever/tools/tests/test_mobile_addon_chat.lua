@@ -68,6 +68,7 @@ SetOverrideBindingClick = function(_, _, key, button) binding = { key, button } 
 
 local handlers = {}
 local ns = { STICK_X = 0.12, STICK_Y = 0.222, editing = false }
+ns.T = ns.T or function(text) return text end
 function ns.Register(_, module) return module end
 function ns.On(event, fn) handlers[event] = fn end
 function ns.Guard(_, fn, ...) return fn(...) end
@@ -117,7 +118,7 @@ local function Check(label)
     for _, button in ipairs(Buttons(panel, 36)) do
         local text = button.text.text
         if text == "X" then close = button
-        elseif text == "Discussion" or text == "Privé" or text == "Système" or text == "Tout" then tabs[#tabs + 1] = button
+        elseif text == "Chat" or text == "Whispers" or text == "System" or text == "All" then tabs[#tabs + 1] = button
         else chips[#chips + 1] = button end
     end
     assert(close and #tabs == 4 and #chips == 5, label .. ": the panel's buttons")
@@ -170,9 +171,9 @@ end
 handlers.CHAT_MSG_SAY("bonjour", "Ana-Realm")
 handlers.CHAT_MSG_LOOT("Vous recevez le butin : [Étoffe de lin].")
 assert(#ticker.lines == 1 and ticker.lines[1]:find("bonjour"), "the talk strip shows the loot")
-Tap("Système", ticker)
+Tap("System", ticker)
 assert(ns.db.chat.tab == "system" and #ticker.lines == 1 and ticker.lines[1]:find("butin"), "the system strip")
-Tap("Discussion", ticker)
+Tap("Chat", ticker)
 assert(#ticker.lines == 1 and ticker.lines[1]:find("bonjour"))
 -- The add-on's own messages show on both.
 ns.ChatAdd("Mobile : réglages enregistrés.")
@@ -182,17 +183,17 @@ assert(ticker.lines[#ticker.lines]:find("réglages"))
 handlers.CHAT_MSG_WHISPER("tu viens ?", "Bob-Realm")
 local badgeText
 for _, frame in ipairs(frames) do
-    if frame.ftype == "FontString" and frame.parent == ticker and rawget(frame, "text") and frame.text:find("privé") then badgeText = frame.text end
+    if frame.ftype == "FontString" and frame.parent == ticker and rawget(frame, "text") and frame.text:find("whisper") then badgeText = frame.text end
 end
-assert(badgeText == "1 nouveau privé", tostring(badgeText))
+assert(badgeText == "1 new whisper", tostring(badgeText))
 local reply
-for _, button in ipairs(Buttons(panel, 36)) do if button.text.text == "À Bob" then reply = button end end
+for _, button in ipairs(Buttons(panel, 36)) do if button.text.text == "To Bob" then reply = button end end
 assert(reply, "the Reply chip does not name Bob")
 
 -- F12, sent by the app before a line: the input opens on the chosen conversation.
 WolkaraMobileChatOpener.scripts.OnClick()
 assert(opened == "/s ", "Say is not the default")
-Tap("Groupe", panel)
+Tap("Party", panel)
 WolkaraMobileChatOpener.scripts.OnClick()
 assert(opened == "/p ")
 reply.scripts.OnClick(reply)

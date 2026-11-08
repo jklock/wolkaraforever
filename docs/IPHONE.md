@@ -128,6 +128,27 @@ redistributable build deliberately sets it to `NO` so the artifact contains no s
 copying that choice into a private build leaves the adapter without the resource, which is
 what happened to the first iPhone build.
 
+## iPhone Duo layout
+
+On an iPhone Duo the app and the WolkaraRoue add-on use a layout made for its screen. The app turns
+it on by itself on that device; other iPhones keep the layout described above. In the game, the
+add-on's half can be switched under **Menu → Mobile UI → General → Layout** (iPhone Duo or
+Standard).
+
+- **Moving and the camera.** The left side moves and the right side turns the camera; a stick
+  appears where the thumb lands. Quick taps in either area still reach the game. Holding forward
+  for two seconds and sliding onto the lock starts auto-run.
+- **Skills.** Five skills sit in an arc in the bottom-right corner, with Jump in the corner itself.
+  A swipe along the arc, or the arrow, switches between skills 1-5 and 6-10. **Edit**, under the
+  menu button by the minimap, opens the spell window to change them; the quick bar on the left
+  edge holds more. Presets 1-3 save and load a whole set.
+- **Chat.** **Chat** at the bottom shows the latest lines; tapping them opens the full chat, whose
+  input line raises the keyboard. **Send** posts the line; holding Send types into the game text
+  box that has the focus instead.
+- **Settings.** **Mobile UI** in the menu holds every option, pookee's and the Duo layout's.
+
+Duo UI by scarrdi94, built on Mobile Interface by pookee (ExoGroupe), in WolkaraForever by jklock.
+
 ## Mouse, controller and keyboard
 
 The initial Forever session used a Bluetooth keyboard and **Settings > Accessibility > Touch >

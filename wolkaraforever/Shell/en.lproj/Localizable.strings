@@ -331,6 +331,10 @@
 "touch.draft.hint" = "Tap Replace to replace the selected game field, or leave this empty to clear it. Existing game text is not shown here.";
 "touch.draft.placeholder" = "Return sends to the chat · Replace writes into the selected field";
 "touch.draft.replace" = "Replace";
+"touch.composer.message" = "Message";
+"touch.composer.send" = "Send";
+"touch.composer.send.hint" = "Hold to type into the selected game text box instead of the chat";
+"touch.autorun" = "Auto-run";
 "touch.draft.replace.hint" = "Replaces the whole selected game field. An empty draft clears it. Does not press Return.";
 "touch.draft.clear" = "Clear draft";
 "touch.keyboard.show" = "Show keyboard";

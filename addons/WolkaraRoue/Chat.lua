@@ -34,10 +34,10 @@ local hider = CreateFrame("Frame")
 hider:Hide()
 
 local TABS = {
-    { key = "talk", label = "Discussion" }, { key = "whisper", label = "Privé" },
-    { key = "system", label = "Système" }, { key = "all", label = "Tout" },
+    { key = "talk", label = "Chat" }, { key = "whisper", label = "Whispers" },
+    { key = "system", label = "System" }, { key = "all", label = "All" },
 }
-local QUICK = { { key = "talk", label = "Discussion" }, { key = "system", label = "Système" } }
+local QUICK = { { key = "talk", label = "Chat" }, { key = "system", label = "System" } }
 local KNOWN = { talk = true, whisper = true, system = true, all = true }
 
 -- Ce que chaque message du jeu devient : son étiquette et ses onglets.
@@ -46,25 +46,25 @@ local PRIVATE = { all = true, talk = true, whisper = true }
 local NPC = { all = true }
 local SYSTEM = { system = true }
 local EVENTS = {
-    CHAT_MSG_SAY = { label = "Dire", tabs = TALK },
-    CHAT_MSG_YELL = { label = "Crier", tabs = TALK },
+    CHAT_MSG_SAY = { label = "Say", tabs = TALK },
+    CHAT_MSG_YELL = { label = "Yell", tabs = TALK },
     CHAT_MSG_EMOTE = { emote = true, tabs = TALK },
     CHAT_MSG_TEXT_EMOTE = { raw = true, tabs = TALK },
-    CHAT_MSG_PARTY = { label = "Groupe", tabs = TALK },
-    CHAT_MSG_PARTY_LEADER = { label = "Chef", tabs = TALK },
+    CHAT_MSG_PARTY = { label = "Party", tabs = TALK },
+    CHAT_MSG_PARTY_LEADER = { label = "Party Leader", tabs = TALK },
     CHAT_MSG_RAID = { label = "Raid", tabs = TALK },
-    CHAT_MSG_RAID_LEADER = { label = "Chef de raid", tabs = TALK },
-    CHAT_MSG_RAID_WARNING = { label = "Alerte", tabs = TALK },
+    CHAT_MSG_RAID_LEADER = { label = "Raid Leader", tabs = TALK },
+    CHAT_MSG_RAID_WARNING = { label = "Raid Warning", tabs = TALK },
     CHAT_MSG_INSTANCE_CHAT = { label = "Instance", tabs = TALK },
     CHAT_MSG_INSTANCE_CHAT_LEADER = { label = "Instance", tabs = TALK },
-    CHAT_MSG_GUILD = { label = "Guilde", tabs = TALK },
-    CHAT_MSG_OFFICER = { label = "Officier", tabs = TALK },
-    CHAT_MSG_WHISPER = { label = "De", tabs = PRIVATE, incoming = true },
-    CHAT_MSG_WHISPER_INFORM = { label = "À", tabs = PRIVATE },
+    CHAT_MSG_GUILD = { label = "Guild", tabs = TALK },
+    CHAT_MSG_OFFICER = { label = "Officer", tabs = TALK },
+    CHAT_MSG_WHISPER = { label = "From", tabs = PRIVATE, incoming = true },
+    CHAT_MSG_WHISPER_INFORM = { label = "To", tabs = PRIVATE },
     CHAT_MSG_CHANNEL = { channel = true, tabs = TALK },
-    CHAT_MSG_MONSTER_SAY = { label = "Dit", tabs = NPC },
-    CHAT_MSG_MONSTER_YELL = { label = "Crie", tabs = NPC },
-    CHAT_MSG_MONSTER_WHISPER = { label = "Murmure", tabs = NPC },
+    CHAT_MSG_MONSTER_SAY = { label = "Says", tabs = NPC },
+    CHAT_MSG_MONSTER_YELL = { label = "Yells", tabs = NPC },
+    CHAT_MSG_MONSTER_WHISPER = { label = "Whispers", tabs = NPC },
     CHAT_MSG_MONSTER_EMOTE = { emote = true, tabs = NPC },
     CHAT_MSG_SYSTEM = { raw = true, tabs = { all = true, system = true } },
     CHAT_MSG_LOOT = { raw = true, tabs = SYSTEM },
@@ -75,11 +75,11 @@ local EVENTS = {
 }
 
 local TARGETS = {
-    { kind = "say", label = "Dire" }, { kind = "party", label = "Groupe" }, { kind = "guild", label = "Guilde" },
-    { kind = "general", label = "Général" }, { kind = "whisper", label = "Répondre" },
+    { kind = "say", label = "Say" }, { kind = "party", label = "Party" }, { kind = "guild", label = "Guild" },
+    { kind = "general", label = "General" }, { kind = "whisper", label = "Reply" },
 }
 
-local WRITE = "Pour écrire, touche le clavier juste sous le chat ; Entrée envoie."
+local WRITE = "To write, tap 'Tap to type' above the chat; Send posts it."
 
 -- ---------------------------------------------------------------------------------------
 -- Messages
@@ -109,11 +109,11 @@ local function Format(info, text, author, channelIndex, channelBase)
     local stamp = date and date("%H:%M ") or ""
     if info.raw then return stamp .. text end
     if info.emote then return stamp .. PlayerLink(author) .. " " .. text end
-    local label = info.label
+    local label = ns.T(info.label)
     if info.channel then
-        label = (channelIndex and (channelIndex .. ". ") or "") .. (channelBase ~= "" and channelBase or "Canal")
+        label = (channelIndex and (channelIndex .. ". ") or "") .. (channelBase ~= "" and channelBase or ns.T("Channel"))
     end
-    return ("%s[%s] %s : %s"):format(stamp, label, PlayerLink(author), text)
+    return (ns.T("%s[%s] %s: %s")):format(stamp, label, PlayerLink(author), text)
 end
 
 local function Shows(entry) return entry.tabs[Tab()] end
@@ -190,10 +190,12 @@ function UpdateChips()
     for _, chip in ipairs(chips) do
         if chip.kind == "whisper" then
             local name = target.name or lastWhisper
-            chip.text:SetText(name and ("À " .. Short(name)) or "Répondre")
+            chip.text:SetText(name and (ns.T("To ") .. Short(name)) or ns.T("Reply"))
         end
         Paint(chip, chip.kind == target.kind)
+        if chip.kind == target.kind then ns.chatChannelLabel = chip.text:GetText() end
     end
+    if ns.OnChatChannel then ns.OnChatChannel(ns.chatChannelLabel) end
 end
 
 local function UpdateTabs()
@@ -326,11 +328,40 @@ end
 Chat.Open, Chat.Close = Open, Close
 
 function Chat:UpdateBadge()
-    badge:SetText(unread > 0 and (unread .. (unread == 1 and " nouveau privé" or " nouveaux privés")) or "")
+    badge:SetText(unread > 0 and (unread .. (unread == 1 and ns.T(" new whisper") or ns.T(" new whispers"))) or "")
 end
 
 -- Le panneau ouvert : onglets et croix en haut, messages et flèches au milieu, conversation en bas.
+local function LayoutDuoPanel(width, height)
+    panel:SetSize(width, height)
+    close:ClearAllPoints()
+    close:SetSize(ARROW - 10, ROW - 10)
+    close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD, -PAD)
+    local tabW = math.min(120, (width - 2 * PAD) / #tabButtons - 4)
+    for i, button in ipairs(tabButtons) do
+        button:SetSize(tabW, ROW - 6)
+        button:ClearAllPoints()
+        button:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", PAD + (i - 1) * (tabW + 4), -1)
+        button.text:SetWidth(math.max(1, tabW - 8))
+    end
+    local input = UIParent:GetHeight() * 0.05 + PAD
+    hint:Hide()
+    to:ClearAllPoints()
+    to:SetPoint("LEFT", panel, "BOTTOMLEFT", PAD + ARROW + GAP, input + GAP + ROW / 2)
+    local label = (to:GetStringWidth() or 30) + GAP
+    Row(panel, chips, "BOTTOMLEFT", PAD + ARROW + GAP + label, input + GAP, width - 2 * PAD - ARROW - GAP - label, ROW)
+    list:ClearAllPoints()
+    list:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD + ARROW + GAP, -PAD)
+    list:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -(PAD + ARROW), input + GAP + ROW + GAP)
+    for i, arrow in ipairs(arrows) do
+        arrow:ClearAllPoints()
+        arrow:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD, -(PAD + (i - 1) * (ARROW + GAP)))
+    end
+end
+
 local function LayoutPanel(width, height)
+    if ns.DuoLayout and ns.DuoLayout() then return LayoutDuoPanel(width, height) end
+    hint:Show()
     panel:SetSize(width, height)
     close:SetSize(ARROW, ROW)
     close:ClearAllPoints()
@@ -383,7 +414,7 @@ function Chat:Init()
     ticker.glow = ns.EditFrame(ticker)
     quick = {}
     for i, info in ipairs(QUICK) do
-        local button = ns.UIButton(ticker, info.label, 100, QUICK_H, function() SetTab(info.key) end)
+        local button = ns.UIButton(ticker, ns.T(info.label), 100, QUICK_H, function() SetTab(info.key) end)
         button.text:SetFontObject("GameFontHighlight")
         button.key = info.key
         quick[i] = button
@@ -404,7 +435,7 @@ function Chat:Init()
 
     tabButtons = {}
     for i, info in ipairs(TABS) do
-        local button = ns.UIButton(panel, info.label, 90, ROW, function() SetTab(info.key) end)
+        local button = ns.UIButton(panel, ns.T(info.label), 90, ROW, function() SetTab(info.key) end)
         button.key = info.key
         tabButtons[i] = button
     end
@@ -421,7 +452,7 @@ function Chat:Init()
         if name then
             target = { kind = "whisper", name = name }
             UpdateChips()
-            hint:SetText("Message privé à " .. Short(name) .. " : touche le clavier juste sous le chat.")
+            hint:SetText((ns.T("Whisper to %s: tap 'Tap to type' above the chat.")):format(Short(name)))
         elseif SetItemRef then
             SetItemRef(link, text, button, self)
         end
@@ -437,25 +468,25 @@ function Chat:Init()
         ArrowButton(panel, "Interface\\ChatFrame\\UI-ChatIcon-ScrollEnd", function() list:ScrollToBottom() end),
     }
 
-    to = ns.Label(panel, "GameFontNormal", "À :")
+    to = ns.Label(panel, "GameFontNormal", ns.T("To:"))
     chips = {}
     for i, info in ipairs(TARGETS) do
-        local chip = ns.UIButton(panel, info.label, 100, ROW, function()
+        local chip = ns.UIButton(panel, ns.T(info.label), 100, ROW, function()
             target = { kind = info.kind }
             if info.kind == "whisper" then target.name = lastWhisper end
             UpdateChips()
-            hint:SetText(WRITE)
+            hint:SetText(ns.T(WRITE))
         end)
         chip.kind = info.kind
         chips[i] = chip
     end
-    hint = ns.Label(panel, "GameFontHighlightSmall", WRITE)
+    hint = ns.Label(panel, "GameFontHighlightSmall", ns.T(WRITE))
     hint:SetJustifyH("LEFT")
     if hint.SetWordWrap then hint:SetWordWrap(false) end
 
     -- F12 : la touche que l'app envoie avant un message.
     opener = CreateFrame("Button", "WolkaraMobileChatOpener", UIParent)
-    opener:SetScript("OnClick", function() ns.Guard("ouvrir la saisie", OpenInput) end)
+    opener:SetScript("OnClick", function() ns.Guard(ns.T("open input"), OpenInput) end)
 
     -- Les messages de l'addon, quand le chat du jeu est rangé : rares et utiles, ils passent dans
     -- les deux onglets rapides.

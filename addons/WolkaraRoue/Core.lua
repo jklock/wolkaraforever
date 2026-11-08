@@ -22,7 +22,7 @@ local pendingLayout = false
 ns.editing = false
 
 function ns.Print(message)
-    local line = "|cff66ccffMobile|r : " .. message
+    local line = "|cff66ccffMobile|r: " .. message
     -- Le chat mobile range celui du jeu : nos messages passent alors par lui.
     if ns.ChatAdd and ns.ChatAdd(line) then return end
     DEFAULT_CHAT_FRAME:AddMessage(line)
@@ -35,10 +35,10 @@ end
 function ns.Guard(label, fn, ...)
     local ok, problem = xpcall(fn, Trace, ...)
     if not ok then
-        ns.lastError = label .. " : " .. problem
+        ns.lastError = label .. ": " .. problem
         if reported < 5 then
             reported = reported + 1
-            if loggedIn then ns.Print("|cffff5555erreur|r (" .. label .. ") : " .. problem) end
+            if loggedIn then ns.Print("|cffff5555error|r (" .. label .. "): " .. problem) end
         end
     end
     return ok
@@ -67,14 +67,14 @@ function ns.Refresh() ns.Each("Refresh") end
 
 function ns.SetEditing(on)
     if InCombatLockdown() then
-        if on then ns.Print("on personnalise hors combat.") end
+        if on then ns.Print(ns.T("customize out of combat.")) end
         return
     end
     ns.editing = on and true or false
     ns.Each("SetEditing", ns.editing)
     ns.Layout()
     if ns.editing then
-        ns.Print("mode Personnaliser : fais glisser ce que tu veux déplacer, touche une case pour choisir son sort, puis Terminé.")
+        ns.Print(ns.T("Customize mode: drag whatever you want to move, tap a slot to choose its spell, then Done."))
     end
 end
 
@@ -94,7 +94,7 @@ end
 function ns.SpellCooldown(id)
     if C_Spell and C_Spell.GetSpellCooldown then
         local info = C_Spell.GetSpellCooldown(id)
-        if type(info) == "table" then return info.startTime, info.duration, info.isEnabled end
+        if type(info) == "table" then return info.startTime, info.duration, info.isEnabled, info.isOnGCD end
         return info
     end
     if GetSpellCooldown then return GetSpellCooldown(id) end
@@ -161,7 +161,7 @@ function ns.CursorEntry()
     local kind, a, b, c = GetCursorInfo()
     if kind == "spell" then
         if b == "pet" then
-            ns.Print("les techniques de familier ne vont pas dans une case.")
+            ns.Print(ns.T("pet abilities can't go in a slot."))
             return nil
         end
         local spellID = c
@@ -176,7 +176,7 @@ function ns.CursorEntry()
         local name = GetMacroInfo(a)
         if name then return { kind = "macro", id = name } end
     elseif kind then
-        ns.Print("seuls les sorts, les objets et les macros vont dans une case.")
+        ns.Print(ns.T("only spells, items and macros can go in a slot."))
     end
     return nil
 end
@@ -459,10 +459,10 @@ ns.On("PLAYER_LOGIN", function()
     if not ns.db then LoadSettings(); ns.Each("Init") end
     ns.Layout()
     ns.Refresh()
-    if ns.lastError then ns.Print("|cffff5555erreur au chargement|r : " .. ns.lastError) end
+    if ns.lastError then ns.Print("|cffff5555error while loading|r: " .. ns.lastError) end
     if not ns.db.welcomed then
         ns.db.welcomed = true
-        ns.Print("touche une case vide d'une roue pour y mettre un sort, glisse depuis un sort pour la faire tourner, et l'engrenage des raccourcis règle tout.")
+        ns.Print(ns.T("tap an empty wheel slot to put a spell in it, swipe from a spell to turn the wheel, and the gear in the shortcuts sets everything up."))
     end
 end)
 
@@ -484,18 +484,19 @@ end)
 
 SLASH_WOLKARAMOBILE1 = "/mobile"
 SLASH_WOLKARAMOBILE2 = "/roue"
+SLASH_WOLKARAMOBILE3 = "/wheel"
 SlashCmdList.WOLKARAMOBILE = function(message)
     if not ns.db then
-        ns.Print("pas encore prête" .. (ns.lastError and (" : " .. ns.lastError) or "."))
+        ns.Print(ns.T("not ready yet") .. (ns.lastError and (": " .. ns.lastError) or "."))
         return
     end
     local command = ((message or ""):match("^%s*(%S*)") or ""):lower()
-    if command == "erreur" then
-        ns.Print(ns.lastError or "aucune erreur.")
-    elseif command == "personnaliser" or command == "modifier" then
+    if command == "erreur" or command == "error" then
+        ns.Print(ns.lastError or ns.T("no errors."))
+    elseif command == "personnaliser" or command == "modifier" or command == "edit" or command == "customize" then
         ns.SetEditing(not ns.editing)
     elseif command == "reset" then
-        if InCombatLockdown() then ns.Print("pas en combat."); return end
+        if InCombatLockdown() then ns.Print(ns.T("not in combat.")); return end
         local old = ns.db
         WolkaraRoueDB = nil
         LoadSettings()
@@ -512,7 +513,7 @@ SlashCmdList.WOLKARAMOBILE = function(message)
         ns.db.welcomed = true
         ns.MarkChanged()
         ns.Layout(); ns.Refresh()
-        ns.Print("réglages et positions par défaut remis (les sorts des roues restent).")
+        ns.Print(ns.T("settings and default positions restored (wheel spells are kept)."))
     elseif ns.Settings then
         ns.Settings:Toggle()
     end

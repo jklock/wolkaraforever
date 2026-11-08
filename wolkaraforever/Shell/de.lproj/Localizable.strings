@@ -331,6 +331,10 @@
 "touch.draft.hint" = "Tippen Sie auf Ersetzen, um das gewählte Spielfeld zu ersetzen, oder lassen Sie das Feld leer, um es zu leeren. Vorhandener Spieltext wird hier nicht angezeigt.";
 "touch.draft.placeholder" = "Eingabe sendet in den Chat · Ersetzen schreibt ins gewählte Feld";
 "touch.draft.replace" = "Ersetzen";
+"touch.composer.message" = "Nachricht";
+"touch.composer.send" = "Senden";
+"touch.composer.send.hint" = "Halten, um statt in den Chat in das ausgewählte Textfeld des Spiels zu schreiben";
+"touch.autorun" = "Automatisch laufen";
 "touch.draft.replace.hint" = "Ersetzt das gesamte gewählte Spielfeld. Ein leerer Entwurf leert es. Die Eingabetaste wird nicht gedrückt.";
 "touch.draft.clear" = "Entwurf leeren";
 "touch.keyboard.show" = "Tastatur einblenden";

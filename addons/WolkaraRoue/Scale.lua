@@ -8,15 +8,16 @@
 
 local _, ns = ...
 
-local Scale = ns.Register("Taille de l'interface", {})
+local Scale = ns.Register("Interface size", {})
 local base, applied
+local DUO_REFERENCE_SCALE = 0.64
 
 local function Apply()
     if InCombatLockdown() then return end
     local current = UIParent:GetScale()
     -- Le jeu a pu recalculer sa propre taille (changement d'écran) : on repart de la sienne.
     if not applied or math.abs(current - applied) > 0.001 then base = current end
-    applied = base * ns.db.ui.scale / 100
+    applied = ((ns.DuoLayout and ns.DuoLayout()) and DUO_REFERENCE_SCALE or base) * ns.db.ui.scale / 100
     UIParent:SetScale(applied)
 end
 

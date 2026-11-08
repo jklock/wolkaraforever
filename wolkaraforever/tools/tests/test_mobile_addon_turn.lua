@@ -48,6 +48,7 @@ GetCursorPosition = function() return cursor[1], cursor[2] end
 
 local handlers = {}
 local ns = { STICK_X = 0.12, STICK_Y = 0.222, WHITE = "white" }
+ns.T = ns.T or function(text) return text end
 function ns.Register(_, module) return module end
 function ns.On(event, fn) handlers[event] = fn end
 function ns.Circle() return true end

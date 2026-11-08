@@ -20,7 +20,7 @@
 
 local _, ns = ...
 
-local Turn = ns.Register("Roues tournantes", {})
+local Turn = ns.Register("Turning wheels", {})
 ns.Turn = Turn
 
 local SIZE = 64         -- un sort, comme les boutons libres

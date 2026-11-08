@@ -5,7 +5,7 @@
 
 local _, ns = ...
 
-local Mini = ns.Register("Mini-carte", {})
+local Mini = ns.Register("Minimap", {})
 ns.Minimap = Mini
 local hider = CreateFrame("Frame")
 hider:Hide()
@@ -26,7 +26,7 @@ end
 
 -- Le Mode Édition du jeu remet sa propre taille à la mini-carte : on repasse derrière.
 local function Again()
-    if ns.db and not InCombatLockdown() then ns.Guard("mini-carte", Mini.Layout, Mini) end
+    if ns.db and not InCombatLockdown() then ns.Guard(ns.T("minimap"), Mini.Layout, Mini) end
 end
 ns.On("EDIT_MODE_LAYOUTS_UPDATED", Again)
 ns.On("PLAYER_ENTERING_WORLD", function()

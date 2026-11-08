@@ -8,17 +8,17 @@ local _, ns = ...
 local SIZE = 58
 local GAP = 12
 
-local Shortcuts = ns.Register("Raccourcis", {})
+local Shortcuts = ns.Register("Shortcuts", {})
 local bar
 
 local LIST = {
-    { label = "Sacs", icon = "Interface\\Icons\\INV_Misc_Bag_08", run = function()
+    { label = "Bags", icon = "Interface\\Icons\\INV_Misc_Bag_08", run = function()
         if ToggleAllBags then ToggleAllBags() elseif OpenAllBags then OpenAllBags() end
     end },
-    { label = "Sorts", icon = "Interface\\Icons\\INV_Misc_Book_09", click = "SpellbookMicroButton", run = function()
+    { label = "Spells", icon = "Interface\\Icons\\INV_Misc_Book_09", click = "SpellbookMicroButton", run = function()
         if ToggleSpellBook then ToggleSpellBook(BOOKTYPE_SPELL or "spell") end
     end },
-    { label = "Carte", icon = "Interface\\Icons\\INV_Misc_Map_01", run = function()
+    { label = "Map", icon = "Interface\\Icons\\INV_Misc_Map_01", run = function()
         if ToggleWorldMap then ToggleWorldMap() end
     end },
     { label = "Menu", icon = "Interface\\Icons\\INV_Misc_Gear_01", menu = true },
@@ -32,7 +32,7 @@ local function Decorate(button, info)
     icon:SetTexture(info.icon)
     icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     ns.Circle(button, icon)
-    local label = ns.Label(button, "GameFontNormal", info.label)
+    local label = ns.Label(button, "GameFontNormal", ns.T(info.label))
     label:SetPoint("TOP", button, "BOTTOM", 0, -2)
     local highlight = ns.Disc(button, "HIGHLIGHT", 1, 1, 1, 0.2, 0)
     highlight:SetBlendMode("ADD")

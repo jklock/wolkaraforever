@@ -6,7 +6,7 @@
 
 local _, ns = ...
 
-local Hud = ns.Register("Barres de vie", {})
+local Hud = ns.Register("Health bars", {})
 local player, target
 local MAX_AURAS = 10
 local AURA_SIZE = 30
@@ -32,8 +32,10 @@ end
 
 local function Aura(unit, index, filter)
     if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-        local aura = C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
-        if aura then return aura.icon, aura.applications, aura.duration, aura.expirationTime end
+        local found, aura = pcall(C_UnitAuras.GetAuraDataByIndex, unit, index, filter)
+        if not found or not ((issecretvalue and issecretvalue(aura)) or aura ~= nil) then return nil end
+        local ok, icon, count, duration, expiration = pcall(function() return aura.icon, aura.applications, aura.duration, aura.expirationTime end)
+        if ok then return icon, count, duration, expiration end
         return nil
     end
     if UnitAura then
@@ -128,17 +130,17 @@ local function UpdateAuras(frame)
         local index = 1
         while shown < MAX_AURAS do
             local icon, count, duration, expiration = Aura(frame.unit, index, filter)
-            if not icon then break end
+            local present = (issecretvalue and issecretvalue(icon)) or pcall(function() if not icon then error() end end)
+            if not present then break end
             shown = shown + 1
             local aura = frame.auras[shown]
             aura.icon:SetTexture(icon)
-            aura.count:SetText((count and count > 1) and count or "")
-            if duration and duration > 0 and expiration then
-                aura.cooldown:SetCooldown(expiration - duration, duration)
-                aura.cooldown:Show()
-            else
-                aura.cooldown:Hide()
-            end
+            local counted, label = pcall(function() return (count and count > 1) and count or "" end)
+            aura.count:SetText(counted and label or "")
+            local timed = pcall(function()
+                if duration and duration > 0 and expiration then aura.cooldown:SetCooldown(expiration - duration, duration) else error() end
+            end)
+            aura.cooldown:SetShown(timed)
             aura:Show()
             index = index + 1
         end
@@ -151,16 +153,26 @@ local function Update(frame)
     if not UnitExists(unit) then return end
     local level = UnitLevel(unit)
     local levelText = (level and level > 0) and tostring(level) or "??"
-    frame.name:SetText((UnitName(unit) or "") .. "  |cffbbbbbb" .. levelText .. "|r")
+    if not pcall(function() frame.name:SetText((UnitName(unit) or "") .. "  |cffbbbbbb" .. levelText .. "|r") end) then
+        pcall(frame.name.SetText, frame.name, UnitName(unit))
+    end
 
     local health, maxHealth = UnitHealth(unit) or 0, UnitHealthMax(unit) or 0
-    frame.health:SetMinMaxValues(0, math.max(1, maxHealth))
-    frame.health:SetValue(health)
-    local percent = maxHealth > 0 and math.floor(health * 100 / maxHealth + 0.5) or 0
-    if unit == "player" then
-        frame.health.text:SetText(Short(health) .. " / " .. Short(maxHealth))
-    else
-        frame.health.text:SetText(percent .. " %")
+    if not pcall(frame.health.SetMinMaxValues, frame.health, 0, maxHealth) then frame.health:SetMinMaxValues(0, 1) end
+    pcall(frame.health.SetValue, frame.health, health)
+    local shown, text = pcall(function()
+        if unit == "player" then return Short(health) .. " / " .. Short(maxHealth) end
+        return (maxHealth > 0 and math.floor(health * 100 / maxHealth + 0.5) or 0) .. ns.T("%")
+    end)
+    if not shown then text = nil end
+    if not shown and UnitHealthPercent then
+        shown = pcall(function()
+            frame.health.text:SetFormattedText("%d" .. ns.T("%"), UnitHealthPercent(unit, true, CurveConstants and CurveConstants.ScaleTo100))
+        end)
+        text = nil
+    end
+    if text then frame.health.text:SetText(text) elseif not shown then frame.health.text:SetText("") end
+    if unit ~= "player" then
         if UnitIsDead(unit) then
             frame.health:SetStatusBarColor(0.4, 0.4, 0.4)
         elseif UnitIsFriend("player", unit) then
@@ -186,12 +198,14 @@ local function Update(frame)
     end
 
     local power, maxPower = UnitPower(unit) or 0, UnitPowerMax(unit) or 0
-    if maxPower > 0 then
+    local known, hasPower = pcall(function() return maxPower > 0 end)
+    if not known or hasPower then
         local color = PowerBarColor and PowerBarColor[UnitPowerType(unit)]
         if color then frame.power:SetStatusBarColor(color.r, color.g, color.b) end
-        frame.power:SetMinMaxValues(0, maxPower)
-        frame.power:SetValue(power)
-        frame.power.text:SetText(Short(power) .. " / " .. Short(maxPower))
+        if not pcall(frame.power.SetMinMaxValues, frame.power, 0, maxPower) then frame.power:SetMinMaxValues(0, 1) end
+        pcall(frame.power.SetValue, frame.power, power)
+        local ok, text = pcall(function() return Short(power) .. " / " .. Short(maxPower) end)
+        frame.power.text:SetText(ok and text or "")
         frame.power:Show()
     else
         frame.power:Hide()
@@ -240,7 +254,7 @@ end
 function Hud:SetEditing(on)
     player.glow:SetShown(on)
     target.glow:SetShown(on)
-    if on and not UnitExists("target") then target.name:SetText("Cible") end
+    if on and not UnitExists("target") then target.name:SetText(ns.T("Target")) end
 end
 
 local function Changed(unit)
