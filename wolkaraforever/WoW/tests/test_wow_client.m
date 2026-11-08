@@ -42,6 +42,7 @@ static NSString *Reference(NSString *name, NSData *data, TKFixtureClient *client
 // No socket, credentials, application code or live CDN request is used.
 static NSDictionary<NSString *,NSDictionary *> *ProtocolResponses;
 static NSUInteger ActiveRequests,PeakRequests,StartedRequests,StoppedRequests;
+static NSUInteger InjectedConnectionLosses;
 static uint64_t ActiveBytes,PeakBytes;
 static dispatch_semaphore_t FourStarted;
 static dispatch_group_t ProtocolDeliveries;
@@ -75,7 +76,13 @@ static dispatch_group_t ProtocolDeliveries;
     if(reply[@"truncate"])body=[body subdataWithRange:NSMakeRange(0,body.length-1)];
     if(reply[@"corrupt"]) { NSMutableData *bad=[body mutableCopy];((uint8_t *)bad.mutableBytes)[bad.length-1]^=1;body=bad; }
     _bytes=body.length;
+    BOOL dropConnection=NO;
     @synchronized(TKDownloadProtocol.class) {
+        if (InjectedConnectionLosses<[reply[@"connectionLosses"] unsignedIntegerValue] &&
+            (!reply[@"dropRange"] || [range isEqual:reply[@"dropRange"]])) {
+            InjectedConnectionLosses++;
+            dropConnection=YES;
+        }
         ActiveRequests++;StartedRequests++;ActiveBytes+=_bytes;
         PeakRequests=MAX(PeakRequests,ActiveRequests);PeakBytes=MAX(PeakBytes,ActiveBytes);
         if(ActiveRequests==4 && FourStarted)dispatch_semaphore_signal(FourStarted);
@@ -94,6 +101,13 @@ static dispatch_group_t ProtocolDeliveries;
             // Distinct response lengths/chunks arrive interleaved across tasks.
             NSUInteger half=body.length/2;
             [self.client URLProtocol:self didLoadData:[body subdataWithRange:NSMakeRange(0,half)]];
+            if (dropConnection) {
+                NSError *loss=[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNetworkConnectionLost userInfo:nil];
+                [self.client URLProtocol:self didFailWithError:loss];
+                dispatch_semaphore_t dropped=reply[@"dropped"];
+                if (dropped) dispatch_semaphore_signal(dropped);
+                return;
+            }
             [self.client URLProtocol:self didLoadData:[body subdataWithRange:NSMakeRange(half,body.length-half)]];
             [self.client URLProtocolDidFinishLoading:self];
         }} @finally { dispatch_group_leave(ProtocolDeliveries); }
@@ -115,7 +129,7 @@ static void ResetProtocol(NSDictionary *responses) {
     @synchronized(TKDownloadProtocol.class) {
         if(!ProtocolDeliveries)ProtocolDeliveries=dispatch_group_create();
         assert(!ActiveRequests);ProtocolResponses=responses;PeakRequests=StartedRequests=StoppedRequests=0;
-        ActiveBytes=PeakBytes=0;FourStarted=nil;
+        ActiveBytes=PeakBytes=0;FourStarted=nil;InjectedConnectionLosses=0;
     }
 }
 static NSData *ArchiveIndex(NSArray<NSData *> *objects,NSArray<NSNumber *> *offsets) {
@@ -261,8 +275,39 @@ static void TestConcurrentDownloads(void) {
     assert(result && seen.count==objects.count && PeakRequests==4 && PeakBytes<=64*1024*1024 && !ActiveRequests);
     // Timing is diagnostic, never a load-dependent test pass condition.
     printf("Synthetic downloader: 14 latency-bound requests, serial %.3fs, four-way %.3fs (%.2fx); no live CDN.\n",serial,parallel,serial/parallel);
-    // A transport error cancels siblings and the next window is not scheduled.
+    // Lose the first archive range halfway through. Retry only that exact range,
+    // discard its partial bytes, and deliver every verified object exactly once.
     NSMutableDictionary *faulty=[responses mutableCopy];
+    NSUInteger firstOffset=[offsets[0] unsignedIntegerValue];
+    NSString *firstRange=[NSString stringWithFormat:@"bytes=%lu-%lu",(unsigned long)firstOffset,
+        (unsigned long)(firstOffset+[objects[0] length]-1)];
+    faulty[archiveKey]=@{@"data":archive,@"dropRange":firstRange,@"connectionLosses":@1};
+    ResetProtocol(faulty);[seen removeAllObjects];error=nil;
+    assert([client downloadEntries:records plan:plan indices:indices consume:^BOOL(NSData *data,NSString *key,NSError **problem){
+        (void)problem;assert([TKWoWMD5(data) isEqual:key] && ![seen containsObject:key]);[seen addObject:key];return YES;
+    } error:&error]);
+    assert(!error && seen.count==objects.count && InjectedConnectionLosses==1 && StartedRequests==objects.count+1);
+
+    // Bound retries on an unreachable object and return the final transport error.
+    NSURL *offline=[NSURL URLWithString:@"https://fixture.invalid/object"];
+    ResetProtocol(@{@"object":@{@"data":objects[0],@"connectionLosses":@100}});
+    assert(![client fetch:offline limit:[objects[0] length] error:&error]);
+    assert([error.domain isEqual:NSURLErrorDomain] && error.code==NSURLErrorNetworkConnectionLost);
+    assert(StartedRequests==5 && InjectedConnectionLosses==5);
+
+    // Cancelling a dropped request must not start another attempt.
+    TKSessionClient *paused=[TKSessionClient new];
+    dispatch_semaphore_t dropped=dispatch_semaphore_create(0);
+    ResetProtocol(@{@"object":@{@"data":objects[0],@"connectionLosses":@1,@"dropped":dropped}});
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        assert(!dispatch_semaphore_wait(dropped,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC)));
+        [paused cancel];
+    });
+    error=nil;
+    assert(![paused fetch:offline limit:[objects[0] length] error:&error]);
+    assert(paused.cancelled && error && StartedRequests==1);
+
+    // Invalid range responses still cancel siblings without scheduling another window.
     faulty[archiveKey]=@{@"data":archive,@"delay":@0.01,@"contentRange":@"bytes 0-0/1"};
     ResetProtocol(faulty);[seen removeAllObjects];error=nil;
     assert(![client downloadEntries:records plan:plan indices:indices consume:^BOOL(NSData *data,NSString *key,NSError **problem){
