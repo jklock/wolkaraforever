@@ -136,6 +136,20 @@
     return [self transferURL:url offset:offset size:size limit:size error:error];
 }
 - (NSData *)transferURL:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size limit:(NSUInteger)limit error:(NSError **)error {
+    for(NSUInteger attempt=0;attempt<3;attempt++) {
+        NSError *failure=nil;
+        NSData *data=[self attemptTransferURL:url offset:offset size:size limit:limit error:&failure];
+        if(data)return data;
+        BOOL transient=[failure.domain isEqualToString:NSURLErrorDomain] &&
+            (failure.code==NSURLErrorTimedOut || failure.code==NSURLErrorNetworkConnectionLost);
+        if(!transient || self.cancelled || attempt==2) {
+            if(error)*error=failure;
+            return nil;
+        }
+    }
+    return nil;
+}
+- (NSData *)attemptTransferURL:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size limit:(NSUInteger)limit error:(NSError **)error {
     if (![url.scheme isEqualToString:@"https"] || !url.host.length || url.user || url.password ||
         (size && offset>UINT64_MAX-(size-1))) {
         if (error) *error=TKWoWError(@"A valid HTTPS download URL and range are required.");

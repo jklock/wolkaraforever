@@ -18,6 +18,9 @@ prepares a launch. The screen stays awake during a file check. Brief interruptio
 such as opening Control Centre do not cancel it. Switching to another app pauses
 unfinished work; returning to the home page resumes it without starting the game.
 
+The downloader retries a timed-out or interrupted connection up to three attempts per
+request. If those attempts fail, choose **Try again** to resume with verified files retained.
+
 The first check of an imported installation still reads its game data. Later
 updates reuse checks for unchanged files, and long checks save their progress
 periodically so an unexpected app closure does not discard the whole scan.

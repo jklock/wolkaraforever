@@ -41,6 +41,7 @@ static NSString *Reference(NSString *name, NSData *data, TKFixtureClient *client
 // Exercise the real NSURLSession delegate routing with synthetic HTTPS objects.
 // No socket, credentials, application code or live CDN request is used.
 static NSDictionary<NSString *,NSDictionary *> *ProtocolResponses;
+static NSMutableDictionary<NSString *,NSNumber *> *ProtocolAttempts;
 static NSUInteger ActiveRequests,PeakRequests,StartedRequests,StoppedRequests;
 static uint64_t ActiveBytes,PeakBytes;
 static dispatch_semaphore_t FourStarted;
@@ -61,6 +62,12 @@ static dispatch_group_t ProtocolDeliveries;
 }
 - (void)startLoading {
     NSDictionary *reply=ProtocolResponses[self.request.URL.lastPathComponent]?:@{@"data":NSData.data,@"status":@404};
+    NSUInteger attempt;
+    @synchronized(TKDownloadProtocol.class) {
+        NSString *key=self.request.URL.absoluteString;
+        attempt=[ProtocolAttempts[key] unsignedIntegerValue]+1;
+        ProtocolAttempts[key]=@(attempt);
+    }
     NSData *body=reply[@"data"];NSString *range=[self.request valueForHTTPHeaderField:@"Range"];
     NSUInteger status=[reply[@"status"] unsignedIntegerValue]?:200;NSString *contentRange=nil;
     if(range) {
@@ -90,6 +97,11 @@ static dispatch_group_t ProtocolDeliveries;
         @try { @synchronized(self) {
             if(self.finished)return;
             [self finishCount:NO];
+            NSNumber *failure=reply[@"error"] ?: (attempt==1 ? reply[@"failOnce"] : nil);
+            if(failure) {
+                [self.client URLProtocol:self didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:failure.integerValue userInfo:nil]];
+                return;
+            }
             [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
             // Distinct response lengths/chunks arrive interleaved across tasks.
             NSUInteger half=body.length/2;
@@ -114,9 +126,32 @@ static dispatch_group_t ProtocolDeliveries;
 static void ResetProtocol(NSDictionary *responses) {
     @synchronized(TKDownloadProtocol.class) {
         if(!ProtocolDeliveries)ProtocolDeliveries=dispatch_group_create();
-        assert(!ActiveRequests);ProtocolResponses=responses;PeakRequests=StartedRequests=StoppedRequests=0;
+        assert(!ActiveRequests);ProtocolResponses=responses;ProtocolAttempts=[NSMutableDictionary new];PeakRequests=StartedRequests=StoppedRequests=0;
         ActiveBytes=PeakBytes=0;FourStarted=nil;
     }
+}
+static void TestTransientTransfers(void) {
+    NSData *body=Text(@"0123456789");
+    NSURL *url=[NSURL URLWithString:@"https://fixture.invalid/transient"];
+    for(NSNumber *code in @[@(NSURLErrorTimedOut),@(NSURLErrorNetworkConnectionLost)]) {
+        ResetProtocol(@{@"transient":@{@"data":body,@"failOnce":code}});
+        TKSessionClient *client=[TKSessionClient new];NSError *error=nil;
+        NSData *result=[client range:url offset:3 size:5 error:&error];
+        assert([result isEqual:Text(@"34567")] && !error && StartedRequests==2 && !ActiveRequests);
+    }
+    ResetProtocol(@{@"transient":@{@"data":body,@"error":@(NSURLErrorTimedOut)}});
+    TKSessionClient *client=[TKSessionClient new];NSError *error=nil;
+    assert(![client fetch:url limit:body.length error:&error]);
+    assert(error.code==NSURLErrorTimedOut && StartedRequests==3 && !ActiveRequests);
+    ResetProtocol(@{@"transient":@{@"data":body,@"error":@(NSURLErrorCancelled)}});
+    client=[TKSessionClient new];error=nil;
+    assert(![client fetch:url limit:body.length error:&error]);
+    assert(error.code==NSURLErrorCancelled && StartedRequests==1 && !ActiveRequests);
+    ResetProtocol(@{@"transient":@{@"data":body,@"status":@403}});
+    client=[TKSessionClient new];error=nil;
+    assert(![client fetch:url limit:body.length error:&error]);
+    assert(error && StartedRequests==1 && !ActiveRequests);
+    puts("Transient transfers: timeout and lost-connection recovery, three-attempt limit, no cancellation or HTTP retries.");
 }
 static NSData *ArchiveIndex(NSArray<NSData *> *objects,NSArray<NSNumber *> *offsets) {
     NSMutableData *data=[NSMutableData new];
@@ -376,6 +411,7 @@ int main(void) {
         assert([error.localizedDescription containsString:@"HTTPS"]);
         assert([NSFileManager.defaultManager removeItemAtPath:directory error:&error]);
     }
+    TestTransientTransfers();
     TestTransferBudget();
     TestReadyRanges();
     TestConcurrentDownloads();
