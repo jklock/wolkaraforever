@@ -359,7 +359,10 @@ static void AKFixtureInputSource(void *context) {
                 assert(CGRectGetMaxY(controls.frame) <= CGRectGetMinY(host.keyboardLayoutGuide.layoutFrame));
                 assert(CGRectGetMinY(controls.frame) >= 0);
                 CGRect toolbarFrame = controls.frame;
-                assert(fabs(CGRectGetMidX(toolbarFrame) - CGRectGetMidX(host.safeAreaLayoutGuide.layoutFrame)) < 1);
+                // Centred on the screen while typing too, as at rest: on an iPhone in landscape the
+                // safe area is off-centre (a side inset for the camera), and TouchControls.m
+                // centres on the host's bounds on purpose.
+                assert(fabs(CGRectGetMidX(toolbarFrame) - CGRectGetMidX(host.bounds)) < 1);
                 assert(fabs(CGRectGetMinY(toolbarFrame) - CGRectGetMinY(host.safeAreaLayoutGuide.layoutFrame) - 8) < 1);
                 UITextView *input = (UITextView *)AKFindInputView(host, @"wolkaraforever.keyboard.draft");
                 UIButton *insert = (UIButton *)AKFindInputView(host, @"wolkaraforever.keyboard.insert");
