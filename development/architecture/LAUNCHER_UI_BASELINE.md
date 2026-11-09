@@ -4,8 +4,11 @@
 
 The committed images in `wolkaraforever/WoW/tests/ui-baselines/launcher/` are the visual source
 of truth for the WolkaraForever launcher at `550755f6dffcf15852ae76c8b206fe27b6da6461`.
-They cover the iPhone Duo and iPad Pro 13-inch (M5) simulators. Pixel equality is intentional:
-layout drift is a failure, not a subjective review comment.
+They cover the iPhone Duo and iPad Pro 13-inch (M5) simulators. The comparator decodes RGBA
+pixels and permits only a per-channel difference of four or less, reporting every tolerated
+difference. This accommodates measured renderer rounding only; a larger difference, missing
+or extra state, dimension mismatch, identifier mismatch, or layout-contract failure is a test
+failure. Layout drift is a failure, not a subjective review comment.
 
 ## Required states
 
