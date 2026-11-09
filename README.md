@@ -22,16 +22,24 @@ Wi-Fi (2026-11-05). On mobile data the developer service needs the app's documen
 (turn mobile data off while it waits for the local connection, back on once the game starts).
 For a phone it brings:
 
-- **Interface mobile**, a touch add-on in [addons/WolkaraRoue](addons/WolkaraRoue): two spell
-  wheels, one by each stick (the left one mirrors the right), that you turn by dragging a spell
-  (a tap casts), with adjustable spacing; shortcuts and a tile menu, health bars with your
-  portrait, a quest card, and a chat at the bottom between the wheels that switches between the
-  players' talk and the system's messages with one touch, and can be put away into a button
-  beside the app's keyboard that counts what players say meanwhile. The game's windows (world map,
-  quests, merchants, journal) shrink to fit the screen and stay clear of the sticks, so the
-  map's close button and "Complete quest" can be reached; the minimap's size can be set, or it
-  can be put away. Its settings save themselves after each change: WoW only writes add-on
-  settings on a clean exit, which a phone session rarely gets.
+- **Interface mobile**, a touch add-on in [addons/WolkaraRoue](addons/WolkaraRoue): a spell
+  wheel by each stick (the left one mirrors the right), turned by dragging a spell along it (a
+  tap casts). Each side has one to six wheels, four by default, one shown at a time: numbered
+  tabs just above the wheel switch to another, in combat too, and so does a diagonal swipe from
+  the wheel (toward the centre the next, toward the corner the previous); the wheel that comes
+  lights up spell after spell, and an empty one shows its slots to be filled. A long press on a
+  spell starts customising, as on the iPhone's home screen, and dragging it then moves it to
+  another slot. A small "☰" button at the top, beside the minimap, opens a quick menu and a tile
+  menu; health bars at the top show your portrait and, right beside them, your target's, with
+  your own effects small under your bar; touching the void drops the target. A quest card and a
+  chat at the bottom between the wheels switch between the players' talk and the system's
+  messages with one touch, and can be put away into a button beside the app's keyboard that
+  counts what players say meanwhile. The game's windows (world map, quests, merchants, journal,
+  bags) shrink to fit the screen and stay clear of the sticks and the jump, so the map's close
+  button and "Complete quest" can be reached; the minimap's size can be set, or it can be put
+  away. WoW only writes add-on settings on a reload or a clean exit, which a phone session
+  rarely gets, and a reload needs a real touch: "Done" and "Close" save what changed, and the
+  quick menu's "Enregistrer" saves at any time.
 - **Jumping while running**: the Jump button of the "sticks only" layout sends the game's own
   Space and reaches the whole area under the camera stick.
 - **The app's toolbar at the bottom** (keyboard, mouse, gamepad, settings), centred between the
@@ -45,7 +53,8 @@ For a phone it brings:
   steps), and [forget_login.sh](wolkaraforever/tools/forget_login.sh) clears a remembered login.
 
 Install as below, then run `wolkaraforever/tools/push_addon.sh` with the game closed. Not yet
-checked on the device: turning the wheel during combat, which only the game's secure code can do.
+checked on the device: turning and changing wheels during combat, which only the game's secure
+code can do, the wheel tabs and the arrival animation.
 
 ## Credit and lineage
 

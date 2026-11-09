@@ -9,9 +9,14 @@
 -- sort part d'un toucher, exactement comme un clic sur une barre d'action.
 
 local ADDON_NAME, ns = ...
-ns.MAX_WHEELS = 4
+ns.MAX_WHEELS = 4  -- les roues dorées d'avant la 0.6, gardées pour relire une vieille sauvegarde
 ns.MAX_SLOTS = 12
 ns.MAX_FREE = 12
+-- Chaque côté a ses roues de sorts : quatre par défaut, de une à six (réglage « Roues »). On en
+-- voit une à la fois ; un glissé en diagonale ou un onglet au-dessus d'elle passe à une autre,
+-- même vide (demandé sur l'iPhone, 2026-11-09).
+ns.PAGES = 6   -- au plus, de chaque côté
+ns.WHEELS = 4  -- par défaut
 ns.CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 ns.WHITE = "Interface\\Buttons\\WHITE8X8"
 ns.QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
@@ -32,10 +37,31 @@ local reported = 0
 local function Trace(message)
     return tostring(message) .. (debugstack and ("\n" .. debugstack(2, 2, 0)) or "")
 end
+-- Les dernières erreurs restent dans la sauvegarde (ns.db.errors, 8 au plus, avec leur nombre
+-- et leurs heures) : le jeu ne les écrit dans aucun journal, et le chat ne se relit pas
+-- depuis le Mac. Une même erreur ne prend qu'une ligne.
+local KEEP_ERRORS = 8
+function ns.RememberError(text)
+    local db = ns.db
+    if type(db) ~= "table" then return end
+    if type(db.errors) ~= "table" then db.errors = {} end
+    text = tostring(text):sub(1, 400)
+    local now = time and time() or nil
+    for _, seen in ipairs(db.errors) do
+        if seen.text == text then
+            seen.count, seen.last = (tonumber(seen.count) or 1) + 1, now
+            return
+        end
+    end
+    table.insert(db.errors, 1, { text = text, count = 1, first = now, last = now })
+    while #db.errors > KEEP_ERRORS do table.remove(db.errors) end
+end
+
 function ns.Guard(label, fn, ...)
     local ok, problem = xpcall(fn, Trace, ...)
     if not ok then
         ns.lastError = label .. " : " .. problem
+        ns.RememberError(ns.lastError)
         if reported < 5 then
             reported = reported + 1
             if loggedIn then ns.Print("|cffff5555erreur|r (" .. label .. ") : " .. problem) end
@@ -70,12 +96,36 @@ function ns.SetEditing(on)
         if on then ns.Print("on personnalise hors combat.") end
         return
     end
+    if ns.editing == (on and true or false) then return end
     ns.editing = on and true or false
     ns.Each("SetEditing", ns.editing)
     ns.Layout()
     if ns.editing then
-        ns.Print("mode Personnaliser : fais glisser ce que tu veux déplacer, touche une case pour choisir son sort, puis Terminé.")
+        ns.Print("mode Personnaliser : touche une case pour choisir son sort, appui long puis glisse pour déplacer un sort, change de roue par ses onglets ou d'un glissé en diagonale, puis Terminé.")
     end
+end
+
+-- Les données d'une des roues d'un côté (ns.db.free ou ns.db.freeLeft) : ses sorts et son cran.
+function ns.PageData(side, page)
+    if type(side.pages) ~= "table" then side.pages = {} end
+    local data = side.pages[page]
+    if type(data) ~= "table" then
+        data = {}
+        side.pages[page] = data
+    end
+    if type(data.buttons) ~= "table" then data.buttons = {} end
+    return data
+end
+
+-- Vrai si la roue a au moins un sort dans ses `count` premières cases.
+function ns.PageHasEntries(side, page, count)
+    local data = type(side.pages) == "table" and side.pages[page]
+    if type(data) ~= "table" or type(data.buttons) ~= "table" then return false end
+    for index = 1, count or ns.MAX_FREE do
+        local button = data.buttons[index]
+        if type(button) == "table" and button.entry then return true end
+    end
+    return false
 end
 
 -- ---------------------------------------------------------------------------------------
@@ -184,11 +234,6 @@ end
 -- Toutes les positions enregistrées, pour revenir à la disposition par défaut.
 function ns.ClearPositions(db)
     for i = 1, ns.MAX_WHEELS do if type(db.wheels[i]) == "table" then db.wheels[i].toggle = nil end end
-    for _, group in ipairs({ db.free, db.freeLeft }) do
-        if type(group) == "table" and type(group.buttons) == "table" then
-            for _, button in pairs(group.buttons) do if type(button) == "table" then button.pos = nil end end
-        end
-    end
     if type(db.shortcuts) == "table" then db.shortcuts.pos = nil end
     if type(db.hud) == "table" then db.hud.player = nil; db.hud.target = nil end
     if type(db.chat) == "table" then db.chat.pos = nil end
@@ -199,6 +244,7 @@ end
 -- et sans doublon, et la roue dorée s'éteint. Elle garde ses sorts : la rallumer la retrouve.
 function ns.MigrateGoldenWheel(db)
     local golden, left = db.wheels[1], db.freeLeft
+    if type(left.buttons) ~= "table" then left.buttons = {} end
     local function Stored(index) return type(left.buttons[index]) == "table" and left.buttons[index].entry end
     local last = 0
     local function Has(entry)
@@ -291,7 +337,7 @@ function ns.Movable(frame, store, key, default)
         local point, _, relativePoint, x, y = self:GetPoint(1)
         local target = store()
         target[key] = { point = point, relativePoint = relativePoint, x = x, y = y }
-        if ns.MarkChanged then ns.MarkChanged() end
+        if ns.MarkChanged then ns.MarkChanged("déplacé : " .. (self:GetName() or "?")) end
         if frame.OnMoved then frame:OnMoved() end
     end)
     function frame:PlaceSaved()
@@ -354,10 +400,13 @@ local function Defaults()
         version = 2,
         wheels = wheels,
         ui = { scale = 170 },
-        free = { count = 4, scale = 100, spread = 100, turn = true, turnOffset = 0, buttons = {} },
-        freeLeft = { count = 4, scale = 100, spread = 100, turn = true, turnOffset = 0, buttons = {} },
+        -- Chaque côté : `wheels` roues de `count` cases, leurs sorts et leur cran dans `pages`,
+        -- et `page`, celle qu'on voit.
+        free = { count = 4, wheels = ns.WHEELS, scale = 100, spread = 100, page = 1, pages = {} },
+        freeLeft = { count = 4, wheels = ns.WHEELS, scale = 100, spread = 100, page = 1, pages = {} },
         shortcuts = { enabled = true, scale = 100 },
-        hud = { enabled = true, scale = 100 },
+        -- deselect : toucher le vide (le sol, le ciel) retire la cible.
+        hud = { enabled = true, scale = 100, deselect = true },
         chat = { custom = true, fontSize = 16, tab = "talk", hidden = false },
         minimap = { shown = true, scale = 60 },
         blizzard = { hideBars = true, hideUnitFrames = true },
@@ -402,6 +451,9 @@ local function LoadSettings()
     saved.minimap.scale = ns.Clamp(tonumber(saved.minimap.scale) or 60, 30, 150)
     saved.free.spread = ns.Clamp(tonumber(saved.free.spread) or 100, 60, 180)
     saved.freeLeft.spread = ns.Clamp(tonumber(saved.freeLeft.spread) or 100, 60, 180)
+    for _, key in ipairs({ "free", "freeLeft" }) do
+        saved[key].wheels = ns.Clamp(math.floor(tonumber(saved[key].wheels) or ns.WHEELS), 1, ns.PAGES)
+    end
     saved.ui.scale = ns.Clamp(tonumber(saved.ui.scale) or 170, 100, 220)
     -- La disposition 3 (interface agrandie, éléments placés en proportion de l'écran) remet
     -- une fois les positions par défaut : les anciennes étaient faites pour l'interface d'origine.
@@ -419,6 +471,49 @@ local function LoadSettings()
         ns.MigrateGoldenWheel(saved)
         saved.chat.pos = nil
         saved.layoutVersion = 4
+    end
+    -- La disposition 5 (0.7) : les quatre raccourcis deviennent un petit bouton « ☰ » ; leur
+    -- ancienne place ne lui va pas, il repart sous la mini-carte.
+    if (tonumber(saved.layoutVersion) or 0) < 5 then
+        saved.shortcuts.pos = nil
+        saved.layoutVersion = 5
+    end
+    -- La disposition 6 (0.8) : quatre roues par côté. Les sorts de chaque côté et son cran
+    -- deviennent sa roue 1 ; les roues dorées et le mode « Arc » s'en vont.
+    if (tonumber(saved.layoutVersion) or 0) < 6 then
+        for _, key in ipairs({ "free", "freeLeft" }) do
+            local side = saved[key]
+            local first = ns.PageData(side, 1)
+            if type(side.buttons) == "table" then
+                for index, button in pairs(side.buttons) do
+                    if type(button) == "table" and button.entry and first.buttons[index] == nil then
+                        first.buttons[index] = { entry = button.entry }
+                    end
+                end
+            end
+            if tonumber(side.turnOffset) then first.turnOffset = tonumber(side.turnOffset) end
+            side.buttons, side.turnOffset, side.turn = nil, nil, nil
+            side.page = 1
+        end
+        saved.layoutVersion = 6
+    end
+    -- La disposition 7 (0.9) : le bouton « ☰ » monte en haut de l'écran, à gauche de la
+    -- mini-carte ; sa place d'avant, sous elle, ne lui va plus.
+    if (tonumber(saved.layoutVersion) or 0) < 7 then
+        saved.shortcuts.pos = nil
+        saved.layoutVersion = 7
+    end
+    -- La disposition 8 (0.9.1) : la cible monte tout en haut, à droite de ta barre ; tes effets
+    -- passent sous ta barre et la carte des quêtes sous eux. Leurs places d'avant ne vont plus.
+    if (tonumber(saved.layoutVersion) or 0) < 8 then
+        saved.hud.target = nil
+        saved.quests.pos = nil
+        saved.layoutVersion = 8
+    end
+    for _, key in ipairs({ "free", "freeLeft" }) do
+        local side = saved[key]
+        for page = 1, ns.PAGES do ns.PageData(side, page) end
+        side.page = ns.Clamp(math.floor(tonumber(side.page) or 1), 1, side.wheels)
     end
     WolkaraRoueDB = saved
     ns.db = saved
@@ -500,17 +595,23 @@ SlashCmdList.WOLKARAMOBILE = function(message)
         WolkaraRoueDB = nil
         LoadSettings()
         for i = 1, ns.MAX_WHEELS do ns.db.wheels[i].entries = old.wheels[i] and old.wheels[i].entries or {} end
-        -- Les sorts des roues qui tournent restent aussi, à leur place dans la roue.
+        -- Les sorts des roues restent aussi, chacun à sa place dans sa roue.
         for _, key in ipairs({ "free", "freeLeft" }) do
-            for index, button in pairs(old[key].buttons) do
-                if type(button) == "table" and button.entry and ns.db[key].buttons then
-                    ns.db[key].buttons[index] = { entry = button.entry }
-                    ns.db[key].count = math.max(ns.db[key].count, math.min(index, ns.MAX_FREE))
+            for page = 1, ns.PAGES do
+                local before = type(old[key].pages) == "table" and old[key].pages[page]
+                if type(before) == "table" and type(before.buttons) == "table" then
+                    for index, button in pairs(before.buttons) do
+                        if type(button) == "table" and button.entry then
+                            ns.PageData(ns.db[key], page).buttons[index] = { entry = button.entry }
+                            ns.db[key].count = math.max(ns.db[key].count, math.min(index, ns.MAX_FREE))
+                            ns.db[key].wheels = math.max(ns.db[key].wheels, page)
+                        end
+                    end
                 end
             end
         end
         ns.db.welcomed = true
-        ns.MarkChanged()
+        ns.MarkChanged("réglages par défaut")
         ns.Layout(); ns.Refresh()
         ns.Print("réglages et positions par défaut remis (les sorts des roues restent).")
     elseif ns.Settings then

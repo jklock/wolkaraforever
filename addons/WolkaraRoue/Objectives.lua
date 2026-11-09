@@ -113,7 +113,8 @@ function Objectives:Init()
     card:SetFrameStrata("LOW")
     ns.Box(card, "BACKGROUND", 0, 0, 0, 0.35)
     card.glow = ns.EditFrame(card)
-    ns.Movable(card, function() return ns.db.quests end, "pos", { "TOPLEFT", "TOPLEFT", 12, -92 })
+    -- Sous ta barre et tes effets (Buffs.lua), à gauche, tant qu'on ne l'a pas déplacée.
+    ns.Movable(card, function() return ns.db.quests end, "pos", { "TOPLEFT", "TOPLEFT", 12, -150 })
 
     header = CreateFrame("Button", nil, card)
     header:SetSize(WIDTH, 34)

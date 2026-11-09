@@ -2,20 +2,21 @@
 ## Title: Interface mobile |cff66ccff(WolkaraForever)|r
 ## Notes: Roues de sorts, boutons libres, raccourcis, barres de vie et chat pensés pour le tactile.
 ## Author: WolkaraForever
-## Version: 0.6.1
+## Version: 0.9.1
 ## SavedVariablesPerCharacter: WolkaraRoueDB
 
 Core.lua
 Save.lua
 Scale.lua
+Skin.lua
 Actions.lua
 Picker.lua
-Wheels.lua
 Free.lua
 Turn.lua
 Menu.lua
 Shortcuts.lua
 Hud.lua
+Buffs.lua
 Bags.lua
 Windows.lua
 Minimap.lua

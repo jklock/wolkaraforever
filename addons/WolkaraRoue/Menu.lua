@@ -1,6 +1,6 @@
 -- Interface mobile : le menu en grandes tuiles, façon tablette. Tout ce qu'on ouvre moins
 -- souvent que les sacs ou la carte : personnage, talents, quêtes, social, guilde, macros,
--- options du jeu, réglages de l'interface mobile, recharger, déconnexion, quitter.
+-- options du jeu, réglages de l'interface mobile, enregistrer, déconnexion, quitter.
 -- Il s'ouvre et se ferme en combat aussi (cadre sécurisé) ; toucher à côté le referme.
 
 local _, ns = ...
@@ -49,7 +49,9 @@ local TILES = {
     end },
     { label = "Interface mobile", icon = "Interface\\Icons\\Trade_Engineering",
       run = function() if ns.Settings then ns.Settings:Toggle() end end },
-    { label = "Recharger", icon = "Interface\\Icons\\INV_Misc_PocketWatch_01", macro = "/reload" },
+    -- Recharger l'interface est ce qui écrit la sauvegarde (Save.lua).
+    { label = "Enregistrer", icon = "Interface\\Icons\\INV_Misc_PocketWatch_01", macro = "/reload",
+      prepare = function() if ns.db and not InCombatLockdown() then ns.db.justSaved = true end end },
     { label = "Déconnexion", icon = "Interface\\Icons\\INV_Misc_Rune_01", macro = "/logout" },
     { label = "Quitter", icon = "Interface\\Icons\\Ability_Rogue_FeignDeath", macro = "/quit" },
 }
@@ -72,6 +74,10 @@ local function Tile(info, index)
         tile:SetScript("PostClick", function(_, _, down)
             if not down and not InCombatLockdown() then frame:Hide() end
         end)
+        -- Une tuile qui prépare son action juste avant (Enregistrer : noter que la sauvegarde part).
+        if info.prepare then
+            tile:SetScript("PreClick", function(self, _, down) info.prepare(self, down) end)
+        end
     else
         tile = CreateFrame("Button", nil, frame)
         tile:RegisterForClicks("AnyUp")
@@ -84,6 +90,7 @@ local function Tile(info, index)
     local column, row = (index - 1) % COLUMNS, math.floor((index - 1) / COLUMNS)
     tile:SetPoint("TOPLEFT", 24 + column * TILE_W, -60 - row * TILE_H)
     ns.Box(tile, "BACKGROUND", 0.1, 0.1, 0.14, 0.95)
+    if ns.Surface then ns.Surface(tile, "card", 0) end
     local icon = tile:CreateTexture(nil, "ARTWORK")
     icon:SetSize(60, 60)
     icon:SetPoint("TOP", 0, -10)
@@ -121,6 +128,8 @@ function Menu:Init()
     card:SetFrameLevel((dim:GetFrameLevel() or 1) + 2)
     card:EnableMouse(true)
     ns.Box(card, "BACKGROUND", 0.04, 0.05, 0.08, 0.97)
+    -- Bordure bronze et fond sombre (Skin.lua) : le menu se détache du jeu.
+    if ns.Surface then ns.Surface(card, "panel", 2) end
     local title = ns.Label(card, "GameFontNormalLarge", "Menu")
     title:SetPoint("TOP", 0, -18)
     frame.card = card

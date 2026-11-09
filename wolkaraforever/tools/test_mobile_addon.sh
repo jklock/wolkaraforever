@@ -1,11 +1,15 @@
 #!/bin/bash
 # The Interface mobile add-on (addons/WolkaraRoue), checked on the Mac: every Lua file compiles
 # as the game's Lua 5.1 would read it, every file the .toc lists exists, and the save module
-# decides when to reload the interface as tests/test_mobile_addon_save.lua expects; the turning
-# wheels, the cooldown text, the bag placement, the game's windows, the minimap, the chat and the
-# move of a 0.5 save behave as tests/test_mobile_addon_turn.lua, test_mobile_addon_cooldown.lua,
+# saves as tests/test_mobile_addon_save.lua expects; the turning wheels, their tabs and the wheel
+# that lights up as it comes, the
+# cooldown text, the touch and long press on a spell, the bag placement, the game's windows, the
+# minimap, the chat, the moves of old saves and the settings panel, the player's auras and the
+# tidy screen behave as
+# tests/test_mobile_addon_turn.lua, test_mobile_addon_cooldown.lua, test_mobile_addon_press.lua,
 # test_mobile_addon_bags.lua, test_mobile_addon_windows.lua, test_mobile_addon_minimap.lua,
-# test_mobile_addon_chat.lua and test_mobile_addon_settings.lua expect.
+# test_mobile_addon_chat.lua, test_mobile_addon_settings.lua, test_mobile_addon_buffs.lua and
+# test_mobile_addon_tidy.lua expect.
 #
 # usage: wolkaraforever/tools/test_mobile_addon.sh
 #
@@ -28,8 +32,12 @@ echo "mobile add-on: $(ls "$addon"/*.lua | wc -l | tr -d ' ') Lua files compile,
 luajit wolkaraforever/tools/tests/test_mobile_addon_save.lua "$addon/Save.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_turn.lua "$addon/Turn.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_cooldown.lua "$addon/Actions.lua"
+luajit wolkaraforever/tools/tests/test_mobile_addon_press.lua "$addon/Actions.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_bags.lua "$addon/Bags.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_windows.lua "$addon/Windows.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_minimap.lua "$addon/Minimap.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_chat.lua "$addon/Chat.lua"
-luajit wolkaraforever/tools/tests/test_mobile_addon_settings.lua "$addon/Core.lua"
+luajit wolkaraforever/tools/tests/test_mobile_addon_settings.lua "$addon/Core.lua" "$addon/Settings.lua"
+luajit wolkaraforever/tools/tests/test_mobile_addon_buffs.lua "$addon/Buffs.lua"
+luajit wolkaraforever/tools/tests/test_mobile_addon_tidy.lua "$addon/Hud.lua" "$addon/Shortcuts.lua" "$addon/Free.lua"
+
