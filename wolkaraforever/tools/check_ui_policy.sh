@@ -16,7 +16,7 @@ test -f development/architecture/UI_POLICY.md
 test -f development/architecture/LAUNCHER_UI_BASELINE.md
 test -x wolkaraforever/tools/record_ui_baselines.sh
 test -f wolkaraforever/tools/compare_ui_baselines.swift
-rg -q 'bounds.*700|700 points' DEVICE_CONTRACT.md
+rg -q 'bounds.*700|700 points' development/architecture/DEVICE_CONTRACT.md
 rg -q 'WKPopupMaximumScreenFraction.*0\.85|0\.85' wolkaraforever/Shell/WolkaraForeverTheme.m
 
 if [ -n "$review" ]; then
