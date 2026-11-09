@@ -452,6 +452,8 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     UIButton *_insertDraftButton, *_clearDraftButton;
     UILabel *_composerLabel;
     BOOL _gamepadEnabled, _keyboardRequested, _systemKeyboardSeen, _ownKeyboard;
+    // Which keyboard request a late check belongs to: one made for an earlier request does nothing.
+    NSUInteger _keyboardRequest;
     CGFloat _systemKeyboardHeight;
     UIView *_accessory, *_composer;
     AKTouchKeyboardView *_layerKeyboard;
@@ -779,15 +781,32 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     _systemKeyboardSeen = NO;
     BOOL accepted = [_keyboardInput becomeFirstResponder];
     [self updateKeyboardButton];
-    // A hardware keyboard hides the software keyboard, and with it the dictation
-    // button. When that happens the layer supplies the keys itself: a login field
-    // that cannot be typed into is not a state to leave the user in.
+    [self checkSystemKeyboard:++_keyboardRequest late:NO];
+    return accepted;
+}
+// A hardware keyboard hides the software keyboard, and with it the dictation
+// button. When that happens the layer supplies the keys itself: a login field
+// that cannot be typed into is not a state to leave the user in.
+//
+// Without a hardware keyboard (an iPhone), iOS's own keyboard is coming, only late when the
+// phone is busy. On 2026-11-09 it took longer than 0.8 s at the login screen, the layer's keys
+// replaced it, and the player could not type the password. So without a hardware keyboard the
+// layer waits much longer before giving up on iOS's keyboard.
+static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait = 4;
+- (void)checkSystemKeyboard:(NSUInteger)request late:(BOOL)late {
     __weak AKTouchControls *weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    NSTimeInterval wait = late ? AKSystemKeyboardLateWait - AKSystemKeyboardWait : AKSystemKeyboardWait;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         AKTouchControls *controls = weakSelf;
-        if (!controls || !controls.keyboardVisible || controls->_ownKeyboard) return;
-        AKLog(@"hardware keyboard %@", hardwareKeyboardAttached() ? @"attached" : @"absent");
+        if (!controls || controls->_keyboardRequest != request || !controls.keyboardVisible || controls->_ownKeyboard) return;
+        BOOL hardware = hardwareKeyboardAttached();
+        if (!late) AKLog(@"hardware keyboard %@", hardware ? @"attached" : @"absent");
         if (!controls->_systemKeyboardSeen) {
+            if (!hardware && !late) {
+                AKLog(@"software keyboard not up yet and no hardware keyboard: waiting for it");
+                [controls checkSystemKeyboard:request late:YES];
+                return;
+            }
             AKLog(@"software keyboard did not appear; showing the layer's own keys");
             [controls showLayerKeyboard];
         } else if (controls->_systemKeyboardHeight < AKKeyboardKeysHeight) {
@@ -795,7 +814,6 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
             [controls showLayerKeyboard];
         }
     });
-    return accepted;
 }
 - (BOOL)keyboardRequested { return _keyboardRequested; }
 - (BOOL)resignFirstResponder {
