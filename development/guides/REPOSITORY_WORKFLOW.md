@@ -49,8 +49,19 @@ repository; this page is the authoritative configuration record.
    material, provisioning profiles, pairing records, device identifiers, or captures.
 4. Write small, imperative commits that can be reviewed independently. Do not mix upstream
    ingestion, product behavior, documentation-only work, and formatting cleanup.
-5. Rebase onto current `main`, resolve conflicts deliberately, and run the relevant checks
-   again before requesting review.
+5. Before review and again before merge, merge current `origin/main` into the original PR branch:
+
+   ```sh
+   git fetch origin --prune
+   gh pr checkout <number>
+   git merge --no-ff origin/main -m "merge: integrate current main for PR validation"
+   git status --short --branch
+   ```
+
+   Resolve conflicts on that branch and push normally. Record "Already up to date" when no
+   merge is required. Do **not** rebase, reset, force-push, rewrite branch history, or replace
+   the original pull request. The merge commit is integration evidence; the final PR still
+   squash-merges to `main`.
 6. The PR description must name the behavior changed, safety boundary, commands run and
    results, device coverage, and explicit remaining gaps. The template provides the format.
 
@@ -60,7 +71,7 @@ repository; this page is the authoritative configuration record.
 | --- | --- |
 | Any layer, patch, overlay, or `platform/`-adjacent change | `wolkaraforever/tools/check_layers.sh` plus focused tests |
 | User or developer documentation | `wolkaraforever/tools/check_docs.sh` and `git diff --check` |
-| WoW launcher, add-on, or Forever UI behavior | Owning `test_wow_launcher.sh`, `test_addon_archive.sh`, `test_curseforge.sh`, or `test_forever_ui.sh` |
+| WoW launcher, add-on, or Forever UI behavior | Owning suite plus `check_ui_policy.sh --review <record>`; existing baselines cannot change in an additive PR |
 | Touch, controller, or voice behavior | Owning simulator test plus physical confirmation when the claim concerns hardware behavior |
 | Runtime, authorization, translation, or cross-cutting behavior | `test_emulation.sh`; add `test_translation_sim.sh` when UIKit adapters changed |
 | Release candidate | Clean-tree `validate.sh --full`; add `--device` only for a coordinated device run |
@@ -76,12 +87,28 @@ the device in the report.
 
 ## Exact-SHA evidence and releases
 
-Run `wolkaraforever/tools/validate.sh` on a clean candidate after code is committed. It writes
+Run `wolkaraforever/tools/validate.sh --full --device --ui-review <record>` on a clean candidate
+after code is committed. It writes
 a scrubbed record under `development/validation/` and refuses to represent an uncommitted
 working tree as a commit. Never hand-edit generated validation records. A later device result
 does not validate an earlier SHA.
 
-For a release, tag the single tested SHA. Build, package, test, and publish from that SHA only.
+For a release, squash merge only after the integrated branch review is approved and every
+conversation is resolved:
+
+```sh
+gh pr merge <number> --squash --admin
+git fetch origin main
+git worktree add --detach ../wolkaraforever-postmerge-<number> origin/main
+cd ../wolkaraforever-postmerge-<number>
+wolkaraforever/tools/validate.sh --full --device --ui-review <record>
+git tag -a v<version> -m "release: <summary>"
+git push origin v<version>
+```
+
+The tag points to the exact tested squash-merge SHA. Commit the generated validation record
+after tagging; it must name that SHA. No later release branch starts until exact-main validation
+passes. Build, package, test, and publish from that SHA only.
 Inspect the failing CI job before changing another lane or retagging. The External JIT IPA
 workflow is manual and is never an automatic side effect of tagging.
 

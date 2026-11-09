@@ -4,6 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 . wolkaraforever/tools/simulators.sh
+baseline_mode=${UI_BASELINE_MODE:-check}
+case "$baseline_mode" in check|record|off) ;; *) echo "invalid UI_BASELINE_MODE: $baseline_mode" >&2; exit 2;; esac
 wolkaraforever/tools/prepare.sh
 cd build/platform
 # The matrix iPad, or the matrix iPhone with `SIMULATOR=iphone`. There is no fallback to
@@ -65,6 +67,9 @@ cp "$ROOT/NOTICE.md" "$APP/WolkaraForever-NOTICE.md"
 cp "$ROOT/platform/LICENSE" "$APP/LICENSE"
 cp "$ROOT/platform/NOTICE.md" "$APP/NOTICE.md"
 codesign --force --sign - "$APP" > /dev/null
+# The fixture deliberately creates corrupt/legacy metadata states. Start its synthetic app with
+# a fresh container so one aborted fixture cannot become evidence for the next matrix run.
+xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.wow-launcher > /dev/null 2>&1 || true
 xcrun simctl install "$SIM_ID" "$APP"
 LOG=$(mktemp)
 trap 'rm -f "$LOG"' EXIT
@@ -82,4 +87,22 @@ wait "$LAUNCH" 2>/dev/null || true
 grep -q 'WoW UIKit PASS:' "$LOG"
 # The images the fixture drew are in its container, which is where anyone wanting to
 # look at the launcher's pages has to go looking.
-echo "screenshots: $(xcrun simctl get_app_container "$SIM_ID" org.tolkara.tests.wow-launcher data)/Documents"
+screenshots="$(xcrun simctl get_app_container "$SIM_ID" org.tolkara.tests.wow-launcher data)/Documents"
+states=(wow-home.png wow-home-large-text.png addons-popup.png voice-settings.png voice-test.png
+        wow-home-de.png wow-addons-de.png wow-voice-de.png wow-voice-test-de.png
+        wow-home-de-large-text.png wow-starting.png wow-running.png wow-startup-failed.png)
+case "${SIMULATOR:-ipad}" in
+    iphone) baseline_device=iphone-duo;;
+    ipad) baseline_device=ipad-pro-13-m5;;
+    *) echo "unexpected matrix selector" >&2; exit 2;;
+esac
+baseline="${ROOT}/wolkaraforever/WoW/tests/ui-baselines/launcher/$baseline_device"
+if [ "$baseline_mode" = record ]; then
+    mkdir -p "$baseline"
+    for state in "${states[@]}"; do cp "$screenshots/$state" "$baseline/$state"; done
+elif [ "$baseline_mode" = check ]; then
+    comparator=build/wow-launcher/compare_ui_baselines
+    xcrun swiftc wolkaraforever/tools/compare_ui_baselines.swift -framework CoreGraphics -framework ImageIO -o "$comparator"
+    "$comparator" "$baseline" "$screenshots" "${states[@]}"
+fi
+echo "screenshots: $screenshots"
