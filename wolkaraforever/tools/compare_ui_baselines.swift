@@ -36,10 +36,11 @@ func load(_ path: String) throws -> PixelImage {
 
 // A channel difference at or below this is renderer rounding, not a change. Measured between
 // two identical iPhone runs on 2026-11-09: 1/255 along a nine-pixel hairline on the add-on
-// page, 3/255 then 4/255 across a four-pixel-tall band of one German glyph. Anything a person
+// page, 3/255 then 4/255 across a four-pixel-tall band of one German glyph, and 5/255 in three
+// pixels of the add-ons popup on the second iPad simulator matrix pass. Anything a person
 // could see is far above it - the animating clock and spinner that this check found were 161
 // and 110 - and every real change measured so far has been over a far larger area.
-let negligibleDelta = 4
+let negligibleDelta = 5
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 4 else {
