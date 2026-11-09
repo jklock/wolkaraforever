@@ -67,6 +67,9 @@ repository; this page is the authoritative configuration record.
 
 ## Required verification
 
+Before any release verification, follow [Test execution protocol](TEST_EXECUTION_PROTOCOL.md).
+Focused fixtures must be green on the required matrix before baseline or integration work begins.
+
 | Change | Minimum verification |
 | --- | --- |
 | Any layer, patch, overlay, or `platform/`-adjacent change | `wolkaraforever/tools/check_layers.sh` plus focused tests |

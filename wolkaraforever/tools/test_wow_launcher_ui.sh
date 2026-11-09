@@ -71,13 +71,31 @@ codesign --force --sign - "$APP" > /dev/null
 # a fresh container so one aborted fixture cannot become evidence for the next matrix run.
 xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.wow-launcher > /dev/null 2>&1 || true
 xcrun simctl install "$SIM_ID" "$APP"
-LOG=$(mktemp)
-trap 'rm -f "$LOG"' EXIT
+# Keep every transcript when invoked directly; matrix runners pass TEST_LOG_PATH so their
+# summary can link to the exact failing simulator log. Output still streams to the terminal.
+#
+# One writer per file, and always an absolute path. This code runs after `cd build/platform`,
+# so a relative path lands in the prepared tree - and prepare.sh rebuilds that tree, which
+# deleted the iPhone console before anyone could read it on 2026-11-09. The runner's own log
+# is already absolute for the same reason.
+if [ -n "${TEST_LOG_PATH:-}" ]; then
+    LOG="${TEST_LOG_PATH%.log}.fixture.log"
+else
+    LOG="logs/ui-fixtures/$(date '+%Y%m%dT%H%M%S')-$(printf '%s' "${SIM_NAME:-ipad}" | tr ' ()' '__').log"
+fi
+case "$LOG" in /*) ;; *) LOG="$ROOT/$LOG";; esac
+mkdir -p "$(dirname "$LOG")"
+: > "$LOG"
 # The fixture exits after its assertions, but simctl can leave the console stream open after
 # the process exits. Watch the fixture's explicit verdict so this automated wrapper cannot hang.
 xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.wow-launcher "$@" 2>&1 | tee "$LOG" &
 LAUNCH=$!
-for _ in $(seq 1 75); do
+# The fixture guards itself against a hang and prints its own verdict (PASS or TIMEOUT).
+# Wait longer than that guard, so the verdict this loop sees is always the fixture's and
+# never this wrapper killing a healthy run: the iPad matrix device legitimately needs
+# about a minute, and the guard is 180 seconds.
+VERDICT_TIMEOUT=${VERDICT_TIMEOUT:-200}
+for _ in $(seq 1 "$VERDICT_TIMEOUT"); do
     if grep -qE 'WoW UIKit (PASS:|TIMEOUT)' "$LOG"; then break; fi
     sleep 1
 done
@@ -91,10 +109,14 @@ screenshots="$(xcrun simctl get_app_container "$SIM_ID" org.tolkara.tests.wow-la
 states=(wow-home.png wow-home-large-text.png addons-popup.png voice-settings.png voice-test.png
         wow-home-de.png wow-addons-de.png wow-voice-de.png wow-voice-test-de.png
         wow-home-de-large-text.png wow-starting.png wow-running.png wow-startup-failed.png)
-case "${SIMULATOR:-ipad}" in
-    iphone) baseline_device=iphone-duo;;
-    ipad) baseline_device=ipad-pro-13-m5;;
-    *) echo "unexpected matrix selector" >&2; exit 2;;
+# The baseline directory is named after the device that drew the pages, not after the
+# selector that asked for it: simulator_use has replaced SIMULATOR with the UDID by
+# now, and a UDID is not a directory name. Reading SIM_NAME also means a run that
+# named the device directly lands in the same place the matrix does.
+case "$SIM_NAME" in
+    "iPhone Duo"*) baseline_device=iphone-duo;;
+    "iPad Pro 13-inch"*) baseline_device=ipad-pro-13-m5;;
+    *) echo "unexpected matrix device: $SIM_NAME" >&2; exit 2;;
 esac
 baseline="${ROOT}/wolkaraforever/WoW/tests/ui-baselines/launcher/$baseline_device"
 if [ "$baseline_mode" = record ]; then
@@ -102,7 +124,11 @@ if [ "$baseline_mode" = record ]; then
     for state in "${states[@]}"; do cp "$screenshots/$state" "$baseline/$state"; done
 elif [ "$baseline_mode" = check ]; then
     comparator=build/wow-launcher/compare_ui_baselines
-    xcrun swiftc wolkaraforever/tools/compare_ui_baselines.swift -framework CoreGraphics -framework ImageIO -o "$comparator"
+    # Absolute for the source: this runs after `cd build/platform`, where the tool path does
+    # not exist. The binary stays beside the fixture app it is comparing. `-O` matters: the
+    # comparison reads about 2.8 million pixels per page, and an unoptimised build took over
+    # a minute per device.
+    xcrun swiftc -O "$ROOT/wolkaraforever/tools/compare_ui_baselines.swift" -framework CoreGraphics -framework ImageIO -o "$comparator"
     "$comparator" "$baseline" "$screenshots" "${states[@]}"
 fi
 echo "screenshots: $screenshots"

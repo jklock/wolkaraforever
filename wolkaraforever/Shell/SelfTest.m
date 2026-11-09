@@ -1136,6 +1136,24 @@ static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
     [recorder check:view != nil _:@"the Add-ons page builds and lays out"];
     [recorder check:page.tableView.tableHeaderView.bounds.size.height > 100
                    _:@"its header is built, which is where the toolbar lives"];
+    // The header spans the list and its panels sit inside it with equal margins. The header is
+    // a table-header view created before the page has its final width, and UITableView keeps
+    // the frame it was given, so it was narrower than the table and the edition panel hung past
+    // the right edge - the ragged page measured in the simulator fixture on 2026-11-09. It is
+    // geometry, so it is checked here too, on the installed build on the iPad.
+    UIView *headerView = page.tableView.tableHeaderView;
+    CGRect headerInTable = [headerView convertRect:headerView.bounds toView:page.tableView];
+    UIView *editionPanel = headerView.subviews.firstObject;
+    CGRect panelInTable = [editionPanel convertRect:editionPanel.bounds toView:page.tableView];
+    CGFloat listWidth = CGRectGetWidth(page.tableView.bounds);
+    CGFloat panelLeft = CGRectGetMinX(panelInTable);
+    CGFloat panelRight = listWidth - CGRectGetMaxX(panelInTable);
+    [recorder check:fabs(CGRectGetWidth(headerInTable) - listWidth) < 0.5
+                   _:@"the header spans the list"];
+    [recorder check:panelLeft >= 0 && panelRight >= 0
+                   _:@"and its panels stay inside the list"];
+    [recorder check:fabs(panelLeft - panelRight) < 0.5
+                   _:@"inset equally on both sides"];
     [recorder check:AKSelfTestFind(view, @"wow.addons.sort") != nil &&
                    AKSelfTestFind(view, @"wow.addons.filters") != nil &&
                    AKSelfTestFind(view, @"wow.addons.columns") != nil

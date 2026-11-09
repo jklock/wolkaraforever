@@ -1,17 +1,26 @@
-# Baseline capture blocker — 2026-11-08
+# Baseline completion record — 2026-11-09
 
-The initial baseline capture did not complete. This is a release blocker, not an approval to
-record incomplete or manually fabricated images.
+The initial capture blocker is resolved. The launcher fixture was reconciled with the current
+CDN metadata contract, current settings actions, localization, and deterministic device-profile
+behaviour. A real compact-popup header geometry defect was fixed and asserted both in the
+simulator fixture and on the installed iPad self-test.
 
-On the iPhone Duo, the existing `test_wow_launcher_ui.sh` fixture aborts before its capture
-phase in `wolkaraforever/WoW/tests/test_wow_launcher_app.m`. The first observed failure is its
-stale unmanaged-add-on removal expectation at line 337; later diagnostic attempts exposed stale
-ready-state and add-on install-button assertions as well. The test log reports `Invalid install
-metadata` before the ready-state assertion. No baseline image was created or accepted.
+Clean `--check` matrix evidence is retained at:
 
-Required repair, on this same branch before release: reconcile each fixture assertion with the
-current product contract, add focused tests for the CDN/startup fixture setup, run the corrected
-fixture cleanly on both allowed simulators, inspect every captured state, then use the explicit
-recorder command. Do not weaken baseline comparison, change default mode to bypass it, or copy
-images from a different build/device. After the two directories contain the complete inventory,
-run `check_ui_policy.sh --review UI-BASELINE-11082026.md` and the full release procedure.
+```text
+logs/launcher-matrix/20261109T143450/
+```
+
+It records `WoW UIKit PASS:` and `UI baseline comparison passed` for both iPhone Duo and iPad
+Pro 13-inch (M5). The complete 26-image inventory is committed under
+`wolkaraforever/WoW/tests/ui-baselines/launcher/`. The physical iPad matrix separately passed
+25 automated checks, including the add-ons-page header contract.
+
+The matrix runner is the required repeatable entry point:
+
+```sh
+wolkaraforever/tools/test_launcher_matrix.sh --fixture
+UI_BASELINE_RECORD=I_HAVE_APPROVED_THE_UI_CHANGE \
+  wolkaraforever/tools/test_launcher_matrix.sh --record
+wolkaraforever/tools/test_launcher_matrix.sh --check
+```

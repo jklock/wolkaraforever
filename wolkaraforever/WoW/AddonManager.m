@@ -686,16 +686,34 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
         if ([self hasKey]) [self beginBrowse];
     }
 }
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    // UITableView does not re-size a tableHeaderView after it has accepted the view. This page
+    // is commonly created before a popover/sheet reaches its final width, so leaving the
+    // original frame here made the constrained header remain narrow beside full-width rows.
+    UIView *header=self.tableView.tableHeaderView;
+    CGFloat width=CGRectGetWidth(self.tableView.bounds);
+    if (header && width>0 && fabs(CGRectGetWidth(header.frame)-width)>0.5) {
+        CGRect frame=header.frame;
+        frame.size.width=width;
+        header.frame=frame;
+        self.tableView.tableHeaderView=header;
+    }
+}
 - (UIView *)header {
     UIColor *gold=WKGold();
     // Laid out with constraints against this view's own layout margins, which inherit the
-    // table's because of preservesSuperviewLayoutMargins. The frames this replaces were
-    // computed from the table's width when the header was created - before the sheet had its
-    // final size - and then stretched by an autoresizing mask, so the edition panel hung
-    // fourteen points past the right edge of the table and the whole page read as ragged next
-    // to cells inset by sixteen. Measured in the fixture on 2026-10-22.
+    // table's. The frames this replaces were computed from the table's width when the header
+    // was created - before the sheet had its final size - and then stretched by an autoresizing
+    // mask, so the edition panel hung fourteen points past the right edge of the table and the
+    // whole page read as ragged next to cells inset by sixteen. Measured in the fixture on
+    // 2026-10-22.
     UIView *header=[[UIView alloc] initWithFrame:CGRectMake(0,0,MAX(CGRectGetWidth(self.tableView.bounds),320),212)];
     header.autoresizingMask=UIViewAutoresizingFlexibleWidth;
+    // The header takes the table's own margins, safe area included, so its panels share the
+    // rows' gutters. On an iPhone in landscape those margins are asymmetric - the notch is on
+    // one side - and a symmetric header would put its panels under the notch while every cell
+    // stayed clear of it. Measured in the fixture on 2026-11-09: safe area left 76, right 0.
     header.preservesSuperviewLayoutMargins=YES;
     UILayoutGuide *gutters=header.layoutMarginsGuide;
     UIView *editionPanel=[[UIView alloc] init];
