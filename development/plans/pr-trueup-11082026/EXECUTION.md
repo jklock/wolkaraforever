@@ -7,7 +7,7 @@ Perform this once for the policy PR and once for each retained feature PR, in re
 
 ```sh
 git fetch origin --prune
-gh pr checkout <number>
+gh pr checkout <number> --repo jklock/wolkaraforever
 git merge --no-ff origin/main -m "merge: integrate current main for PR validation"
 git status --short --branch
 git push origin HEAD
@@ -29,7 +29,7 @@ resolve all conversations.
 ## Exact-main release
 
 ```sh
-gh pr merge <number> --squash --admin
+gh pr merge <number> --repo jklock/wolkaraforever --squash --admin
 git fetch origin main
 git worktree add --detach ../wolkaraforever-postmerge-<number> origin/main
 cd ../wolkaraforever-postmerge-<number>

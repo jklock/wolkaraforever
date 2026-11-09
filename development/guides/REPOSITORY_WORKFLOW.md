@@ -53,7 +53,7 @@ repository; this page is the authoritative configuration record.
 
    ```sh
    git fetch origin --prune
-   gh pr checkout <number>
+   gh pr checkout <number> --repo jklock/wolkaraforever
    git merge --no-ff origin/main -m "merge: integrate current main for PR validation"
    git status --short --branch
    ```
@@ -97,7 +97,7 @@ For a release, squash merge only after the integrated branch review is approved 
 conversation is resolved:
 
 ```sh
-gh pr merge <number> --squash --admin
+gh pr merge <number> --repo jklock/wolkaraforever --squash --admin
 git fetch origin main
 git worktree add --detach ../wolkaraforever-postmerge-<number> origin/main
 cd ../wolkaraforever-postmerge-<number>
