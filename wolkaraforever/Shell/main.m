@@ -248,7 +248,17 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
     // External JIT only: any other debugger stops at the request.
     if(self.executionMode!=TKExecutionModeExternalJIT || !TKExecutionModeAvailable(self.executionMode,NULL) ||
        ng_arena_reserved() || !hd_debugger_attached() || !CanStartApps()) return;
-    ng_reserve_arena(NULL);
+    // Keep the exchange with the enabler: the guest's log does not exist yet, so
+    // nothing else records what was asked for and what came back.
+    char *said=NULL; size_t length=0;
+    FILE *exchange=open_memstream(&said,&length);
+    bool reserved=ng_reserve_arena(exchange);
+    if(exchange) {
+        fclose(exchange);
+        for(NSString *line in [@(said?:"") componentsSeparatedByString:@"\n"]) if(line.length) WKLog("jit",@"%@",line);
+        free(said);
+    }
+    WKLog("jit",@"an arena was %s at launch",reserved?"reserved":"not reserved");
 }
 // The touch adapter posts this when it has created the game's own text view. That view
 // is the only thing dictation will type into, so it is registered here - where both the
