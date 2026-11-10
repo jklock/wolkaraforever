@@ -141,6 +141,87 @@ static UIView *Find(UIView *view, NSString *identifier) {
 
 #pragma mark - The tests
 
+@interface AKControllerInspector (MouseTest)
+- (void)attachMouse:(GCMouse *)mouse;
+@end
+
+@interface FakeMouseButton : NSObject
+@property (nonatomic) float value;
+@property (nonatomic, getter=isPressed) BOOL pressed;
+@property (nonatomic, copy) GCControllerButtonValueChangedHandler pressedChangedHandler;
+@end
+@implementation FakeMouseButton
+@end
+
+@interface FakeMouseInput : NSObject
+@property (nonatomic) FakeMouseButton *leftButton, *rightButton, *middleButton;
+@property (nonatomic, copy) GCMouseMoved mouseMovedHandler;
+@property (nonatomic, copy) void (^valueDidChangeHandler)(GCPhysicalInputProfile *, GCControllerElement *);
+- (void)sendButton:(FakeMouseButton *)button pressed:(BOOL)pressed;
+@end
+@implementation FakeMouseInput
+- (void)sendButton:(FakeMouseButton *)button pressed:(BOOL)pressed {
+    button.pressed=pressed; button.value=pressed ? 1 : 0;
+    if (button.pressedChangedHandler) button.pressedChangedHandler((id)button,button.value,pressed);
+    if (self.valueDidChangeHandler) self.valueDidChangeHandler((id)self,(id)button);
+}
+@end
+
+@interface FakeMouse : NSObject
+@property (nonatomic) FakeMouseInput *mouseInput;
+@property (nonatomic, copy) NSString *vendorName;
+@end
+@implementation FakeMouse
+@end
+
+static void TestMouseCallbacks(void) {
+    NSUInteger before=failures;
+    FakeMouse *mouse=[FakeMouse new]; mouse.vendorName=@"Fixture trackpad";
+    FakeMouseInput *input=[FakeMouseInput new]; mouse.mouseInput=input;
+    input.leftButton=[FakeMouseButton new]; input.rightButton=[FakeMouseButton new]; input.middleButton=[FakeMouseButton new];
+    AKControllerInspector *inspector=[AKControllerInspector new]; inspector.interest=AKInputInterest.learning;
+    __block NSUInteger motion=0, buttons=0;
+    NSMutableArray<NSString *> *observed=[NSMutableArray new];
+    inspector.onInput=^(NSString *element,double value,BOOL pressed) {
+        (void)value;
+        [observed addObject:[NSString stringWithFormat:@"%@:%d",element,pressed]];
+    };
+    for (NSUInteger refresh=0;refresh<2;refresh++) {
+        // The host installs its callbacks when a view or device connects. The inspector
+        // can refresh afterwards, including when a different device disconnects.
+        input.mouseMovedHandler=^(GCMouseInput *profile,float x,float y) { (void)profile;(void)x;(void)y;motion++; };
+        for (FakeMouseButton *button in @[input.leftButton,input.rightButton,input.middleButton])
+            button.pressedChangedHandler=^(GCControllerButtonInput *b,float value,BOOL pressed) { (void)b;(void)value;(void)pressed;buttons++; };
+        [inspector attachMouse:(id)mouse];
+        [inspector attachMouse:(id)mouse];
+        for (FakeMouseButton *button in @[input.leftButton,input.rightButton,input.middleButton]) {
+            [input sendButton:button pressed:YES];
+            input.mouseMovedHandler((id)input,4,-3);
+            [input sendButton:button pressed:NO];
+        }
+    }
+    Pump(0.05);
+    CHECK(motion==6,@"inspector refresh preserves the host's relative mouse motion");
+    CHECK(buttons==12,@"inspector refresh preserves all host mouse-button edges");
+    CHECK(observed.count==12,@"each mouse-button edge is observed once after repeated attachment");
+    for (NSString *button in @[@"left",@"right",@"middle"]) {
+        for (NSNumber *pressed in @[@YES,@NO]) {
+            NSString *edge=[NSString stringWithFormat:@"mouse.button.%@:%d",button,pressed.boolValue];
+            CHECK(([[observed filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF == %@",edge]] count]==2),
+                  @"both attachment cycles retain %@",edge);
+        }
+    }
+    inspector.interest=AKInputInterest.none;
+    NSUInteger observedBefore=observed.count;
+    [input sendButton:input.leftButton pressed:YES];
+    input.mouseMovedHandler((id)input,1,2);
+    [input sendButton:input.leftButton pressed:NO];
+    Pump(0.05);
+    CHECK(motion==7 && buttons==14,@"uninterested diagnostics still preserve host input");
+    CHECK(observed.count==observedBefore,@"uninterested diagnostics do not publish mouse input");
+    if (failures==before) puts("MOUSE_CALLBACKS PASS: host motion and buttons survive inspector attachment and refresh");
+}
+
 // The input-interest snapshot, the aggregation counters, and the fact that a GameController
 // callback for something nobody asked about costs nothing.
 //
@@ -1578,6 +1659,7 @@ static void TestConfigWriteFailure(void) {
     // means the screenshot path is exercised end to end rather than in pieces.
     [AKInputRouter.shared begin];
 
+    TestMouseCallbacks();
     TestElements();
     TestInputInterest();
     TestTriggers();
