@@ -91,7 +91,7 @@ left, right, and middle buttons; empty, busy, and blocking event queues; two con
 per case. Native editor/settings tracking and the UIKit adapter suite also passed. This is a
 bounded input result, not a latency measurement or a long-session stability result. The
 physical run used the revision named above; the later standalone PR branch was not installed
-on the device. Its trackpad implementation and tests are byte-identical to that revision.
+on the device. Its production input implementation is byte-identical to that revision.
 
 ## Before you rely on it
 

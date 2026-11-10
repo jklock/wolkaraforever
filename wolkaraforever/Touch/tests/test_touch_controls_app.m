@@ -211,7 +211,8 @@ static void AKFixtureInputSource(void *context) {
     UIView *host = [self.guest valueForKey:@"_host"];
     AKTouchControls *controls = [host valueForKey:@"_touchControls"];
     AKTouchGamepad *gamepad = [controls valueForKey:@"_gamepad"];
-    gamepad.enabled = NO;
+    assert(gamepad);
+    assert(!gamepad.enabled);
     AKDrainFixtureEvents();
     for (NSUInteger surface = 0; surface < 2; surface++) {
         if (surface == 0) [controls toggleKeyboard]; else [gamepad toggleSettings];
@@ -299,6 +300,11 @@ static void AKFixtureInputSource(void *context) {
 }
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--tracking-progress-test"]) {
+        NSMutableDictionary *arguments=[[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
+        arguments[@"TKTouchGamepadEnabled"]=@NO;
+        [NSUserDefaults.standardUserDefaults setVolatileDomain:arguments forName:NSArgumentDomain];
+    }
     [NSApplication sharedApplication];
     self.guest = [[NSWindow alloc] initWithContentRect:((UIWindowScene *)scene).screen.bounds styleMask:0 backing:2 defer:NO];
     self.guest.contentView = [[AKInputFixtureView alloc] initWithFrame:self.guest.frame];
