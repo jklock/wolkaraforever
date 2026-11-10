@@ -8,6 +8,7 @@
 #import "../App/WKLocalization.h"
 #import "Installation.h"
 #import "DeviceProfile.h"
+#import "DownloadStatus.h"
 #import "ForeverUI.h"
 #import "Updater.h"
 #import "../App/LaunchProgressView.h"
@@ -121,33 +122,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _toggle.accessibilityLabel=title;
 }
 @end
-
-typedef struct {
-    double time;
-    uint64_t bytes;
-} DownloadSample;
-
-typedef struct {
-    DownloadSample samples[31];
-    unsigned count;
-} DownloadWindow;
-
-// Keep at most one sample per second and measure verified payload throughput.
-static double DownloadMBPerSecond(DownloadWindow *window, double now, uint64_t bytes) {
-    unsigned count=window->count;
-    unsigned first=0;
-    while (first+1<count && window->samples[first+1].time<=now-30) first++;
-    if (first) {
-        count-=first;
-        memmove(window->samples,window->samples+first,count*sizeof(DownloadSample));
-    }
-    DownloadSample start=count?window->samples[0]:(DownloadSample){now,bytes};
-    if (!count || now-window->samples[count-1].time>=1) {
-        window->samples[count++]=(DownloadSample){now,bytes};
-    }
-    window->count=count;
-    return now-start.time>=1 ? (bytes-start.bytes)/(now-start.time)/1e6 : -1;
-}
 
 @interface TKWoWViewController () <UIDocumentPickerDelegate>
 @end
@@ -612,7 +586,11 @@ static double DownloadMBPerSecond(DownloadWindow *window, double now, uint64_t b
         if(updateAttempted) {
             __block NSString *lastPhase=nil;
             __block NSTimeInterval lastProgressLog=0;
-            __block DownloadWindow speedWindow={0};
+            // Verified payload throughput, not socket throughput: the updater reports the bytes it
+            // has checked, so a cached or re-sent byte never raises the rate. The window belongs to
+            // this attempt and is emptied by every other phase - a rate measured across a verify
+            // pass or after a restart would describe a transfer that is not happening.
+            __block TKDownloadWindow speedWindow={0};
             void (^progress)(NSString *,uint64_t,uint64_t)=^(NSString *phase,uint64_t done,uint64_t total) {
                 NSTimeInterval now=NSDate.timeIntervalSinceReferenceDate;
                 if(![lastPhase isEqual:phase] || now-lastProgressLog>=5) {
@@ -621,7 +599,9 @@ static double DownloadMBPerSecond(DownloadWindow *window, double now, uint64_t b
                 }
                 double speed=-1;
                 if ([phase isEqual:@"download"]) {
-                    speed=DownloadMBPerSecond(&speedWindow,NSProcessInfo.processInfo.systemUptime,done);
+                    // A monotonic clock: NSDate jumps when the user changes it, and a rate computed
+                    // across that jump is not a measurement of anything.
+                    speed=TKDownloadWindowSpeedMBps(&speedWindow,NSProcessInfo.processInfo.systemUptime,done);
                 } else {
                     speedWindow.count=0;
                 }
@@ -948,22 +928,17 @@ static double DownloadMBPerSecond(DownloadWindow *window, double now, uint64_t b
             NSString *total=counted?[bytes stringFromByteCount:(int64_t)_updateTotal]
                 :[number stringFromNumber:@(_updateTotal)];
             detail=[detail stringByAppendingFormat:@" · %@ / %@",done,total];
-            if ([_updatePhase isEqual:@"download"] && _downloadMBps>=0) {
-                number.minimumFractionDigits=1; number.maximumFractionDigits=1;
-                detail=[detail stringByAppendingFormat:@" · %@ MB/s",[number stringFromNumber:@(_downloadMBps)]];
-                if (_downloadMBps>0 && _updateTotal>_updateDone) {
-                    double seconds=(_updateTotal-_updateDone)/(_downloadMBps*1e6);
-                    if (seconds<=7*24*3600) {
-                        NSDateComponentsFormatter *duration=[NSDateComponentsFormatter new];
-                        duration.unitsStyle=NSDateComponentsFormatterUnitsStyleAbbreviated;
-                        duration.allowedUnits=seconds>=60 ? NSCalendarUnitHour|NSCalendarUnitMinute : NSCalendarUnitSecond;
-                        NSCalendar *calendar=[NSCalendar.currentCalendar copy];
-                        calendar.locale=number.locale;
-                        duration.calendar=calendar;
-                        NSString *estimate=[duration stringFromTimeInterval:MAX(1,ceil(seconds))];
-                        if (estimate.length) detail=[detail stringByAppendingFormat:@" · %@",WKLocalizedFormat(@"home.download.remaining",estimate)];
-                    }
-                }
+            // The speed and the estimate are additive: they follow the byte counts only while data
+            // is being downloaded, and only when each of them is a measurement rather than a guess.
+            // Every other phase, an unknown rate, a stalled rate and an estimate past a day write
+            // nothing at all, so the line a user already knows is unchanged.
+            if ([_updatePhase isEqual:@"download"]) {
+                NSLocale *locale=number.locale;
+                NSString *speed=TKDownloadSpeedText(_downloadMBps,locale);
+                NSString *remaining=speed?TKDownloadRemainingText(_downloadMBps,_updateDone,_updateTotal,
+                    locale,WKLocalized(@"home.download.remaining")):nil;
+                if (speed.length) detail=[detail stringByAppendingFormat:@" · %@",speed];
+                if (remaining.length) detail=[detail stringByAppendingFormat:@" · %@",remaining];
             }
         }
         action=WKLocalized(@"home.action.updating");

@@ -54,6 +54,10 @@
 @end
 static atomic_uint requests, revision, updates, repairs;
 static atomic_bool failure, slow, slowUpdate, interruptRepair;
+// One update held open so the downloading state can be inspected while it is happening. It is a
+// separate flag from slowUpdate because a delay long enough to look at is also long enough to make
+// every other step in this file guess at how fast the machine is.
+static atomic_bool holdUpdate;
 static unsigned requestsBeforePopup;
 static BOOL keyboardShown;
 static TKFixtureLibrary *fixture;
@@ -73,6 +77,16 @@ static BOOL Update(id self, SEL selector, NSDictionary *plan, NSString *root,
         atomic_fetch_add(&repairs,1);
         if(atomic_exchange(&interruptRepair,false)) { if(error)*error=TKWoWError(@"Synthetic repair interruption");return NO; }
     }
+    if(atomic_load(&holdUpdate)) {
+        // A game update the size of a real one, held open: 40 GB of 70 GB, so the status line has
+        // the byte counts the speed and the estimate are written after.
+        progress(@"download",40000000000ULL,70000000000ULL);
+        NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:30];
+        while(atomic_load(&holdUpdate) && deadline.timeIntervalSinceNow>0)
+            [NSThread sleepForTimeInterval:0.02];
+        [fixture writeMetadata:atomic_load(&revision) duplicate:NO];
+        progress(@"complete",1,1); return YES;
+    }
     atomic_fetch_add(&updates,1); progress(@"download",50,100);
     if(atomic_load(&slowUpdate)) [NSThread sleepForTimeInterval:0.5];
     [fixture writeMetadata:atomic_load(&revision) duplicate:NO];
@@ -87,6 +101,17 @@ static UIView *Find(UIView *view, NSString *identifier) {
 static void CollectActivityIndicators(UIView *view, NSMutableArray<UIActivityIndicatorView *> *into) {
     if ([view isKindOfClass:UIActivityIndicatorView.class]) [into addObject:(UIActivityIndicatorView *)view];
     for (UIView *child in view.subviews) CollectActivityIndicators(child, into);
+}
+// Whether anything in this layer's tree is still animating. A button whose configuration changed a
+// moment ago crossfades its old words out over the new ones, and that crossfade is two animated
+// layers: measured on 2026-11-10, the primary button was still animating when the downloading page
+// was captured, and the picture then held "Checking…" under a status line that already read
+// "Updating your game…". The same subtree has no animations 0.4 s later, so a capture waits for
+// that rather than for a delay that happens to be long enough.
+static BOOL AnimatingUnder(CALayer *layer) {
+    if (layer.animationKeys.count) return YES;
+    for (CALayer *child in layer.sublayers) if (AnimatingUnder(child)) return YES;
+    return NO;
 }
 static NSString *ButtonTitle(UIButton *button) {
     return button.configuration.title ?: [button titleForState:UIControlStateNormal] ?: button.titleLabel.text;
@@ -465,6 +490,8 @@ static void TestPhoneDisplayDefaults(void) {
 @implementation TKWoWFixtureDelegate
 - (UIButton *)primary { return (id)Find(self.controller.view,@"wow.primary"); }
 - (NSString *)status { return [(UILabel *)Find(self.controller.view,@"wow.status") text]; }
+- (NSString *)detail { return [(UILabel *)Find(self.controller.view,@"wow.detail") text]; }
+- (NSString *)phase { return [self.controller valueForKey:@"_updatePhase"]; }
 - (void)tap { [[self primary] sendActionsForControlEvents:UIControlEventTouchUpInside]; }
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
@@ -959,7 +986,50 @@ static void TestPhoneDisplayDefaults(void) {
         puts("WoW UIKit PASS: transient interruption keeps verification alive, paused update renders usable controls, foreground resumes once without launching, completed checks stay completed, and Auto-Lock is restored.");
         exit(0);
     }
-    [self captureAndLaunch];
+    [self captureDownloading];
+}
+// A download in progress is the one state a screenshot cannot wait for: the speed and the estimate
+// come from the clock. The window and both fragments are values with one right answer, and the
+// suite that checks them runs on this Mac (tests/test_wow_download_status.m). What is left for this
+// page is whether it draws the state at all, writes the fragments after the byte counts, and writes
+// nothing when there is no rate - so the rate is pinned to the value that suite proves, exactly as
+// the clock is pinned for every other picture in this file.
+- (void)captureDownloading {
+    atomic_store(&holdUpdate,true);
+    // The same install this page has been looking at, asked to update itself: bumping the synthetic
+    // build number instead would leave a different version in every picture taken after this one.
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"WoWInstallRequested.wowf"];
+    [self.controller refresh];
+    assert(PumpUntil(^{ return (BOOL)[[self phase] isEqual:@"download"]; }, 30.0));
+    assert([[self status] isEqual:@"Updating your game…"]);
+    // The phase, then the counts, and nothing after them: one report is not a rate.
+    assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB"]);
+    // The rate the suite proves - four megabytes a second - and the estimate that follows: 30 GB
+    // left at 4 MB/s is two hours five minutes.
+    [self.controller setValue:@(4.0) forKey:@"_downloadMBps"];
+    [self.controller render];
+    assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB · 4.0 MB/s · ~2h 5m left"]);
+    // The words on the primary button crossfade when the phase changes, and a draw with the
+    // window's clock held still renders that crossfade at its beginning - the old words. Measured
+    // on 2026-11-10: a picture taken at this point held "Checking…" under a status line that
+    // already read "Updating your game…". Wait for the crossfade to finish; measured, the two
+    // animated layers are gone 0.4 s later. Waiting here rather than in `capture:` keeps every
+    // other picture in this file exactly as it was recorded.
+    PumpUntil(^{ return (BOOL)!AnimatingUnder([self primary].layer); }, 3.0);
+    [self capture:@"wow-downloading.png"];
+    // Past a day the estimate is withheld and the rate still stands.
+    [self.controller setValue:@(0.1) forKey:@"_downloadMBps"];
+    [self.controller render];
+    assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB · 0.1 MB/s"]);
+    // A stalled rate writes nothing at all, so the line reads as it did before this feature.
+    [self.controller setValue:@(0.0) forKey:@"_downloadMBps"];
+    [self.controller render];
+    assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB"]);
+    // Let the held update finish, and the state goes with it.
+    atomic_store(&holdUpdate,false);
+    assert(PumpUntil(^{ return (BOOL)[[self status] isEqual:@"Ready to play"]; }, 30.0));
+    assert(![[self detail] containsString:@"MB/s"] && ![[self detail] containsString:@"left"]);
+    [self performSelector:@selector(captureAndLaunch) withObject:nil afterDelay:0.3];
 }
 - (void)captureAndLaunch {
     assert([self primary].enabled);
