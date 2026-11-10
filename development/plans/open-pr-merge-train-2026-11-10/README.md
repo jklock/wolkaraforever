@@ -17,3 +17,9 @@ This is the authoritative execution package after v1.0.1 (bd0ed91). Retained wor
 | 10 | v1.0.10 | #26 | retain, Duo-only |
 
 Read COMMON_PROCEDURE.md, TEST_INSTALL_PROTOCOL.md, ISSUE_REGISTER.md, then the individual PR document. Re-query the PR head before work; drift invalidates that review.
+
+Each execution handoff has a compact agent prompt: `PROMPT-PR-TEST-INSTALL-ISOLATION.md`,
+`PROMPT-PR-27.md`, `PROMPT-PR-28.md`, `PROMPT-PR-36.md`, `PROMPT-PR-37.md`,
+`PROMPT-PR-41.md`, `PROMPT-PR-40.md`, `PROMPT-PR-23.md`,
+`PROMPT-PR-LAUNCHER-MANAGER.md`, `PROMPT-PR-26.md`, and
+`PROMPT-PR-RELEASE-EVIDENCE-V1.0.1.md`.
