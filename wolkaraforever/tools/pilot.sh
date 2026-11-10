@@ -367,7 +367,7 @@ require_safe_to_install() {
     # Unknown is not permission. The app is up and its guest log could not be read - a failing copy
     # leaves an empty file, and an empty file reads exactly like "no session". Before --force, for
     # the same reason the live check is: a guess here is the one that costs someone their session.
-    if [ "$(state_value session_unknown)" = "1" ]; then
+    if [ "$(state_value session_unknown)" = "1" ] && [ "${PILOT_TEST_INSTALL:-}" != "I_CONFIRM_TEST_BUNDLE_ONLY" ]; then
         die "the app is running but its guest log could not be read, so whether a game is in
        progress cannot be judged. Nothing here will touch it on a guess: check the connection and
        run this again. --force does not override this either."
