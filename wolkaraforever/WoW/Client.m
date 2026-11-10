@@ -1,5 +1,6 @@
 #import "Client.h"
 #import "CASC.h"
+#include <time.h>
 
 // A client reuses one connection pool with bounded concurrent transfers. No cookies,
 // credentials, redirects, HTTP fallback, or application-installation writes.
@@ -98,28 +99,58 @@
 @implementation TKWoWRangeJob
 @end
 
+const NSTimeInterval TKWoWRetryDelays[]={1,2,4,8};
+const NSUInteger TKWoWRetryDelayCount=sizeof(TKWoWRetryDelays)/sizeof(TKWoWRetryDelays[0]);
+
+// The bounded range window: four reservations and 64 MiB in total, with an
+// object larger than the window running alone. A reservation is held only while
+// its request can actually transfer, so a retry delay is not an occupied slot.
+static const uint64_t TKWoWWindowBytes=64ULL*1024*1024;
+static const NSUInteger TKWoWWindowTransfers=4;
+
+@implementation TKWoWRetryScheduler
+- (NSTimeInterval)monotonicNow {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC,&now)) return 0;
+    return (NSTimeInterval)now.tv_sec+(NSTimeInterval)now.tv_nsec/1000000000.0;
+}
+- (BOOL)waitUntil:(NSTimeInterval)deadline lock:(NSCondition *)lock {
+    NSTimeInterval remaining=deadline-[self monotonicNow];
+    if (remaining<=0) return YES;
+    return [lock waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:remaining]];
+}
+@end
+
 @implementation TKWoWClient {
-    NSLock *_lock;
+    NSCondition *_lock;
     BOOL _cancelled;
     NSURLSession *_session;
     TKWoWTransfers *_transfers;
     NSError *_downloadFailure;
+    NSUInteger _windowTransfers;
+    uint64_t _windowBytes;
+    NSUInteger _windowGeneration;
     NSData *_archiveTable;
     NSArray<NSString *> *_archives;
     NSString *_archiveConfig;
 }
 - (instancetype)init {
-    if ((self=[super init])) _lock=[NSLock new];
+    if ((self=[super init])) _lock=[NSCondition new];
     return self;
+}
+// A cleared clock would turn a delay into a spin, so the default is restored here.
+- (TKWoWRetryScheduler *)retryScheduler {
+    if (!_retryScheduler) _retryScheduler=[TKWoWRetryScheduler new];
+    return _retryScheduler;
 }
 - (void)dealloc { [_session invalidateAndCancel]; }
 - (void)cancel {
-    [_lock lock]; _cancelled=YES; [_session invalidateAndCancel]; [_lock unlock];
+    [_lock lock]; _cancelled=YES; [_session invalidateAndCancel]; [_lock broadcast]; [_lock unlock];
 }
 - (BOOL)cancelled { [_lock lock]; BOOL value=_cancelled; [_lock unlock]; return value; }
 - (void)failDownloads:(NSError *)error {
     [_lock lock];if(!_downloadFailure)_downloadFailure=error?:TKWoWError(@"Download failed.");
-    [_transfers cancel];[_lock unlock];
+    [_transfers cancel];[_lock broadcast];[_lock unlock];
 }
 - (NSURLSessionConfiguration *)sessionConfiguration {
     NSURLSessionConfiguration *config=NSURLSessionConfiguration.ephemeralSessionConfiguration;
@@ -130,12 +161,91 @@
     config.HTTPAdditionalHeaders=@{@"Accept-Encoding":@"identity"};return config;
 }
 - (NSData *)fetch:(NSURL *)url limit:(NSUInteger)limit error:(NSError **)error {
-    return [self transferURL:url offset:0 size:0 limit:limit error:error];
+    return [self transferURL:url offset:0 size:0 limit:limit window:0 error:error];
 }
 - (NSData *)range:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size error:(NSError **)error {
-    return [self transferURL:url offset:offset size:size limit:size error:error];
+    return [self transferURL:url offset:offset size:size limit:size window:0 error:error];
 }
-- (NSData *)transferURL:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size limit:(NSUInteger)limit error:(NSError **)error {
+- (NSData *)fetch:(NSURL *)url limit:(NSUInteger)limit window:(uint64_t)window error:(NSError **)error {
+    return [self transferURL:url offset:0 size:0 limit:limit window:window error:error];
+}
+- (NSData *)range:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size window:(uint64_t)window
+    error:(NSError **)error {
+    return [self transferURL:url offset:offset size:size limit:size window:window error:error];
+}
+// Only a dropped, timed out or unreachable connection is transient. HTTP status,
+// redirect, TLS/security, malformed response, range, checksum, storage,
+// cancellation and a terminal sibling failure all fail at once instead.
+static BOOL RetryableNetworkError(NSError *error) {
+    if (![error.domain isEqual:NSURLErrorDomain]) return NO;
+    switch (error.code) {
+        case NSURLErrorNetworkConnectionLost:
+        case NSURLErrorTimedOut:
+        case NSURLErrorNotConnectedToInternet:
+        case NSURLErrorCannotConnectToHost:
+        case NSURLErrorCannotFindHost:
+        case NSURLErrorDNSLookupFailed:
+            return YES;
+        default:
+            return NO;
+    }
+}
+// Admission for the bounded window. `wait` blocks a job that is about to make
+// another attempt: it is refused at once when the operation is cancelled or a
+// sibling has already failed.
+- (BOOL)reserveWindowBytes:(uint64_t)bytes wait:(BOOL)wait {
+    [_lock lock];
+    for (;;) {
+        BOOL fits=bytes>TKWoWWindowBytes ? _windowTransfers==0
+            : (_windowTransfers<TKWoWWindowTransfers && _windowBytes+bytes<=TKWoWWindowBytes);
+        if (fits) { _windowTransfers++; _windowBytes+=bytes; [_lock unlock]; return YES; }
+        if (!wait || _cancelled || _downloadFailure) { [_lock unlock]; return NO; }
+        [_lock waitUntilDate:[NSDate distantFuture]];
+    }
+}
+- (void)releaseWindowBytes:(uint64_t)bytes {
+    [_lock lock];
+    if (_windowTransfers) _windowTransfers--;
+    _windowBytes=_windowBytes>bytes?_windowBytes-bytes:0;
+    _windowGeneration++;
+    [_lock broadcast];
+    [_lock unlock];
+}
+- (NSData *)transferURL:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size
+    limit:(NSUInteger)limit window:(uint64_t)window error:(NSError **)error {
+    NSError *failure=nil;
+    for (NSUInteger attempt=0; ; attempt++) {
+        NSData *data;
+        @autoreleasepool {
+            failure=nil;
+            data=[self attemptURL:url offset:offset size:size limit:limit error:&failure];
+        }
+        if (data) return data;
+        if (attempt>=TKWoWRetryDelayCount || !RetryableNetworkError(failure)) break;
+        NSTimeInterval delay=TKWoWRetryDelays[attempt];
+        NSLog(@"[wow-update] Network error %ld; retrying request in %.0f s.",(long)failure.code,delay);
+        // The delay is not an active transfer slot: hand the range window back so
+        // an unrelated range can start, then wait on the monotonic clock. Only
+        // cancellation or a terminal sibling failure ends the wait early.
+        if (window) [self releaseWindowBytes:window];
+        NSTimeInterval deadline=[_retryScheduler monotonicNow]+delay;
+        BOOL stopped=NO;
+        [_lock lock];
+        while (!_cancelled && !_downloadFailure)
+            if ([_retryScheduler waitUntil:deadline lock:_lock]) break;
+        stopped=_cancelled || _downloadFailure!=nil;
+        if (stopped) failure=_downloadFailure?:TKWoWError(@"Download cancelled.");
+        [_lock unlock];
+        if (stopped) break;
+        if (window && ![self reserveWindowBytes:window wait:YES]) {
+            [_lock lock];failure=_downloadFailure?:TKWoWError(@"Download cancelled.");[_lock unlock];
+            break;
+        }
+    }
+    if (error) *error=failure;
+    return nil;
+}
+- (NSData *)attemptURL:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size limit:(NSUInteger)limit error:(NSError **)error {
     if (![url.scheme isEqualToString:@"https"] || !url.host.length || url.user || url.password ||
         (size && offset>UINT64_MAX-(size-1))) {
         if (error) *error=TKWoWError(@"A valid HTTPS download URL and range are required.");
@@ -455,14 +565,13 @@ static int CompareRanges(const void *a,const void *b) {
     // window is at most 64 MiB, including complete results awaiting the consumer.
     dispatch_queue_t queue=dispatch_queue_create("app.wolkara.download",DISPATCH_QUEUE_CONCURRENT);
     dispatch_group_t group=dispatch_group_create();
-    dispatch_semaphore_t completed=dispatch_semaphore_create(0);
-    NSMutableArray<TKWoWRangeJob *> *jobs=[NSMutableArray new];uint64_t buffered=0;
+    NSMutableArray<TKWoWRangeJob *> *jobs=[NSMutableArray new];
     @try {
     for(NSUInteger i=0;i<count || jobs.count;) { @autoreleasepool {
         if(self.cancelled) { failure=TKWoWError(@"Download cancelled.");return NO; }
-        [_lock lock];failure=_downloadFailure;[_lock unlock];
+        [_lock lock];failure=_downloadFailure;NSUInteger generation=_windowGeneration;[_lock unlock];
         if(failure)return NO;
-        while(i<count && jobs.count<4) {
+        while(i<count) {
             TKWoWArchiveEntry first=entries[i];
             uint64_t end=(uint64_t)first.offset+first.size,payload=first.size;NSUInteger last=i+1;
             // Small archive gaps are tolerated, with at most 25% extra transfer
@@ -474,36 +583,48 @@ static int CompareRanges(const void *a,const void *b) {
                 end=nextEnd;payload+=entries[last].size;last++;
             }
             NSUInteger size=(NSUInteger)(end-first.offset);
-            if(jobs.count && (buffered>=64*1024*1024 || size>64*1024*1024-buffered))break;
+            // A retry delay hands its reservation back, so admission here can
+            // start an unrelated range while that request waits.
+            if(![self reserveWindowBytes:size wait:NO])break;
             TKWoWRangeJob *job=[TKWoWRangeJob new];job.first=i;job.last=last;job.offset=first.offset;job.size=size;
             job.ranged=first.archive!=UINT32_MAX;
             NSString *key=job.ranged?_archives[first.archive]:TKWoWHex(first.key,16);
             job.url=[NSURL URLWithString:[NSString stringWithFormat:@"%@/data/%@/%@/%@",plan[@"cdn"],
                 [key substringToIndex:2],[key substringWithRange:NSMakeRange(2,2)],key]];
-            [jobs addObject:job];buffered+=size;i=last;
+            [jobs addObject:job];i=last;
             dispatch_group_async(group,queue,^{
                 @autoreleasepool {
                     NSError *problem=nil;
-                    job.data=job.ranged?[self range:job.url offset:job.offset size:job.size error:&problem]:
-                        [self fetch:job.url limit:job.size error:&problem];
+                    job.data=job.ranged?[self range:job.url offset:job.offset size:job.size window:job.size error:&problem]:
+                        [self fetch:job.url limit:job.size window:job.size error:&problem];
                     if(job.data.length!=job.size && !problem)problem=TKWoWError(@"Incomplete download.");
                     if(problem)[self failDownloads:problem];
                 }
-                [self->_lock lock];job.complete=YES;[self->_lock unlock];
-                dispatch_semaphore_signal(completed);
+                [self->_lock lock];job.complete=YES;[self->_lock broadcast];[self->_lock unlock];
             });
-            if(buffered>=64*1024*1024)break;
         }
         // Consume whichever range is ready, then refill its slot. A slow range
-        // must not prevent unrelated completed ranges from making progress.
+        // must not prevent unrelated completed ranges from making progress, and
+        // a freed or relinquished reservation wakes this wait immediately.
         // Retain each reservation through the serial consumer, so downloading,
         // completed and currently consumed buffers all share the same budget.
         TKWoWRangeJob *ready=nil;
-        [_lock lock];failure=_downloadFailure;
-        for(TKWoWRangeJob *job in jobs)if(job.complete) { ready=job;break; }
+        [_lock lock];
+        for(;;) {
+            failure=_downloadFailure;
+            if(failure || _cancelled)break;
+            for(TKWoWRangeJob *job in jobs)if(job.complete) { ready=job;break; }
+            if(ready)break;
+            // A reservation released since the admission attempt can now admit a
+            // pending range; a completion or a stop is the other way out.
+            if(i<count && _windowGeneration!=generation)break;
+            [_lock waitUntilDate:[NSDate distantFuture]];
+        }
         [_lock unlock];
         if(failure)return NO;
-        if(!ready) { dispatch_semaphore_wait(completed,DISPATCH_TIME_FOREVER);continue; }
+        if(_cancelled) { failure=TKWoWError(@"Download cancelled.");return NO; }
+        // A released reservation is the only other way out: admit the next range.
+        if(!ready)continue;
         TKWoWRangeJob *job=ready;
         for(NSUInteger j=job.first;j<job.last;j++) { @autoreleasepool {
             if(self.cancelled) { failure=TKWoWError(@"Download cancelled.");return NO; }
@@ -518,7 +639,8 @@ static int CompareRanges(const void *a,const void *b) {
             }
         }}
         job.data=nil;
-        buffered-=job.size;[jobs removeObject:job];
+        [jobs removeObject:job];
+        [self releaseWindowBytes:job.size];
     }}
     succeeded=YES;
     } @finally {
@@ -526,7 +648,8 @@ static int CompareRanges(const void *a,const void *b) {
         // Cancel and drain them before releasing state or allowing a retry.
         if(!succeeded)[self failDownloads:failure?:TKWoWError(@"Download cancelled.")];
         dispatch_group_wait(group,DISPATCH_TIME_FOREVER);
-        [_lock lock];_downloadFailure=nil;[_lock unlock];
+        // No job can run now: drop every reservation this operation held.
+        [_lock lock];_downloadFailure=nil;_windowTransfers=0;_windowBytes=0;[_lock unlock];
         if(failure && error)*error=failure;
     }
     return YES;

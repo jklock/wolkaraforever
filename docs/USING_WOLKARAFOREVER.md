@@ -18,6 +18,14 @@ prepares a launch. The screen stays awake during a file check. Brief interruptio
 such as opening Control Centre do not cancel it. Switching to another app pauses
 unfinished work; returning to the home page resumes it without starting the game.
 
+If a connection drops or times out, the launcher retries the affected request after
+1, 2, 4, and 8 seconds. Only that request waits: the rest of the download keeps
+going. A retried request discards the part it had already received and asks for its
+range again. If all four retries fail, tap **Try again**. Nothing already verified
+is downloaded again, and a retry never activates an update on its own. For the same
+build and game language, the updater reuses verified data saved on the device. The
+total shown under **Downloading new data** is what remains for the current attempt.
+
 The first check of an imported installation still reads its game data. Later
 updates reuse checks for unchanged files, and long checks save their progress
 periodically so an unexpected app closure does not discard the whole scan.
