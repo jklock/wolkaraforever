@@ -1,8 +1,12 @@
 #import <Foundation/Foundation.h>
 #import "../launcher/WoW/Updater.h"
 #import "../launcher/WoW/CASC.h"
+#import "../launcher/WoW/Installation.h"
 #include <assert.h>
 #include <unistd.h>
+@interface TKWoWClient (TestTransport)
+- (NSURLSessionConfiguration *)sessionConfiguration;
+@end
 static NSData *Text(NSString *s){return [s dataUsingEncoding:NSUTF8StringEncoding];}
 static void BE(NSMutableData *d,uint64_t n,NSUInteger bytes){while(bytes){uint8_t b=(uint8_t)(n>>(--bytes*8));[d appendBytes:&b length:1];}}
 static NSData *Hash(NSData *d){uint8_t bytes[16];assert(TKWoWUnhex(TKWoWMD5(d),bytes));return [NSData dataWithBytes:bytes length:16];}
@@ -24,8 +28,15 @@ static NSData *Wrap(NSData *d){NSMutableData *r=[Text(@"BLTE") mutableCopy];BE(r
     (void)url; if(offset>_archive.length || size>_archive.length-offset){if(error)*error=TKWoWError(@"Bad synthetic range");return nil;}
     _counts[@"range"]=@([_counts[@"range"] unsignedIntegerValue]+1);return [_archive subdataWithRange:NSMakeRange((NSUInteger)offset,size)];
 }
+- (NSData *)fetch:(NSURL *)url limit:(NSUInteger)limit window:(uint64_t)window error:(NSError **)error {
+    (void)window;return [self fetch:url limit:limit error:error];
+}
+- (NSData *)range:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size window:(uint64_t)window error:(NSError **)error {
+    (void)window;return [self range:url offset:offset size:size error:error];
+}
 @end
-static NSString *Reference(NSString *name,NSData *d,TKUpdateClient *client){NSData *raw=Wrap(d);client.responses[TKWoWMD5(raw)]=raw;return [NSString stringWithFormat:@"%@ = %@ %@\n%@-size = %lu %lu\n",name,TKWoWMD5(d),TKWoWMD5(raw),name,(unsigned long)d.length,(unsigned long)raw.length];}
+static NSString *ReferenceResponses(NSString *name,NSData *d,NSMutableDictionary *responses){NSData *raw=Wrap(d);responses[TKWoWMD5(raw)]=raw;return [NSString stringWithFormat:@"%@ = %@ %@\n%@-size = %lu %lu\n",name,TKWoWMD5(d),TKWoWMD5(raw),name,(unsigned long)d.length,(unsigned long)raw.length];}
+static NSString *Reference(NSString *name,NSData *d,TKUpdateClient *client){return ReferenceResponses(name,d,client.responses);}
 static NSData *IndexObjects(NSArray<NSData *> *objects){
     NSMutableData *d=[NSMutableData new];uint32_t offset=37;
     for(NSData *raw in objects){[d appendData:Hash(raw)];BE(d,raw.length,4);BE(d,offset,4);offset+=(uint32_t)raw.length;}
@@ -102,8 +113,252 @@ static void TestStorage(void) {
     assert([error.localizedDescription containsString:@"requirement is too large"]);
 }
 
+
+// The update suites drive the downloader itself: this transport serves the same
+// synthetic objects through NSURLSession, so an injected drop exercises the
+// retry path the device uses. No socket or live CDN is involved.
+static NSDictionary *RetryResponses;
+static NSString *RetryDropRange;
+static NSUInteger RetryLosses;
+@interface TKRetryProtocol : NSURLProtocol @end
+@implementation TKRetryProtocol
++ (BOOL)canInitWithRequest:(NSURLRequest *)request {
+    NSString *host=request.URL.host.lowercaseString;
+    return [host isEqual:@"fixture.invalid"] || [host hasSuffix:@".blizzard.com"] || [host hasSuffix:@".battle.net"];
+}
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
+- (void)startLoading {
+    id reply=RetryResponses[self.request.URL.lastPathComponent];
+    NSData *body=[reply isKindOfClass:NSDictionary.class]?reply[@"data"]:reply;
+    NSString *range=[self.request valueForHTTPHeaderField:@"Range"];
+    NSUInteger status=body?200:404;NSString *contentRange=nil;
+    if(body && range) {
+        unsigned long long first=0,last=0;
+        if(sscanf(range.UTF8String,"bytes=%llu-%llu",&first,&last)!=2 || first>last || last>=body.length) {
+            status=416;body=nil;
+        } else {
+            contentRange=[NSString stringWithFormat:@"bytes %llu-%llu/%lu",first,last,(unsigned long)body.length];
+            body=[body subdataWithRange:NSMakeRange((NSUInteger)first,(NSUInteger)(last-first+1))];status=206;
+        }
+    }
+    BOOL drop=NO;
+    @synchronized(TKRetryProtocol.class) {
+        if(RetryLosses && (!RetryDropRange || [range isEqual:RetryDropRange])) { RetryLosses--;drop=YES; }
+    }
+    NSMutableDictionary *headers=[@{@"Content-Length":[NSString stringWithFormat:@"%lu",(unsigned long)body.length]} mutableCopy];
+    if(contentRange)headers[@"Content-Range"]=contentRange;
+    NSHTTPURLResponse *response=[[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:(NSInteger)status
+        HTTPVersion:@"HTTP/1.1" headerFields:headers];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        if(drop) {
+            [self.client URLProtocol:self didFailWithError:
+                [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNetworkConnectionLost userInfo:nil]];
+            return;
+        }
+        [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+        [self.client URLProtocol:self didLoadData:body];
+        [self.client URLProtocolDidFinishLoading:self];
+    });
+}
+- (void)stopLoading {
+    [self.client URLProtocol:self didFailWithError:
+        [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]];
+}
+@end
+@interface TKRetryClient : TKWoWClient
+@property(nonatomic) NSMutableDictionary *responses;
+@end
+@implementation TKRetryClient
+- (NSURLSessionConfiguration *)sessionConfiguration {
+    NSURLSessionConfiguration *configuration=[super sessionConfiguration];
+    configuration.protocolClasses=@[TKRetryProtocol.class];return configuration;
+}
+@end
+// Virtual retry clock: the schedule is asserted, no test sleeps a delay.
+@interface TKVirtualClock : TKWoWRetryScheduler
+@property(nonatomic) NSTimeInterval now;
+@property(nonatomic) NSMutableArray<NSNumber *> *delays;
+@end
+@implementation TKVirtualClock
+- (instancetype)init { if((self=[super init])){_now=5000;_delays=[NSMutableArray new];}return self; }
+- (NSTimeInterval)monotonicNow { return _now; }
+- (BOOL)waitUntil:(NSTimeInterval)deadline lock:(NSCondition *)lock {
+    (void)lock;[self.delays addObject:@(deadline-self.now)];self.now=deadline;return YES;
+}
+@end
+// Play eligibility is exactly what TKWoWInspectInstallation reports for the
+// installed folder, so both sides read the same launcher state.
+@interface TKContractApp : NSObject
+@property(nonatomic) TKAppSource source;
+@property(nonatomic, copy) NSString *workingDirectory;
+@end
+@implementation TKContractApp
+@end
+@interface TKContractLibrary : NSObject
+@property(nonatomic, copy) NSString *directory;
+@property(nonatomic, copy) NSString *executable;
+@property(nonatomic, strong) NSArray *apps;
+- (NSString *)workingDirectoryForApp:(id)app error:(NSError **)error;
+- (NSString *)executablePathForApp:(id)app error:(NSError **)error;
+@end
+@implementation TKContractLibrary
+- (NSString *)workingDirectoryForApp:(id)app error:(NSError **)error { (void)app;(void)error;return _directory; }
+- (NSString *)executablePathForApp:(id)app error:(NSError **)error { (void)app;(void)error;return _executable; }
+@end
+static TKWoWInstallation *PlayInspection(NSString *root,NSDictionary *plan) {
+    TKContractApp *app=[TKContractApp new];app.source=TKAppSourceDocuments;
+    app.workingDirectory=[root stringByAppendingPathComponent:@"_forever_"];
+    TKContractLibrary *library=[TKContractLibrary new];library.apps=@[app];
+    library.directory=app.workingDirectory;
+    library.executable=[app.workingDirectory stringByAppendingPathComponent:@"Synthetic.app/Contents/MacOS/Synthetic"];
+    NSDictionary *product=@{@"id":plan[@"product"],@"folder":@"_forever_"};
+    return TKWoWInspectInstallation((id)library,product,plan);
+}
+static TKWoWInstallationState PlayEligibility(NSString *root,NSDictionary *plan) {
+    TKWoWInstallation *inspection=PlayInspection(root,plan);
+    return inspection.state;
+}
+static NSData *PlistBytes(NSDictionary *plan) {
+    return [NSPropertyListSerialization dataWithPropertyList:plan format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL];
+}
+// A retried download must not move the launcher's startup contract: metadata,
+// verification, activation and Play eligibility stay exactly what they were
+// until the single activation of a completely downloaded build.
+static void TestStartupContract(void) {
+    NSData *first=Text(@"first installed code"),*second=Text(@"second installed code");
+    NSData *firstRaw=Wrap(first),*secondRaw=Wrap(second),*third=Wrap(Text(@"third downloaded object"));
+    NSMutableDictionary *responses=[NSMutableDictionary new];
+    for(NSData *raw in @[firstRaw,secondRaw,third])responses[TKWoWMD5(raw)]=@{@"data":raw};
+    NSMutableData *install=[Text(@"IN") mutableCopy];BE(install,1,1);BE(install,16,1);BE(install,0,2);BE(install,1,4);
+    [install appendData:Text(@"Synthetic.app/Contents/MacOS/Synthetic")];BE(install,0,1);[install appendData:Hash(first)];BE(install,first.length,4);
+    NSMutableData *encoding=[Text(@"EN") mutableCopy];BE(encoding,1,1);BE(encoding,16,1);BE(encoding,16,1);
+    BE(encoding,1,2);BE(encoding,1,2);BE(encoding,1,4);BE(encoding,0,4);BE(encoding,0,1);BE(encoding,0,4);encoding.length+=32;
+    BE(encoding,1,1);BE(encoding,first.length,5);[encoding appendData:Hash(first)];[encoding appendData:Hash(firstRaw)];
+    encoding.length=22+32+1024;
+    NSString *(^manifest)(NSString *,NSArray *)=^(NSString *version,NSArray *entries) {
+        NSMutableData *download=[Text(@"DL") mutableCopy];BE(download,3,1);BE(download,16,1);BE(download,0,1);
+        BE(download,entries.count,4);BE(download,0,2);BE(download,0,1);BE(download,0,4);
+        for(NSData *entry in entries){[download appendData:Hash(entry)];BE(download,entry.length,5);BE(download,0,1);}
+        NSString *configuration=[NSString stringWithFormat:@"build-uid = wowf\nroot = %@\n%@%@%@",TKWoWMD5(first),
+            ReferenceResponses(@"install",install,responses),ReferenceResponses(@"encoding",encoding,responses),
+            ReferenceResponses(@"download",download,responses)];
+        NSString *build=TKWoWMD5(Text(version.length?[configuration stringByAppendingFormat:@"\nversion = %@",version]:configuration));
+        responses[build]=@{@"data":Text([configuration stringByAppendingFormat:@"\nversion = %@",version])};
+        return build;
+    };
+    NSMutableData *archive=[NSMutableData dataWithLength:37];
+    [archive appendData:firstRaw];[archive appendData:secondRaw];[archive appendData:third];
+    NSString *archiveKey=TKWoWMD5(archive);
+    responses[archiveKey]=@{@"data":archive};
+    NSMutableArray *indexed=[NSMutableArray new];
+    for(NSData *raw in @[firstRaw,secondRaw,third])[indexed addObject:raw];
+    responses[[archiveKey stringByAppendingString:@".index"]]=@{@"data":IndexObjects(indexed)};
+    NSData *cdnData=Text([NSString stringWithFormat:@"archives = %@\n",archiveKey]);NSString *cdn=TKWoWMD5(cdnData);
+    responses[cdn]=@{@"data":cdnData};
+    responses[@"cdns"]=@{@"data":Text(@"Name|Path|Hosts|Servers\neu|tpr/wow|level3.ssl.blizzard.com|https://level3.ssl.blizzard.com/?maxhosts=4&fallback=1\n")};
+    NSString *(^publish)(NSString *,NSArray *)=^(NSString *version,NSArray *entries) {
+        NSString *build=manifest(version,entries);
+        responses[@"versions"]=@{@"data":Text([NSString stringWithFormat:
+            @"Region|BuildConfig|CDNConfig|VersionsName\neu|%@|%@|%@\n",build,cdn,version])};
+        return build;
+    };
+    NSError *error=nil;
+    NSString *base=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    NSString *root=[base stringByAppendingPathComponent:@"World of Warcraft"];
+    NSFileManager *fm=NSFileManager.defaultManager;
+    NSString *exe=[root stringByAppendingPathComponent:@"_forever_/Synthetic.app/Contents/MacOS/Synthetic"];
+    assert([fm createDirectoryAtPath:exe.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:&error]);
+    NSData *old=Text(@"previous installed code");assert([old writeToFile:exe atomically:YES]);
+    NSString *infoPath=[root stringByAppendingPathComponent:@".build.info"];
+    NSData *oldInfo=Text(@"Product|Active|Build Key|CDN Key|Version|Tags\nwowf|1|11111111111111111111111111111111|22222222222222222222222222222222|previous|OSX arm64 EU enUS speech?:OSX arm64 EU enUS text?\n");
+    assert([oldInfo writeToFile:infoPath atomically:YES]);
+    RetryResponses=responses;
+    TKRetryClient *client=[TKRetryClient new];client.responses=responses;
+    TKVirtualClock *clock=[TKVirtualClock new];client.retryScheduler=clock;
+
+    // v1 installs the executable. Nothing is retried yet.
+    publish(@"synthetic-1",@[firstRaw]);
+    NSDictionary *plan=[client planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error];
+    if(!plan)fprintf(stderr,"Contract plan: %s\n",error.localizedDescription.UTF8String);
+    assert(plan && !error);
+    assert(PlayEligibility(root,plan)==TKWoWInstallationOutdated);
+    NSData *planBytes=PlistBytes(plan);
+    RetryLosses=0;RetryDropRange=nil;
+    __block NSUInteger activations=0;__block BOOL sawDownload=NO;
+    TKWoWUpdater *updater=[[TKWoWUpdater alloc] initWithClient:client];
+    BOOL result=[updater updatePlan:plan root:root progress:^(NSString *phase,uint64_t done,uint64_t total){
+        (void)done;(void)total;
+        if([phase isEqual:@"activate"])activations++;
+        if([phase isEqual:@"download"]) {
+            sawDownload=YES;
+            assert([[NSData dataWithContentsOfFile:infoPath] isEqual:oldInfo]);
+            assert([[NSData dataWithContentsOfFile:exe] isEqual:old]);
+            assert(PlayEligibility(root,plan)==TKWoWInstallationOutdated);
+        }
+    } error:&error];
+    if(!result)fprintf(stderr,"Contract v1: %s\n",error.localizedDescription.UTF8String);
+    assert(result && sawDownload && activations==1);
+    assert([[NSData dataWithContentsOfFile:exe] isEqual:first]);
+    assert(PlayEligibility(root,plan)==TKWoWInstallationReady);
+    assert([PlistBytes(plan) isEqual:planBytes]);
+    assert(clock.delays.count==0);
+
+    // v2 adds an object. Its range transfer drops once: the retry must not
+    // re-verify, re-activate or change eligibility before the single activation.
+    publish(@"synthetic-2",@[firstRaw,secondRaw]);
+    NSDictionary *plan2=[client planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error];
+    assert(plan2 && !error);
+    assert(PlayEligibility(root,plan2)==TKWoWInstallationOutdated);
+    NSData *plan2Bytes=PlistBytes(plan2);
+    NSData *v1Info=[NSData dataWithContentsOfFile:infoPath],*v1Exe=[NSData dataWithContentsOfFile:exe];
+    RetryLosses=1;
+    RetryDropRange=[NSString stringWithFormat:@"bytes=%lu-%lu",(unsigned long)(37+firstRaw.length),
+        (unsigned long)(37+firstRaw.length+secondRaw.length-1)];
+    activations=0;sawDownload=NO;
+    TKWoWUpdater *updater2=[[TKWoWUpdater alloc] initWithClient:client];
+    result=[updater2 updatePlan:plan2 root:root progress:^(NSString *phase,uint64_t done,uint64_t total){
+        (void)done;(void)total;
+        if([phase isEqual:@"activate"])activations++;
+        if([phase isEqual:@"download"]) {
+            sawDownload=YES;
+            assert([[NSData dataWithContentsOfFile:infoPath] isEqual:v1Info]);
+            assert([[NSData dataWithContentsOfFile:exe] isEqual:v1Exe]);
+            assert(PlayEligibility(root,plan2)==TKWoWInstallationOutdated);
+        }
+    } error:&error];
+    if(!result)fprintf(stderr,"Contract v2: %s\n",error.localizedDescription.UTF8String);
+    assert(result && sawDownload && activations==1);
+    // The retry happened, exactly once, and it re-read no verified payload.
+    assert(RetryLosses==0 && [clock.delays isEqual:@[@1]]);
+    assert(updater2.verificationBytesRead==0 && updater2.verificationBytesReused>=firstRaw.length);
+    assert([[NSData dataWithContentsOfFile:exe] isEqual:first]);
+    assert(PlayEligibility(root,plan2)==TKWoWInstallationReady);
+    assert([PlistBytes(plan2) isEqual:plan2Bytes]);
+
+    // Exhausted retries change nothing either: the installed root, its metadata
+    // and Play eligibility are exactly the previously activated build.
+    publish(@"synthetic-3",@[firstRaw,secondRaw,third]);
+    NSDictionary *plan3=[client planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error];
+    assert(plan3 && !error);
+    NSData *v2Info=[NSData dataWithContentsOfFile:infoPath],*v2Exe=[NSData dataWithContentsOfFile:exe];
+    RetryLosses=100;RetryDropRange=nil;[clock.delays removeAllObjects];
+    TKWoWUpdater *updater3=[[TKWoWUpdater alloc] initWithClient:client];
+    result=[updater3 updatePlan:plan3 root:root progress:^(NSString *phase,uint64_t done,uint64_t total){
+        (void)phase;(void)done;(void)total;
+    } error:&error];
+    assert(!result && error);
+    assert(([clock.delays isEqual:@[@1,@2,@4,@8]]));
+    assert([[NSData dataWithContentsOfFile:infoPath] isEqual:v2Info]);
+    assert([[NSData dataWithContentsOfFile:exe] isEqual:v2Exe]);
+    assert(PlayEligibility(root,plan3)==TKWoWInstallationOutdated);
+    RetryLosses=0;RetryDropRange=nil;RetryResponses=nil;
+    assert([fm removeItemAtPath:base error:&error]);
+    puts("WoW startup contract PASS: a retried and an exhausted download leave metadata, verification, activation and Play eligibility unchanged, and activation happens once for the completed build.");
+}
+
 int main(void){@autoreleasepool{
     TestStorage();
+    TestStartupContract();
     TKUpdateClient *client=[TKUpdateClient new];NSData *old=Text(@"old code"),*original=Text(@"our own new code"),*raw=Wrap(original);
     NSData *asset=Wrap(Text(@"new asset")),*present=Wrap(Text(@"existing asset"));
     client.responses[TKWoWMD5(asset)]=asset;client.responses[TKWoWMD5(present)]=present;

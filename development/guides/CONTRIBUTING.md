@@ -3,6 +3,8 @@
 Thanks for helping. Start with the [repository workflow](REPOSITORY_WORKFLOW.md) and
 [project map](../architecture/PROJECT_MAP.md). The most useful contributions are focused
 WolkaraForever improvements, compatibility reports, and bounded device test results.
+[CONTRIBUTORS.md](../../CONTRIBUTORS.md) is the roster: who has contributed, what each did,
+and the repository access the account holds.
 
 ## Ground rules
 

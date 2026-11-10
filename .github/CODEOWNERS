@@ -1,8 +1,20 @@
-# Enforce these paths through the main-branch ruleset described in
-# development/guides/REPOSITORY_WORKFLOW.md. Replace @jklock with the maintainer account
-# or team that has accepted review responsibility before enabling required CODEOWNERS review.
+# Enforced by the main-branch ruleset described in
+# development/guides/REPOSITORY_WORKFLOW.md: required code-owner review is on, and @jklock is
+# the code owner for every path, so no pull request merges without the maintainer's approval.
 
 * @jklock
+
+# The WolkaraForever application UI is additive-only. These explicit paths keep UI-contract
+# review visible instead of relying on the catch-all above.
+/wolkaraforever/Shell/ @jklock
+/wolkaraforever/WoW/ @jklock
+/wolkaraforever/Voice/ @jklock
+/wolkaraforever/Touch/ @jklock
+/wolkaraforever/Controller/ @jklock
+/wolkaraforever/WoW/tests/ui-baselines/ @jklock
+/development/architecture/UI_POLICY.md @jklock
+/development/architecture/LAUNCHER_UI_BASELINE.md @jklock
+/development/reviews/ui/ @jklock
 
 # The upstream vendor tree and layer assembly boundary.
 /platform/ @jklock

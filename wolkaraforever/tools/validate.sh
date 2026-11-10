@@ -12,7 +12,7 @@
 # with its exit status, and the tail of what it printed. It refuses to run on a dirty
 # worktree unless told to, and says so in the file when it is.
 #
-#   wolkaraforever/tools/validate.sh [--allow-dirty] [--full] [--device] [--out <path>]
+#   wolkaraforever/tools/validate.sh [--allow-dirty] [--full] [--device] [--ui-review <record>] [--out <path>]
 #
 #   --full    also run the platform suites (test_emulation.sh, test_translation_sim.sh),
 #             which are the slow ones
@@ -25,12 +25,14 @@ root=$PWD
 allow_dirty=0
 full=0
 device=0
+ui_review=""
 out=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --allow-dirty) allow_dirty=1;;
         --full) full=1;;
         --device) device=1;;
+        --ui-review) shift; ui_review=${1:-};;
         --out) shift; out=${1:-};;
         *) echo "unknown option: $1" >&2; exit 2;;
     esac
@@ -218,6 +220,11 @@ run_platform_suite() {
 
 failures=0
 run_step "layer gate (check_layers.sh)" wolkaraforever/tools/check_layers.sh || failures=$((failures+1))
+if [ -n "$ui_review" ]; then
+    run_step "immutable launcher UI policy and matrix baselines" wolkaraforever/tools/check_ui_policy.sh --review "$ui_review" || failures=$((failures+1))
+else
+    run_step "immutable launcher UI policy and matrix baselines" wolkaraforever/tools/check_ui_policy.sh || failures=$((failures+1))
+fi
 run_step "validation distinguishes known failures from incomplete suites" wolkaraforever/tools/tests/test_validate.sh || failures=$((failures+1))
 run_step "install does the right thing per execution mode" wolkaraforever/tools/tests/test_after_install.sh || failures=$((failures+1))
 run_step "pilot.sh fails closed and keeps its own session" wolkaraforever/tools/tests/test_pilot.sh || failures=$((failures+1))
