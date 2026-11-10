@@ -268,6 +268,10 @@ static void TestConcurrentDownloads(void) {
     assert(![client downloadEntries:records plan:plan indices:indices consume:^BOOL(NSData *data,NSString *key,NSError **problem){
         (void)data;(void)key;(void)problem;[seen addObject:key];return YES;
     } error:&error]);
+    // NSURLSession may return the terminal transport error before its cancelled
+    // NSURLProtocol siblings run their stop-loading cleanup. Drain those scheduled
+    // fixture deliveries before asserting the protocol accounting boundary.
+    assert(!dispatch_group_wait(ProtocolDeliveries,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC)));
     assert(error && !seen.count && StartedRequests<=4 && !ActiveRequests);
     // Error state is scoped to this operation. A verified retry still works.
     ResetProtocol(responses);error=nil;

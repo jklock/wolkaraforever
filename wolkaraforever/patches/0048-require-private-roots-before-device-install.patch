@@ -1,0 +1,22 @@
+# A developer-service/local-signing device install must carry the private
+# build's public trust roots.  The rootless artifact belongs exclusively to
+# the public External-JIT packaging lane.
+--- a/tools/install.sh
++++ b/tools/install.sh
+@@ -43,5 +43,16 @@
+     build > "$LOG" 2>&1 \
+     || { grep -E "error:" "$LOG" | head -20; echo "BUILD FAILED -> $LOG"; exit 1; }
++ROOT_STORE="build/device/Build/Products/Release-iphoneos/Tolkara.app/CompatibilityRootCertificates.plist"
++if [ "${TOLKARA_SYSTEM_ROOTS:-YES}" = NO ]; then
++    echo "PRIVATE DEVICE INSTALL REFUSED: TOLKARA_SYSTEM_ROOTS=NO is only for the public IPA lane." >&2
++    exit 2
++fi
++if [ ! -s "$ROOT_STORE" ] || ! plutil -lint "$ROOT_STORE" >/dev/null; then
++    echo "PRIVATE DEVICE INSTALL REFUSED: missing or invalid CompatibilityRootCertificates.plist." >&2
++    echo "Build a private artifact with TOLKARA_SYSTEM_ROOTS=YES; the app was not installed." >&2
++    exit 1
++fi
++echo "Private trust store verified before device install."
+ xcrun devicectl device install app --device "$DEVICE" build/device/Build/Products/Release-iphoneos/Tolkara.app
+ case "${TOLKARA_MODE:-}" in
+ local-signing)

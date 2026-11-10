@@ -30,6 +30,16 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 
+# A private signed device build is allowed to use this Mac's public trust roots;
+# the public, redistributable IPA intentionally is not.  Never let a release-style
+# rootless artifact reach a user's device through this installer.
+if [ "${TOLKARA_SYSTEM_ROOTS:-YES}" = "NO" ]; then
+    echo "install: refusing TOLKARA_SYSTEM_ROOTS=NO for a private device install." >&2
+    echo "         Use wolkaraforever/tools/package_altstore_ipa.sh for the rootless public IPA lane." >&2
+    exit 2
+fi
+export TOLKARA_SYSTEM_ROOTS=YES
+
 replace_running=0
 force_kill=0
 build_only=0
@@ -190,6 +200,16 @@ step "2/$total build (the platform's own script)"
 # the visible app state in both the success and failure paths.
 [ "$build_only" = 1 ] || cleanup_needed=1
 tools/install.sh ${args[@]+"${args[@]}"}
+
+# The platform-side pre-deployment gate checks this too.  Keep a second check
+# here so --build-only proves the exact artifact before anybody chooses to
+# install it later.
+root_store="$ROOT/build/platform/build/device/Build/Products/Release-iphoneos/Tolkara.app/CompatibilityRootCertificates.plist"
+if [ ! -s "$root_store" ] || ! plutil -lint "$root_store" >/dev/null; then
+    echo "install: private build is missing a valid CompatibilityRootCertificates.plist; refusing to continue." >&2
+    exit 1
+fi
+echo "   private trust store: present and valid"
 
 if [ "$build_only" = 1 ]; then
     step "2/$total done: built, and the device was left alone"
