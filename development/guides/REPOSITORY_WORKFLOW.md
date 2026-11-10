@@ -10,9 +10,14 @@ engine and evidence that must remain tied to the exact build that ran.
 Apply these rules to `main` in GitHub. GitHub branch protection cannot be committed to this
 repository; this page is the authoritative configuration record.
 
-- Require a pull request before merging, with at least one approval.
-- Dismiss stale approvals when new commits are pushed; require conversation resolution and
-  the branch to be current with `main`.
+- Require a pull request before merging, with one approval **from the code owner**.
+  `.github/CODEOWNERS` names `@jklock` for every path and required code-owner review is on, so
+  no pull request reaches `main` without the maintainer's approval. Dismiss stale approvals when
+  new commits are pushed; require conversation resolution and the branch to be current with
+  `main`.
+- Enforced on the `main` ruleset since 2026-11-08: `required_approving_review_count` 1,
+  `require_code_owner_review` on, `dismiss_stale_reviews_on_push` on,
+  `required_review_thread_resolution` on, linear history, no force-push, no deletion.
 - No hosted CI. The verification is `wolkaraforever/tools/check_docs.sh` and
   `wolkaraforever/tools/check_layers.sh`, run locally before the PR is opened, with the results
   and the exact source SHA written into the PR. The **Verify** workflow was deleted on
@@ -24,8 +29,14 @@ repository; this page is the authoritative configuration record.
   the checks that run on Linux.
 - Require linear history; allow squash merges for ordinary PRs. Reserve merge commits for
   intentional integration branches.
-- Block force-pushes and branch deletion. The repository owner has the intentionally selected
-  normal bypass; every bypassed merge must still carry the PR's verification and risk record.
+- Block force-pushes and branch deletion for everyone, the owner included.
+- The maintainer (`@jklock`) is the only bypass actor, with bypass mode **pull requests only**:
+  the owner must still open a pull request — a direct push to `main` is refused for the owner
+  too, measured 2026-11-08 — and merges it with the admin override
+  (`gh pr merge <n> --squash --admin`, or the bypass option in the web UI), because GitHub does
+  not let anyone approve their own pull request. Nobody else has a bypass; a collaborator's
+  pull request stays unmergeable until the owner approves it, and every bypassed
+  merge still carries the PR's verification and risk record.
 - Enforce `.github/CODEOWNERS` for protected paths.
 - Enable GitHub secret scanning, push protection, Dependabot alerts, and private
   vulnerability reporting.
@@ -38,18 +49,32 @@ repository; this page is the authoritative configuration record.
    material, provisioning profiles, pairing records, device identifiers, or captures.
 4. Write small, imperative commits that can be reviewed independently. Do not mix upstream
    ingestion, product behavior, documentation-only work, and formatting cleanup.
-5. Rebase onto current `main`, resolve conflicts deliberately, and run the relevant checks
-   again before requesting review.
+5. Before review and again before merge, merge current `origin/main` into the original PR branch:
+
+   ```sh
+   git fetch origin --prune
+   gh pr checkout <number> --repo jklock/wolkaraforever
+   git merge --no-ff origin/main -m "merge: integrate current main for PR validation"
+   git status --short --branch
+   ```
+
+   Resolve conflicts on that branch and push normally. Record "Already up to date" when no
+   merge is required. Do **not** rebase, reset, force-push, rewrite branch history, or replace
+   the original pull request. The merge commit is integration evidence; the final PR still
+   squash-merges to `main`.
 6. The PR description must name the behavior changed, safety boundary, commands run and
    results, device coverage, and explicit remaining gaps. The template provides the format.
 
 ## Required verification
 
+Before any release verification, follow [Test execution protocol](TEST_EXECUTION_PROTOCOL.md).
+Focused fixtures must be green on the required matrix before baseline or integration work begins.
+
 | Change | Minimum verification |
 | --- | --- |
 | Any layer, patch, overlay, or `platform/`-adjacent change | `wolkaraforever/tools/check_layers.sh` plus focused tests |
 | User or developer documentation | `wolkaraforever/tools/check_docs.sh` and `git diff --check` |
-| WoW launcher, add-on, or Forever UI behavior | Owning `test_wow_launcher.sh`, `test_addon_archive.sh`, `test_curseforge.sh`, or `test_forever_ui.sh` |
+| WoW launcher, add-on, or Forever UI behavior | Owning suite plus `check_ui_policy.sh --review <record>`; existing baselines cannot change in an additive PR |
 | Touch, controller, or voice behavior | Owning simulator test plus physical confirmation when the claim concerns hardware behavior |
 | Runtime, authorization, translation, or cross-cutting behavior | `test_emulation.sh`; add `test_translation_sim.sh` when UIKit adapters changed |
 | Release candidate | Clean-tree `validate.sh --full`; add `--device` only for a coordinated device run |
@@ -65,12 +90,28 @@ the device in the report.
 
 ## Exact-SHA evidence and releases
 
-Run `wolkaraforever/tools/validate.sh` on a clean candidate after code is committed. It writes
+Run `wolkaraforever/tools/validate.sh --full --device --ui-review <record>` on a clean candidate
+after code is committed. It writes
 a scrubbed record under `development/validation/` and refuses to represent an uncommitted
 working tree as a commit. Never hand-edit generated validation records. A later device result
 does not validate an earlier SHA.
 
-For a release, tag the single tested SHA. Build, package, test, and publish from that SHA only.
+For a release, squash merge only after the integrated branch review is approved and every
+conversation is resolved:
+
+```sh
+gh pr merge <number> --repo jklock/wolkaraforever --squash --admin
+git fetch origin main
+git worktree add --detach ../wolkaraforever-postmerge-<number> origin/main
+cd ../wolkaraforever-postmerge-<number>
+wolkaraforever/tools/validate.sh --full --device --ui-review <record>
+git tag -a v<version> -m "release: <summary>"
+git push origin v<version>
+```
+
+The tag points to the exact tested squash-merge SHA. Commit the generated validation record
+after tagging; it must name that SHA. No later release branch starts until exact-main validation
+passes. Build, package, test, and publish from that SHA only.
 Inspect the failing CI job before changing another lane or retagging. The External JIT IPA
 workflow is manual and is never an automatic side effect of tagging.
 

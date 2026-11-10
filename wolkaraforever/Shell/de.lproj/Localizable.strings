@@ -576,3 +576,7 @@
 
 "home.status.paused" = "Prüfung pausiert";
 "home.status.paused.detail" = "Die Prüfung wird fortgesetzt, wenn du zu dieser Seite zurückkehrst.";
+"shell.repairRequired.title" = "Spieldateien müssen repariert werden";
+"shell.repairRequired.status" = "World of Warcraft meldete beschädigte Spieldateien.";
+"shell.repairRequired.message" = "World of Warcraft konnte nicht starten, weil installierte Daten beschädigt sind. Die Reparatur prüft die Spieldateien, lädt nur Ersatzdateien und behält Ihre Einstellungen und Add-ons.\n\nGemeldeter Fehler: %@";
+"shell.repairRequired.action" = "Spieldateien reparieren";

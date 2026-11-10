@@ -28,6 +28,11 @@ updates reuse checks for unchanged files, and long checks save their progress
 periodically so an unexpected app closure does not discard the whole scan.
 **Verify and repair game files** deliberately performs a full check.
 
+If World of Warcraft reports its documented damaged-installation condition, WolkaraForever
+shows the reported error in its own **Game files need repair** alert instead of leaving an
+unexplained game popup. Choose **Repair game files**; WolkaraForever closes the spent game
+session, and its next launch performs the full repair while preserving `WTF` and add-ons.
+
 For a ready Forever installation, changing the game language updates both `textLocale` and
 `audioLocale` in the game's configuration. If its installed files belong to another language,
 WolkaraForever marks the install as requiring a language update and downloads the selected-language
@@ -163,9 +168,30 @@ on the button bindings you use in the game.
 
 ## Help and safe recovery
 
-Open **Settings → Technical details** for the app's current state and an exact failure
-message. Include that message and a redacted log in a support report. Do not share account
-credentials, API keys, signing data, pairing material, or device identifiers.
+Open **Settings → Technical details** for the app's current state and exact failure message.
+Guest-owned alerts are recorded in the runtime log with a `[guest-alert]` marker and forwarded to
+the launcher log as `guest-error class=guest-alert`. A recognized damaged-installation error is
+recorded as `guest-error class=damaged-installation` and offers repair.
+
+### Issue reports
+
+Do not guess from a screenshot alone. Include all of the following:
+
+1. The exact **Technical details** message and any **Game files need repair** message.
+2. What you pressed, what you expected, what happened, and the local date/time and time zone.
+3. On a Mac with the iPad connected, run these read-only commands and attach the resulting
+   redacted output:
+
+   ```sh
+   wolkaraforever/tools/device_log.sh 400 '\\[guest-alert\\]|\\[host\\]|\\[native\\]|\\[wow-update\\]'
+   wolkaraforever/tools/pilot.sh log 400 'guest-error|fatal|error|failed'
+   ```
+
+   The first command saves the complete runtime record at
+   `build/device-log/native-guest.log` without stopping or restarting the app. The second reads
+   launcher events without touching game files. Redact account names, credentials, API keys,
+   signing data, pairing material, device identifiers, and unrelated personal paths before
+   posting. Do not edit timestamps, error lines, or the surrounding context.
 
 Do not delete the app as a first repair step: it removes downloaded game data and enrollment
 state. If a download or startup fails, reopen the app, preserve its data, and use the
