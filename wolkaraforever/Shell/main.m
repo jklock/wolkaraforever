@@ -26,6 +26,7 @@
 #import "StartupActivity.h"
 #import "WolkaraForeverConfig.h"
 #import "WolkaraForeverLog.h"
+#import "WolkaraForeverTheme.h"
 #import "WKLocalization.h"
 // Why the developer service refused, in the layer's own vocabulary. The sentence
 // is localized below; the layer's English text is only the fallback for a key the
@@ -648,6 +649,28 @@ static NSString *AKAudioStateDescription(void) {
     self.sessionUsed=YES;
     self.libraryController.notice=reason;
     self.wowController.sessionUsed=YES;
+}
+
+// A known guest failure is surfaced here, where the user can see the actual
+// error and choose a safe repair. The next process owns the repair because a
+// native guest session is deliberately single-use.
+- (void)presentDamagedInstallationRecovery:(NSString *)guestMessage {
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:WKLocalized(@"shell.repairRequired.title")
+        message:WKLocalizedFormat(@"shell.repairRequired.message",guestMessage)
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"shell.repairRequired.action") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        (void)action;
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"WoWInstallRequested.wowf"];
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"WoWRepairRequested.wowf"];
+        WKLog(@"wow", @"user accepted repair after guest reported damaged installation");
+        exit(0);
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.action.close") style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+        (void)action; exit(0);
+    }]];
+    UIViewController *presenter=self.wowController ?: self.window.rootViewController;
+    WKPreparePopupForPresentation(alert,presenter.view);
+    [presenter presentViewController:alert animated:YES completion:^{ WKConstrainPopupToScreen(alert,presenter.view); }];
 }
 
 #pragma mark Execution mode
@@ -1349,7 +1372,26 @@ static NSString *AKAudioStateDescription(void) {
         }
         fprintf(log,"[host] signed-image container=%s\n",shown.UTF8String); fflush(log);
     }
+    // A recovery marker belongs to this launch only. Clear an interrupted prior
+    // launch before entering native code, then consume the marker it produces.
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestAlert.Last"];
     BOOL ok = ng_initialize(path.fileSystemRepresentation, NSBundle.mainBundle.privateFrameworksPath.fileSystemRepresentation, map.fileSystemRepresentation, log, fullStartup);
+    NSString *guestDamage=[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
+    NSString *guestAlert=[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForever.GuestAlert.Last"];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestAlert.Last"];
+    if(fullStartup && guestDamage.length) {
+        fprintf(log,"[host] guest reported damaged installation; offering launcher repair\n"); fflush(log);
+        WKLog(@"wow", @"guest-error class=damaged-installation message=%@",guestDamage);
+        self.status.text=WKLocalized(@"shell.repairRequired.status");
+        [self showStartStopped];
+        [self presentDamagedInstallationRecovery:guestDamage];
+        return;
+    }
+    if(fullStartup && guestAlert.length) {
+        WKLog(@"wow", @"guest-error class=guest-alert message=%@",guestAlert);
+    }
     // The outcome as the host saw it (tools/run.sh requires "returned").
     fprintf(log,"[host] native %s %s\n",fullStartup?"startup":"first initializer",ok?"returned":"stopped"); fflush(log);
     self.status.text = ok ? (fullStartup ? [app.name stringByAppendingString:WKLocalized(@"shell.closed")] : WKLocalized(@"shell.firstInitializer")) : WKLocalized(@"shell.nativeStopped");

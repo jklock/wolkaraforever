@@ -106,4 +106,5 @@ Continue with [Using WolkaraForever](USING_WOLKARAFOREVER.md).
 | Startup appears stalled | Keep the app foregrounded for several minutes. If it fails, reopen the app rather than deleting it. |
 
 For support, provide the exact Technical details message and a redacted log—never credentials,
-pairing records, provisioning data, or a device identifier.
+pairing records, provisioning data, or a device identifier. The complete issue-report commands
+and required context are in [Help and safe recovery](USING_WOLKARAFOREVER.md#help-and-safe-recovery).
