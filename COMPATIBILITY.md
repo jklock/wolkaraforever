@@ -60,7 +60,7 @@ The dated record for that run is
 the commands with captured success exits from the observed self-test results in the matrix;
 the matrix runner's final terminal exit was not retained by the host capture.
 
-### Not run, and deliberately not claimed
+### Not run in the `96133d9` validation
 
 - **Human full-game.** No launch, login, in-world session, performance measurement, or
   gameplay check was part of this work. Nothing here says the game works.
@@ -77,6 +77,26 @@ the matrix runner's final terminal exit was not retained by the host capture.
   iPadOS reports for a particular pad's buttons.
 - **The store and the account.** No install, update or repair was performed against the
   client's own files.
+
+### 2026-11-09: interrupted download on iPad
+
+Source revision `ad62d239fea9da8acf628aaca5f51ea7e886e115`, built with Xcode 27.2, was installed
+on an **iPad Pro 12.9-inch (5th generation), iPadOS 27.0**, in **Developer service** mode.
+The preceding build stopped twice on request timeouts during a fresh US English download of
+**Forever 1.60.1.70862**. The replacement preserved the partial installation, downloaded the
+remaining 42.16 GB of the 50.70 GB client, and reported `InstallationReady` with no error.
+
+Device Hub showed the completed launcher, the opening cinematic, and the login screen.
+Touch-trackpad navigation dismissed the first-run narration prompt. No error file or crash
+report was present while the login screen was running. This does not establish that a
+network retry occurred during the successful download; transient retry behavior is covered
+by synthetic transport tests. A subsequent sign-in passed the authenticator-code prompt and
+reached **Choose Your Experience Preset**, observed through Device Hub. In-world gameplay
+was not tested.
+
+In a separate earlier check, **Leave game** produced an `EXC_BAD_ACCESS` report during guest
+finalization through `exit()`. The download-retry change does not modify that shutdown path. Reopening
+WolkaraForever returned to its **Ready to play** launcher.
 
 ## Before you rely on it
 
