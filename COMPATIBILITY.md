@@ -60,7 +60,7 @@ The dated record for that run is
 the commands with captured success exits from the observed self-test results in the matrix;
 the matrix runner's final terminal exit was not retained by the host capture.
 
-### Not run, and deliberately not claimed
+### Not run in the `96133d9` validation
 
 - **Human full-game.** No launch, login, in-world session, performance measurement, or
   gameplay check was part of this work. Nothing here says the game works.
@@ -77,6 +77,21 @@ the matrix runner's final terminal exit was not retained by the host capture.
   iPadOS reports for a particular pad's buttons.
 - **The store and the account.** No install, update or repair was performed against the
   client's own files.
+
+### 2026-11-09: repeated physical-trackpad camera drags
+
+Source revision `d6fc0bb9b1ba3c683c52c0dbdc853d0c8f74f8ea`, built with Xcode 27.2, was installed
+on an **iPad Pro 12.9-inch (5th generation), iPadOS 27.0**, in **Developer service** mode,
+with **Forever 1.60.1.70862**. Device Hub showed the updated launcher at **Ready to play**.
+The user then confirmed that **three consecutive click-hold-drag-release cycles on a physical
+trackpad moved the camera continuously while held**, rather than updating only on release.
+
+The matching regression passed 18 held-button cases on the **iPad Pro 13-inch (M5) simulator**:
+left, right, and middle buttons; empty, busy, and blocking event queues; two consecutive cycles
+per case. Native editor/settings tracking and the UIKit adapter suite also passed. This is a
+bounded input result, not a latency measurement or a long-session stability result. The
+physical run used the revision named above; the later standalone PR branch was not installed
+on the device. Its trackpad implementation and tests are byte-identical to that revision.
 
 ## Before you rely on it
 
