@@ -49,6 +49,7 @@ run_test_tool() {
     env DEVICE="$test_device" DEVELOPMENT_TEAM="$test_team" \
         TOLKARA_BUNDLE_ID="$test_bundle" TOLKARA_KEYCHAIN_GROUP="$test_group" \
         TOLKARA_DISPLAY_NAME="$test_display" \
+        PILOT_TEST_INSTALL=I_CONFIRM_TEST_BUNDLE_ONLY \
         "$root/wolkaraforever/tools/$command.sh" "$@"
 }
 
