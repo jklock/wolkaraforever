@@ -1,19 +1,27 @@
 #!/bin/bash
-# Put mutable CoreSimulator device data in an APFS sparse bundle on Storage, and
-# make sure the two matrix simulators exist.
+# Make sure the two matrix simulators exist, and refuse the storage layout that
+# is known not to work.
 # usage: wolkaraforever/tools/setup_simulators.sh --apply
 #
-# CoreSimulatorService cannot write directly to an external USB path, even via a
-# symlink or simctl --set. A native APFS disk-image mount works: the sparse
-# bundle's blocks live on Storage while CoreSimulator sees an APFS mount at its
-# required local path. Xcode's sealed simulator runtimes remain Apple-managed.
+# Device data stays where CoreSimulator puts it: a real directory at
+# ~/Library/Developer/CoreSimulator on the boot volume. An APFS sparse bundle
+# mounted there was tried and is withdrawn - it is not a supported layout, and
+# it does not merely fail: every device booted from it hangs for ever at the
+# Apple logo. SpringBoard gets a PID, com.apple.springboard.services never
+# registers, `simctl io screenshot` returns a static frame and writes stop dead,
+# while the same runtime on the same device on the boot volume reaches its home
+# screen in seconds. `simctl bootstatus -b` then hangs too, so the fault reads
+# as "a slow boot" rather than as the layout. Proven on 2026-11-06 by booting a
+# throwaway device in a device set on the boot disk and comparing the two.
+# See development/guides/BUILDING.md.
 #
 # The test matrix is three devices and no others (see
-# development/architecture/DEVICE_CONTRACT.md):
+# development/architecture/DEVICE_CONTRACT.md). The two simulators are the
+# requirement; the physical iPad is nice to have and no simulator is involved:
 #
-#   1. iPhone Duo                    - simulator, ensured here
-#   2. iPad Pro 13-inch (M5)         - simulator, ensured here
-#   3. iPad Pro 12.9-inch (5th gen)  - the physical iPad, no simulator involved
+#   1. iPhone Duo                    - simulator, required, ensured here
+#   2. iPad Pro 13-inch (M5)         - simulator, required, ensured here
+#   3. iPad Pro 12.9-inch (5th gen)  - the physical iPad, nice to have
 #
 # So this script creates, at most, those two simulators. It deletes nothing and
 # shuts nothing down: a simulator already carrying a matrix name is reused as it
@@ -24,65 +32,50 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/simulators.sh
 
-storage_image=/Volumes/Storage/Simulators.sparsebundle
 mount_root="$HOME/Library/Developer/CoreSimulator"
-launch_agent="$HOME/Library/LaunchAgents/com.wolkaraforever.coresimulator-storage.plist"
+legacy_image=/Volumes/Storage/Simulators.sparsebundle
+legacy_agent="$HOME/Library/LaunchAgents/com.wolkaraforever.coresimulator-storage.plist"
 
 if [ "${1:-}" != --apply ] || [ "$#" -ne 1 ]; then
     echo "usage: wolkaraforever/tools/setup_simulators.sh --apply" >&2
     exit 2
 fi
-[ -d /Volumes/Storage ] && [ -w /Volumes/Storage ] || {
-    echo "setup_simulators: /Volumes/Storage is not writable" >&2
+
+# A machine still carrying the withdrawn layout would have this script report
+# success while every suite it enables hangs, so it stops and says how to get
+# out instead. Nothing is moved or detached here: a live mount point and the
+# user's device data are theirs to change, and the commands below are exact.
+legacy=
+case "$(diskutil info "$mount_root" 2>/dev/null || true)" in
+    *Protocol:*"Disk Image"*) legacy="a disk image is mounted at $mount_root";;
+esac
+if [ -z "$legacy" ] && [ -e "$legacy_agent" ]; then
+    legacy="$legacy_agent still attaches one at login"
+fi
+if [ -n "$legacy" ]; then
+    cat >&2 <<EOF
+setup_simulators: this Mac still uses the withdrawn storage layout: $legacy.
+
+That layout is why a simulator boot hangs at the Apple logo for ever, and this
+script will not add to it. To go back to the supported one:
+
+  launchctl bootout gui/\$(id -u)/com.wolkaraforever.coresimulator-storage 2>/dev/null || true
+  mv "$legacy_agent" "$legacy_agent.disabled"
+  hdiutil detach "$mount_root"          # only if the image is attached
+  # the device data on the image is the same shape CoreSimulator expects:
+  # copy it back into a real directory at \$HOME/Library/Developer/CoreSimulator
+
+Then run this script again. The image at $legacy_image is left alone:
+deleting it is your call, and nothing here needs it.
+EOF
     exit 1
-}
+fi
+
 [ ! -L "$mount_root" ] || {
     echo "setup_simulators: refusing symlinked $mount_root; restore a real directory first" >&2
     exit 1
 }
-
-mounted=0
-backup_root=
-rollback() {
-    local exit_status=$?
-    trap - ERR
-    if [ "$mounted" = 1 ]; then hdiutil detach "$mount_root" >/dev/null 2>&1 || true; fi
-    if [ -n "$backup_root" ] && [ -d "$backup_root" ]; then
-        rmdir "$mount_root" >/dev/null 2>&1 || true
-        mv "$backup_root" "$mount_root"
-    fi
-    exit "$exit_status"
-}
-trap rollback ERR
-
-# `hdiutil info | grep -q` reads as a mount test and is not one under pipefail:
-# grep -q exits at the first match, hdiutil then dies of SIGPIPE, and the
-# pipeline reports failure for an image that is attached - which sent the old
-# script down the unattach branch to move a live mount point aside. Match in the
-# shell instead, where there is no pipe to break.
-amount=$(hdiutil info 2>/dev/null || true)
-case "$amount" in
-    *"$storage_image"*) ;;
-    *)
-        backup_root="$HOME/Library/Developer/CoreSimulator.pre-storage-$(date +%Y%m%d-%H%M%S)"
-        mv "$mount_root" "$backup_root"
-        mkdir "$mount_root"
-        if [ ! -e "$storage_image" ]; then
-            hdiutil create -size 150g -type SPARSEBUNDLE -fs APFS \
-                -volname WolkaraSimulatorStorage "$storage_image" >/dev/null
-        fi
-        hdiutil attach -nobrowse -mountpoint "$mount_root" "$storage_image" >/dev/null
-        mounted=1
-        ;;
-esac
-
-case "$(diskutil info "$mount_root" 2>/dev/null || true)" in
-    *Protocol:*"Disk Image"*) ;;
-    *)
-        echo "setup_simulators: $mount_root is not the Storage-backed disk image" >&2
-        exit 1
-        ;;
-esac
+mkdir -p "$mount_root"
 
 # The UDID of a device whose name starts with this one, or nothing.
 device_udid() {
@@ -143,28 +136,12 @@ ensure_device() {
 ensure_device ipad com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-16GB "$WOLKARA_MATRIX_IPAD"
 ensure_device iphone com.apple.CoreSimulator.SimDeviceType.iPhone-Duo "$WOLKARA_MATRIX_IPHONE"
 
-mkdir -p "$(dirname "$launch_agent")"
-cat > "$launch_agent" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.wolkaraforever.coresimulator-storage</string>
-  <key>ProgramArguments</key><array>
-    <string>/usr/bin/hdiutil</string><string>attach</string><string>-nobrowse</string>
-    <string>-mountpoint</string><string>$mount_root</string><string>$storage_image</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-</dict></plist>
-PLIST
-
-# Keep the old device set recoverable until the user empties Trash.
-if [ -n "$backup_root" ]; then mv "$backup_root" "$HOME/.Trash/$(basename "$backup_root")"; fi
-trap - ERR
 cat <<EOF
-setup_simulators: device data is in $storage_image (mounted at $mount_root)
+setup_simulators: device data stays at $mount_root on the boot volume
 
-The test matrix is these three devices and no others:
-  1. $WOLKARA_MATRIX_IPHONE  (simulator)
-  2. $WOLKARA_MATRIX_IPAD  (simulator)
-  3. $WOLKARA_MATRIX_PHYSICAL  (hardware, through device_matrix.sh)
+The test matrix is these three devices and no others. The two simulators are the
+requirement; the physical iPad is nice to have:
+  1. $WOLKARA_MATRIX_IPHONE  (simulator, required)
+  2. $WOLKARA_MATRIX_IPAD  (simulator, required)
+  3. $WOLKARA_MATRIX_PHYSICAL  (hardware, nice to have, through device_matrix.sh)
 EOF
