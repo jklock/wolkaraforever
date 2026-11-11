@@ -113,6 +113,15 @@ static BOOL AnimatingUnder(CALayer *layer) {
     for (CALayer *child in layer.sublayers) if (AnimatingUnder(child)) return YES;
     return NO;
 }
+// Every animation in a layer's tree, gone. A busy indicator fades its spokes as it turns, so a
+// picture of it stopped mid-turn shows whichever spoke happened to be bright: measured on the iPad
+// matrix on 2026-11-10, two runs of the same state differed in 339 pixels, all of them in the
+// indicator. With the fades removed every spoke is drawn at its own strength, the indicator is
+// still there and still visible, and the picture is the same one every run.
+static void RemoveAnimations(CALayer *layer) {
+    [layer removeAllAnimations];
+    for (CALayer *child in layer.sublayers) RemoveAnimations(child);
+}
 static NSString *ButtonTitle(UIButton *button) {
     return button.configuration.title ?: [button titleForState:UIControlStateNormal] ?: button.titleLabel.text;
 }
@@ -1004,19 +1013,6 @@ static void TestPhoneDisplayDefaults(void) {
     assert([[self status] isEqual:@"Updating your game…"]);
     // The phase, then the counts, and nothing after them: one report is not a rate.
     assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB"]);
-    // The rate the suite proves - four megabytes a second - and the estimate that follows: 30 GB
-    // left at 4 MB/s is two hours five minutes.
-    [self.controller setValue:@(4.0) forKey:@"_downloadMBps"];
-    [self.controller render];
-    assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB · 4.0 MB/s · ~2h 5m left"]);
-    // The words on the primary button crossfade when the phase changes, and a draw with the
-    // window's clock held still renders that crossfade at its beginning - the old words. Measured
-    // on 2026-11-10: a picture taken at this point held "Checking…" under a status line that
-    // already read "Updating your game…". Wait for the crossfade to finish; measured, the two
-    // animated layers are gone 0.4 s later. Waiting here rather than in `capture:` keeps every
-    // other picture in this file exactly as it was recorded.
-    PumpUntil(^{ return (BOOL)!AnimatingUnder([self primary].layer); }, 3.0);
-    [self capture:@"wow-downloading.png"];
     // Past a day the estimate is withheld and the rate still stands.
     [self.controller setValue:@(0.1) forKey:@"_downloadMBps"];
     [self.controller render];
@@ -1025,6 +1021,26 @@ static void TestPhoneDisplayDefaults(void) {
     [self.controller setValue:@(0.0) forKey:@"_downloadMBps"];
     [self.controller render];
     assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB"]);
+    // Now the state the picture shows: the rate the suite proves - four megabytes a second - and
+    // the estimate that follows, 30 GB left at that rate being two hours five minutes. Pinned last,
+    // after the three cases above, so nothing intervenes between the state this asserts and the
+    // draw that follows it.
+    [self.controller setValue:@(4.0) forKey:@"_downloadMBps"];
+    [self.controller render];
+    // The words on the primary button crossfade when the phase changes, and a draw with the
+    // window's clock held still renders that crossfade at its beginning - the old words. Measured
+    // on 2026-11-10: a picture taken at this point held "Checking…" under a status line that
+    // already read "Updating your game…". Wait for the crossfade to finish; measured, the two
+    // animated layers are gone 0.4 s later. Waiting here rather than in `capture:` keeps every
+    // other picture in this file exactly as it was recorded.
+    PumpUntil(^{ return (BOOL)!AnimatingUnder([self primary].layer); }, 3.0);
+    NSMutableArray<UIActivityIndicatorView *> *busy=[NSMutableArray array];
+    CollectActivityIndicators(self.window, busy);
+    for (UIActivityIndicatorView *indicator in busy) RemoveAnimations(indicator.layer);
+    // The picture is only evidence of the state it claims if the state is still that one at the
+    // draw: this is the same sentence as above, asked again last.
+    assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB · 4.0 MB/s · ~2h 5m left"]);
+    [self capture:@"wow-downloading.png"];
     // Let the held update finish, and the state goes with it.
     atomic_store(&holdUpdate,false);
     assert(PumpUntil(^{ return (BOOL)[[self status] isEqual:@"Ready to play"]; }, 30.0));
