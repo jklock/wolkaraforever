@@ -45,12 +45,13 @@ image at `~/Library/Developer/CoreSimulator`. CoreSimulator therefore sees its
 required native local APFS mount while the image and all simulator device data
 live on Storage.
 
-The test matrix is three devices and no others, and the script ensures only the
-two simulators among them:
+The test matrix is three devices and no others. The two simulators among them are the
+requirement; the physical iPad is nice to have, and the script ensures only the two
+simulators:
 
-- `iPad Pro 13-inch (M5)` — simulator
-- `iPhone Duo` — simulator
-- `iPad Pro 12.9-inch (5th generation)` — the physical iPad, no simulator
+- `iPad Pro 13-inch (M5)` — simulator, required
+- `iPhone Duo` — simulator, required
+- `iPad Pro 12.9-inch (5th generation)` — the physical iPad, no simulator, nice to have
 
 It creates each one only if it is not already there. A device it creates is boot-checked once
 and shut down again; a device that already exists is reported and left exactly as it is. It

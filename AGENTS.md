@@ -75,21 +75,24 @@ physical claims require the installed build, device, iPadOS, client build, and e
 
 ## Test devices
 
-**We test on three devices and nothing else.** One change is measured on these three, and a
-result from any other device is not evidence:
+**The two simulators are the requirement; the iPad is nice to have.** Every change is
+measured on both matrix simulators, and a result from any other device is not evidence.
+A run on the physical iPad is welcome, recorded when it happens, and never blocks a
+release:
 
-1. **iPhone Duo** — simulator.
-2. **iPad Pro 13-inch (M5)** — simulator.
-3. **iPad Pro 12.9-inch (5th generation)** — the physical iPad, reached through
-   `wolkaraforever/tools/` (never raw `devicectl`).
+1. **iPhone Duo** — simulator. Required.
+2. **iPad Pro 13-inch (M5)** — simulator. Required.
+3. **iPad Pro 12.9-inch (5th generation)** — the physical iPad, nice to have, reached
+   through `wolkaraforever/tools/` (never raw `devicectl`).
 
 Do not create a simulator. `wolkaraforever/tools/setup_simulators.sh --apply` creates at most
 those two simulators and never deletes one. Every suite resolves its device through
 `wolkaraforever/tools/simulators.sh`, which refuses anything off this list rather than
 substituting the nearest iPad or iPhone, so `SIMULATOR=` cannot widen the matrix either.
-When a result is reported, name which of the three ran; a fixture pass with no device name is
-a sentence nobody can check. Adding a fourth device is a decision for the maintainer, not a
-local convenience.
+When a result is reported, name which device ran; a fixture pass with no device name is
+a sentence nobody can check. A missing iPad run is not a failed run — say "simulators
+only" plainly, and never present a simulator result as a physical one. Adding a fourth
+device is a decision for the maintainer, not a local convenience.
 
 ## Runtime & Security Constraints
 
