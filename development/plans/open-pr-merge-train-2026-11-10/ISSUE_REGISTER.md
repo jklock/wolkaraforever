@@ -67,3 +67,50 @@ Add every review comment, test failure, head change, baseline difference, and de
   `pilot.sh state` before and after each test-app operation reports the same app, zero error files
   and no update writes. The download state itself cannot be produced on the device - the test
   installation's game is up to date - so it is evidenced by the two committed baselines.
+
+## R-004 — #37 patch names (closed 2026-11-10)
+
+- #37 head moved from `f0c1160` to `13ded3d` by normal merge (`c0c8f28`, current `origin/main`
+  `9059a85`) plus one scope commit and one changelog commit. No rebase, reset or force-push; the
+  PR had no review conversation at either head. The branch is `Morv:fix/external-jit-enabler-arena`
+  in `Morv/wolkaraforever-fork` and is pushed normally.
+- The PR's `0048`/`0049` collided with main's `0048-require-private-roots-before-device-install`
+  and `0049-show-guest-alert-accessory-text`. They are now `0050-external-jit-clear-enabler-arena`
+  and `0051-external-jit-unprepared-high-region`, as `RELEASE_SEQUENCE.md` allocated, and
+  `check_layers.sh` reports 50 patches applying cleanly.
+- Scope kept, exactly as the plan asked: clearing the enabler's arena before the image is placed,
+  and giving back a region granted but not prepared. The original `0048` also unmapped the unused
+  tail of the launch reservation (`nc_trim`); that is a memory measure, not part of either crash,
+  so it is dropped rather than carried. Nothing else from the PR was removed.
+- The debugger ban is unchanged: `0051` only refuses a region before it is adopted, and
+  `da_entry_allowed` still ends every route into guest code with a detach.
+
+## R-008 — #37 physical External JIT evidence (2026-11-11)
+
+- Enabler: StikDebug 3.2.2 (`com.stik.stikdebug.7DJ75AWV5R`) on the test iPad, iPad Pro
+  12.9-inch 5th generation, iPadOS 27.2, paired on-device, LocalDevVPN up, its bundled
+  `universal.js` (the script that services `brk #0xf00d`, `x16=1` prepare region, `x16=0`
+  detach) selected for the test bundle.
+- Test bundle: `local.wolkaraforever.johnklock.test`, built from this branch with patches
+  0050/0051 applied, development-signed (`get-task-allow`, both memory capabilities), installed
+  by `devicectl`. The stable installation was never targeted: its state reads the same before
+  and after (no error file, no crash report, no update write).
+- **0051 is proven on the device.** The launcher log records the reported fault being handled:
+  `[debugger] requesting 1073741824 bytes, attempt 1`; `region 0x7000000000 of 1073741824 bytes
+  was granted but not prepared: it lies past the addresses the enabler writes to; given back`;
+  `requesting 536870912 bytes, attempt 1`; `arena rx=0x109ef0000 ... protection=0x1`.
+- **External JIT itself starts on the device.** In the final run the app came up in
+  `execution mode=external-jit source=saved`, logged `[debugger] nothing has prepared this
+  process; not trapping`, `[native] arena prepared outside this app address=0x10a8ac000
+  size=99532800`, `[native] arena protection 0x5`, `[native] arena ready base=0x10a8ac000`, and
+  its own diagnostics page reported 94.9 MiB of guest memory, 13,305 initializers and "Memory
+  emulation checks passed".
+- **Open, and outside this PR:** the enabler-provided arena does not survive the detach on this
+  device. The same run that proved 0051 then logged `the arena is no longer executable
+  (protection 0x1)` and `the reserved arena did not survive the detach`, so the runtime refused
+  entry and the app fell back to mapping its own arena. `protection=0x5` in the contributor's
+  log from the same enabler version means this is a device/enabler difference, not a regression
+  from 0050/0051, and `da_release_debugger` behaved exactly as designed by refusing it. Because
+  of it, **0050 was not exercised end-to-end on the device**; it is covered by the platform
+  suite (`PASS: device-sized arena limit, adopted regions cleared before use`) and by the
+  contributor's fifteen clean starts.
