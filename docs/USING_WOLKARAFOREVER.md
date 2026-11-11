@@ -18,10 +18,29 @@ prepares a launch. The screen stays awake during a file check. Brief interruptio
 such as opening Control Centre do not cancel it. Switching to another app pauses
 unfinished work; returning to the home page resumes it without starting the game.
 
+If a connection drops or times out, the launcher retries the affected request after
+1, 2, 4, and 8 seconds. Only that request waits: the rest of the download keeps
+going. A retried request discards the part it had already received and asks for its
+range again. If all four retries fail, tap **Try again**. Nothing already verified
+is downloaded again, and a retry never activates an update on its own. For the same
+build and game language, the updater reuses verified data saved on the device. The
+total shown under **Downloading new data** is what remains for the current attempt.
+
+During **Downloading new data**, the byte counts are followed by the recent verified
+download speed in MB/s, averaged over roughly 30 seconds, and an estimated time
+remaining at that speed. Both are left out while the app has not yet measured a
+second of transfer, while no bytes are arriving, and when the estimate is more than a
+day away.
+
 The first check of an imported installation still reads its game data. Later
 updates reuse checks for unchanged files, and long checks save their progress
 periodically so an unexpected app closure does not discard the whole scan.
 **Verify and repair game files** deliberately performs a full check.
+
+If World of Warcraft reports its documented damaged-installation condition, WolkaraForever
+shows the reported error in its own **Game files need repair** alert instead of leaving an
+unexplained game popup. Choose **Repair game files**; WolkaraForever closes the spent game
+session, and its next launch performs the full repair while preserving `WTF` and add-ons.
 
 For a ready Forever installation, changing the game language updates both `textLocale` and
 `audioLocale` in the game's configuration. If its installed files belong to another language,
@@ -162,9 +181,30 @@ on the button bindings you use in the game.
 
 ## Help and safe recovery
 
-Open **Settings → Technical details** for the app's current state and an exact failure
-message. Include that message and a redacted log in a support report. Do not share account
-credentials, API keys, signing data, pairing material, or device identifiers.
+Open **Settings → Technical details** for the app's current state and exact failure message.
+Guest-owned alerts are recorded in the runtime log with a `[guest-alert]` marker and forwarded to
+the launcher log as `guest-error class=guest-alert`. A recognized damaged-installation error is
+recorded as `guest-error class=damaged-installation` and offers repair.
+
+### Issue reports
+
+Do not guess from a screenshot alone. Include all of the following:
+
+1. The exact **Technical details** message and any **Game files need repair** message.
+2. What you pressed, what you expected, what happened, and the local date/time and time zone.
+3. On a Mac with the iPad connected, run these read-only commands and attach the resulting
+   redacted output:
+
+   ```sh
+   wolkaraforever/tools/device_log.sh 400 '\\[guest-alert\\]|\\[host\\]|\\[native\\]|\\[wow-update\\]'
+   wolkaraforever/tools/pilot.sh log 400 'guest-error|fatal|error|failed'
+   ```
+
+   The first command saves the complete runtime record at
+   `build/device-log/native-guest.log` without stopping or restarting the app. The second reads
+   launcher events without touching game files. Redact account names, credentials, API keys,
+   signing data, pairing material, device identifiers, and unrelated personal paths before
+   posting. Do not edit timestamps, error lines, or the surrounding context.
 
 Do not delete the app as a first repair step: it removes downloaded game data and enrollment
 state. If a download or startup fails, reopen the app, preserve its data, and use the

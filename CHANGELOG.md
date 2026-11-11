@@ -13,6 +13,33 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **The game's window is the size of the game's content, from the first frame.** AppKit
+  documents that the content view "is resized to fit precisely within the content area of
+  the window", and the adapter only did that once the window had a host view. A view made
+  by `-[NSView init]` therefore stayed 0×0 until the window was on screen, so a guest that
+  sizes its window right after `setContentView:` — which Forever 1.60.1 does, before
+  showing it — read `convertSizeToBacking:{0, 0}`, clamped its window to its 320×240
+  minimum, and grew the height 0.5 pt per pass for about three seconds. Its `CAMetalLayer`
+  ended up 320 wide and ~4.69 million points tall, and the render target was 320 pixels
+  wide. `setContentView:` now sizes the view to the content rect when there is no host
+  yet; with a host, `ak_attach` still sizes it from the host's bounds (patch 0054). The
+  layer's own test runs on both matrix simulators and fails against the unpatched adapter.
+- **External JIT: a JIT enabler's memory is cleared before the game is placed in it.** The
+  runtime assumed the region an enabler hands back is zero-filled, but StikDebug writes one
+  byte, `0x69`, at the start of every page it prepares. Only the pages the game image has bytes
+  for were written afterwards, so every zero-initialised page of the image began with that
+  byte. Reported on an iPhone Duo outside this project's test matrix (iOS 27.2, AltStore with
+  a free Apple ID, StikDebug 3.2.2): Forever 1.60.1 (70862) closed about 35 seconds after its
+  window appeared, on every launch, with `ERROR #132` at address `0x71`. The image's extent is
+  now cleared through the writable view before the image is placed across it (patch 0050).
+- **External JIT: memory an enabler granted but never prepared is handed back.** Reported on
+  the same phone: about one launch in three closed the moment the game was entered. StikDebug,
+  and the StikJIT library other enablers share, write their page-preparation packets with nine
+  hex digits of address, so a region at or above 2^36 is granted and reported ready while the
+  writes go elsewhere. The kernel puts the region there, at `0x7000000000`, whenever nothing
+  lower down has room for it, and the launch reservation asks for up to 1 GiB. Such a region
+  is now given back and a smaller one asked for, and what was asked and granted is written to
+  `wolkaraforever.log` under `[jit]` (patch 0051).
 - **One test matrix: three devices, enforced by the tools.** The suites used to take whichever
   iPad or iPhone happened to be installed, and to keep trying devices until one booted. Now
   `wolkaraforever/tools/simulators.sh` names the only devices this project measures —

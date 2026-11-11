@@ -1,0 +1,111 @@
+# WolkaraForever layer patch 0050 - runtime: an enabler's arena is not zeroed memory
+#
+# Why: External JIT assumed the region a JIT enabler hands back is fresh,
+# zero-filled memory. But preparing a page means writing to it: StikDebug stores
+# one byte, 0x69, at the start of every page it prepares (the "$M<address>,1:69"
+# packets built in its JSSupport/JSDebugSupport.swift), and the runtime then wrote
+# only the pages the image has bytes for. Every page of the image's zero-fill
+# therefore began with 0x69 instead of 0.
+#
+# What was observed (2026-11-09, iPhone Duo, iOS 27.2, External JIT: AltStore with
+# a free Apple ID, StikDebug 3.2.2 running its universal.js script, World of
+# Warcraft Forever 1.60.1 build 70862): every launch reached the game window and
+# closed about 35 seconds later. The client's own error report was the same twelve
+# times out of twelve: ERROR #132, EXC_BAD_ACCESS at 0x71 in frame 1, with 0x69 in
+# the register the address was formed from. 0x71 is 0x69 + 8: a field of an object
+# whose pointer the client expected to be zero-initialised and read as 0x69.
+#
+# With this patch the same device logs
+#   [native] enabler arena cleared for 99532800 bytes
+# writes no error report and reaches the login screen.
+#
+# What it does: the image's extent is cleared through the writable view before
+# the image is placed, both for the arena reserved at launch and for one
+# requested later. The region beyond the image's extent is left as the enabler
+# touched it, because the image is never placed there; the reservation is not
+# trimmed (that is a separate memory measure and not part of this fix).
+#
+# The new block runs only for a region that came from da_request_arena or from a
+# reservation it made. The Developer service, Local signing and simulator routes
+# do not reach it.
+#
+# Applies to: runtime/NativeGuest.m, tests/test_native_memory.c
+# Upstream: candidate.
+
+diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
+index a306b44..07bd17c 100644
+--- a/runtime/NativeGuest.m
++++ b/runtime/NativeGuest.m
+@@ -1724,7 +1724,7 @@ bool ng_initialize(const char *path, const char *frameworks, const char *library
+         LOG("[native] the arena reserved earlier (%zu bytes) is not used; given back\n",reserved_arena.size);
+         nc_destroy(&reserved_arena);
+     }
+-    bool take_reserved=reserved==NG_RESERVED_TAKE;
++    bool take_reserved=reserved==NG_RESERVED_TAKE, enabler_arena=false;
+     startup_begin(signed_backend?"mapping the signed page container":"preparing execution memory",0);
+     if (signed_backend)
+         arena_ready=signed_image_prepare(guest.base+total,error,sizeof error);
+@@ -1733,17 +1733,25 @@ bool ng_initialize(const char *path, const char *frameworks, const char *library
+         arena_ready=nc_create_managed(&guest.arena,total,TKPrepareLocalArena,NULL,&local_quarantine);
+ #endif
+     else if(take_reserved) {
+-        guest.arena=reserved_arena; reserved_arena=(NativeCodeMemory){0}; arena_ready=true;
++        guest.arena=reserved_arena; reserved_arena=(NativeCodeMemory){0}; arena_ready=true; enabler_arena=true;
+         LOG("[native] using the arena reserved earlier: %zu bytes\n",guest.arena.size);
+     }
+     else if(external) {
+         // An enabler first; otherwise an arena of our own.
+-        arena_ready=da_request_arena(&guest.arena,total,guest.log);
++        arena_ready=enabler_arena=da_request_arena(&guest.arena,total,guest.log);
+         if(!arena_ready) arena_ready=nc_create_managed(&guest.arena,total,prepare_externally,NULL,&external_quarantine);
+     }
+     else
+         arena_ready=nc_create(&guest.arena,total,publish,NULL);
+     if (!arena_ready) { LOG("[native] arena preparation failed errno=%d %s; guest entry blocked\n",errno,signed_backend?error:""); goto done; }
++    if (enabler_arena) {
++        // An enabler's region is not zero-filled memory: preparing a page writes
++        // into it (StikDebug stores one byte, 0x69, at the start of every page),
++        // and only pages the image has bytes for are written below. The image's
++        // zero-fill must read as zero, and it does not beyond the image's extent.
++        memset(guest.arena.writable,0,total);
++        LOG("[native] enabler arena cleared for %zu bytes\n",total);
++    }
+     // A protection change can be reported and not granted.
+     LOG("[native] arena protection %#x\n",hd_protection(guest.arena.executable));
+     // Whichever route prepared it: nothing attached, really executable.
+diff --git a/tests/test_native_memory.c b/tests/test_native_memory.c
+index f784a20..b4e4004 100644
+--- a/tests/test_native_memory.c
++++ b/tests/test_native_memory.c
+@@ -101,6 +101,24 @@ int main(void) {
+     // Adopted, the region is ours: teardown unmaps it with the alias.
+     assert(!mapped(foreign) && !mapped(alias));
+ 
++    // An enabler's region is not zero-filled: preparing a page writes into it
++    // (StikDebug stores one byte, 0x69, at the start of every page). Clearing it
++    // through the writable view before placement must leave zeros where the
++    // executable view will be read.
++    void *touched=mmap(NULL,2*page,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANON,-1,0);
++    assert(touched!=MAP_FAILED);
++    memset(touched,0x69,2*page);
++    NativeCodeMemory clearing={0};
++    assert(nc_adopt(&clearing,touched,2*page));
++    unsigned touched_bytes=0;
++    for(size_t i=0;i<2*page;i++) touched_bytes+=((unsigned char *)clearing.executable)[i];
++    assert(touched_bytes==0x69*2*page);                    // as the enabler left it
++    memset(clearing.writable,0,2*page);
++    for(size_t i=0;i<2*page;i++) assert(((unsigned char *)clearing.executable)[i]==0);
++    assert(clearing.executable==touched);
++    nc_destroy(&clearing);
++    assert(!mapped(touched));
++
+     unsigned old_calls=calls;
+     assert(!nc_create_managed(&memory,page,uncertain_pages,&calls,&quarantine) && errno==EINVAL);
+     assert(calls==old_calls); // No second helper attempt or allocation.
+@@ -120,5 +138,5 @@ int main(void) {
+     assert(!nc_create_managed(&large,(size_t)NC_MAX_ARENA+page,accept_without_reading,NULL,&spare) && errno==EINVAL);
+     assert(!large.executable && !large.writable);
+     puts("PASS: native alias coherence, bounds, rejection cleanup, uncertain quarantine, write/retry denial (no generated code executed)");
+-    puts("PASS: device-sized arena limit, adopted regions (no generated code executed)");
++    puts("PASS: device-sized arena limit, adopted regions cleared before use (no generated code executed)");
+ }

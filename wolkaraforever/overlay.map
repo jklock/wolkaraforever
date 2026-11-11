@@ -57,6 +57,8 @@ wolkaraforever/WoW/CurseForgeClient.h launcher/WoW/CurseForgeClient.h add
 wolkaraforever/WoW/CurseForgeClient.m launcher/WoW/CurseForgeClient.m add
 wolkaraforever/WoW/DeviceProfile.h launcher/WoW/DeviceProfile.h add
 wolkaraforever/WoW/DeviceProfile.m launcher/WoW/DeviceProfile.m add
+wolkaraforever/WoW/DownloadStatus.h launcher/WoW/DownloadStatus.h add
+wolkaraforever/WoW/DownloadStatus.m launcher/WoW/DownloadStatus.m add
 wolkaraforever/WoW/ForeverUI.h launcher/WoW/ForeverUI.h add
 wolkaraforever/WoW/ForeverUI.m launcher/WoW/ForeverUI.m add
 wolkaraforever/WoW/ForeverUIArchive.swift launcher/WoW/ForeverUIArchive.swift add
@@ -77,11 +79,40 @@ wolkaraforever/WoW/tests/test_device_profile.m tests/test_device_profile.m add
 wolkaraforever/WoW/tests/test_forever_config.m tests/test_forever_config.m add
 wolkaraforever/WoW/tests/test_forever_ui_archive.swift tests/test_forever_ui_archive.swift add
 wolkaraforever/WoW/tests/test_wow_client.m tests/test_wow_client.m add
+wolkaraforever/WoW/tests/test_wow_download_status.m tests/test_wow_download_status.m add
 wolkaraforever/WoW/tests/test_wow_installation.m tests/test_wow_installation.m add
 wolkaraforever/WoW/tests/test_wow_launcher_app.m tests/test_wow_launcher_app.m add
 wolkaraforever/WoW/tests/test_wow_manifest.m tests/test_wow_manifest.m add
 wolkaraforever/WoW/tests/test_wow_update.m tests/test_wow_update.m add
 wolkaraforever/WoW/tests/test_wow_verification.m tests/test_wow_verification.m add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/addons-popup.png tests/ui-baselines/launcher/ipad-pro-13-m5/addons-popup.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/voice-settings.png tests/ui-baselines/launcher/ipad-pro-13-m5/voice-settings.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/voice-test.png tests/ui-baselines/launcher/ipad-pro-13-m5/voice-test.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-downloading.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-downloading.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de-large-text.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de-large-text.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-large-text.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-large-text.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-running.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-running.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-starting.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-starting.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-startup-failed.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-startup-failed.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-test-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-test-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/addons-popup.png tests/ui-baselines/launcher/iphone-duo/addons-popup.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/voice-settings.png tests/ui-baselines/launcher/iphone-duo/voice-settings.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/voice-test.png tests/ui-baselines/launcher/iphone-duo/voice-test.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-addons-de.png tests/ui-baselines/launcher/iphone-duo/wow-addons-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-downloading.png tests/ui-baselines/launcher/iphone-duo/wow-downloading.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home-de-large-text.png tests/ui-baselines/launcher/iphone-duo/wow-home-de-large-text.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home-de.png tests/ui-baselines/launcher/iphone-duo/wow-home-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home-large-text.png tests/ui-baselines/launcher/iphone-duo/wow-home-large-text.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home.png tests/ui-baselines/launcher/iphone-duo/wow-home.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-running.png tests/ui-baselines/launcher/iphone-duo/wow-running.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-starting.png tests/ui-baselines/launcher/iphone-duo/wow-starting.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-startup-failed.png tests/ui-baselines/launcher/iphone-duo/wow-startup-failed.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-voice-de.png tests/ui-baselines/launcher/iphone-duo/wow-voice-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-voice-test-de.png tests/ui-baselines/launcher/iphone-duo/wow-voice-test-de.png add
 wolkaraforever/WoW/tests/wow_installation_fixture.h tests/wow_installation_fixture.h add
 wolkaraforever/WoW/wow_cdn.m tools/wow_cdn.m add
 #
@@ -103,6 +134,10 @@ wolkaraforever/Touch/TouchHaptics.h translation/AppKit/TouchHaptics.h add
 wolkaraforever/Touch/TouchHaptics.m translation/AppKit/TouchHaptics.m add
 wolkaraforever/Touch/tests/test_touch_controls_app.m tests/test_touch_controls_app.m replace
 wolkaraforever/Touch/tests/test_touch_gamepad_app.m tests/test_touch_gamepad_app.m add
+#
+# AppKit: the content-view sizing test for patch 0054, which has to make
+# its own window and host because a bare test process has neither.
+wolkaraforever/AppKit/tests/test_appkit_content_view.m tests/test_appkit_content_view.m add
 #
 # Bridge: what the patched platform files and the public APIs call into
 wolkaraforever/Bridge/AuthorizationBlockedState.h authorization/App/AuthorizationBlockedState.h add

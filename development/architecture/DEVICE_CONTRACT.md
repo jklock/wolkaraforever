@@ -129,24 +129,29 @@ factor never becomes a claim about the other.
 
 ## 9. The test matrix
 
-Three devices, and nothing else. A result was measured on one of these or it is a source-only
-result:
+The two simulators are required; the physical iPad is nice to have. A result was measured
+on one of these or it is a source-only result:
 
-| # | Device | Kind | What it is evidence for |
-| --- | --- | --- | --- |
-| 1 | iPhone Duo | simulator | The phone layout and the compact pages, against stand-ins |
-| 2 | iPad Pro 13-inch (M5) | simulator | The iPad layout, popups and the UIKit adapters, against stand-ins |
-| 3 | iPad Pro 12.9-inch (5th generation) | the physical iPad | Developer service, physical Metal, real input, the installed build |
+| # | Device | Kind | Required? | What it is evidence for |
+| --- | --- | --- | --- | --- |
+| 1 | iPhone Duo | simulator | yes | The phone layout and the compact pages, against stand-ins |
+| 2 | iPad Pro 13-inch (M5) | simulator | yes | The iPad layout, popups and the UIKit adapters, against stand-ins |
+| 3 | iPad Pro 12.9-inch (5th generation) | the physical iPad | no | Developer service, physical Metal, real input, the installed build |
+
+A release is measured on both simulators; a physical run is recorded when it happens and
+is never a precondition. That ordering is deliberate: the simulators are the only devices
+a change can be measured on every time, so they carry the requirement, and hardware is
+where the *physical* claims are made — which is a different, narrower thing than passing.
 
 The physical iPad is reached only through `wolkaraforever/tools/`; raw `devicectl` game
 operations are not part of the matrix and never produce evidence. No other iPad, no iPhone
-hardware, and no fourth simulator is in it, and a result from one is not evidence for any of
-the three.
+hardware, and no fourth simulator is in it, and a result from one is not evidence for any
+of the three.
 
 `wolkaraforever/tools/simulators.sh` is the matrix in code: the simulator suites and both
-platform wrappers resolve their device through it, and it refuses a device that is not on this
-list instead of substituting the nearest one. Adding a device changes this contract, because a
-wider matrix is a wider promise about what *tested* means.
+platform wrappers resolve their device through it, and it refuses a device that is not on
+this list instead of substituting the nearest one. Adding a device changes this contract,
+because a wider matrix is a wider promise about what *tested* means.
 
 ## 10. What would make this contract wrong
 

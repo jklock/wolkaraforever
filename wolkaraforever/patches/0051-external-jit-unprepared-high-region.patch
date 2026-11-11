@@ -1,0 +1,172 @@
+# WolkaraForever layer patch 0051 - runtime: a region an enabler granted but did not prepare
+#
+# Why: on External JIT about one launch in three closed the moment the game was
+# entered. The enabler had granted the arena, the arena reported itself executable,
+# and its first instruction faulted.
+#
+# StikJIT, which StikDebug and the enablers built on it share, prepares a region by
+# writing one byte to each page, in packets that carry nine hex digits of address
+# (StikDebug: JSSupport/JSDebugSupport.swift, fillAddress; StikJIT:
+# Sources/ScriptRunner.swift, writeHexAddress). From 2^36 up the leading digits are
+# dropped, so the writes go to other addresses; their answers are not read, and the
+# region comes back as granted. The kernel places a debugger's allocation at
+# 0x7000000000, the first address past the range it reserves, whenever no hole
+# lower down is large enough - and the launch reservation asks for up to 1 GiB.
+# The limit has been reported to StikJIT twice (its pull request 5 and issue 6)
+# and both were closed without a change, so an application has to cope with it.
+#
+# What was observed (2026-11-09, iPhone Duo, iOS 27.2, AltStore with a free Apple
+# ID, StikDebug 3.2.2 running universal.js, Forever 1.60.1 build 70862): of eleven
+# launches that reached Play with the enabler attached, four closed at once. The
+# three crash reports the device kept for them are identical: EXC_BAD_ACCESS
+# (SIGBUS) with a code-signing code at 0x700340519c, which is the image's first
+# initializer in an arena based at 0x7000000000, and that address lies in a single
+# VM entry of 54 MB where a prepared arena has an entry for every page. The one
+# runtime log saved from such a launch has the arena at 0x7000000000 as well. In
+# the ten saved logs of launches that ran, the arena is based below 0x120000000.
+#
+# With this patch, on the same phone: eight launches with the enabler attached,
+# eight games started, no fault at entry. In two of the eight the first grant was
+# the 1 GiB region at 0x7000000000, and the launcher's log shows the rest:
+#   [debugger] region 0x7000000000 of 1073741824 bytes was granted but not
+#              prepared: it lies past the addresses the enabler writes to; given back
+#   [debugger] requesting 536870912 bytes, attempt 1
+#   [debugger] arena rx=0x109f04000 rw=0x13c800000 size=536870912 protection=0x5
+# The two launches that retried had their arena 5.0 and 5.1 s after the process
+# started; the six that did not took between 3.5 and 6.5 s.
+#
+# What it does: da_adopt_region gives such a region back instead of adopting it.
+# A region counts as unprepared when it reaches 2^36 and the first byte of its
+# first or last page is still zero. A high region whose pages were written, as a
+# corrected enabler would leave it, is adopted as before. An enabler that prepared
+# pages by writing a zero byte would be misread; StikJIT's byte is 0x69. The
+# launch reservation already asks again for half as much when a request fails, and
+# a smaller region fits a smaller hole. If no size is usable the debugger has not
+# been asked to detach, so the request made when the game starts, for exactly the
+# image's size, gets the same check. If that comes back out of reach too, the
+# launch fails as it did before this patch.
+#
+# The debugger ban is unchanged: this only refuses a region before it is adopted,
+# and da_entry_allowed still ends every route into guest code with a detach.
+#
+# Applies to: runtime/DebuggerArena.c, runtime/DebuggerArena.h,
+#             tests/test_debugger_arena.c
+# Upstream: candidate.
+
+diff --git a/runtime/DebuggerArena.c b/runtime/DebuggerArena.c
+--- a/runtime/DebuggerArena.c
++++ b/runtime/DebuggerArena.c
+@@ -2,6 +2,7 @@
+ #include "HostDiagnostics.h"
+ #include <TargetConditionals.h>
+ #include <errno.h>
++#include <mach/vm_prot.h>
+ #include <stdint.h>
+ #include <sys/mman.h>
+ #include <unistd.h>
+@@ -27,6 +28,26 @@ bool da_plausible_region(const void *address) {
+     return (value & ((uintptr_t)getpagesize() - 1)) == 0;
+ }
+ 
++// StikJIT, which StikDebug and the enablers built on it share, prepares a region
++// by writing one byte (0x69) to each of its pages, in packets that carry nine hex
++// digits of address. From 2^36 up the leading digits are dropped: the writes go
++// to other addresses, their answers are not read, and the region still comes
++// back as granted. The kernel puts a debugger's allocation up there, at the first
++// address past the range it reserves below 0x7000000000, whenever no hole lower
++// down is large enough for it. Code entered there stops on its first instruction.
++#define DA_NINE_DIGITS ((uintptr_t)1 << 36)
++bool da_region_unprepared(const void *region, size_t size) {
++    size_t page = (size_t)getpagesize();
++    uintptr_t start = (uintptr_t)region;
++    // Null, too small or wrapping: nc_adopt refuses those.
++    if (!start || size < page || start + size < start || start + size <= DA_NINE_DIGITS) return false;
++    // Above that, look at the pages: StikJIT leaves a non-zero byte at the start
++    // of each one it prepares, and a fresh allocation reads as zero.
++    const unsigned char *first = region, *last = first + size - page;
++    if (!(hd_protection(first) & VM_PROT_READ) || !(hd_protection(last) & VM_PROT_READ)) return true;
++    return !*first || !*last;
++}
++
+ #if DA_PROTOCOL
+ // x16 selects the command; naked, the protocol names registers.
+ __attribute__((noinline, optnone, naked))
+@@ -90,14 +111,22 @@ bool da_request_arena(NativeCodeMemory *memory, size_t size, FILE *log) {
+ }
+ 
+ bool da_adopt_region(NativeCodeMemory *memory, void *region, size_t size, FILE *log) {
+-    if (nc_adopt(memory, region, size)) return true;
++    // Giving it back lets the caller ask for less, which can land lower.
++    bool unprepared = da_region_unprepared(region, size);
++    if (!unprepared && nc_adopt(memory, region, size)) return true;
+     int refusal = errno;
+     size_t page = (size_t)getpagesize();
+     // Give back exactly what was asked for, or nothing.
+     bool released = region && !((uintptr_t)region % page) && size && !(size % page) &&
+                     size <= NC_MAX_ARENA && !munmap(region, size);
+-    if (log) fprintf(log, "[debugger] region %p of %zu bytes refused errno=%d, %s\n",
+-                     region, size, refusal, released ? "given back" : "not given back");
++    if (!log) return false;
++    if (unprepared)
++        fprintf(log, "[debugger] region %p of %zu bytes was granted but not prepared:"
++                     " it lies past the addresses the enabler writes to; %s\n",
++                region, size, released ? "given back" : "not given back");
++    else
++        fprintf(log, "[debugger] region %p of %zu bytes refused errno=%d, %s\n",
++                region, size, refusal, released ? "given back" : "not given back");
+     return false;
+ }
+ 
+diff --git a/runtime/DebuggerArena.h b/runtime/DebuggerArena.h
+--- a/runtime/DebuggerArena.h
++++ b/runtime/DebuggerArena.h
+@@ -10,6 +10,9 @@
+ bool da_debugger_present(void);
+ // An unserviced request leaves the breakpoint encoding, not a null.
+ bool da_plausible_region(const void *address);
++// A region the enabler granted but cannot have prepared: it reaches 2^36 and
++// the first byte of its first or last page is still zero.
++bool da_region_unprepared(const void *region, size_t size);
+ // Request one arena and adopt it, with its writable alias.
+ bool da_request_arena(NativeCodeMemory *memory, size_t size, FILE *log);
+ // Adopt a region the enabler granted, or give it back.
+diff --git a/tests/test_debugger_arena.c b/tests/test_debugger_arena.c
+--- a/tests/test_debugger_arena.c
++++ b/tests/test_debugger_arena.c
+@@ -92,8 +92,36 @@ int main(void) {
+     assert(hd_protection(kept));
+     assert(!fflush(record) && strstr(text, ", not given back"));
+     assert(munmap(kept, page) == 0);
++
++    // Granted is not prepared. An enabler's page writes carry nine hex digits of
++    // address: they reach every region that ends by 2^36, and none above it.
++    uintptr_t reach = (uintptr_t)1 << 36;
++    assert(!da_region_unprepared(NULL, page));
++    assert(!da_region_unprepared((const void *)(uintptr_t)(page * 4), page));
++    assert(!da_region_unprepared((const void *)(reach - page), page));
++    // Above it only a region whose first and last pages were written is taken.
++    // 0x7000000000 is where the kernel puts what does not fit lower down.
++    void *high = mmap((void *)(uintptr_t)0x7000000000ull, 2 * page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
++    assert(high != MAP_FAILED && (uintptr_t)high >= reach);
++    assert(da_region_unprepared(high, 2 * page));
++    ((unsigned char *)high)[0] = 0x69;
++    assert(da_region_unprepared(high, 2 * page));
++    ((unsigned char *)high)[page] = 0x69;
++    assert(!da_region_unprepared(high, 2 * page));
++    NativeCodeMemory reached = {0};
++    assert(da_adopt_region(&reached, high, 2 * page, record));
++    assert(reached.executable == high && reached.writable && reached.published);
++    nc_destroy(&reached);
++    // One left untouched is given back, so that less can be asked for.
++    void *missed = mmap((void *)(uintptr_t)0x7000000000ull, 2 * page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
++    assert(missed != MAP_FAILED && (uintptr_t)missed >= reach);
++    NativeCodeMemory unreached = {0};
++    assert(!da_adopt_region(&unreached, missed, 2 * page, record));
++    assert(!unreached.executable && !unreached.writable && !hd_protection(missed));
++    assert(!fflush(record) && strstr(text, "granted but not prepared") && !strstr(text, "prepared: it lies past the addresses the enabler writes to; not given back"));
+     fclose(record); free(text);
+ 
+     puts("PASS: debugger region validation, refused request with nothing attached (no breakpoint executed),"
+          " no entry while a debugger holds on, a refused region given back");
++    puts("PASS: a granted region past the enabler's reach is given back unless its pages were written");
+ }
