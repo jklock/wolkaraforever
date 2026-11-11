@@ -1,0 +1,36 @@
+# WolkaraForever layer patch 0054 - AppKit: setContentView: fills the content area
+#
+# Why: AppKit documents that the content view "is resized to fit precisely
+# within the content area of the window". The adapter sized the view only once
+# the window had a host view, so a view made by -[NSView init] stayed at 0x0
+# until the window was on screen. Forever 1.60.1.70862 sizes its window right
+# after setContentView: and before it is shown: it read convertSizeToBacking:
+# {0, 0}, clamped the window to its 320x240 minimum, and then grew the height
+# 0.5 pt per pass for ~3 s (about 9.4 million passes, to 320 x ~4.69e6). Its
+# CAMetalLayer got setFrame:{0, 0, 320, 4.69072e+06}, and gx.log reported a
+# 320-wide render target (Render Settings Changed ... Size: 320x840).
+#
+# Size the view to the content rect when there is no host yet; with a host,
+# ak_attach does it from the host bounds as before. The layer's own test
+# (wolkaraforever/AppKit/tests/test_appkit_content_view.m, run by
+# wolkaraforever/tools/test_appkit_content_view.sh) holds the size the view has
+# before the window is shown, its fixed point under repeat passes, and the host
+# path; it fails against the unpatched adapter.
+#
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: candidate.
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -767,7 +767,11 @@
+     [_contentView.layer removeFromSuperlayer];
+     _contentView = v; v.window = self; v.nextResponder = self;
+     if (!v.layer) v.wantsLayer = YES;
++    // As AppKit: "The view object is resized to fit precisely within the content
++    // area of the window." A view made with a zero frame would otherwise report
++    // a 0x0 window, which the game clamps to its 320x240 minimum.
+     if (_host) [self ak_attach];
++    else if (v) v.frame = (NSRect){CGPointZero, _contentRect.size};
+ }
+ - (void)ak_attach {
+     [_host.layer addSublayer:_contentView.layer];
