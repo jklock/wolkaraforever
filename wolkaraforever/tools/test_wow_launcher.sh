@@ -24,7 +24,8 @@ xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
 build/wow-launcher/test_wow_installation
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer -framework Foundation -lz \
-    launcher/WoW/Manifest.m launcher/WoW/CASC.m launcher/WoW/Client.m launcher/WoW/UpdateLock.m launcher/WoW/Updater.m tests/test_wow_update.m \
+    launcher/WoW/Manifest.m launcher/WoW/CASC.m launcher/WoW/Client.m launcher/WoW/UpdateLock.m launcher/WoW/Updater.m \
+    launcher/WoW/Installation.m tests/test_wow_update.m \
     -o build/wow-launcher/test_wow_update
 build/wow-launcher/test_wow_update
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
@@ -42,3 +43,11 @@ xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
     launcher/WoW/DeviceProfile.m tests/test_device_profile.m \
     -o build/wow-launcher/test_device_profile
 build/wow-launcher/test_device_profile
+# The download speed and the estimate beside the byte counts. No UIKit either: the window, the
+# estimate and the words both are written in are values, and a value with one right answer is
+# checked here rather than by looking at a picture of it.
+xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
+    -fsanitize=address,undefined -fno-omit-frame-pointer -framework Foundation \
+    launcher/WoW/DownloadStatus.m tests/test_wow_download_status.m \
+    -o build/wow-launcher/test_wow_download_status
+build/wow-launcher/test_wow_download_status

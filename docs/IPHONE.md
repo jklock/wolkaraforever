@@ -125,8 +125,8 @@ Keep the default `TOLKARA_SYSTEM_ROOTS=YES` in a private build on your own Mac. 
 public system root certificates for the macOS Security adapter; it does not export personal
 keychain contents or private keys, and iOS still applies its own trust policy. The published
 redistributable build deliberately sets it to `NO` so the artifact contains no system roots —
-copying that choice into a private build leaves the adapter without the resource, which is
-what happened to the first iPhone build.
+copying that choice into a private build leaves the adapter without the resource. The private
+device installer now refuses that setting and verifies the resource before deployment.
 
 ## Mouse, controller and keyboard
 

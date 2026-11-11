@@ -351,24 +351,24 @@ static void TestStickMapping(void) {
 // completion phase, from a nested pump rather than UIApplication's outer loop.
 static void TestTrackingPump(void) {
     CFRunLoopRef loop=CFRunLoopGetCurrent();
-    __block BOOL trackingTimer=NO, defaultCompletion=NO, trackingCompletion=NO;
-    CFRunLoopTimerRef timer=CFRunLoopTimerCreateWithHandler(NULL,CFAbsoluteTimeGetCurrent(),0,0,0,
+    __block BOOL defaultTimer=NO, trackingTimer=NO;
+    // A future fire date makes the closed, zero-duration pump assertion meaningful:
+    // it must not wait for work that is not yet ready.
+    CFAbsoluteTime fireDate=CFAbsoluteTimeGetCurrent()+.01;
+    CFRunLoopTimerRef defaultModeTimer=CFRunLoopTimerCreateWithHandler(NULL,fireDate,0,0,0,
+        ^(__unused CFRunLoopTimerRef t) { defaultTimer=YES; });
+    CFRunLoopAddTimer(loop,defaultModeTimer,kCFRunLoopDefaultMode);
+    CFRunLoopTimerRef trackingModeTimer=CFRunLoopTimerCreateWithHandler(NULL,fireDate,0,0,0,
         ^(__unused CFRunLoopTimerRef t) { trackingTimer=YES; });
-    CFRunLoopAddTimer(loop,timer,(__bridge CFStringRef)UITrackingRunLoopMode);
-    CFRunLoopObserverRef observer=CFRunLoopObserverCreateWithHandler(NULL,kCFRunLoopBeforeWaiting,true,0,
-        ^(__unused CFRunLoopObserverRef o,__unused CFRunLoopActivity a) {
-            CFStringRef mode=CFRunLoopCopyCurrentMode(loop);
-            if (CFEqual(mode,kCFRunLoopDefaultMode)) defaultCompletion=YES;
-            if (CFEqual(mode,(__bridge CFStringRef)UITrackingRunLoopMode)) trackingCompletion=YES;
-            CFRelease(mode);
-        });
-    CFRunLoopAddObserver(loop,observer,kCFRunLoopCommonModes);
+    CFRunLoopAddTimer(loop,trackingModeTimer,(__bridge CFStringRef)UITrackingRunLoopMode);
     AKPumpTouchEvents(NO);
-    assert(!trackingTimer && !defaultCompletion && !trackingCompletion);
-    AKPumpTouchEvents(YES);
-    assert(trackingTimer && defaultCompletion && trackingCompletion);
-    CFRunLoopTimerInvalidate(timer); CFRelease(timer);
-    CFRunLoopObserverInvalidate(observer); CFRelease(observer);
+    assert(!defaultTimer && !trackingTimer);
+    CFAbsoluteTime deadline=CFAbsoluteTimeGetCurrent()+.25;
+    while ((!defaultTimer || !trackingTimer) && CFAbsoluteTimeGetCurrent()<deadline)
+        AKPumpTouchEvents(YES);
+    assert(defaultTimer && trackingTimer);
+    CFRunLoopTimerInvalidate(defaultModeTimer); CFRelease(defaultModeTimer);
+    CFRunLoopTimerInvalidate(trackingModeTimer); CFRelease(trackingModeTimer);
     puts("TOUCH_TRACKING_PUMP_PASS: deferred UI and tracking timers progress; closed-panel pump remains nonblocking.");
 }
 
