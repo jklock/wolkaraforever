@@ -8,6 +8,7 @@
 #import "../App/WKLocalization.h"
 #import "Installation.h"
 #import "DeviceProfile.h"
+#import "DownloadStatus.h"
 #import "ForeverUI.h"
 #import "Updater.h"
 #import "../App/LaunchProgressView.h"
@@ -147,6 +148,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UILabel *_updatesLabel;
     NSString *_updatePhase;
     uint64_t _updateDone, _updateTotal;
+    double _downloadMBps;
     UIProgressView *_progressBar;
     CAGradientLayer *_background;
     UIStackView *_columns;
@@ -584,14 +586,28 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         if(updateAttempted) {
             __block NSString *lastPhase=nil;
             __block NSTimeInterval lastProgressLog=0;
+            // Verified payload throughput, not socket throughput: the updater reports the bytes it
+            // has checked, so a cached or re-sent byte never raises the rate. The window belongs to
+            // this attempt and is emptied by every other phase - a rate measured across a verify
+            // pass or after a restart would describe a transfer that is not happening.
+            __block TKDownloadWindow speedWindow={0};
             void (^progress)(NSString *,uint64_t,uint64_t)=^(NSString *phase,uint64_t done,uint64_t total) {
                 NSTimeInterval now=NSDate.timeIntervalSinceReferenceDate;
                 if(![lastPhase isEqual:phase] || now-lastProgressLog>=5) {
                     lastPhase=phase;lastProgressLog=now;
                     WKLog("wow", @"update progress: %@ %llu/%llu",phase,done,total);
                 }
+                double speed=-1;
+                if ([phase isEqual:@"download"]) {
+                    // A monotonic clock: NSDate jumps when the user changes it, and a rate computed
+                    // across that jump is not a measurement of anything.
+                    speed=TKDownloadWindowSpeedMBps(&speedWindow,NSProcessInfo.processInfo.systemUptime,done);
+                } else {
+                    speedWindow.count=0;
+                }
                 dispatch_async(dispatch_get_main_queue(),^{
                     if(generation!=self->_generation)return;
+                    self->_downloadMBps=speed;
                     self->_plan=plan;self->_installation=installation;self->_updating=YES;
                     self->_updatePhase=phase;self->_updateDone=done;self->_updateTotal=total;[self render];
                 });
@@ -912,6 +928,18 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             NSString *total=counted?[bytes stringFromByteCount:(int64_t)_updateTotal]
                 :[number stringFromNumber:@(_updateTotal)];
             detail=[detail stringByAppendingFormat:@" · %@ / %@",done,total];
+            // The speed and the estimate are additive: they follow the byte counts only while data
+            // is being downloaded, and only when each of them is a measurement rather than a guess.
+            // Every other phase, an unknown rate, a stalled rate and an estimate past a day write
+            // nothing at all, so the line a user already knows is unchanged.
+            if ([_updatePhase isEqual:@"download"]) {
+                NSLocale *locale=number.locale;
+                NSString *speed=TKDownloadSpeedText(_downloadMBps,locale);
+                NSString *remaining=speed?TKDownloadRemainingText(_downloadMBps,_updateDone,_updateTotal,
+                    locale,WKLocalized(@"home.download.remaining")):nil;
+                if (speed.length) detail=[detail stringByAppendingFormat:@" · %@",speed];
+                if (remaining.length) detail=[detail stringByAppendingFormat:@" · %@",remaining];
+            }
         }
         action=WKLocalized(@"home.action.updating");
     } else if (_busy) {

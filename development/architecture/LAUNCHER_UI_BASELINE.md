@@ -28,10 +28,18 @@ wow-home-de-large-text.png
 wow-starting.png
 wow-running.png
 wow-startup-failed.png
+wow-downloading.png
 ```
 
 The fixture also asserts the existing identifiers and layout contract. Missing, extra, or
 dimension-mismatched images fail `test_wow_launcher_ui.sh`.
+
+`wow-downloading.png` is the state a download is in, and the only one whose status line carries a
+speed and an estimate. The fixture draws it from a real update held open by the updater stub
+(`40 GB / 70 GB`) with the measured rate pinned to 4 MB/s, because the rate itself comes from the
+clock and a picture of a clock proves nothing; the window, both fragments and the cases that
+withhold them are asserted as values by `wolkaraforever/WoW/tests/test_wow_download_status.m`,
+which runs without a simulator.
 
 ## Recording procedure
 

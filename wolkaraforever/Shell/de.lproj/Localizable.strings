@@ -101,6 +101,7 @@
 "home.phase.verify" = "Vorhandene Daten werden geprüft";
 "home.phase.reuse" = "Installierte Inhalte werden verglichen";
 "home.phase.indices" = "Downloaddateien werden gesucht";
+"home.download.remaining" = "noch ca. %@";
 "home.phase.download" = "Neue Daten werden geladen";
 "home.phase.files" = "Spieldateien werden installiert";
 "home.phase.activate" = "Aktualisierung wird abgeschlossen";
