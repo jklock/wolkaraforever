@@ -11,6 +11,10 @@
 | R-007 | #40 reports stale failures. | Reproduce on current main or fix before merge. |
 | R-008 | #37 needs physical External JIT evidence. | Test-bundle enabler log and Device Hub launch. |
 | R-009 | #28's throughput window writes past its array, and its evidence is an external device capture. | Closed 2026-11-10 at `7c5e104`: bounded window proved by `test_wow_download_status.m`; named fixture states replace the capture. |
+| R-010 | The patch registry allocated #41 the number 0052, but v1.0.5 already shipped 0052 and 0053. | Closed 2026-11-11: #41 keeps the contributor's 0054; `RELEASE_SEQUENCE.md` records the drift and #23's row is re-planned at execution. |
+| R-011 | The upstream translation suite aborts on the matrix iPhone Duo at `test_appkit_views.m:178` (`!plainHost.multipleTouchEnabled`). | Reproduced on untouched `main` (`092ecc0`) before #41; not a #41 regression, recorded and left for its own change. |
+| R-012 | `wolkaraforever/tools/test_emulation.sh` always exits 1: its suite loop runs `test_install.sh` with no subcommand, which exits 2. | Reproduced at `1ef4429`'s loop; every suite it runs prints PASS. Fix is to skip dispatchers, owned by its own change. |
+| R-013 | External JIT on the test iPad enters a self-mapped arena and iOS kills the first guest instruction (`CODESIGNING / Invalid Page`, `TolkaraDiagnostics-2026-11-11-151618.ips`). | Open; measured 2026-11-11 at `3fca304`. Proposal: `da_entry_allowed` must refuse an arena no enabler prepared, or the route must require the enabler's arena before entry. It belongs to the External JIT route (0052/0053), not to 0054: the guest dies before any AppKit call, so no content-view claim rests on it. |
 
 Add every review comment, test failure, head change, baseline difference, and device observation. Any open entry blocks its dependent PR.
 
