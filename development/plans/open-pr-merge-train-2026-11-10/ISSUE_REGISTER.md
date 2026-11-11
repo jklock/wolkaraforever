@@ -1,0 +1,116 @@
+# Merge-blocking issue register
+
+| ID | Blocker | Closure proof |
+| --- | --- | --- |
+| R-001 | v1.0.1 exact-main record is not tracked on main. | Generated bd0ed91 record committed through docs PR. |
+| R-002 | No permanent stable/test isolation guard. | Wrapper mocked tests and stable-state before/after evidence. |
+| R-003 | #27 and #36 overlap in Client.m. | Closed 2026-11-10 at `1a230d3`: #36 closed as a duplicate with the capability comment; #27 selected tests pass. |
+| R-004 | #37/#41/#23 patch names collide with main. | Renamed patches apply through check_layers.sh. |
+| R-005 | #23/#26 can alter protected defaults. | iPadOS default screenshots and gated-mode tests. |
+| R-006 | Launcher Manager changes golden UI. | Contract amendment, approved screenshots, Device Hub evidence. |
+| R-007 | #40 reports stale failures. | Reproduce on current main or fix before merge. |
+| R-008 | #37 needs physical External JIT evidence. | Test-bundle enabler log and Device Hub launch. |
+| R-009 | #28's throughput window writes past its array, and its evidence is an external device capture. | Closed 2026-11-10 at `7c5e104`: bounded window proved by `test_wow_download_status.m`; named fixture states replace the capture. |
+
+Add every review comment, test failure, head change, baseline difference, and device observation. Any open entry blocks its dependent PR.
+
+## R-003 — #27 and #36 (closed 2026-11-10)
+
+- #36 (`f8cd9fb`) closed as a duplicate of #27 with the documented capability comment; no code was
+  copied and no tag was published for it. #35 was closed the same way on 2026-11-08.
+- #27 head moved from `cf7dbfa` to `1a230d3` by normal merge (`a11f320`, current `origin/main`
+  `1ef4429`) plus one integration commit. No rebase, reset or force-push; no review conversation
+  existed at either head.
+- Tests at `1a230d3`: `test_wow_launcher.sh` PASS (six suites), `check_layers.sh` OK,
+  `check_docs.sh` OK, `git diff --check` clean.
+- Simulators: iPad Pro 13-inch (M5) PASS including baselines; iPhone Duo PASS on two consecutive
+  runs. One earlier iPhone Duo run differed by 3 pixels (worst channel delta 8) in
+  `addons-popup.png` — rounding only, and #27 changes no UI.
+- Test iPad (iPad Pro 12.9-inch, 5th generation; iPadOS 27.2; installed from `1a230d3`): startup
+  check reached *Ready to play* at 15:08, stop and relaunch re-checked at 15:11 and stayed Ready;
+  0 game error files, no new crash report, 0 files being written by an update. Left on the normal
+  launcher home screen.
+
+
+## R-009 — #28 download speed and estimate (closed 2026-11-10)
+
+- Head moved from `667b40d` to `7c5e104` by normal merge (`da1aaf1`, current `origin/main`
+  `5def12e`) plus one integration commit. No rebase, reset or force-push; no review conversation
+  existed at either head. Only the review comment in the PR body was the contributor's own claim of
+  an iPhone Duo run, which is not evidence this repository can check.
+- Two findings, both fixed rather than carried:
+  - The throughput window appended at index 31 of a 31-entry array once a transfer ran longer than
+    about half a minute. That overwrites the window's own count and the next report reads and copies
+    past the end of the struct. The window is now bounded and drops its oldest sample; the suite
+    holds ten thousand reports and a corrupt count against it under ASan/UBSan.
+  - The evidence was a 2.1 MB capture from the contributor's own device, referenced by nothing. It
+    is removed, and the state is a named baseline (`wow-downloading.png`) drawn by the fixture on
+    both matrix devices.
+- Behaviour kept, exactly as the plan asked: the rate and the estimate are written after the byte
+  counts, only in the download phase, and only when each is a measurement - unknown for the first
+  second, nothing for a stalled rate, no estimate past a day. No other state, identifier or default
+  changed, and every existing golden image is untouched.
+- Tests at `7c5e104`: `test_wow_launcher.sh` PASS (seven suites, including the new
+  `DOWNLOAD_STATUS_PASS` with 40 checks), `check_layers.sh` OK, `check_docs.sh` OK,
+  `check_ui_policy.sh --review UI-DOWNLOADING-2026-11-10.md` PASS, `git diff --check` clean.
+- Simulators: the launcher fixture passed on **iPad Pro 13-inch (M5)** and **iPhone Duo** including
+  the fourteen images each now compares. After the image was recorded, eighteen of nineteen iPhone
+  Duo runs and all four iPad runs matched it. One iPhone run differed (5015 pixels) and was not
+  preserved for diagnosis; the residual known flake in this matrix is the 3-pixel `addons-popup.png`
+  rounding difference already recorded at R-003, which appeared twice here with the same worst
+  channel delta of 8.
+- Test iPad (iPad Pro 12.9-inch, 5th generation; iPadOS 27.2), from the separately signed
+  `WolkaraForever Test` installation built from `7c5e104`: installed and launched, its own log
+  reached `home: the launcher is up` and `checked: state=3`, no crash report and no error file, and
+  a device screenshot shows the normal launcher home (**Ready to play**, game up to date at
+  1.60.170888, *Checked 17:26*) with no fragment anywhere. The stable installation was not touched:
+  `pilot.sh state` before and after each test-app operation reports the same app, zero error files
+  and no update writes. The download state itself cannot be produced on the device - the test
+  installation's game is up to date - so it is evidenced by the two committed baselines.
+
+## R-004 — #37 patch names (closed 2026-11-10)
+
+- #37 head moved from `f0c1160` to `13ded3d` by normal merge (`c0c8f28`, current `origin/main`
+  `9059a85`) plus one scope commit and one changelog commit. No rebase, reset or force-push; the
+  PR had no review conversation at either head. The branch is `Morv:fix/external-jit-enabler-arena`
+  in `Morv/wolkaraforever-fork` and is pushed normally.
+- The PR's `0048`/`0049` collided with main's `0048-require-private-roots-before-device-install`
+  and `0049-show-guest-alert-accessory-text`. They are now `0050-external-jit-clear-enabler-arena`
+  and `0051-external-jit-unprepared-high-region`, as `RELEASE_SEQUENCE.md` allocated, and
+  `check_layers.sh` reports 50 patches applying cleanly.
+- Scope kept, exactly as the plan asked: clearing the enabler's arena before the image is placed,
+  and giving back a region granted but not prepared. The original `0048` also unmapped the unused
+  tail of the launch reservation (`nc_trim`); that is a memory measure, not part of either crash,
+  so it is dropped rather than carried. Nothing else from the PR was removed.
+- The debugger ban is unchanged: `0051` only refuses a region before it is adopted, and
+  `da_entry_allowed` still ends every route into guest code with a detach.
+
+## R-008 — #37 physical External JIT evidence (2026-11-11)
+
+- Enabler: StikDebug 3.2.2 (`com.stik.stikdebug.7DJ75AWV5R`) on the test iPad, iPad Pro
+  12.9-inch 5th generation, iPadOS 27.2, paired on-device, LocalDevVPN up, its bundled
+  `universal.js` (the script that services `brk #0xf00d`, `x16=1` prepare region, `x16=0`
+  detach) selected for the test bundle.
+- Test bundle: `local.wolkaraforever.johnklock.test`, built from this branch with patches
+  0050/0051 applied, development-signed (`get-task-allow`, both memory capabilities), installed
+  by `devicectl`. The stable installation was never targeted: its state reads the same before
+  and after (no error file, no crash report, no update write).
+- **0051 is proven on the device.** The launcher log records the reported fault being handled:
+  `[debugger] requesting 1073741824 bytes, attempt 1`; `region 0x7000000000 of 1073741824 bytes
+  was granted but not prepared: it lies past the addresses the enabler writes to; given back`;
+  `requesting 536870912 bytes, attempt 1`; `arena rx=0x109ef0000 ... protection=0x1`.
+- **External JIT itself starts on the device.** In the final run the app came up in
+  `execution mode=external-jit source=saved`, logged `[debugger] nothing has prepared this
+  process; not trapping`, `[native] arena prepared outside this app address=0x10a8ac000
+  size=99532800`, `[native] arena protection 0x5`, `[native] arena ready base=0x10a8ac000`, and
+  its own diagnostics page reported 94.9 MiB of guest memory, 13,305 initializers and "Memory
+  emulation checks passed".
+- **Open, and outside this PR:** the enabler-provided arena does not survive the detach on this
+  device. The same run that proved 0051 then logged `the arena is no longer executable
+  (protection 0x1)` and `the reserved arena did not survive the detach`, so the runtime refused
+  entry and the app fell back to mapping its own arena. `protection=0x5` in the contributor's
+  log from the same enabler version means this is a device/enabler difference, not a regression
+  from 0050/0051, and `da_release_debugger` behaved exactly as designed by refusing it. Because
+  of it, **0050 was not exercised end-to-end on the device**; it is covered by the platform
+  suite (`PASS: device-sized arena limit, adopted regions cleared before use`) and by the
+  contributor's fifteen clean starts.

@@ -101,6 +101,7 @@
 "home.phase.verify" = "Checking existing data";
 "home.phase.reuse" = "Comparing installed content";
 "home.phase.indices" = "Locating download files";
+"home.download.remaining" = "~%@ left";
 "home.phase.download" = "Downloading new data";
 "home.phase.files" = "Installing game files";
 "home.phase.activate" = "Finishing the update";
@@ -577,3 +578,7 @@
 
 "home.status.paused" = "Check paused";
 "home.status.paused.detail" = "The check will continue when you return to this page.";
+"shell.repairRequired.title" = "Game files need repair";
+"shell.repairRequired.status" = "World of Warcraft reported damaged game files.";
+"shell.repairRequired.message" = "World of Warcraft could not start because its installed data is damaged. Repair verifies the game files, downloads only replacements, and keeps your settings and add-ons.\n\nReported error: %@";
+"shell.repairRequired.action" = "Repair game files";

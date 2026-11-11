@@ -95,6 +95,33 @@ neither requires reinstalling the app. See [App language](USING_WOLKARAFOREVER.m
 
 Continue with [Using WolkaraForever](USING_WOLKARAFOREVER.md).
 
+## Permanent test installation
+
+Keep production data in the stable app and validate builds in a separate app. Copy
+`local.test.env.example` to ignored `local.test.env`, give it a different bundle ID and
+Keychain group, then run approved device tools through:
+
+```sh
+wolkaraforever/tools/test_install.sh preflight
+wolkaraforever/tools/test_install.sh install
+```
+
+The wrapper records the stable app's read-only state before and after and refuses to target
+the stable identifiers. It accepts only `preflight`, `install`, `pilot`, `device_log`,
+`push_game`, `device_matrix`, and `verify_external_jit`. Copy game data only deliberately:
+
+```sh
+wolkaraforever/tools/test_install.sh push_game --source "/Applications/World of Warcraft"
+```
+
+The test app has a separate container; this copy does not modify the stable app. Use its
+separate External JIT bundle ID when validating an enabler. Capture test-app diagnostics with
+`wolkaraforever/tools/test_install.sh device_log`; it writes the selected app's
+`Documents/native-guest.log` under ignored `build/device-log/`. If test validation fails,
+collect that log, use `test_install.sh pilot state` to confirm the stable app still reports
+normally, and leave the stable app alone. The test app can be repaired or replaced through
+the wrapper without changing stable data.
+
 ## Troubleshooting
 
 | Problem | Action |
@@ -106,4 +133,5 @@ Continue with [Using WolkaraForever](USING_WOLKARAFOREVER.md).
 | Startup appears stalled | Keep the app foregrounded for several minutes. If it fails, reopen the app rather than deleting it. |
 
 For support, provide the exact Technical details message and a redacted log—never credentials,
-pairing records, provisioning data, or a device identifier.
+pairing records, provisioning data, or a device identifier. The complete issue-report commands
+and required context are in [Help and safe recovery](USING_WOLKARAFOREVER.md#help-and-safe-recovery).

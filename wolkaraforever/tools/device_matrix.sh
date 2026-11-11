@@ -2,12 +2,13 @@
 # The parts of the physical-iPad matrix that a Mac can drive on its own.
 #
 # The audit's exit criteria ask for a device matrix that passes repeatedly without new
-# crashes, game error files, data loss, or orphaned input/audio state. Some of that needs a
-# person - speaking into the iPad, pressing a button on a pad - and those are listed as
-# deferred at the end of this script rather than pretended. Backgrounding used to be on that
-# list and is not any more: launching another app puts ours away, and the app's own log then
-# says whether anything was left running, listening or recording. What is here is what a
-# script can honestly check:
+# crashes, game error files, data loss, or orphaned input/audio state. Everything this script
+# does is automated: no step waits for someone to press, speak or watch. The handful of things
+# that need a person, a pad, or a running game cannot be automated here, so they are named at
+# the end as out of scope rather than pretended, and no run of this matrix will ever cover them.
+# Backgrounding used to be on that list and is not any more: launching another app puts ours
+# away, and the app's own log then says whether anything was left running, listening or
+# recording. What is here is what a script can honestly check:
 #
 #   1. the device can be inspected at all (otherwise nothing below means anything)
 #   2. a fresh install, and the user's file surviving it
@@ -318,7 +319,11 @@ step "7. the app's own self-tests, run on the installed build"
 # dictation session - the same code the simulator fixtures drive with stand-ins - and writes a
 # verdict to its own log. Running them against the installed build is the difference between "a
 # fixture says the mapper works" and "the app on this iPad says so". See wolkaraforever/Shell/SelfTest.h.
-for name in input voice render-profile; do
+#
+# `addons-page` is here because that page is the launcher's largest surface and its header is
+# laid out by a different rule from its rows: the fixture measures it in the simulator, and this
+# is the same contract on the installed build.
+for name in input voice render-profile addons-page; do
     selftest_when_quiet "$name" "$work/selftest-$name.log" && rc=0 || rc=1
     verdict=$(grep -oE "selftest: $name (PASS|FAIL)[^\"]*" "$work/selftest-$name.log" | tail -1)
     # A microphone cannot be proved without sound, and this Mac has no way to make one.
@@ -356,28 +361,30 @@ if [ "$voice_needs_a_voice" = 1 ]; then
     printf '                               to speak and a look at whether anything else holds the input.\n'
 fi
 
-cat <<'DEFERRED'
+cat <<'OUT_OF_SCOPE'
 
-== deferred, and why
-  a real transcript          needs someone to speak into the iPad, because only a voice makes
-                             the recogniser produce words. What is covered without one is the
-                             state the session is left in: the app's own `voice` self-test opens
-                             a real session with the real recogniser and hands it back, and
-                             `mic=0` above is the same claim after being put away.
+== out of scope: these need a person, a pad, or a running game
+  Every check above is automated, and none of them waits for someone to press, speak or
+  watch. The things below cannot be automated on this device at all, so they are out of
+  scope for this matrix rather than outstanding work:
+  a spoken transcript        only a voice makes the recogniser produce words. What is
+                             covered without one is the state the session is left in:
+                             `voice` above opens a real session with the real recogniser
+                             and hands it back, and `mic=0` after being put away is the
+                             same claim.
   a controller button        a real pad, in a hand: `input` above drives the router with a
                              synthetic press, which proves the mapper, the modes and the
                              published key set. What it cannot prove is what iPadOS reports
                              for a particular pad's buttons, which needs the pad.
   a dictation target         a running guest: `selftest dictation-target` asks the game's
                              own text field whether it takes words and keys, and with no
-                             guest it correctly reports 0/1 checks. Launching the game is
-                             outside this work, so it is deferred here and not counted as a
-                             pass - run it once a game is up.
+                             guest it correctly reports 0/1 checks. That is a check to run
+                             with the game up, outside this matrix.
   the game itself            a live session touches the client's own store; the CASC and
                              in-game checks stay in COMPATIBILITY.md and are done by hand.
   a real add-on import       the extractor is the Swift/ZIPFoundation path the fixture
                              stands in for; it is exercised by importing an archive here.
-DEFERRED
+OUT_OF_SCOPE
 
 printf '\n'
 if [ "$failures" -eq 0 ]; then

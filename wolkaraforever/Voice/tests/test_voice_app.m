@@ -211,6 +211,10 @@ static void TestInputInterest(void) {
     AKTrigger *trigger = [AKTrigger new];
     trigger.element = @"controller.button.a";
     trigger.pattern = AKTriggerPatternPushToTalk;
+    // No physical controller is connected in this fixture. An any-device mapping is
+    // therefore the mapping that can apply and must reach the inspector snapshot;
+    // the named mapping exercises trigger delivery for the synthetic pad below.
+    [settings setTrigger:trigger forDevice:nil];
     [settings setTrigger:trigger forDevice:@"pad"];
     settings.enabled = YES;
     [AKInputRouter.shared refreshInterest];
@@ -257,6 +261,7 @@ static void TestInputInterest(void) {
     AKInputRouter.shared.onLearned = nil;
 
     // Put the shared state back for the suites that run after this one.
+    [settings clearMappingForDevice:nil];
     [settings clearMappingForDevice:@"pad"];
     settings.enabled = wasEnabled;
     AKInputRouter.shared.onTriggerBegan = nil;

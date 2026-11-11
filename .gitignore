@@ -14,5 +14,6 @@ logs/
 xcuserdata/
 DerivedData/
 local.env
+local.test.env
 __pycache__/
 Tolkara.xcodeproj/

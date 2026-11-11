@@ -44,6 +44,7 @@
 @end
 @interface TKWoWAddonManagerViewController (Fixture)
 - (void)done;
+- (void)changeMode:(UISegmentedControl *)sender;
 @end
 @interface AKVoiceViewController (Fixture)
 - (void)done;
@@ -53,9 +54,14 @@
 @end
 static atomic_uint requests, revision, updates, repairs;
 static atomic_bool failure, slow, slowUpdate, interruptRepair;
+// One update held open so the downloading state can be inspected while it is happening. It is a
+// separate flag from slowUpdate because a delay long enough to look at is also long enough to make
+// every other step in this file guess at how fast the machine is.
+static atomic_bool holdUpdate;
 static unsigned requestsBeforePopup;
 static BOOL keyboardShown;
 static TKFixtureLibrary *fixture;
+static NSString *FixtureModelIdentifier(id self, SEL selector) { (void)self; (void)selector; return @"fixture-unmeasured"; }
 static NSDictionary *Plan(id self, SEL selector, NSString *product, NSString *region, NSString *locale, NSError **error) {
     (void)self; (void)selector; (void)region; (void)locale;
     unsigned request=atomic_fetch_add(&requests,1);
@@ -71,6 +77,16 @@ static BOOL Update(id self, SEL selector, NSDictionary *plan, NSString *root,
         atomic_fetch_add(&repairs,1);
         if(atomic_exchange(&interruptRepair,false)) { if(error)*error=TKWoWError(@"Synthetic repair interruption");return NO; }
     }
+    if(atomic_load(&holdUpdate)) {
+        // A game update the size of a real one, held open: 40 GB of 70 GB, so the status line has
+        // the byte counts the speed and the estimate are written after.
+        progress(@"download",40000000000ULL,70000000000ULL);
+        NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:30];
+        while(atomic_load(&holdUpdate) && deadline.timeIntervalSinceNow>0)
+            [NSThread sleepForTimeInterval:0.02];
+        [fixture writeMetadata:atomic_load(&revision) duplicate:NO];
+        progress(@"complete",1,1); return YES;
+    }
     atomic_fetch_add(&updates,1); progress(@"download",50,100);
     if(atomic_load(&slowUpdate)) [NSThread sleepForTimeInterval:0.5];
     [fixture writeMetadata:atomic_load(&revision) duplicate:NO];
@@ -80,6 +96,34 @@ static UIView *Find(UIView *view, NSString *identifier) {
     if ([view.accessibilityIdentifier isEqual:identifier]) return view;
     for (UIView *child in view.subviews) { UIView *match=Find(child,identifier); if (match) return match; }
     return nil;
+}
+// Every spinner in a window, so a capture can hold still the one part of a page that moves.
+static void CollectActivityIndicators(UIView *view, NSMutableArray<UIActivityIndicatorView *> *into) {
+    if ([view isKindOfClass:UIActivityIndicatorView.class]) [into addObject:(UIActivityIndicatorView *)view];
+    for (UIView *child in view.subviews) CollectActivityIndicators(child, into);
+}
+// Whether anything in this layer's tree is still animating. A button whose configuration changed a
+// moment ago crossfades its old words out over the new ones, and that crossfade is two animated
+// layers: measured on 2026-11-10, the primary button was still animating when the downloading page
+// was captured, and the picture then held "Checking…" under a status line that already read
+// "Updating your game…". The same subtree has no animations 0.4 s later, so a capture waits for
+// that rather than for a delay that happens to be long enough.
+static BOOL AnimatingUnder(CALayer *layer) {
+    if (layer.animationKeys.count) return YES;
+    for (CALayer *child in layer.sublayers) if (AnimatingUnder(child)) return YES;
+    return NO;
+}
+// Every animation in a layer's tree, gone. A busy indicator fades its spokes as it turns, so a
+// picture of it stopped mid-turn shows whichever spoke happened to be bright: measured on the iPad
+// matrix on 2026-11-10, two runs of the same state differed in 339 pixels, all of them in the
+// indicator. With the fades removed every spoke is drawn at its own strength, the indicator is
+// still there and still visible, and the picture is the same one every run.
+static void RemoveAnimations(CALayer *layer) {
+    [layer removeAllAnimations];
+    for (CALayer *child in layer.sublayers) RemoveAnimations(child);
+}
+static NSString *ButtonTitle(UIButton *button) {
+    return button.configuration.title ?: [button titleForState:UIControlStateNormal] ?: button.titleLabel.text;
 }
 // Let the run loop work for a while. Every one of these rows answers on the main
 // queue, so turning the wheel here is the same as the tap a person makes; sleeping
@@ -331,11 +375,13 @@ static void TestAddons(void) {
     assert(![files fileExistsAtPath:[addons stringByAppendingPathComponent:@"Imported"]]);
     assert(store.records.count == 1);   // only the one that was already there
 
-    // An add-on this store did not install is not its to remove.
+    // An existing add-on can be removed only when the user explicitly chooses Remove. The
+    // launcher exposes that action for unmanaged packages; automatic update/mutation remains
+    // restricted to managed packages.
     error = nil;
     TKAddonRecord *existing = store.records[0];
-    assert(![store removeRecord:existing error:&error]);
-    assert([files fileExistsAtPath:[addons stringByAppendingPathComponent:@"MyAddon"]]);
+    assert([store removeRecord:existing error:&error]);
+    assert(![files fileExistsAtPath:[addons stringByAppendingPathComponent:@"MyAddon"]]);
 
     // --- the key
     TKAddonCredentialStore *credentials = [TKAddonCredentialStore new];
@@ -453,6 +499,8 @@ static void TestPhoneDisplayDefaults(void) {
 @implementation TKWoWFixtureDelegate
 - (UIButton *)primary { return (id)Find(self.controller.view,@"wow.primary"); }
 - (NSString *)status { return [(UILabel *)Find(self.controller.view,@"wow.status") text]; }
+- (NSString *)detail { return [(UILabel *)Find(self.controller.view,@"wow.detail") text]; }
+- (NSString *)phase { return [self.controller valueForKey:@"_updatePhase"]; }
 - (void)tap { [[self primary] sendActionsForControlEvents:UIControlEventTouchUpInside]; }
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
@@ -467,6 +515,9 @@ static void TestPhoneDisplayDefaults(void) {
     }
     method_setImplementation(class_getInstanceMethod(TKWoWClient.class,@selector(planForProduct:region:locale:error:)),(IMP)Plan);
     method_setImplementation(class_getInstanceMethod(TKWoWUpdater.class,@selector(updatePlan:root:progress:error:)),(IMP)Update);
+    // Simulator host hardware is not launcher-device evidence. Keep fallback-profile assertions
+    // deterministic, then select measured profiles explicitly in the test below.
+    method_setImplementation(class_getClassMethod(TKDeviceProfile.class,@selector(currentModelIdentifier)),(IMP)FixtureModelIdentifier);
     [NSUserDefaults.standardUserDefaults setObject:@"wowf" forKey:@"WoWProduct"];
     [NSUserDefaults.standardUserDefaults setObject:@"enUS" forKey:@"WoWLocale"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWRepairRequested.wowf"];
@@ -479,9 +530,11 @@ static void TestPhoneDisplayDefaults(void) {
     [NSUserDefaults.standardUserDefaults removeObjectForKey:WKAppLanguageDefaultsKey];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverGameLanguageOfferShown"];
     // A hang guard, not a budget: the whole scripted run - including the German pass, the
-    // one-time offer and the largest-text pass - takes about half of this, and a fixture that is
-    // still going after it is stuck rather than slow.
-    if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,60*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
+    // one-time offer and the largest-text pass - measured 51 s on iPhone Duo and 62 s on
+    // iPad Pro 13-inch (M5) in the matrix of 2026-11-09, so a fixture still going after this
+    // is stuck rather than slow. It has to stay well clear of the slower matrix device: the
+    // first version of this guard used 60 s and killed a healthy iPad run two seconds early.
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,180*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
         fprintf(stderr,"WoW UIKit TIMEOUT\n"); _Exit(1);
     });
     // Watching for the software keyboard tells a shim-level input block apart
@@ -594,16 +647,16 @@ static void TestPhoneDisplayDefaults(void) {
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateIdle];
     UIButton *install = (id)Find(cell, @"wow.addons.project.61284.install");
-    assert(install != nil && [install.titleLabel.text isEqual:@"Install"] && install.enabled);
+    assert(install != nil && [ButtonTitle(install) isEqual:@"Install"] && install.enabled);
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateInstalled];
-    assert([install.titleLabel.text isEqual:@"Installed"] && !install.enabled);
+    assert([ButtonTitle(install) isEqual:@"Installed"] && !install.enabled);
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateBusy];
-    assert([install.titleLabel.text isEqual:@"Installing…"] && !install.enabled);
+    assert([ButtonTitle(install) isEqual:@"Installing…"] && !install.enabled);
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:NO installState:TKAddonInstallStateUnavailable];
-    assert([install.titleLabel.text isEqual:@"Unavailable"] && !install.enabled);
+    assert([ButtonTitle(install) isEqual:@"Unavailable"] && !install.enabled);
     // The action is inside the row at every width, including the narrow one.
     [cell configureWithProject:probeProject file:probeFile rank:@"1" columns:0x3f
                        gameVersion:@"1.60.1" compact:TKAddonRowsAreCompact(540.0)
@@ -620,6 +673,9 @@ static void TestPhoneDisplayDefaults(void) {
     assert(Find(manager.view, @"wow.addons.updateAll") != nil);
 
     // --- no visible sort or filter name is a localization key or a bare API id
+    UISegmentedControl *managerMode = [manager valueForKey:@"_mode"];
+    managerMode.selectedSegmentIndex = 1;
+    [manager changeMode:managerMode];
     UIButton *sortButton = (id)Find(manager.view, @"wow.addons.sort");
     UIButton *filterButton = (id)Find(manager.view, @"wow.addons.filters");
     assert(sortButton.menu != nil && filterButton.menu != nil);
@@ -779,26 +835,33 @@ static void TestPhoneDisplayDefaults(void) {
     TKWoWAddonManagerViewController *page=(id)frame.topViewController;
     UITableView *table=page.tableView;
     [table layoutIfNeeded];
-    CGRect row=[table rectForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
     UIView *header=table.tableHeaderView;
+    [header layoutIfNeeded];
     UIView *panel=header.subviews.firstObject;
-    CGFloat panelLeft=CGRectGetMinX(panel.frame);
-    CGFloat panelRight=CGRectGetWidth(table.bounds)-CGRectGetMaxX(panel.frame);
+    CGRect headerInTable=[header convertRect:header.bounds toView:table];
+    CGRect panelInTable=[panel convertRect:panel.bounds toView:table];
+    CGRect row=[table rectForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+    CGFloat tableWidth=CGRectGetWidth(table.bounds);
+    CGFloat panelLeft=CGRectGetMinX(panelInTable);
+    CGFloat panelRight=tableWidth-CGRectGetMaxX(panelInTable);
     CGFloat rowLeft=CGRectGetMinX(row);
-    CGFloat rowRight=CGRectGetWidth(table.bounds)-CGRectGetMaxX(row);
-    NSLog(@"ADDONS_GUTTERS table=%@ margins=%@ row=%@@%@ panel=%@@%@",
-          NSStringFromCGRect(table.bounds), NSStringFromUIEdgeInsets(table.layoutMargins),
-          @(rowLeft), @(rowRight), @(panelLeft), @(panelRight));
-    // The page has to be inside its own table and inset the same on both sides.
-    //
-    // The header is a table-header view and the rows are inset-grouped cells, laid out by two
-    // different rules, and the header's frames used to be computed from the table's width
-    // before the sheet had its final size: the edition panel hung fourteen points past the
-    // right edge of the table and the page read as ragged beside cells inset by sixteen. These
-    // are the two numbers that said so.
+    CGFloat rowRight=tableWidth-CGRectGetMaxX(row);
+    NSLog(@"ADDONS_GUTTERS table=%@ header=%@ row=%@@%@ panel=%@@%@ safe=%@ margins=%@",
+          NSStringFromCGRect(table.bounds), NSStringFromCGRect(headerInTable),
+          @(rowLeft), @(rowRight), @(panelLeft), @(panelRight),
+          NSStringFromUIEdgeInsets(table.safeAreaInsets), NSStringFromUIEdgeInsets(table.layoutMargins));
+    // The header is a table-header view created before the popup reached its final width, and
+    // UITableView keeps the frame it was given. If it is narrower than the table its panels sit
+    // in a different page from the rows beside them - the ragged page this check found.
+    assert(fabs(CGRectGetWidth(headerInTable)-tableWidth) < 0.5);
+    // Every full-width launcher panel stays inside its page and no closer to an edge than the
+    // rows beside it. The two margins are deliberately not asserted equal: on an iPhone in
+    // landscape the safe area is wider on the notch side, and the header has to follow the rows
+    // into that margin rather than drifting under the notch.
     assert(panelLeft >= rowLeft - 0.5);
     assert(panelRight >= rowRight - 0.5);
-    assert(fabs(panelLeft - panelRight) < 0.5);
+    assert(panelLeft >= table.safeAreaInsets.left - 0.5);
+    assert(panelRight >= table.safeAreaInsets.right - 0.5);
     [self capture:@"addons-popup.png"];
     [(TKWoWAddonManagerViewController *)frame.topViewController done];
     [self performSelector:@selector(checkVoiceSettingsPage) withObject:nil afterDelay:0.8];
@@ -932,7 +995,57 @@ static void TestPhoneDisplayDefaults(void) {
         puts("WoW UIKit PASS: transient interruption keeps verification alive, paused update renders usable controls, foreground resumes once without launching, completed checks stay completed, and Auto-Lock is restored.");
         exit(0);
     }
-    [self captureAndLaunch];
+    [self captureDownloading];
+}
+// A download in progress is the one state a screenshot cannot wait for: the speed and the estimate
+// come from the clock. The window and both fragments are values with one right answer, and the
+// suite that checks them runs on this Mac (tests/test_wow_download_status.m). What is left for this
+// page is whether it draws the state at all, writes the fragments after the byte counts, and writes
+// nothing when there is no rate - so the rate is pinned to the value that suite proves, exactly as
+// the clock is pinned for every other picture in this file.
+- (void)captureDownloading {
+    atomic_store(&holdUpdate,true);
+    // The same install this page has been looking at, asked to update itself: bumping the synthetic
+    // build number instead would leave a different version in every picture taken after this one.
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"WoWInstallRequested.wowf"];
+    [self.controller refresh];
+    assert(PumpUntil(^{ return (BOOL)[[self phase] isEqual:@"download"]; }, 30.0));
+    assert([[self status] isEqual:@"Updating your game…"]);
+    // The phase, then the counts, and nothing after them: one report is not a rate.
+    assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB"]);
+    // Past a day the estimate is withheld and the rate still stands.
+    [self.controller setValue:@(0.1) forKey:@"_downloadMBps"];
+    [self.controller render];
+    assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB · 0.1 MB/s"]);
+    // A stalled rate writes nothing at all, so the line reads as it did before this feature.
+    [self.controller setValue:@(0.0) forKey:@"_downloadMBps"];
+    [self.controller render];
+    assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB"]);
+    // Now the state the picture shows: the rate the suite proves - four megabytes a second - and
+    // the estimate that follows, 30 GB left at that rate being two hours five minutes. Pinned last,
+    // after the three cases above, so nothing intervenes between the state this asserts and the
+    // draw that follows it.
+    [self.controller setValue:@(4.0) forKey:@"_downloadMBps"];
+    [self.controller render];
+    // The words on the primary button crossfade when the phase changes, and a draw with the
+    // window's clock held still renders that crossfade at its beginning - the old words. Measured
+    // on 2026-11-10: a picture taken at this point held "Checking…" under a status line that
+    // already read "Updating your game…". Wait for the crossfade to finish; measured, the two
+    // animated layers are gone 0.4 s later. Waiting here rather than in `capture:` keeps every
+    // other picture in this file exactly as it was recorded.
+    PumpUntil(^{ return (BOOL)!AnimatingUnder([self primary].layer); }, 3.0);
+    NSMutableArray<UIActivityIndicatorView *> *busy=[NSMutableArray array];
+    CollectActivityIndicators(self.window, busy);
+    for (UIActivityIndicatorView *indicator in busy) RemoveAnimations(indicator.layer);
+    // The picture is only evidence of the state it claims if the state is still that one at the
+    // draw: this is the same sentence as above, asked again last.
+    assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB · 4.0 MB/s · ~2h 5m left"]);
+    [self capture:@"wow-downloading.png"];
+    // Let the held update finish, and the state goes with it.
+    atomic_store(&holdUpdate,false);
+    assert(PumpUntil(^{ return (BOOL)[[self status] isEqual:@"Ready to play"]; }, 30.0));
+    assert(![[self detail] containsString:@"MB/s"] && ![[self detail] containsString:@"left"]);
+    [self performSelector:@selector(captureAndLaunch) withObject:nil afterDelay:0.3];
 }
 - (void)captureAndLaunch {
     assert([self primary].enabled);
@@ -974,11 +1087,69 @@ static void TestPhoneDisplayDefaults(void) {
     [self tap]; [self performSelector:@selector(checkLaunch) withObject:nil afterDelay:0.3];
 }
 - (void)capture:(NSString *)name {
+    // Presenting is asynchronous: `presentedViewController` is set before the transition has
+    // finished, and a draw taken during it shows the page underneath. That is exactly how the
+    // add-on popup's baseline came out as a picture of the home page in one matrix run on
+    // 2026-11-09, two runs after the same code had drawn it correctly. Wait for whatever is on
+    // top to be on screen before measuring or drawing anything.
+    __block UIViewController *top=self.controller.presentedViewController;
+    while (top.presentedViewController) top=top.presentedViewController;
+    if (top) PumpUntil(^{
+        return (BOOL)(top.viewIfLoaded.window!=nil && !top.isBeingPresented && !top.isBeingDismissed);
+    }, 5.0);
+    [self.window layoutIfNeeded];
+    // Two things on these pages move on their own, and a baseline that pinned either of them
+    // could never match the next run. Measured in the matrix on 2026-11-09: the version line's
+    // wall clock ("Checked 12:21" against "Checked 12:23") moved 540 pixels by 161, and an
+    // activity indicator would move with its own rotation.
+    //
+    // The clock is drawn at one fixed instant and then the page's own value is put back, so
+    // nothing after the capture is looking at a stopped clock. A indicator is stopped for the
+    // draw only, and told to stay visible so the page still reads as busy; it is started again
+    // afterwards so the fixture goes on driving the same state.
+    id realCheckedAt=[self.controller valueForKey:@"_checkedAt"];
+    if (realCheckedAt) {
+        static NSDate *baselineClock;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{ baselineClock=[NSDate dateWithTimeIntervalSince1970:800000000]; });
+        [self.controller setValue:baselineClock forKey:@"_checkedAt"];
+        [self.controller render];
+        [self.window layoutIfNeeded];
+    }
+    NSMutableArray<UIActivityIndicatorView *> *spinners=[NSMutableArray array];
+    CollectActivityIndicators(self.window, spinners);
+    NSMutableArray<NSNumber *> *hides=[NSMutableArray array];
+    NSMutableArray<UIActivityIndicatorView *> *animating=[NSMutableArray array];
+    for (UIActivityIndicatorView *spinner in spinners) {
+        [hides addObject:@(spinner.hidesWhenStopped)];
+        if (spinner.isAnimating) {
+            spinner.hidesWhenStopped=NO;
+            [spinner stopAnimating];
+            [animating addObject:spinner];
+        }
+    }
+    [self.window layoutIfNeeded];
+    // Hold the layer tree's clock still for the draw. The launch page spins a ring and steps
+    // an elapsed-time counter from Core Animation, and without this the picture is taken at
+    // whatever phase the run happened to reach: the matrix measured a 64x66 region differing
+    // by 110 between two identical iPhone runs on 2026-11-09. Speed 0 with a zeroed offset
+    // renders every animation in the window at local time 0; putting both back afterwards
+    // lets them carry on as if nothing happened.
+    CALayer *root=self.window.layer;
+    CFTimeInterval savedSpeed=root.speed, savedOffset=root.timeOffset;
+    root.speed=0; root.timeOffset=0;
     [self.window layoutIfNeeded];
     UIGraphicsImageRenderer *renderer=[[UIGraphicsImageRenderer alloc] initWithBounds:self.window.bounds];
     UIImage *image=[renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
         (void)context; [self.window drawViewHierarchyInRect:self.window.bounds afterScreenUpdates:YES];
     }];
+    root.speed=savedSpeed; root.timeOffset=savedOffset;
+    [animating makeObjectsPerformSelector:@selector(startAnimating)];
+    for (NSUInteger index=0; index<spinners.count; index++) spinners[index].hidesWhenStopped=hides[index].boolValue;
+    if (realCheckedAt) {
+        [self.controller setValue:realCheckedAt forKey:@"_checkedAt"];
+        [self.controller render];
+    }
     NSString *documents=NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject;
     assert([UIImagePNGRepresentation(image) writeToFile:[documents stringByAppendingPathComponent:name] atomically:YES]);
 }
@@ -1379,16 +1550,18 @@ static int backupsBeforePerformance;
     assert([titles containsObject:@"iPad Pro 13-inch (M4) — 1376 × 1032"]);
     assert(titles.count == TKDeviceProfile.profiles.count + 2);   // + Automatic + Cancel
     // Choosing another device is a preview, and the sheet says so before the row changes.
+    // The action is run the way UIKit runs it - after the sheet has gone - and the message it
+    // presents is deferred until the presenter is free, so the wait is on the page, not a guess.
     UIAlertAction *measured = nil;
     for (UIAlertAction *action in sheet.actions) if ([action.title isEqual:@"iPad Pro 12.9-inch (M1) — 1366 × 1024"]) measured = action;
     assert(measured != nil);
     [self dismissPresented];
+    Pump(0.4);
     RunAction(measured);
-    Pump(0.6);
-    UIAlertController *alert = (id)self.controller.presentedViewController;
+    UIAlertController *alert = WaitForAlert(self.controller, 5.0);
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Preview profile"]);
-    assert([alert.message containsString:@"is not this iPad"]);
+    assert([alert.message containsString:@"is not this device"]);
     [self dismissPresented];
     Pump(0.4);
     // The row now says Preview, everywhere it appears, and keeps the stored choice.
@@ -1396,6 +1569,10 @@ static int backupsBeforePerformance;
     assert([deviceRow isEqual:@"Device profile: Preview — iPad Pro 12.9-inch (M1)"]);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverDeviceProfile"]
             isEqual:@"ipad-pro-12.9-m1"]);
+    // The override, the quality and the scale are written together, so they cannot disagree.
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverRenderProfile"]
+            isEqual:@"performance"]);
+    assert([NSUserDefaults.standardUserDefaults doubleForKey:@"WolkaraForeverBackingScale"] == 0.75);
     // Choosing a device keeps the quality that was already chosen, clamped to what the new
     // profile may be asked for: it is a change of hardware, not a silent quality change. That
     // profile was measured, so Quality is now available as well.
@@ -1622,7 +1799,7 @@ static int backupsBeforePerformance;
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.backup") configuration].title
         isEqual:@"WoW-Oberflächenkonfiguration sichern"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
-        isEqual:@"Mac-Ever laden"]);
+        isEqual:@"Mac-Ever laden (Leistungsoptimierung)"]);
     // A product name stays itself in both languages.
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text]
         isEqual:@"Gamepad-Oberfläche"]);
@@ -1787,8 +1964,9 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([sheet.title isEqual:@"Einstellungen"]);
     assert([sheet.message containsString:@"Aktualisierungen werden automatisch installiert"]);
     NSArray *titles = [sheet.actions valueForKey:@"title"];
-    for (NSString *expected in @[@"Add-ons verwalten", @"Spieldateien prüfen und reparieren",
-                                 @"Diagnose und Protokolle", @"Über diese App und Open-Source-Lizenzen",
+    for (NSString *expected in @[@"Spieldateien prüfen und reparieren",
+                                 @"Diagnose und Protokolle", @"Eingabediagnose einschalten",
+                                 @"Über diese App und Open-Source-Lizenzen",
                                  @"Abbrechen"])
         assert([titles containsObject:expected]);
     [self dismissPresented];
@@ -1898,7 +2076,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(atomic_load(&requests) == beforeCheck + 1);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWProduct"] isEqual:@"wowf"]);
     assert(self.controller.presentedViewController == nil);
-    assert([[self row:@"wow.edition"].configuration.title hasPrefix:@"Forever"]);
+    assert([[self row:@"wow.edition"].configuration.title isEqual:@"Game Edition: Forever"]);
 
     // --- Preferences: Region, through the sub-sheet the row opens and the action it holds
     assert([self row:@"wow.preferences"].enabled);
@@ -1928,7 +2106,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     RunAction(americas);
     Pump(1.2);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWRegion"] isEqual:@"us"]);
-    assert([[self row:@"wow.preferences"].configuration.title hasPrefix:@"US"]);
+    assert([[self row:@"wow.preferences"].configuration.title isEqual:@"Region / Locale: US English"]);
     assert(atomic_load(&requests) == beforeCheck + 1);
     // Back to Europe through the same two sheets, so every later step runs where the
     // page started. The row's title follows the change both ways.
@@ -1949,7 +2127,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     RunAction(europe);
     Pump(1.2);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WoWRegion"] isEqual:@"eu"]);
-    assert([[self row:@"wow.preferences"].configuration.title hasPrefix:@"EU"]);
+    assert([[self row:@"wow.preferences"].configuration.title isEqual:@"Region / Locale: EU English"]);
 
     // --- Open Add-on Directory: the file browser opens on the game's Interface/AddOns
     assert([self row:@"wow.addons.directory"].enabled);
@@ -1993,7 +2171,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
         (@[@"Verify and repair game files", @"Diagnostics and logs",
-           @"About and open-source licenses", @"Cancel"])]);
+           @"Turn on input diagnostics", @"About and open-source licenses", @"Cancel"])]);
     assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
     __block NSInteger diagnostics = 0;

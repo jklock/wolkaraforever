@@ -1,0 +1,79 @@
+# WolkaraForever layer patch 0053 - runtime: External JIT is a route of this build too
+#
+# Why: upstream commit 6b7d9f5 ("make External JIT an execution mode of the build without the
+# tunnel") deliberately kept the external route out of the Tolkara target. The consequence is
+# that the only build that offers External JIT is TolkaraDiagnostics, and that build's Play runs
+# the loader check (launcher/App/Diagnostics.m) - it never enters the guest. So a person who
+# sideloads the unsigned .ipa, turns JIT on with an enabler and presses Play gets a report page,
+# never the game. That is the gap, and it is not something #37 or 0050-0052 can close from the
+# enabler side.
+#
+# What it does: the external route and its mode become part of every build.
+#   - ng_use_external_authorization() answers in the integrated build instead of returning false.
+#   - ng_initialize() computes the external route in the integrated build instead of compiling
+#     it out.
+#   - TKExecutionModeAvailable() offers External JIT in every build.
+#
+# Nothing else changes: the route is still only taken when it is named (an enabler answered, or
+# --external-authorization was passed), the arena still comes from the enabler, and
+# da_entry_allowed() still refuses entry while anything is attached or the arena does not
+# execute. The Developer service and Local signing are untouched, and neither becomes a fallback
+# for the external route.
+#
+# Applies to: runtime/NativeGuest.m, launcher/App/ExecutionMode.m
+# Upstream: candidate (deliberate departure from 6b7d9f5, recorded in COMPATIBILITY.md).
+
+diff --git a/launcher/App/ExecutionMode.m b/launcher/App/ExecutionMode.m
+index ff4e1ca..4c90d22 100644
+--- a/launcher/App/ExecutionMode.m
++++ b/launcher/App/ExecutionMode.m
+@@ -66,12 +66,9 @@ BOOL TKExecutionModeAvailable(TKExecutionMode mode, NSString **reason) {
+         return NO;
+ #endif
+     case TKExecutionModeExternalJIT:
+-#if TOLKARA_INTEGRATED_AUTH
+-        if(reason) *reason=@"Not included in this build (Tolkara).";
+-        return NO;
+-#else
++        // Offered by every build: the unsigned .ipa is this build too, and a user who
++        // launches it with a JIT enabler needs the route to exist.
+         return YES;
+-#endif
+     case TKExecutionModeNone: break;
+     }
+     if(reason) *reason=@"No execution mode chosen.";
+diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
+index 07bd17c..073a1c6 100644
+--- a/runtime/NativeGuest.m
++++ b/runtime/NativeGuest.m
+@@ -106,16 +106,10 @@ bool ng_use_local_authorization(void) {
+     return false;
+ #endif
+ }
+-#if !TOLKARA_INTEGRATED_AUTH
+ static atomic_bool use_external_authorization;
+-#endif
+ bool ng_use_external_authorization(void) {
+-#if TOLKARA_INTEGRATED_AUTH
+-    return false;
+-#else
+     if(atomic_load(&initialization_attempted) || atomic_load(&use_signed_image)) return false;
+     atomic_store(&use_external_authorization,true);return true;
+-#endif
+ }
+ 
+ static struct {
+@@ -1701,11 +1695,10 @@ bool ng_initialize(const char *path, const char *frameworks, const char *library
+         [NSProcessInfo.processInfo.arguments containsObject:@"--local-native-authorization"]);
+ #endif
+     bool external=false;
+-#if !TOLKARA_INTEGRATED_AUTH
+-    // External JIT exists only in TolkaraDiagnostics, like its mode.
++    // External JIT is a route of this build too: whoever sideloads the unsigned .ipa and
++    // launches it with a JIT enabler arrives here, and the enabler provides the arena.
+     external=!signed_backend && !local && (atomic_load(&use_external_authorization) ||
+         [NSProcessInfo.processInfo.arguments containsObject:@"--external-authorization"]);
+-#endif
+     if (!signed_backend) {
+         // Only what certainly cannot fit is refused; the rest is the device's answer.
+         size_t limit=nc_launch_limit(), available=nc_available_memory();
