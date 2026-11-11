@@ -13,6 +13,22 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **External JIT: a JIT enabler's memory is cleared before the game is placed in it.** The
+  runtime assumed the region an enabler hands back is zero-filled, but StikDebug writes one
+  byte, `0x69`, at the start of every page it prepares. Only the pages the game image has bytes
+  for were written afterwards, so every zero-initialised page of the image began with that
+  byte. Reported on an iPhone Duo outside this project's test matrix (iOS 27.2, AltStore with
+  a free Apple ID, StikDebug 3.2.2): Forever 1.60.1 (70862) closed about 35 seconds after its
+  window appeared, on every launch, with `ERROR #132` at address `0x71`. The image's extent is
+  now cleared through the writable view before the image is placed across it (patch 0050).
+- **External JIT: memory an enabler granted but never prepared is handed back.** Reported on
+  the same phone: about one launch in three closed the moment the game was entered. StikDebug,
+  and the StikJIT library other enablers share, write their page-preparation packets with nine
+  hex digits of address, so a region at or above 2^36 is granted and reported ready while the
+  writes go elsewhere. The kernel puts the region there, at `0x7000000000`, whenever nothing
+  lower down has room for it, and the launch reservation asks for up to 1 GiB. Such a region
+  is now given back and a smaller one asked for, and what was asked and granted is written to
+  `wolkaraforever.log` under `[jit]` (patch 0051).
 - **One test matrix: three devices, enforced by the tools.** The suites used to take whichever
   iPad or iPhone happened to be installed, and to keep trying devices until one booted. Now
   `wolkaraforever/tools/simulators.sh` names the only devices this project measures —

@@ -64,8 +64,14 @@ the matrix runner's final terminal exit was not retained by the host capture.
 
 - **Human full-game.** No launch, login, in-world session, performance measurement, or
   gameplay check was part of this work. Nothing here says the game works.
-- **External JIT.** Not exercised at all. The unsigned generic `.ipa` exists for sideloading;
-  that is not a compatibility result.
+- **External JIT.** Exercised once, on 2026-11-11, on the test iPad (iPad Pro 12.9-inch, 5th
+  generation, iPadOS 27.2) with the TolkaraDiagnostics test bundle and StikDebug 3.2.2: the app
+  started in External JIT, mapped a 99,532,800-byte arena (protection `0x5`) and ran 13,305
+  initializers of Forever 1.60.170888. That is a loader result, not a game session, and the
+  enabler-provided arena path could not be completed on this device: a region StikDebug granted
+  came back readable but not executable after the debugger detached (`protection 0x1`), so the
+  runtime refused it and the app mapped its own. External JIT remains a diagnostics-build path,
+  not something a user of the shipping app selects.
 - **Dictation in the game's own text field.** The app's own voice self-test opened a real
   iPad dictation session, restored it, and measured **-25.8 dBFS**. That demonstrates an
   on-device microphone signal reaching the app, not that speech becomes text in the game.
