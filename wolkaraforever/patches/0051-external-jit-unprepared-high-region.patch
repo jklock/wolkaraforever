@@ -1,4 +1,4 @@
-# WolkaraForever layer patch 0049 - runtime: a region an enabler granted but did not prepare
+# WolkaraForever layer patch 0051 - runtime: a region an enabler granted but did not prepare
 #
 # Why: on External JIT about one launch in three closed the moment the game was
 # entered. The enabler had granted the arena, the arena reported itself executable,
@@ -46,6 +46,9 @@
 # image's size, gets the same check. If that comes back out of reach too, the
 # launch fails as it did before this patch.
 #
+# The debugger ban is unchanged: this only refuses a region before it is adopted,
+# and da_entry_allowed still ends every route into guest code with a detach.
+#
 # Applies to: runtime/DebuggerArena.c, runtime/DebuggerArena.h,
 #             tests/test_debugger_arena.c
 # Upstream: candidate.
@@ -64,7 +67,7 @@ diff --git a/runtime/DebuggerArena.c b/runtime/DebuggerArena.c
 @@ -27,6 +28,26 @@ bool da_plausible_region(const void *address) {
      return (value & ((uintptr_t)getpagesize() - 1)) == 0;
  }
-
+ 
 +// StikJIT, which StikDebug and the enablers built on it share, prepares a region
 +// by writing one byte (0x69) to each of its pages, in packets that carry nine hex
 +// digits of address. From 2^36 up the leading digits are dropped: the writes go
@@ -90,7 +93,7 @@ diff --git a/runtime/DebuggerArena.c b/runtime/DebuggerArena.c
  __attribute__((noinline, optnone, naked))
 @@ -90,14 +111,22 @@ bool da_request_arena(NativeCodeMemory *memory, size_t size, FILE *log) {
  }
-
+ 
  bool da_adopt_region(NativeCodeMemory *memory, void *region, size_t size, FILE *log) {
 -    if (nc_adopt(memory, region, size)) return true;
 +    // Giving it back lets the caller ask for less, which can land lower.
@@ -113,7 +116,7 @@ diff --git a/runtime/DebuggerArena.c b/runtime/DebuggerArena.c
 +                region, size, refusal, released ? "given back" : "not given back");
      return false;
  }
-
+ 
 diff --git a/runtime/DebuggerArena.h b/runtime/DebuggerArena.h
 --- a/runtime/DebuggerArena.h
 +++ b/runtime/DebuggerArena.h
@@ -162,7 +165,7 @@ diff --git a/tests/test_debugger_arena.c b/tests/test_debugger_arena.c
 +    assert(!unreached.executable && !unreached.writable && !hd_protection(missed));
 +    assert(!fflush(record) && strstr(text, "granted but not prepared") && !strstr(text, "prepared: it lies past the addresses the enabler writes to; not given back"));
      fclose(record); free(text);
-
+ 
      puts("PASS: debugger region validation, refused request with nothing attached (no breakpoint executed),"
           " no entry while a debugger holds on, a refused region given back");
 +    puts("PASS: a granted region past the enabler's reach is given back unless its pages were written");
