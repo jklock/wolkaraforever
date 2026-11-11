@@ -70,8 +70,11 @@ a result nobody can repeat.
 creates only those two, reuses them if they are already there, and deletes nothing.
 
 There is no iPhone hardware in the matrix and no iPad other than the 12.9-inch. A result from a
-fourth device is not evidence, and a report that does not name which of the three ran is not a
-report.
+fourth device is not evidence, and a report that does not name which device ran is not a
+report. The two simulators are the requirement and the physical iPad is nice to have: a
+release is measured on both simulators, and a run on the iPad is recorded when it happens
+rather than waited for. Say "simulators only" when that is what ran — a simulator result
+must never read as a physical one.
 
 ## The device matrix
 
