@@ -29,21 +29,25 @@ to a running application.
   devices or OS versions.
 - A macOS arm64 application that you own, installed on the Mac.
 
-## Storage-backed simulator devices
+## Simulator devices
 
-For simulator work, the supported storage layout keeps *device data* on the
-external Storage volume without asking CoreSimulator to use an unsupported
-external directory. Install an iOS simulator runtime from Xcode Components,
-then run this once:
+Simulator device data stays where CoreSimulator puts it: a real directory at
+`~/Library/Developer/CoreSimulator` on the boot volume. Install an iOS simulator
+runtime from Xcode Components, then run this once:
 
 ```bash
 wolkaraforever/tools/setup_simulators.sh --apply
 ```
 
-It creates `/Volumes/Storage/Simulators.sparsebundle` and mounts that APFS disk
-image at `~/Library/Developer/CoreSimulator`. CoreSimulator therefore sees its
-required native local APFS mount while the image and all simulator device data
-live on Storage.
+**Do not put that directory on a disk image.** An APFS sparse bundle mounted at
+`~/Library/Developer/CoreSimulator` was tried and is withdrawn, because it does
+not fail cleanly — every device booted from it hangs for ever at the Apple logo:
+SpringBoard gets a PID, `com.apple.springboard.services` never registers,
+`simctl io screenshot` returns a static frame, writes stop dead, and
+`simctl bootstatus -b` hangs, so the fault reads as a slow boot rather than as
+the layout. The same runtime on the same device on the boot volume reaches its
+home screen in seconds. Proven on 2026-11-06 by booting a throwaway device in a
+device set on the boot disk and comparing the two.
 
 The test matrix is three devices and no others. The two simulators among them are the
 requirement; the physical iPad is nice to have, and the script ensures only the two
@@ -57,26 +61,17 @@ It creates each one only if it is not already there. A device it creates is boot
 and shut down again; a device that already exists is reported and left exactly as it is. It
 deletes nothing and shuts nothing else down: every other simulator on the Mac is left alone.
 
-It also installs a per-user LaunchAgent that reattaches the image at login.
-Keep the Storage volume connected and mounted before opening Xcode; if it was
-not available at login, attach the image before starting CoreSimulator:
+A Mac still carrying the withdrawn layout — a disk image mounted at that path, or
+the old `com.wolkaraforever.coresimulator-storage` LaunchAgent — is refused by the
+script, which prints the commands that undo it. The image is never deleted for
+you; it holds your device data, and copying that data back into the real
+directory is what keeps your simulators.
+
+Confirm the devices with:
 
 ```bash
-hdiutil attach -nobrowse -mountpoint "$HOME/Library/Developer/CoreSimulator" \
-  /Volumes/Storage/Simulators.sparsebundle
-```
-
-Confirm the live mount and devices with:
-
-```bash
-diskutil info "$HOME/Library/Developer/CoreSimulator"
 xcrun simctl list devices available
 ```
-
-`diskutil` must report `Protocol: Disk Image` and `Device Location: External`.
-Do not replace this mount with a symlink or point `simctl --set` directly at the
-external USB path: CoreSimulator rejects those layouts. Do not rename or remove
-the sparse bundle while CoreSimulator is running; use `simctl` to reset devices.
 
 The sealed iOS and iPadOS simulator runtimes are Apple-managed Cryptex content
 and remain where Xcode installs them. macOS does not use a CoreSimulator runtime:
