@@ -11,16 +11,18 @@
 # 320-wide render target (Render Settings Changed ... Size: 320x840).
 #
 # Size the view to the content rect when there is no host yet; with a host,
-# ak_attach does it from the host bounds as before. Measured on an iPhone Air:
-# the sizing pass runs at most 4 times, the layer gets {0, 0, 912, 420} and
-# setDrawableSize:{912, 420}, and the client reaches its first frame ~4 s sooner.
+# ak_attach does it from the host bounds as before. The layer's own test
+# (wolkaraforever/AppKit/tests/test_appkit_content_view.m, run by
+# wolkaraforever/tools/test_appkit_content_view.sh) holds the size the view has
+# before the window is shown, its fixed point under repeat passes, and the host
+# path; it fails against the unpatched adapter.
 #
 # Applies to: translation/AppKit/AppKit.m
 # Upstream: candidate.
 #
 --- a/translation/AppKit/AppKit.m
 +++ b/translation/AppKit/AppKit.m
-@@ -882,7 +882,11 @@
+@@ -767,7 +767,11 @@
      [_contentView.layer removeFromSuperlayer];
      _contentView = v; v.window = self; v.nextResponder = self;
      if (!v.layer) v.wantsLayer = YES;

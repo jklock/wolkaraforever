@@ -135,6 +135,10 @@ wolkaraforever/Touch/TouchHaptics.m translation/AppKit/TouchHaptics.m add
 wolkaraforever/Touch/tests/test_touch_controls_app.m tests/test_touch_controls_app.m replace
 wolkaraforever/Touch/tests/test_touch_gamepad_app.m tests/test_touch_gamepad_app.m add
 #
+# AppKit: the content-view sizing test for patch 0054, which has to make
+# its own window and host because a bare test process has neither.
+wolkaraforever/AppKit/tests/test_appkit_content_view.m tests/test_appkit_content_view.m add
+#
 # Bridge: what the patched platform files and the public APIs call into
 wolkaraforever/Bridge/AuthorizationBlockedState.h authorization/App/AuthorizationBlockedState.h add
 wolkaraforever/Bridge/AuthorizationBlockedState.m authorization/App/AuthorizationBlockedState.m add

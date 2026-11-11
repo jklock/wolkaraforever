@@ -61,6 +61,16 @@ intent() {
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
+    echo "# AppKit: the content-view sizing test for patch 0054, which has to make"
+    echo "# its own window and host because a bare test process has neither."
+    git ls-files wolkaraforever/AppKit | while read -r f; do
+        case "$f" in
+            wolkaraforever/AppKit/tests/*) dst=tests/${f#wolkaraforever/AppKit/tests/};;
+            *) echo "# not overlaid yet (source of a pending patch): $f"; continue;;
+        esac
+        echo "$f $dst $(intent "$dst")"
+    done
+    echo "#"
     echo "# Bridge: what the patched platform files and the public APIs call into"
     git ls-files wolkaraforever/Bridge | while read -r f; do
         case "$f" in
