@@ -17,6 +17,8 @@ concurrency:
 
 permissions:
   contents: write # create or edit the release, upload the .ipa
+  issues: read # credit reporters of issues closed by released pull requests
+  pull-requests: read # credit authors of pull requests associated with released commits
 
 env:
   TAG: ${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}
@@ -86,6 +88,40 @@ jobs:
           git log --no-merges --format="- [\`%h\`]($URL/commit/%H) %s" "${PREV:+$PREV..}$TAG" > commits.md
           TOTAL=$(wc -l < commits.md | tr -d ' ')
 
+          # Git does not retain issue authors or PR authors after a squash merge. Resolve
+          # them from GitHub's commit associations so every generated release credits both
+          # the people whose PRs shipped and reporters of issues those PRs close.
+          : > credits.tsv
+          credit_query='query($owner: String!, $name: String!, $oid: GitObjectID!) {
+            repository(owner: $owner, name: $name) {
+              object(oid: $oid) {
+                ... on Commit {
+                  associatedPullRequests(first: 20) {
+                    nodes {
+                      number title url mergedAt author { login url }
+                      closingIssuesReferences(first: 100) {
+                        nodes { number title url author { login url } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }'
+          git log --no-merges --format=%H "${PREV:+$PREV..}$TAG" | while IFS= read -r oid; do
+            gh api graphql -f query="$credit_query" \
+              -f owner="${GITHUB_REPOSITORY_OWNER}" \
+              -f name="${GITHUB_REPOSITORY#*/}" \
+              -F oid="$oid" > credit.json
+            jq -r '.data.repository.object.associatedPullRequests.nodes[]?
+              | select(.mergedAt != null)
+              | . as $pr
+              | (["pr", $pr.number, ($pr.author.login // ""), ($pr.author.url // ""), $pr.title, $pr.url] | @tsv),
+                ($pr.closingIssuesReferences.nodes[]?
+                  | ["issue", .number, (.author.login // ""), (.author.url // ""), .title, .url] | @tsv)' credit.json >> credits.tsv
+          done
+          sort -u credits.tsv -o credits.tsv
+
           {
             if [ -s notes.md ]; then echo; fi
             echo "$MARKER"
@@ -98,6 +134,26 @@ jobs:
             echo "- SideStore: \`sidestore://install?url=$URL/releases/download/$TAG/$IPA\`"
             echo "- LiveContainer: \`livecontainer://install?url=$URL/releases/download/$TAG/$IPA\`"
             echo
+            if [ -s credits.tsv ]; then
+              echo "**Contributors**"
+              echo
+              while IFS=$'\t' read -r kind number login profile title item_url; do
+                safe_title=$(printf '%s' "$title" | sed 's/\\/\\\\/g; s/]/\\]/g')
+                if [ -n "$login" ] && [ -n "$profile" ]; then
+                  person="[@$login]($profile)"
+                elif [ -n "$login" ]; then
+                  person="@$login"
+                else
+                  person="an unlinked GitHub contributor"
+                fi
+                if [ "$kind" = pr ]; then
+                  echo "- $person — [#$number]($item_url): $safe_title"
+                else
+                  echo "- $person — reported [#$number]($item_url): $safe_title"
+                fi
+              done < credits.tsv
+              echo
+            fi
             if [ -n "$PREV" ]; then
               echo "**Commits since $PREV:**"
             else

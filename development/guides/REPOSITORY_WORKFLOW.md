@@ -112,6 +112,14 @@ git push origin v<version>
 The tag points to the exact tested squash-merge SHA. Commit the generated validation record
 after tagging; it must name that SHA. No later release branch starts until exact-main validation
 passes. Build, package, test, and publish from that SHA only.
+
+Every published release credits the people who helped ship it. The release workflow resolves
+each released commit's merged pull request and its closing issue references from GitHub, then
+adds a **Contributors** section naming the PR author and each issue reporter. Keep the PR's
+closing keywords and author intact; do not replace that generated section with a hand-written
+summary. A person is credited once per PR or issue even when multiple release commits point to
+the same work.
+
 Inspect the failing CI job before changing another lane or retagging. The External JIT IPA
 workflow is manual and is never an automatic side effect of tagging.
 
