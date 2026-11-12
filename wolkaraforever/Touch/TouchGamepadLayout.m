@@ -174,8 +174,8 @@ static CGFloat Number(id value, CGFloat fallback) {
         ]}];
     }
 }
-+ (NSArray<NSString *> *)savedProfileNames {
-    NSDictionary *all = [NSUserDefaults.standardUserDefaults dictionaryForKey:AKProfilesDefaultsKey];
+- (NSArray<NSString *> *)savedProfileNames {
+    NSDictionary *all = [_defaults dictionaryForKey:AKProfilesDefaultsKey];
     return [[all.allKeys sortedArrayUsingSelector:@selector(compare:)] copy];
 }
 - (BOOL)saveAsProfileNamed:(NSString *)name {

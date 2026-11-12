@@ -201,12 +201,12 @@ static void TestPreferences(void) {
     [layout applyTemplateNamed:@"duo-addon"];
     assert(layout.floatingSticks && layout.keepFree.count==2);
     assert([layout saveAsProfileNamed:@"test-setup"]);
-    assert([[AKGamepadLayout savedProfileNames] containsObject:@"test-setup"]);
+    assert([[layout savedProfileNames] containsObject:@"test-setup"]);
     [layout applyTemplateNamed:@"plain"];
     assert(!layout.floatingSticks);
     assert([layout applyProfileNamed:@"test-setup"] && layout.floatingSticks && layout.keepFree.count==2);
     assert([layout deleteProfileNamed:@"test-setup"]);
-    assert(![[AKGamepadLayout savedProfileNames] containsObject:@"test-setup"]);
+    assert(![[layout savedProfileNames] containsObject:@"test-setup"]);
     assert(![layout applyProfileNamed:@"test-setup"]);
     assert(![layout saveAsProfileNamed:@""]);
     // An arrangement from a hand-edited file cannot smuggle in an out-of-range value.

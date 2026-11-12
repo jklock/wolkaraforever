@@ -39,7 +39,7 @@ FOUNDATION_EXPORT NSNotificationName const AKGamepadLayoutDidChangeNotification;
 - (void)applyArrangement:(NSDictionary<NSString *, id> *)arrangement;
 + (NSArray<NSString *> *)templateNames;
 - (void)applyTemplateNamed:(NSString *)name;
-+ (NSArray<NSString *> *)savedProfileNames;
+- (NSArray<NSString *> *)savedProfileNames;
 - (BOOL)saveAsProfileNamed:(NSString *)name;
 - (BOOL)applyProfileNamed:(NSString *)name;
 - (BOOL)deleteProfileNamed:(NSString *)name;
