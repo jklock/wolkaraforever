@@ -85,6 +85,34 @@ Mac-native suites:
   installing through the store, updating in place on a second Install, and refusing a tampered
   archive without replacing anything.
 
+Physical iPad (iPad Pro 12.9-inch, 5th generation; iPadOS 27.2; Developer service), installed
+with `wolkaraforever/tools/install.sh` from the working tree that became `d9d49ce`:
+
+- The install reached step 5/5 and relaunched the plain launcher. Its own log reads
+  `home: the launcher is up (mode=developer-service source=saved)`, the first appearance check
+  ran and finished (`checked: state=3 error=none`), and there is no new error file or crash
+  report.
+- A device screenshot after that launch shows the six-card page with **LAUNCHER MANAGER** and
+  `Interface Mode: iPadOS` beside UI Manager, and the Add-On Manager card's
+  `Install Recommended Add-ons (Mac-Ever)` row. That is the iPadOS default on the installed
+  build.
+- `wolkaraforever/tools/pilot.sh selftest addons-page` reports
+  `addons-page PASS 27/27 checks`, which now includes: the Duo recommendation opens the
+  bundled-package page; the app's own bundle carries a verified WolkaraRoue package; the page
+  knows its release and a 64-character SHA-256; the row shows that release with an enabled
+  Install; opening the page installed nothing; and the iPadOS recommendation is the Mac-Ever
+  page filtered to CurseForge project 1733200.
+- The app was put back on its normal home screen afterwards, and `pilot.sh view` shows it
+  running there (`home: back in front`, `checked: state=3 error=none`).
+
+What the device did not show: the selector sheet's own tap, and a final reinstall from the
+committed SHA. A live game session was running when the final exact-SHA reinstall was
+attempted, and the reviewed install guard correctly refused to replace the app underneath it;
+the installed build's content is the committed tree (`d9d49ce` differs from it only by that
+commit), and the live session was left alone rather than stopped a third time. The simulator
+matrix carries the required evidence; the device result above is recorded as the narrower,
+physical thing it is.
+
 Localization: `wolkaraforever/tools/check_localization.py` passes with 563 keys; `iPadOS` and
 `iOS on Duo` are on the documented same-in-both list, and the bundled version/hash line is
 `Version %@ · SHA-256 %@` in all three tables.
