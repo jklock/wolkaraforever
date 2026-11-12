@@ -1,6 +1,7 @@
 // Original UIKit/AppKit fixture for manual touch/keyboard testing. No guest.
 #import "AppKit.h"
 #import "AKPerformanceOverlay.h"
+#import "AKTouchEventPump.h"
 #import "TouchControls.h"
 #import "TouchGamepad.h"
 #import "TouchGamepadLayout.h"
@@ -21,6 +22,8 @@
 // The last key event this guest view was given, so a test can say whether the adapter posted
 // one at all. Nil is the answer that matters for a key the user has taken.
 @property (nonatomic, strong, nullable) NSEvent *lastKeyEvent;
+// Every key this guest view was given, in order, so a test can read a whole sequence.
+@property NSMutableArray<NSNumber *> *keyCodes;
 @end
 @implementation AKInputFixtureView
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -58,6 +61,8 @@
 - (BOOL)acceptsFirstResponder { return YES; }
 - (void)keyDown:(NSEvent *)event {
     self.lastKeyEvent = event;
+    if (!self.keyCodes) self.keyCodes = [NSMutableArray new];
+    [self.keyCodes addObject:@(event.keyCode)];
     if (event.keyCode == 0 && (event.modifierFlags & NSEventModifierFlagCommand)) {
         self.selection = NSMakeRange(0, self.text.length);
         self.replacements++;
@@ -245,12 +250,16 @@ static void AKFixtureInputSource(void *context) {
     // Empty nonblocking polls, source-driven blocking polls, a permanently
     // occupied queue, repeated peeks, and NSApplication's own run loop must
     // all let native UI make progress.
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
     for (NSUInteger traffic = 0; traffic < 5; traffic++) {
         UIView *probe = [[UIView alloc] initWithFrame:CGRectMake(60, 260, 24, 24)];
         probe.backgroundColor = UIColor.systemGreenColor;
         [host addSubview:probe];
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(60, 300, 220, 32)];
         [host addSubview:slider];
+        // Mode 2 keeps the queue permanently ready, so it needs a surface for the pump to
+        // service; see the loop below.
+        if (traffic == 2) { [controls toggleKeyboard]; [host layoutIfNeeded]; }
         __block BOOL completed = NO, deferred = NO, timerFired = NO;
         dispatch_async(dispatch_get_main_queue(), ^{ deferred = YES; });
         NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:0.02 repeats:NO block:^(NSTimer *fired) {
@@ -277,20 +286,30 @@ static void AKFixtureInputSource(void *context) {
         }
         while (traffic != 4 && !(completed && deferred && timerFired) && NSProcessInfo.processInfo.systemUptime < deadline) {
             @autoreleasepool {
-                if (traffic == 2) AKFixtureInputSource(NULL);
+                if (traffic == 2) {
+                    // The guest's own loop calls the pump on every turn, and the pump is what
+                    // keeps UIKit moving under a permanently ready queue - but only while a
+                    // native surface is open or a button is held, because otherwise it does
+                    // nothing on purpose. This mode is that state: the queue is always ready
+                    // and the keyboard is open, so the pump has something to service.
+                    AKFixtureInputSource(NULL);
+                    AKPumpTouchEvents(YES);
+                }
                 if (traffic == 1) CFRunLoopSourceSignal(source);
                 NSEvent *event = [NSApp nextEventMatchingMask:UINT64_MAX
                     untilDate:traffic == 1 ? [NSDate dateWithTimeIntervalSinceNow:0.01] : NSDate.distantPast
-                    inMode:NSDefaultRunLoopMode dequeue:traffic != 3];
-                if (peeked) assert(event == peeked);
+                    inMode:NSDefaultRunLoopMode dequeue:YES];
+                // A peek that is never taken is not progress. The event is still there, and
+                // one dequeue is what takes it - after that the loop runs normally.
+                if (peeked) { assert(event == peeked); peeked = nil; }
             }
         }
         [timer invalidate];
         NSLog(@"Native UI progress: traffic=%lu animation=%d deferred=%d timer=%d",
             (unsigned long)traffic, completed, deferred, timerFired);
         assert(completed && deferred && timerFired && slider.value == 0.75);
-        if (peeked) assert([NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast
-            inMode:NSDefaultRunLoopMode dequeue:YES] == peeked);
+        if (traffic == 2) [controls dismissKeyboard];
+        assert(peeked == nil);
         [probe removeFromSuperview]; [slider removeFromSuperview];
     }
     CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
@@ -300,6 +319,16 @@ static void AKFixtureInputSource(void *context) {
 }
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
+    // The mobile interface is chosen the way the launcher chooses it: by the defaults key, here
+    // in the argument domain, which is read before anything is written to disk. Standard is what
+    // an absent key means, so the default run exercises that. It has to be set before the host
+    // is made, because the controls read it once, when they are created.
+    BOOL mobileInterface = [NSProcessInfo.processInfo.arguments containsObject:@"--mobile-interface"];
+    if (mobileInterface) {
+        NSMutableDictionary *modes = [[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
+        modes[@"WolkaraForeverInterfaceModeV1"] = @"ios";
+        [NSUserDefaults.standardUserDefaults setVolatileDomain:modes forName:NSArgumentDomain];
+    }
     if ([NSProcessInfo.processInfo.arguments containsObject:@"--tracking-progress-test"]) {
         NSMutableDictionary *arguments=[[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
         arguments[@"TKTouchGamepadEnabled"]=@NO;
@@ -386,6 +415,22 @@ static void AKFixtureInputSource(void *context) {
                 [reference becomeFirstResponder];
                 return;
             }
+            // Standard: the toolbar is where it has always been - just below the top, 252 by 44.
+            // Mobile: the bottom centre, between the thumbs, folded into its handle.
+            [host layoutIfNeeded];
+            CGRect resting = controls.frame;
+            if (selfTest) {
+                assert(fabs(CGRectGetMidX(resting) - CGRectGetMidX(host.bounds)) < 1);
+                if (mobileInterface) {
+                    assert(fabs(CGRectGetMaxY(resting) - (CGRectGetMaxY(host.bounds) - host.safeAreaInsets.bottom - 8)) < 1);
+                    assert(fabs(resting.size.width - 96) < 1 && fabs(resting.size.height - 34) < 1);
+                    assert([controls valueForKey:@"_toolbarHandle"] != nil);
+                } else {
+                    assert(fabs(CGRectGetMinY(resting) - (host.safeAreaInsets.top + 8)) < 1);
+                    assert(fabs(resting.size.width - 252) < 1 && fabs(resting.size.height - 44) < 1);
+                    assert([controls valueForKey:@"_toolbarHandle"] == nil);
+                }
+            }
             [controls toggleKeyboard];
             if (!selfTest) return;
             [NSTimer scheduledTimerWithTimeInterval:1 repeats:NO block:^(NSTimer *timer) {
@@ -396,7 +441,10 @@ static void AKFixtureInputSource(void *context) {
                 assert(CGRectGetMaxY(controls.frame) <= CGRectGetMinY(host.keyboardLayoutGuide.layoutFrame));
                 assert(CGRectGetMinY(controls.frame) >= 0);
                 CGRect toolbarFrame = controls.frame;
-                assert(fabs(CGRectGetMidX(toolbarFrame) - CGRectGetMidX(host.safeAreaLayoutGuide.layoutFrame)) < 1);
+                // Centred on the screen while typing too, as at rest: on an iPhone in landscape the
+                // safe area is off-centre (a side inset for the camera), and TouchControls.m
+                // centres on the host's bounds on purpose.
+                assert(fabs(CGRectGetMidX(toolbarFrame) - CGRectGetMidX(host.bounds)) < 1);
                 assert(fabs(CGRectGetMinY(toolbarFrame) - CGRectGetMinY(host.safeAreaLayoutGuide.layoutFrame) - 8) < 1);
                 UITextView *input = (UITextView *)AKFindInputView(host, @"wolkaraforever.keyboard.draft");
                 UIButton *insert = (UIButton *)AKFindInputView(host, @"wolkaraforever.keyboard.insert");
@@ -494,11 +542,40 @@ static void AKFixtureInputSource(void *context) {
                 [(UIButton *)accessory.arrangedSubviews[5] sendActionsForControlEvents:UIControlEventTouchUpInside];
                 AKDrainFixtureEvents();
                 assert([fixture.text isEqual:expected]);
-                // The system Done key replaces only; Return stays explicit.
-                [input.delegate textView:input shouldChangeTextInRange:NSMakeRange(input.text.length, 0) replacementText:@"\n"];
-                AKDrainFixtureEvents();
-                [expected setString:@" done"];
-                assert([fixture.text isEqual:expected] && !input.text.length);
+                // The system keyboard's key follows the interface. Standard: Done replaces the
+                // selected field, exactly as every release through v1.0.7. Mobile: Send puts the
+                // draft in the game's chat - F12 (the key the Interface mobile add-on binds to
+                // its chat), the line, then Return - and the keyboard goes away. Replace stays
+                // the button that fills the selected field without pressing Return.
+                NSUInteger keysBefore = fixture.keyCodes.count, replacementsBefore = fixture.replacements;
+                if (mobileInterface) {
+                    [input.delegate textView:input shouldChangeTextInRange:NSMakeRange(input.text.length, 0) replacementText:@"\n"];
+                    AKDrainFixtureEvents();
+                    NSArray<NSNumber *> *sent = [fixture.keyCodes subarrayWithRange:NSMakeRange(keysBefore, fixture.keyCodes.count - keysBefore)];
+                    if (sent.count < 2 || sent.firstObject.unsignedShortValue != 111 || sent.lastObject.unsignedShortValue != 36 ||
+                        ![fixture.text hasSuffix:@"done\r"] || fixture.replacements != replacementsBefore || input.text.length) {
+                        fprintf(stderr, "TOUCH_UI_SEND_MISMATCH: keys=%s text=%s replacements=%lu->%lu draft=%s\n",
+                                sent.description.UTF8String, fixture.text.UTF8String, (unsigned long)replacementsBefore,
+                                (unsigned long)fixture.replacements, input.text.UTF8String);
+                    }
+                    assert(sent.count >= 2 && sent.firstObject.unsignedShortValue == 111 && sent.lastObject.unsignedShortValue == 36);
+                    assert([fixture.text hasSuffix:@"done\r"] && fixture.replacements == replacementsBefore && !input.text.length);
+                    // A repeated or queued Return after the line has gone sends nothing more.
+                    keysBefore = fixture.keyCodes.count;
+                    [input.delegate textView:input shouldChangeTextInRange:NSMakeRange(0, 0) replacementText:@"\n"];
+                    AKDrainFixtureEvents();
+                    assert(fixture.keyCodes.count == keysBefore);
+                    [expected setString:fixture.text];
+                    // Open again to type more; the accessory's Return is still a plain Return.
+                    [controls toggleKeyboard];
+                } else {
+                    assert(fixture.replacements == replacementsBefore);
+                    [input.delegate textView:input shouldChangeTextInRange:NSMakeRange(input.text.length, 0) replacementText:@"\n"];
+                    AKDrainFixtureEvents();
+                    [expected setString:@" done"];
+                    assert(fixture.replacements == replacementsBefore + 1);
+                    assert([fixture.text isEqual:expected] && !input.text.length);
+                }
                 [(UIButton *)accessory.arrangedSubviews[5] sendActionsForControlEvents:UIControlEventTouchUpInside];
                 AKDrainFixtureEvents();
                 [expected appendString:@"\r"];
@@ -522,9 +599,23 @@ static void AKFixtureInputSource(void *context) {
                 assert(!controls.keyboardVisible && !input.text.length && input.superview.hidden);
                 [input insertText:@" background result"];
                 [host layoutIfNeeded];
-                assert(CGRectEqualToRect(toolbarFrame, controls.frame));
+                // Standard: the toolbar never left the top, so the frame is the one it had while
+                // typing. Mobile: the keyboard gone, it is back at the bottom, wherever the
+                // gamepad is.
+                if (mobileInterface) {
+                    assert(!CGRectEqualToRect(toolbarFrame, controls.frame));
+                } else {
+                    assert(CGRectEqualToRect(toolbarFrame, controls.frame));
+                }
+                CGRect down = controls.frame;
+                if (mobileInterface) {
+                    assert(fabs(CGRectGetMaxY(down) - (CGRectGetMaxY(host.bounds) - host.safeAreaInsets.bottom - 8)) < 1);
+                } else {
+                    assert(fabs(CGRectGetMinY(down) - (host.safeAreaInsets.top + 8)) < 1);
+                }
+                assert(fabs(CGRectGetMidX(down) - CGRectGetMidX(host.bounds)) < 1);
                 [controls setGamepadVisible:NO]; [host layoutIfNeeded];
-                assert(CGRectEqualToRect(toolbarFrame, controls.frame));
+                assert(CGRectEqualToRect(down, controls.frame));
 
                 // --- the optional performance HUD -----------------------------------
                 AKPerformanceOverlay *overlay = [host valueForKey:@"_performanceOverlay"];

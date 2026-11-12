@@ -22,7 +22,7 @@ SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations \
     translation/AppKit/TouchGamepad.m translation/AppKit/TouchGamepadLayout.m translation/AppKit/TouchHaptics.m \
-    translation/AppKit/AKHostLocalization.m tests/test_touch_gamepad_app.m \
+    translation/AppKit/InterfaceMode.m translation/AppKit/AKHostLocalization.m tests/test_touch_gamepad_app.m \
     -framework Foundation -framework UIKit -framework GameController -framework CoreGraphics -framework QuartzCore -o "$APP/TouchGamepadFixture"
 cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -50,8 +50,12 @@ else
     if [[ " $* " != *" --self-test "* && " $* " != *" --self-test-input "* ]]; then
         set -- --self-test "$@"
     fi
-    # simctl may report success even when the app aborts an assertion.
-    LOG=build/touch-gamepad-fixture/self-test.log
-    xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-gamepad "$@" 2>&1 | tee "$LOG"
-    grep -Eq 'TOUCH_GAMEPAD_(LIFECYCLE|INPUT)_PASS:' "$LOG"
+    # Both interfaces: the default (iPadOS, what every release through v1.0.7 has) and the
+    # mobile one the launcher selects with WolkaraForeverInterfaceModeV1.
+    for MODE in "" "--mobile-interface"; do
+        LOG="build/touch-gamepad-fixture/self-test${MODE:+-mobile}.log"
+        # simctl may report success even when the app aborts an assertion.
+        xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-gamepad "$@" $MODE 2>&1 | tee "$LOG"
+        grep -Eq 'TOUCH_GAMEPAD_(LIFECYCLE|INPUT)_PASS:' "$LOG"
+    done
 fi

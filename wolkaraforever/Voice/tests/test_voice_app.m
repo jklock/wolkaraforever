@@ -1403,6 +1403,11 @@ static void CheckLayout(UIView *root, NSString *page, NSArray<NSString *> *ident
     UIView *host = root.window ?: root;
     CGRect bounds = host.bounds;
     CHECK((bounds.size.width > 0 && bounds.size.height > 0), @"%@: the page is on a screen with a size", page);
+    UIScrollView *(^scroller)(UIView *) = ^UIScrollView *(UIView *view) {
+        for (UIView *parent = view.superview; parent; parent = parent.superview)
+            if ([parent isKindOfClass:UIScrollView.class]) return (UIScrollView *)parent;
+        return nil;
+    };
     for (NSString *identifier in identifiers) {
         UIView *view = Find(root, identifier);
         CHECK((view != nil), @"%@: %@ is on the page", page, identifier);
@@ -1413,6 +1418,19 @@ static void CheckLayout(UIView *root, NSString *page, NSArray<NSString *> *ident
         if (view.hidden || view.alpha < 0.01) continue;
         CGRect frame = [view convertRect:view.bounds toView:host];
         CGRect intersection = CGRectIntersection(frame, bounds);
+        // A page taller than the screen is a page that scrolls - the phone in landscape is
+        // shorter than its own settings page. The row must then be reachable, which is what
+        // scrolling to it proves; a row that is still off screen afterwards, or one the page
+        // never gives a size, is what this check is for.
+        if (CGRectIsNull(intersection) || CGRectIsEmpty(intersection)) {
+            UIScrollView *scroll = scroller(view);
+            if (scroll) {
+                [scroll scrollRectToVisible:[view convertRect:view.bounds toView:scroll] animated:NO];
+                [scroll layoutIfNeeded];
+                frame = [view convertRect:view.bounds toView:host];
+                intersection = CGRectIntersection(frame, bounds);
+            }
+        }
         CHECK((!CGRectIsNull(intersection) && !CGRectIsEmpty(intersection)),
               @"%@: %@ is on screen at %.0f,%.0f %.0fx%.0f", page, identifier,
               frame.origin.x, frame.origin.y, frame.size.width, frame.size.height);

@@ -118,6 +118,15 @@ intent() {
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
+    echo "# Addons: the bundled Interface mobile add-on package - one versioned ZIP of the"
+    echo "# reviewed Lua in addons/WolkaraRoue, and the manifest that binds it to its release"
+    echo "# and to every file's hash. A fixture rebuilds both from the sources and compares,"
+    echo "# so the archive the app ships cannot drift from the Lua that was reviewed."
+    git ls-files wolkaraforever/Addons | while read -r f; do
+        dst=launcher/Addons/${f#wolkaraforever/Addons/}
+        echo "$f $dst $(intent "$dst")"
+    done
+    echo "#"
     echo "# Notices: this repository's own licence and notice, which the packaged app must"
     echo "# carry. The prepared tree already has a LICENSE and a NOTICE.md at its top level,"
     echo "# and those are upstream's, so ours travel under names of their own: both have to"

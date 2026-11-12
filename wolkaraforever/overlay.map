@@ -37,6 +37,7 @@ wolkaraforever/Shell/artwork/wolkaraforever-icon-source.png artwork/wolkaraforev
 wolkaraforever/Shell/artwork/wolkaraforever-logo.png artwork/wolkaraforever/wolkaraforever-logo.png add
 wolkaraforever/Shell/de.lproj/Localizable.strings launcher/App/de.lproj/Localizable.strings add
 wolkaraforever/Shell/en.lproj/Localizable.strings launcher/App/en.lproj/Localizable.strings add
+wolkaraforever/Shell/fr.lproj/Localizable.strings launcher/App/fr.lproj/Localizable.strings add
 wolkaraforever/Shell/main.m launcher/App/main.m replace
 wolkaraforever/Shell/tests/test_execution_mode.m tests/test_execution_mode.m replace
 wolkaraforever/Shell/tests/test_localization.m tests/test_localization.m add
@@ -47,6 +48,7 @@ wolkaraforever/WoW/AddonCredentialStore.h launcher/WoW/AddonCredentialStore.h ad
 wolkaraforever/WoW/AddonCredentialStore.m launcher/WoW/AddonCredentialStore.m add
 wolkaraforever/WoW/AddonManager.h launcher/WoW/AddonManager.h add
 wolkaraforever/WoW/AddonManager.m launcher/WoW/AddonManager.m add
+wolkaraforever/WoW/AddonPackage.swift launcher/WoW/AddonPackage.swift add
 wolkaraforever/WoW/AddonStore.h launcher/WoW/AddonStore.h add
 wolkaraforever/WoW/AddonStore.m launcher/WoW/AddonStore.m add
 wolkaraforever/WoW/CASC.h launcher/WoW/CASC.h add
@@ -74,6 +76,7 @@ wolkaraforever/WoW/WoWViewController.h launcher/WoW/WoWViewController.h add
 wolkaraforever/WoW/WoWViewController.m launcher/WoW/WoWViewController.m add
 wolkaraforever/WoW/tests/test_addon_archive.swift tests/test_addon_archive.swift add
 wolkaraforever/WoW/tests/test_addon_import.m tests/test_addon_import.m add
+wolkaraforever/WoW/tests/test_addon_package.swift tests/test_addon_package.swift add
 wolkaraforever/WoW/tests/test_curseforge.m tests/test_curseforge.m add
 wolkaraforever/WoW/tests/test_device_profile.m tests/test_device_profile.m add
 wolkaraforever/WoW/tests/test_forever_config.m tests/test_forever_config.m add
@@ -124,6 +127,8 @@ wolkaraforever/Touch/AKPerformanceOverlay.m translation/AppKit/AKPerformanceOver
 wolkaraforever/Touch/AKTouchEventPump.h translation/AppKit/AKTouchEventPump.h add
 wolkaraforever/Touch/Fonts.h translation/AppKit/Fonts.h add
 wolkaraforever/Touch/Fonts.m translation/AppKit/Fonts.m add
+wolkaraforever/Touch/InterfaceMode.h translation/AppKit/InterfaceMode.h add
+wolkaraforever/Touch/InterfaceMode.m translation/AppKit/InterfaceMode.m add
 wolkaraforever/Touch/TouchControls.h translation/AppKit/TouchControls.h replace
 wolkaraforever/Touch/TouchControls.m translation/AppKit/TouchControls.m replace
 wolkaraforever/Touch/TouchGamepad.h translation/AppKit/TouchGamepad.h add
@@ -184,6 +189,13 @@ wolkaraforever/Input/Trigger.m launcher/Input/Trigger.m add
 # for the game's playback lease. Patch 0005 stopped the adapter taking the
 # session itself, so a bare test process has no route to report.
 wolkaraforever/CoreAudio/tests/test_audio_hardware.m tests/test_audio_hardware.m replace
+#
+# Addons: the bundled Interface mobile add-on package - one versioned ZIP of the
+# reviewed Lua in addons/WolkaraRoue, and the manifest that binds it to its release
+# and to every file's hash. A fixture rebuilds both from the sources and compares,
+# so the archive the app ships cannot drift from the Lua that was reviewed.
+wolkaraforever/Addons/WolkaraRoue-0.9.1.json launcher/Addons/WolkaraRoue-0.9.1.json add
+wolkaraforever/Addons/WolkaraRoue-0.9.1.zip launcher/Addons/WolkaraRoue-0.9.1.zip add
 #
 # Notices: this repository's own licence and notice, which the packaged app must
 # carry. The prepared tree already has a LICENSE and a NOTICE.md at its top level,

@@ -26,8 +26,37 @@ static UIColor *Muted(void) { return [UIColor colorWithRed:0.66 green:0.72 blue:
 // is the same row in the same language.
 static NSString *TKWoWLocaleName(NSString *locale) {
     static NSArray<NSString *> *known; static dispatch_once_t once;
-    dispatch_once(&once, ^{ known = @[@"enUS", @"esES", @"deDE"]; });
+    dispatch_once(&once, ^{ known = @[@"enUS", @"frFR", @"esES", @"deDE"]; });
     return WKLocalized([@"locale." stringByAppendingString:[known containsObject:locale] ? locale : @"enUS"]);
+}
+// No saved choice yet: start from the language the installed game is already in (a copy
+// pushed from a Mac keeps its Config.wtf), then from the device's own language, then
+// English. Starting from English would make the first check plan an English download
+// over a French or German installation.
+static NSString *TKWoWDefaultLocale(NSDictionary *product) {
+    NSArray<NSString *> *supported=@[@"enUS", @"frFR", @"esES", @"deDE"];
+    NSString *documents=NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    NSString *folder=[product[@"folder"] isKindOfClass:NSString.class] ? product[@"folder"] : nil;
+    if (documents.length && folder.length) {
+        NSString *config=[[[[documents stringByAppendingPathComponent:@"World of Warcraft"]
+            stringByAppendingPathComponent:folder] stringByAppendingPathComponent:@"WTF"]
+            stringByAppendingPathComponent:@"Config.wtf"];
+        NSString *text=[NSString stringWithContentsOfFile:config encoding:NSUTF8StringEncoding error:nil];
+        for (NSString *line in [text componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
+            if (![line hasPrefix:@"SET textLocale "]) continue;
+            NSArray<NSString *> *parts=[line componentsSeparatedByString:@"\""];
+            if (parts.count>=2 && [supported containsObject:parts[1]]) return parts[1];
+        }
+    }
+    for (NSString *identifier in NSLocale.preferredLanguages) {
+        NSString *primary=[[identifier stringByReplacingOccurrencesOfString:@"_" withString:@"-"]
+            componentsSeparatedByString:@"-"].firstObject.lowercaseString;
+        if ([primary isEqual:@"fr"]) return @"frFR";
+        if ([primary isEqual:@"de"]) return @"deDE";
+        if ([primary isEqual:@"es"]) return @"esES";
+        if ([primary isEqual:@"en"]) return @"enUS";
+    }
+    return @"enUS";
 }
 static NSString *TKWoWRegionName(NSString *region) {
     static NSArray<NSString *> *known; static dispatch_once_t once;
@@ -124,6 +153,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 @end
 
 @interface TKWoWViewController () <UIDocumentPickerDelegate>
+- (BOOL)inFront;
 @end
 
 @implementation TKWoWViewController {
@@ -144,6 +174,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // appearance: leaving a popup used to send us straight back to the network.
     BOOL _checkedThisLaunch;
     BOOL _resumeCheck, _launchWhenReady, _checkOwnsIdleTimer, _previousIdleTimerDisabled;
+    // Whether this page has been told the app is in front, since the last time it was told it
+    // is not. The page's own foreground/background notifications are what a device gives it,
+    // and they are also the only thing a fixture can give it: simctl launches the fixture in a
+    // state UIKit reports as Inactive for its whole life, so a bare applicationState test would
+    // refuse every resume in the fixture while working on a device.
+    BOOL _sawActive;
     NSString *_startupFailure;
     UILabel *_updatesLabel;
     NSString *_updatePhase;
@@ -178,8 +214,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     for (NSDictionary *p in TKWoWProducts()) if ([p[@"id"] isEqual:[defaults stringForKey:@"WoWProduct"]]) _product=p;
     _region=[defaults stringForKey:@"WoWRegion"]?:@"eu";
     if (![@[@"eu",@"us",@"kr",@"tw"] containsObject:_region]) _region=@"eu";
-    _locale=[defaults stringForKey:@"WoWLocale"]?:@"enUS";
-    if (![@[@"enUS",@"esES",@"deDE"] containsObject:_locale]) _locale=@"enUS";
+    _locale=[defaults stringForKey:@"WoWLocale"]?:TKWoWDefaultLocale(_product);
+    if (![@[@"enUS",@"frFR",@"esES",@"deDE"] containsObject:_locale]) _locale=@"enUS";
     return self;
 }
 - (UIButton *)button:(NSString *)identifier action:(SEL)action {
@@ -496,17 +532,26 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (void)foreground:(NSNotification *)note {
     (void)note;
     WKLog("ui", @"home: back in front");
+    _sawActive=YES;
     // Only unfinished work resumes. Returning from a popup after a completed
     // check still does not fetch manifests again, and never launches a guest.
     [self resumeCheckIfVisible];
 }
 - (void)inactive:(NSNotification *)note {
     (void)note;
+    _sawActive=NO;
     // A notification or Control Centre must not cancel file verification.
     // A pending Play action, however, must not launch after the user leaves.
     _launchWhenReady=NO;
 }
-- (void)background:(NSNotification *)note { (void)note; [self pauseCheck]; }
+- (void)background:(NSNotification *)note { (void)note; _sawActive=NO; [self pauseCheck]; }
+// Whether this page may act as if the user is looking at it. A device answers that with
+// applicationState; a fixture, which simctl keeps in an Inactive state for its whole life,
+// answers with the notification it posts. Both are the same question, and the notification is
+// the one the page already reacts to.
+- (BOOL)inFront {
+    return _sawActive || UIApplication.sharedApplication.applicationState==UIApplicationStateActive;
+}
 - (void)releaseCheckIdleTimer {
     if (!_checkOwnsIdleTimer) return;
     UIApplication.sharedApplication.idleTimerDisabled=_previousIdleTimerDisabled;
@@ -524,7 +569,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)resumeCheckIfVisible {
     if (!_resumeCheck || _busy || _starting || _sessionUsed ||
-        UIApplication.sharedApplication.applicationState!=UIApplicationStateActive ||
+        ![self inFront] ||
         !self.view.window || self.navigationController.topViewController!=self || self.presentedViewController) return;
     WKLog("wow", @"resuming interrupted check without launching the game");
     [self checkForUpdatesAndLaunch:NO];
@@ -657,7 +702,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             self->_checkedAt=plan?NSDate.date:nil; self->_busy=NO; self->_updating=NO; self->_updateError=updateAttempted && error; [self render];
             WKLog("wow", @"checked: state=%ld error=%@", (long)installation.state, error.localizedDescription ?: @"none");
             // Returning from the background or changing edition invalidates this request.
-            if (launch && self->_launchWhenReady && UIApplication.sharedApplication.applicationState==UIApplicationStateActive &&
+            if (launch && self->_launchWhenReady && [self inFront] &&
                 !error && !client.cancelled && installation.state==TKWoWInstallationReady && installation.app && !self->_sessionUsed &&
                 self.view.window && self.navigationController.topViewController==self && self.startApp) self.startApp(installation.app);
         });
@@ -747,11 +792,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         message:WKLocalized(@"lang.message") preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSNumber *each in WKLocalization.choices) {
         WKAppLanguage language=each.integerValue;
-        // The two languages are named in themselves - a language is the one word a person
+        // The languages are named in themselves - a language is the one word a person
         // is most likely to recognise - and only the "follow the iPad" choice is translated.
         NSString *title=language==WKAppLanguageSystem
             ? [NSString stringWithFormat:@"%@ (%@)", WKLocalized(@"lang.system"), localization.resolvedLanguageName]
-            : (language==WKAppLanguageGerman?@"Deutsch":@"English");
+            : [WKLocalization nativeNameForLanguage:language];
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
             (void)action;
             [self applyAppLanguage:language];
@@ -768,24 +813,27 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // -presentSheet: waits for that; the log line says so when the wait is what happened.
     [self offerGermanGameLanguage];
 }
-// The first time the app is put into German, offer to put the *game* into German too -
-// rather than doing it silently, because the two settings cost different things: this one
-// is a redraw, that one is a multi-gigabyte download. Once offered, never offered again;
-// the Game language row is always there for a later change of mind.
+// The first time the app is put into a language the game also speaks, offer to put the
+// *game* into it too - rather than doing it silently, because the two settings cost
+// different things: this one is a redraw, that one is a multi-gigabyte download. Once
+// offered, never offered again; the Game language row is always there for a later change
+// of mind.
 - (void)offerGermanGameLanguage {
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
-    if (WKLocalization.shared.resolvedLanguage!=WKAppLanguageGerman) return;
-    if ([_locale isEqual:@"deDE"]) return;
+    WKAppLanguage appLanguage=WKLocalization.shared.resolvedLanguage;
+    NSString *gameLocale=appLanguage==WKAppLanguageGerman?@"deDE":appLanguage==WKAppLanguageFrench?@"frFR":nil;
+    if (!gameLocale) return;
+    if ([_locale isEqual:gameLocale]) return;
     if ([defaults boolForKey:@"WolkaraForeverGameLanguageOfferShown"]) return;
     [defaults setBool:YES forKey:@"WolkaraForeverGameLanguageOfferShown"];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"lang.confirm.title")
         message:WKLocalized(@"lang.confirm.message") preferredStyle:UIAlertControllerStyleActionSheet];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"lang.confirm.yes") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         (void)action;
-        [self setGameLocale:@"deDE"];
+        [self setGameLocale:gameLocale];
         [self presentMessage:WKLocalized(@"lang.gameChanged.title") message:WKLocalized(@"lang.confirm.changed")];
     }]];
-    // Declining is an answer, not a cancellation: the app language stays German, and only
+    // Declining is an answer, not a cancellation: the app language stays as chosen, and only
     // the download is left alone.
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"lang.confirm.no") style:UIAlertActionStyleCancel handler:nil]];
     [self presentSheet:sheet anchor:_languageButton];
@@ -1045,7 +1093,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)choosePreference:(BOOL)region {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:region?WKLocalized(@"home.preferences.region"):WKLocalized(@"home.preferences.downloadLanguage") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    NSArray *values=region?@[@"eu",@"us",@"kr",@"tw"]:@[@"enUS",@"esES",@"deDE"];
+    NSArray *values=region?@[@"eu",@"us",@"kr",@"tw"]:@[@"enUS",@"frFR",@"esES",@"deDE"];
     for (NSString *value in values) [sheet addAction:[UIAlertAction actionWithTitle:region?TKWoWRegionName(value):TKWoWLocaleName(value) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         (void)action;
         if (region) { self->_region=value; [NSUserDefaults.standardUserDefaults setObject:value forKey:@"WoWRegion"]; [self refresh]; }

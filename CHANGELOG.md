@@ -13,6 +13,58 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **French, for the app and for the game.** The app's own labels now come in French as well
+  as English and German: a complete `fr.lproj` (548 keys, every one of them answered), the
+  language in the settings row and the picker, and `fr` in an exported settings file, so a
+  French choice survives export and import instead of being refused. World of Warcraft's own
+  download language offers French between English and Spanish, in the app's language, and a
+  first choice now starts from the language the installed game is already in - a copy pushed
+  from a Mac keeps its `Config.wtf` - instead of planning an English download over a French
+  installation. The one-time "put the game in the same language too" offer, which used to be
+  German-only, covers French. Nothing changes for an English or German setup: the same keys
+  answer the same words, and `check_localization.py` holds all three tables to the same
+  rules.
+
+- **The iPhone interface's foundation, dormant.** The mobile arrangement the phone needs -
+  a toolbar folded into a handle at the bottom centre, a keyboard whose Send puts the line in
+  the game's chat, sticks and jump without the other buttons, tap/hold/drag/pinch instead of
+  a cursor - is now in the build and switched off. One key decides it,
+  `WolkaraForeverInterfaceModeV1`, read wherever a decision depends on it; iPadOS is what a
+  missing, `ipados`, or hand-edited value means, and Standard is indistinguishable from
+  v1.0.7 - the same toolbar geometry, the same keyboard key, the same gamepad, the same
+  multi-touch contract, and the launcher's baseline comparison passes unchanged on both
+  matrix simulators. Choosing the mobile interface is the next release's job; this one only
+  makes it possible.
+
+- **The Interface mobile add-on, packaged and verifiable.** `addons/WolkaraRoue` (release
+  0.9.1) ships with twelve Lua suites, and as a versioned ZIP plus manifest in the app
+  bundle: the archive, its release, its interface and every file's SHA-256 are recorded, a
+  fixture rebuilds both from the sources and compares them byte for byte, and the app's
+  verifier refuses any package that is not that one - tampered, truncated, a stale per-file
+  hash, extra or missing files, a path outside the folder, another release, a missing
+  manifest, a missing archive, another add-on's manifest. Nothing installs it yet, and no
+  row or card was added.
+
+- **A function key is never text, and secure input is real.** F12's invisible U+F70F could be
+  inserted ahead of whatever followed it in a focused field - a login screen's password field
+  included, because the mobile keyboard sends F12 before a chat line. The reserved function
+  key characters are no longer inserted, commands are unchanged, and the Apple logo still
+  types (patch 0057). Carbon's secure event input, which a game turns on when a password
+  field has the keyboard, is now real and reference counted instead of a generated stub, and
+  announces each change so the keyboard can type exactly what was written there (0058). A
+  held local-service refusal now repeats the last attempt's own report, and a launch on
+  mobile data names how iOS classifies the route (0056).
+
+- **The launcher's own fixture runs again, end to end.** `resumeCheckIfVisible` refused to
+  resume an interrupted check whenever `UIApplication.applicationState` was not `Active`,
+  which a simctl-launched process never reports - so the fixture's resume step aborted, and
+  with it every step after it, in the v1.0.6 and v1.0.7 exact-main records too. The page now
+  keeps the activation its own foreground/background notifications tell it about, and asks
+  that instead: on a device the two agree, and the fixture now verifies the rest of the page,
+  including the baseline comparison it had stopped reaching. Also fixes two things found
+  while carrying the work: a nil toolbar handle could abort every touch on a Standard guest,
+  and v1.0.7's controller-arrival guard had to be kept, not dropped.
+
 - **A held mouse button drags continuously, and native control surfaces keep tracking.**
   Two faults combined to make a physical trackpad drag update only when the button was
   released. The input inspector installed the same `mouseMovedHandler` and per-button

@@ -1,0 +1,99 @@
+{
+  "archive": "WolkaraRoue-0.9.1.zip",
+  "files": {
+    "WolkaraRoue/Actions.lua": {
+      "sha256": "598d5d8ddc9961a123028f92e46c37ad4dabaff4216e15652c7f7c390225218b",
+      "size": 13898
+    },
+    "WolkaraRoue/Bags.lua": {
+      "sha256": "2884cf8acf9731273833e66052a4f73cdf6f6cb89691c2fa202e02499f80e6bc",
+      "size": 5626
+    },
+    "WolkaraRoue/Bindings.lua": {
+      "sha256": "293e09c0045e3ddfe82f8b7e456b038c904fad9a6bd716db920d99d06e4ed2cf",
+      "size": 355
+    },
+    "WolkaraRoue/Bindings.xml": {
+      "sha256": "a02f39b9226693adbaac8775a983ba78e284f0bb8907fc2d390f5cc1885404a3",
+      "size": 274
+    },
+    "WolkaraRoue/Blizzard.lua": {
+      "sha256": "f471bdb3a91a5b4cb9fd7f680a959bd8616cfb07b3d8feccd63dd0e183c4d919",
+      "size": 2662
+    },
+    "WolkaraRoue/Buffs.lua": {
+      "sha256": "8c4f77da7b3712eedcf2395353f29389f66c1a43c619746ee7e659b1ce48bc83",
+      "size": 2807
+    },
+    "WolkaraRoue/Chat.lua": {
+      "sha256": "f83cc3dc162e9ca2832ba0a4209e99d1f6029610a5bd80a30b9b3d57acda6266",
+      "size": 24256
+    },
+    "WolkaraRoue/Core.lua": {
+      "sha256": "206951fe903748cceaa9227aef97b3942693303ae5c5e242523170422e55c946",
+      "size": 24750
+    },
+    "WolkaraRoue/Free.lua": {
+      "sha256": "4d6a737b34f20df15d7c22a3e88d248548e0d4282ac9bd52e2a23b257e68767d",
+      "size": 11096
+    },
+    "WolkaraRoue/Hud.lua": {
+      "sha256": "68b789c6ba8aea23257f14598de82cd6c91203c715323db322185f1026dafb14",
+      "size": 19607
+    },
+    "WolkaraRoue/Menu.lua": {
+      "sha256": "9d9501081dffde6008f9bd4340794541489833f96573aa4ab5e7dfde496093c0",
+      "size": 7276
+    },
+    "WolkaraRoue/Minimap.lua": {
+      "sha256": "1b81316be8d035a51c1b2cf8bc27b1b374d6354213d56d1b129116a5d1e56159",
+      "size": 3933
+    },
+    "WolkaraRoue/Objectives.lua": {
+      "sha256": "cfa91bcfaf3f35f668874bdf39b3c081f357f820caea18a2cc970f7697c08a4a",
+      "size": 7112
+    },
+    "WolkaraRoue/Picker.lua": {
+      "sha256": "e6e93b595e4da07a1e4c746495f762f4d25c5dd951c30ab1d0020d61c289d915",
+      "size": 10164
+    },
+    "WolkaraRoue/Save.lua": {
+      "sha256": "c388440fe7c031c15101ec5af5eb02287cf026d377911d02a3bb125a0d57ae67",
+      "size": 3385
+    },
+    "WolkaraRoue/Scale.lua": {
+      "sha256": "2986fce34da4a05aef62f429d5aeb064077a14e42e571ad08239307d35695000",
+      "size": 1487
+    },
+    "WolkaraRoue/Settings.lua": {
+      "sha256": "e54b168d802306cd2a19e926a48fb5a211e151bb3c2e4e94c146343f49425244",
+      "size": 10116
+    },
+    "WolkaraRoue/Shortcuts.lua": {
+      "sha256": "ffb4cc42542a91590a726a5771c98fc742bc194b4a4c7648770d85f4dc78a7ae",
+      "size": 8350
+    },
+    "WolkaraRoue/Skin.lua": {
+      "sha256": "39c0567fa11e025e053e8ec3b81055362d1ea4ea49c29d7d4a414a5e877d1f3d",
+      "size": 1755
+    },
+    "WolkaraRoue/Turn.lua": {
+      "sha256": "d9d1e60cc413c498e0ed44322935c4e93f1d26fef3e0b9250f0ea795848c5cf5",
+      "size": 31181
+    },
+    "WolkaraRoue/Windows.lua": {
+      "sha256": "e794f249d74579cac9bae82e344f46fdb525d6377b47964dfcd57917b6861494",
+      "size": 6652
+    },
+    "WolkaraRoue/WolkaraRoue.toc": {
+      "sha256": "c5bc4c3281347324568cf677e327db5f38e7212079a4021fb3ee8033c923b101",
+      "size": 482
+    }
+  },
+  "format": "wolkaraforever.addon",
+  "interface": 16001,
+  "name": "WolkaraRoue",
+  "release": "0.9.1",
+  "sha256": "19cdc8278dc9da4611538d299d78df185f84cea5544d3072029d644aeb3251c7",
+  "version": 1
+}

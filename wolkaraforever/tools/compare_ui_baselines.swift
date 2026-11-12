@@ -35,12 +35,16 @@ func load(_ path: String) throws -> PixelImage {
 }
 
 // A channel difference at or below this is renderer rounding, not a change. Measured between
-// two identical iPhone runs on 2026-11-09: 1/255 along a nine-pixel hairline on the add-on
-// page, 3/255 then 4/255 across a four-pixel-tall band of one German glyph, and 5/255 in three
-// pixels of the add-ons popup on the second iPad simulator matrix pass. Anything a person
-// could see is far above it - the animating clock and spinner that this check found were 161
-// and 110 - and every real change measured so far has been over a far larger area.
-let negligibleDelta = 5
+// two identical runs: 1/255 along a nine-pixel hairline on the add-on page, 3/255 then 4/255
+// across a four-pixel-tall band of one German glyph, 5/255 in three pixels of the add-ons popup
+// on an iPad matrix pass, and 8/255 in three pixels of the same popup on the iPhone Duo - twice
+// recorded in ISSUE_REGISTER.md at R-003 and R-009, and both times the worst value seen.
+// Anything a person could see is far above it - the animating clock and spinner that this check
+// found were 161 and 110 - and every real change measured so far has been over a far larger
+// area. A German page already passes with 812 pixels of that faint rounding, so the tolerance is
+// per pixel rather than an area: a wider faint difference is still a difference a person cannot
+// see, and every real change measured has been both wider and far brighter.
+let negligibleDelta = 8
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 4 else {
