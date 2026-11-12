@@ -13,6 +13,20 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **A held mouse button drags continuously, and native control surfaces keep tracking.**
+  Two faults combined to make a physical trackpad drag update only when the button was
+  released. The input inspector installed the same `mouseMovedHandler` and per-button
+  handlers the AppKit bridge owns, so an input-device refresh could leave its no-op motion
+  handler in place and the game saw no movement until the next button edge; it now observes
+  the profile's `valueDidChangeHandler`, which nothing else uses. And the event loop returned
+  a queued guest event before it ever reached the tracking pump, so UIKit's default and
+  tracking modes never ran while events were flowing; the pump now covers a held left, right
+  or middle button as well as the touch-controls editor and the on-screen keyboard, and runs
+  before the guest queue is scanned (patch `0047`, edited in place). The gamepad settings
+  panel also stays open on a device that already has a controller: it used to close on any
+  keyboard, window or application notification, not only when a controller connected. Both
+  fixtures pass on the two matrix simulators, including 18 held-button cases per device.
+
 - **The game's window is the size of the game's content, from the first frame.** AppKit
   documents that the content view "is resized to fit precisely within the content area of
   the window", and the adapter only did that once the window had a host view. A view made
