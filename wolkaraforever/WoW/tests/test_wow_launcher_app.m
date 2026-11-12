@@ -1409,14 +1409,14 @@ static void TestPhoneDisplayDefaults(void) {
     // Automatic names what this device would resolve to, even while iPadOS is what is in force.
     NSString *automatic = [NSString stringWithFormat:@"Automatic (%@)",
         UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone ? @"iOS on Duo" : @"iPadOS"];
-    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"✓ iPadOS", @"iOS on Duo", @"Cancel"])]);
+    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"✓ iPadOS", @"iOS", @"iOS on Duo", @"Cancel"])]);
     UIAlertAction *duo = nil;
     for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iOS on Duo"]) duo = action;
     assert(duo != nil);
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     RunAction(duo);
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
-    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ios"]);
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"iosduo"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Interface Mode: iOS on Duo"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
@@ -1484,7 +1484,7 @@ static void TestPhoneDisplayDefaults(void) {
     [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
     modeSheet = (id)self.controller.presentedViewController;
-    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"iPadOS", @"✓ iOS on Duo", @"Cancel"])]);
+    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"iPadOS", @"iOS", @"✓ iOS on Duo", @"Cancel"])]);
     UIAlertAction *ipados = nil;
     for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iPadOS"]) ipados = action;
     assert(ipados != nil);

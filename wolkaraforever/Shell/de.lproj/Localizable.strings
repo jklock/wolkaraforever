@@ -45,7 +45,8 @@
 "home.launcher.interfaceMode.auto" = "Automatisch";
 "home.launcher.interfaceMode.auto.value" = "Automatisch (%@)";
 "home.launcher.interfaceMode.ipados" = "iPadOS";
-"home.launcher.interfaceMode.ios" = "iOS on Duo";
+"home.launcher.interfaceMode.ios" = "iOS";
+"home.launcher.interfaceMode.iosduo" = "iOS auf dem Duo";
 
 "home.addons.install" = "Add-ons installieren (Curse & direkt)";
 "home.addons.install.needsgame" = "Add-ons installieren (Curse & direkt) (zuerst Spiel installieren)";

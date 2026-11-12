@@ -906,8 +906,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // never a package, a file or an installation.
     [self configureButton:_interfaceModeButton
         title:WKLocalizedFormat(@"home.launcher.interfaceMode.row",
-            AKInterfaceModeIsMobile()?WKLocalized(@"home.launcher.interfaceMode.ios")
-                                     :WKLocalized(@"home.launcher.interfaceMode.ipados")) filled:NO];
+            InterfaceModeLabel(AKInterfaceModeName())) filled:NO];
     _interfaceModeButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _interfaceModeButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     // Switches, not changing commands: the label is fixed and the control shows
@@ -1651,9 +1650,13 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     picker.delegate=self;
     [self presentViewController:picker animated:YES completion:nil];
 }
-// Which interface this launcher drives: Automatic, iPadOS, or iOS on Duo. Automatic is the
-// device's own answer and is labelled with what it resolves to, so it is never a mystery. An
-// explicit choice always wins.
+static NSString *InterfaceModeLabel(NSString *name) {
+    if ([name isEqual:AKInterfaceModeIPadOS]) return WKLocalized(@"home.launcher.interfaceMode.ipados");
+    if ([name isEqual:AKInterfaceModeIOSDuo]) return WKLocalized(@"home.launcher.interfaceMode.iosduo");
+    return WKLocalized(@"home.launcher.interfaceMode.ios");
+}
+// Which interface this launcher drives: Automatic, iPadOS, iOS, or iOS on Duo. Automatic is the
+// device's own answer and is labelled with what it resolves to. An explicit choice always wins.
 - (void)chooseInterfaceMode {
     if (_busy || _starting || _running || _sessionUsed) {
         WKLog("ui", @"interface mode: declined while the page is busy");
@@ -1664,12 +1667,11 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
         message:WKLocalized(@"home.launcher.interfaceMode.message")
         preferredStyle:UIAlertControllerStyleActionSheet];
     NSString *automatic=WKLocalizedFormat(@"home.launcher.interfaceMode.auto.value",
-        [AKInterfaceModeAutomaticName() isEqual:AKInterfaceModeIOS]
-            ? WKLocalized(@"home.launcher.interfaceMode.ios")
-            : WKLocalized(@"home.launcher.interfaceMode.ipados"));
+        InterfaceModeLabel(AKInterfaceModeAutomaticName()));
     NSArray<NSArray<NSString *> *> *choices=@[@[AKInterfaceModeAuto, automatic],
-                                              @[AKInterfaceModeIPadOS, WKLocalized(@"home.launcher.interfaceMode.ipados")],
-                                              @[AKInterfaceModeIOS, WKLocalized(@"home.launcher.interfaceMode.ios")]];
+                                              @[AKInterfaceModeIPadOS, InterfaceModeLabel(AKInterfaceModeIPadOS)],
+                                              @[AKInterfaceModeIOS, InterfaceModeLabel(AKInterfaceModeIOS)],
+                                              @[AKInterfaceModeIOSDuo, InterfaceModeLabel(AKInterfaceModeIOSDuo)]];
     for (NSArray<NSString *> *choice in choices) {
         NSString *title=choice[1];
         if ([current isEqualToString:choice[0]]) title=[@"✓ " stringByAppendingString:title];

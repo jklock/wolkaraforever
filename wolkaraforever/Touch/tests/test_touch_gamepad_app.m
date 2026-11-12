@@ -213,6 +213,27 @@ static void TestPreferences(void) {
     [layout applyArrangement:@{@"opacity":@99, @"keepFree":@[@{@"x":@(NAN),@"y":@0,@"w":@0.1,@"h":@0.1},
                                                             @{@"x":@0.5,@"y":@0.5,@"w":@0.2,@"h":@0.2}]}];
     assert(layout.opacity==1 && layout.keepFree.count==1);
+    // Everything the user sets survives a relaunch and an app update: it is all in the saved
+    // dictionary, and a newer version's unknown key does not erase it.
+    layout.opacity=.55; layout.rearScale=1.4; layout.frontScale=.7; layout.hapticsEnabled=NO;
+    layout.swapShoulders=NO; layout.performanceOverlayEnabled=YES; layout.sticksOnly=NO;
+    layout.floatingSticks=YES; [layout clearKeepFreeAreas];
+    [layout addKeepFreeAreaWithX:0.1 y:0.2 width:0.3 height:0.4];
+    [layout moveItem:@"menu" toFrame:CGRectMake(10,20,44,44) inBounds:bounds];
+    [layout save];
+    AKGamepadLayout *relaunched=[[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(fabs(relaunched.opacity-.55)<.001 && fabs(relaunched.rearScale-1.4)<.001 &&
+           fabs(relaunched.frontScale-.7)<.001 && !relaunched.hapticsEnabled && !relaunched.swapShoulders &&
+           relaunched.performanceOverlayEnabled && !relaunched.sticksOnly && relaunched.floatingSticks);
+    assert(relaunched.keepFree.count==1 && fabs(relaunched.keepFree[0][@"w"].doubleValue-0.3)<.001);
+    assert(CGRectEqualToRect([relaunched frameForItem:@"menu" defaultFrame:frame inBounds:bounds],
+                             [layout frameForItem:@"menu" defaultFrame:frame inBounds:bounds]));
+    // A version that adds a key writes it beside ours; ours still loads.
+    NSMutableDictionary *stored=[NSMutableDictionary dictionaryWithDictionary:[defaults dictionaryForKey:@"WolkaraForeverTouchLayoutV1"]];
+    stored[@"aKeyFromALaterVersion"]=@{@"anything":@YES};
+    [defaults setObject:stored forKey:@"WolkaraForeverTouchLayoutV1"];
+    AKGamepadLayout *updated=[[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(fabs(updated.opacity-.55)<.001 && updated.floatingSticks && updated.keepFree.count==1);
     [defaults removePersistentDomainForName:suite];
 }
 // With sticks only, the jump is the one button under the camera stick, and its reach is the
@@ -275,10 +296,14 @@ static void TestInterfaceMode(void) {
         [defaults setVolatileDomain:modes forName:NSArgumentDomain];
     };
     setMode(AKInterfaceModeIOS); assert(AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    setMode(AKInterfaceModeIOSDuo);
+    assert(AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    assert([AKInterfaceModeName() isEqual:AKInterfaceModeIOSDuo]);
+    assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeIOSDuo]);
     setMode(AKInterfaceModeIPadOS); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
     setMode(AKInterfaceModeAuto);
     assert(AKInterfaceModeIsMobile()==phone && AKInterfaceModeIsAutomatic());
-    assert([AKInterfaceModeName() isEqual:(phone?AKInterfaceModeIOS:AKInterfaceModeIPadOS)]);
+    assert([AKInterfaceModeName() isEqual:AKInterfaceModeAutomaticName()]);
     assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeAuto]);
     setMode(@"AUTO"); assert(AKInterfaceModeIsMobile()==phone);
     setMode(@"duo"); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
@@ -286,7 +311,8 @@ static void TestInterfaceMode(void) {
     setMode(nil); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
     assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeIPadOS]);
     setMode(AKInterfaceModeIPadOS);
-    assert([AKInterfaceModeAutomaticName() isEqual:(phone?AKInterfaceModeIOS:AKInterfaceModeIPadOS)]);
+    NSString *automatic=AKInterfaceModeAutomaticName();
+    assert(([automatic isEqual:AKInterfaceModeIOS] || [automatic isEqual:AKInterfaceModeIOSDuo])==phone);
     setMode(original);
     puts("TOUCH_INTERFACE_MODE_PASS: ios and ipados are explicit, auto is the device's own hardware class (spelled in any case), and a missing or unrecognised value is Standard.");
 }

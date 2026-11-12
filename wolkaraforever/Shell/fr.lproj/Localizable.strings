@@ -42,7 +42,8 @@
 "home.launcher.interfaceMode.auto" = "Automatique";
 "home.launcher.interfaceMode.auto.value" = "Automatique (%@)";
 "home.launcher.interfaceMode.ipados" = "iPadOS";
-"home.launcher.interfaceMode.ios" = "iOS on Duo";
+"home.launcher.interfaceMode.ios" = "iOS";
+"home.launcher.interfaceMode.iosduo" = "iOS sur Duo";
 
 "home.addons.install" = "Installer des addons (CurseForge et direct)";
 "home.addons.install.needsgame" = "Installer des addons (CurseForge et direct) (installez d’abord le jeu)";
