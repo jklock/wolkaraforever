@@ -188,10 +188,14 @@ TKExecutionMode TKWolkaraForeverExecutionMode(NSArray<NSString *> *arguments, NS
     // preselection ahead of the public app's route. An Xcode build has no
     // TOLKARA_MODE by default, though; leaving that first launch at None makes
     // a completed download end at a disabled "Startup unavailable" button.
-    __autoreleasing NSString *resolvedSource=nil;
-    TKExecutionMode mode=source ? TKExecutionModeResolve(arguments,defaults,preselected,source)
-        : TKExecutionModeResolve(arguments,defaults,preselected,&resolvedSource);
-    if(mode || ![(source ? *source : resolvedSource) isEqualToString:TKExecutionModeSourceNone]) return mode;
+    NSString *resolvedSource=nil;
+    TKExecutionMode mode=TKExecutionModeResolve(arguments,defaults,preselected,&resolvedSource);
+    // "none" is the one source that means nothing chose; an unusable argument or
+    // preselection keeps its own diagnostic and is never overridden.
+    if(mode || ![resolvedSource isEqualToString:TKExecutionModeSourceNone]) {
+        if(source) *source=resolvedSource;
+        return mode;
+    }
     if (source) *source = @"wolkaraforever-build";
 #if TOLKARA_INTEGRATED_AUTH
     return TKExecutionModeDeveloperService;
