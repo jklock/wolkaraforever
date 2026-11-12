@@ -44,6 +44,16 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS sur Duo";
+"home.launcher.interfaceSetup.row" = "Disposition des commandes…";
+"home.launcher.interfaceSetup.title" = "Disposition des commandes";
+"home.launcher.interfaceSetup.message" = "Où sont les commandes, leur taille, les zones laissées au jeu et la touche de manette que chacune envoie. Enregistré avec les réglages de l’app, donc toujours là la fois suivante.";
+"home.launcher.interfaceSetup.template.plain" = "Simple (sticks fixes)";
+"home.launcher.interfaceSetup.template.duo" = "Duo (sticks flottants, saut dans le coin)";
+"home.launcher.interfaceSetup.template.duo-addon" = "Duo avec la place pour un add-on";
+"home.launcher.interfaceSetup.save" = "Enregistrer cette disposition…";
+"home.launcher.interfaceSetup.saveTitle" = "Enregistrer la disposition";
+"home.launcher.interfaceSetup.savePlaceholder" = "Nom";
+"home.launcher.interfaceSetup.delete" = "Supprimer une disposition enregistrée…";
 
 "home.addons.install" = "Installer des addons (CurseForge et direct)";
 "home.addons.install.needsgame" = "Installer des addons (CurseForge et direct) (installez d’abord le jeu)";

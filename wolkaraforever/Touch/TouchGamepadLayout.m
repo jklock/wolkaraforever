@@ -1,11 +1,13 @@
 #import "TouchGamepadLayout.h"
 #import "InterfaceMode.h"
+#import "LayoutStore.h"
 #include <math.h>
 
 static NSString *const LayoutKey = @"WolkaraForeverTouchLayoutV1";
 // Named arrangements the user saved, kept apart from the live one so saving never changes what
-// is on screen until the user asks for it.
-static NSString *const AKProfilesDefaultsKey = @"WolkaraForeverProfilesV1";
+// is on screen until the user asks for it. The key itself lives in LayoutStore, which is what
+// the launcher uses too.
+static NSString *const AKProfilesDefaultsKey = AKLayoutProfilesKey;
 NSNotificationName const AKGamepadLayoutDidChangeNotification = @"AKGamepadLayoutDidChange";
 static CGFloat Clamp(CGFloat value, CGFloat minimum, CGFloat maximum, CGFloat fallback) {
     return isfinite(value) ? MAX(minimum,MIN(maximum,value)) : fallback;
@@ -158,21 +160,11 @@ static CGFloat Number(id value, CGFloat fallback) {
         }
     }
 }
-// The built-in starting points. "duo" is the mobile arrangement with nothing reserved; the
-// add-on one reserves the left edge and the bottom centre, where an installed interface usually
-// puts a bar and a chat strip, so the thumbs' halves do not swallow them.
-+ (NSArray<NSString *> *)templateNames { return @[@"plain", @"duo", @"duo-addon"]; }
+// The built-in starting points, from the one place they are defined.
++ (NSArray<NSString *> *)templateNames { return AKLayoutTemplateNames(); }
 - (void)applyTemplateNamed:(NSString *)name {
-    if ([name isEqual:@"plain"]) {
-        [self applyArrangement:@{@"sticksOnly":@NO, @"floatingSticks":@NO, @"keepFree":@[]}];
-    } else if ([name isEqual:@"duo"]) {
-        [self applyArrangement:@{@"sticksOnly":@YES, @"floatingSticks":@YES, @"keepFree":@[]}];
-    } else if ([name isEqual:@"duo-addon"]) {
-        [self applyArrangement:@{@"sticksOnly":@YES, @"floatingSticks":@YES, @"keepFree":@[
-            @{@"x":@0.0, @"y":@0.30, @"w":@0.13, @"h":@0.70},      // a bar down the left edge
-            @{@"x":@0.28, @"y":@0.925, @"w":@0.44, @"h":@0.075},    // the chat strip
-        ]}];
-    }
+    NSDictionary *payload = AKLayoutTemplatePayload(name);
+    if (payload) [self applyArrangement:payload];
 }
 - (NSArray<NSString *> *)savedProfileNames {
     NSDictionary *all = [_defaults dictionaryForKey:AKProfilesDefaultsKey];

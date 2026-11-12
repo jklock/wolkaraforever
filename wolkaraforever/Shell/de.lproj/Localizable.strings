@@ -47,6 +47,16 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS auf dem Duo";
+"home.launcher.interfaceSetup.row" = "Steuerungslayout…";
+"home.launcher.interfaceSetup.title" = "Steuerungslayout";
+"home.launcher.interfaceSetup.message" = "Wo die Bedienelemente liegen, wie groß sie sind, welche Flächen sie dem Spiel lassen und welche Gamepad-Taste jedes sendet. Mit den Einstellungen dieser App gespeichert, also beim nächsten Mal noch da.";
+"home.launcher.interfaceSetup.template.plain" = "Einfach (feste Sticks)";
+"home.launcher.interfaceSetup.template.duo" = "Duo (schwebende Sticks, Sprung in der Ecke)";
+"home.launcher.interfaceSetup.template.duo-addon" = "Duo mit Platz für ein Add-on";
+"home.launcher.interfaceSetup.save" = "Dieses Layout sichern…";
+"home.launcher.interfaceSetup.saveTitle" = "Layout sichern";
+"home.launcher.interfaceSetup.savePlaceholder" = "Bezeichnung";
+"home.launcher.interfaceSetup.delete" = "Gesichertes Layout löschen…";
 
 "home.addons.install" = "Add-ons installieren (Curse & direkt)";
 "home.addons.install.needsgame" = "Add-ons installieren (Curse & direkt) (zuerst Spiel installieren)";

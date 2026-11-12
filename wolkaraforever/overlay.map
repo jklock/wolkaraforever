@@ -137,6 +137,10 @@ wolkaraforever/Touch/InterfaceMode.h translation/AppKit/InterfaceMode.h add
 wolkaraforever/Touch/InterfaceMode.h launcher/WoW/InterfaceMode.h add
 wolkaraforever/Touch/InterfaceMode.m translation/AppKit/InterfaceMode.m add
 wolkaraforever/Touch/InterfaceMode.m launcher/WoW/InterfaceMode.m add
+wolkaraforever/Touch/LayoutStore.h translation/AppKit/LayoutStore.h add
+wolkaraforever/Touch/LayoutStore.h launcher/WoW/LayoutStore.h add
+wolkaraforever/Touch/LayoutStore.m translation/AppKit/LayoutStore.m add
+wolkaraforever/Touch/LayoutStore.m launcher/WoW/LayoutStore.m add
 wolkaraforever/Touch/TouchControls.h translation/AppKit/TouchControls.h replace
 wolkaraforever/Touch/TouchControls.m translation/AppKit/TouchControls.m replace
 wolkaraforever/Touch/TouchGamepad.h translation/AppKit/TouchGamepad.h add

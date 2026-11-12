@@ -62,7 +62,7 @@ intent() {
         # The interface-mode rule is asked by the launcher too, and the launcher does not
         # link the adapter. One source, both binaries: "auto" cannot mean two things.
         case "$f" in
-            wolkaraforever/Touch/InterfaceMode.*)
+            wolkaraforever/Touch/InterfaceMode.*|wolkaraforever/Touch/LayoutStore.*)
                 dst=launcher/WoW/${f#wolkaraforever/Touch/}
                 echo "$f $dst $(intent "$dst")";;
         esac

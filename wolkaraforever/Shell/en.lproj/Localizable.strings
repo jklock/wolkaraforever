@@ -47,6 +47,16 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS on Duo";
+"home.launcher.interfaceSetup.row" = "Controller Layout…";
+"home.launcher.interfaceSetup.title" = "Controller Layout";
+"home.launcher.interfaceSetup.message" = "Where the controls sit, how big they are, which parts of the screen they leave to the game, and the gamepad button each sends. Saved with this app's settings, so it is still there next time.";
+"home.launcher.interfaceSetup.template.plain" = "Plain (fixed sticks)";
+"home.launcher.interfaceSetup.template.duo" = "Duo (floating sticks, corner jump)";
+"home.launcher.interfaceSetup.template.duo-addon" = "Duo with room for an add-on";
+"home.launcher.interfaceSetup.save" = "Save This Layout…";
+"home.launcher.interfaceSetup.saveTitle" = "Save Layout";
+"home.launcher.interfaceSetup.savePlaceholder" = "Name";
+"home.launcher.interfaceSetup.delete" = "Delete a Saved Layout…";
 
 "home.addons.install" = "Install Addons (Curse & Direct)";
 "home.addons.install.needsgame" = "Install Addons (Curse & Direct) (install game first)";

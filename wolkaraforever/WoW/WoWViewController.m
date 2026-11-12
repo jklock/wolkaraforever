@@ -17,6 +17,9 @@
 // The interface-mode rule, from its one definition: the overlay puts this same source in this
 // target, so the launcher and the guest cannot disagree about what "auto" means.
 #import "InterfaceMode.h"
+// The arrangement the on-screen controls read, as data: the same functions the adapter uses, so
+// a choice made here is what the next guest starts with.
+#import "LayoutStore.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 static UIColor *Gold(void) { return [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1]; }
@@ -202,6 +205,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
     TKWoWSwitchRow *_gamepadRow, *_overlayRow;
+    UIButton *_interfaceSetupButton;
     NSString *_backupsDirectory;
     UIView *_markView;
     NSLayoutConstraint *_markCap;
@@ -378,6 +382,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // The interface this launcher drives. One setting, one row: it writes the single key the
     // guest reads and never touches an installed package.
     _interfaceModeButton=[self button:@"wow.launcher.interfaceMode" action:@selector(chooseInterfaceMode)];
+    // The arrangement the on-screen controls use: a built-in starting point, an arrangement the
+    // user saved, or saving the one in use. All of it is data the layout owns.
+    _interfaceSetupButton=[self button:@"wow.launcher.interfaceSetup" action:@selector(chooseInterfaceSetup)];
 
     // Five sections, as boxes, in the order they are read. The compatibility note belongs to
     // the edition it is about, so it lives in that box rather than loose on the page. The
@@ -402,7 +409,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // beside UI Manager on a wide page and after it on a narrow one, and it changes no other
     // card's width, inset or order.
     UIView *launcherManagerBox=[self sectionBoxWithIdentifier:@"wow.box.launcherManager"
-        rows:@[_interfaceModeButton]];
+        rows:@[_interfaceModeButton, _interfaceSetupButton]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _activity.color=Gold(); _activity.hidesWhenStopped=YES;
@@ -909,6 +916,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             InterfaceModeLabel(AKInterfaceModeName())) filled:NO];
     _interfaceModeButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _interfaceModeButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
+    [self configureButton:_interfaceSetupButton
+        title:WKLocalized(@"home.launcher.interfaceSetup.row") filled:NO];
+    _interfaceSetupButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _interfaceSetupButton.enabled=_interfaceModeButton.enabled;
     // Switches, not changing commands: the label is fixed and the control shows
     // the state.
     _gamepadRow.enabled=foreverReady;
@@ -1688,6 +1699,75 @@ static NSString *InterfaceModeLabel(NSString *name) {
     [NSUserDefaults.standardUserDefaults setObject:name forKey:AKInterfaceModeDefaultsKey];
     WKLog("ui", @"interface mode: %@ (resolves to %@)", name, AKInterfaceModeName());
     [self render];
+}
+// The arrangement row. It writes only the dictionary the on-screen controls read, through the
+// same functions the adapter uses, so a choice here is what the next guest starts with; it
+// touches no game file and no package.
+- (void)chooseInterfaceSetup {
+    if (_busy || _starting || _running || _sessionUsed) {
+        WKLog("ui", @"interface setup: declined while the page is busy");
+        return;
+    }
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.title")
+        message:WKLocalized(@"home.launcher.interfaceSetup.message")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSString *template in AKLayoutTemplateNames()) {
+        NSString *title=WKLocalized([@"home.launcher.interfaceSetup.template." stringByAppendingString:template]);
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            AKLayoutApplyTemplate(defaults, template);
+            WKLog("ui", @"interface setup: template %@", template);
+            [self render];
+        }]];
+    }
+    for (NSString *name in AKLayoutSavedNames(defaults)) {
+        [sheet addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            if (AKLayoutApplyProfile(defaults, name)) WKLog("ui", @"interface setup: layout %@", name);
+            [self render];
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.save")
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [self saveInterfaceSetup]; }]];
+    if (AKLayoutSavedNames(defaults).count) {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
+            style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            [self deleteInterfaceSetup];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_interfaceSetupButton];
+}
+- (void)saveInterfaceSetup {
+    UIAlertController *prompt=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.saveTitle")
+        message:nil preferredStyle:UIAlertControllerStyleAlert];
+    [prompt addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder=WKLocalized(@"home.launcher.interfaceSetup.savePlaceholder");
+    }];
+    [prompt addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [prompt addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault
+        handler:^(__unused UIAlertAction *action) {
+        NSString *name=[prompt.textFields.firstObject.text
+            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (AKLayoutSaveProfile(NSUserDefaults.standardUserDefaults, name))
+            WKLog("ui", @"interface setup: saved %@", name);
+        [self render];
+    }]];
+    [self presentViewController:prompt animated:YES completion:nil];
+}
+- (void)deleteInterfaceSetup {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
+        message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSString *name in AKLayoutSavedNames(defaults)) {
+        [sheet addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDestructive
+            handler:^(__unused UIAlertAction *action) {
+            AKLayoutDeleteProfile(defaults, name);
+            WKLog("ui", @"interface setup: deleted %@", name);
+            [self render];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_interfaceSetupButton];
 }
 // The recommendation row. It opens the Add-On Manager, which is where a package is chosen
 // and installed explicitly; pressing the row never installs anything by itself. It offers
