@@ -377,6 +377,11 @@ static void TestLifecycle(UIView *host) {
     TestStickMapping();
     TestHaptics();
     AKFixtureGamepad *pad=[[AKFixtureGamepad alloc] initWithHostView:host];
+    // The fixture asserts the controller lifecycle, not the device's foreground phase.
+    // A simulator launched by simctl reports the app Inactive, which would gate every
+    // connection below on a property this test does not measure; the notification is
+    // the activation the product itself reacts to.
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
     [pad refresh]; assert(pad.connections==1 && !pad.visible);
     AKFixtureController *physical=[AKFixtureController new]; physical.extendedGamepad=@YES;
     pad.devices=@[(id)physical]; [pad refresh];
@@ -404,6 +409,16 @@ static void TestLifecycle(UIView *host) {
     [pad toggleSettings]; assert(pad.configuring);
     pad.devices=@[(id)physical]; [pad refresh]; assert(!pad.visible && !pad.configuring);
     assert(!Find(host,@"wolkaraforever.controls.settings"));
+    pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil]; assert(pad.visible);
+    // A controller that is already connected closes nothing: keyboard, window and
+    // application notifications reach -refresh too, and closing on those hid the panel
+    // while it was being used on any device that already had a controller.
+    pad.devices=@[(id)physical]; [pad refresh]; assert(!pad.visible);
+    [pad toggleSettings]; assert(pad.configuring);
+    [NSNotificationCenter.defaultCenter postNotificationName:UIWindowDidBecomeHiddenNotification object:nil];
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.03,false);
+    assert(pad.configuring && Find(host,@"wolkaraforever.controls.settings"));
+    [pad toggleSettings]; assert(!pad.configuring);
     pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil]; assert(pad.visible);
     [pad toggleSettings];
     UISwitch *edit=(id)Find(host,@"wolkaraforever.controls.edit");
@@ -504,6 +519,10 @@ static void TestLifecycle(UIView *host) {
         }
     };
     NSLog(@"FIXTURE_CONTROLLER_COUNT=%lu",(unsigned long)GCController.controllers.count);
+    // The input fixture measures the pad's own routing; a simctl-launched app can
+    // report Inactive, which would leave the preview pad unconnected for ever.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--self-test-input"])
+        [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
     [self.gamepad refresh];
     [self performSelector:@selector(report) withObject:nil afterDelay:2];
     // The guest owns the main thread after a timer callout and polls UIKit
