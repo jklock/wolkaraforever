@@ -3,10 +3,18 @@ import Foundation
 @_silgen_name("TestRealAddonImport")
 func testImport(_ fixtures: UnsafePointer<CChar>, _ temporary: UnsafePointer<CChar>) -> Int32
 
+@_silgen_name("TestBundledPackageInstall")
+func testBundledPackageInstall(_ fixtures: UnsafePointer<CChar>, _ temporary: UnsafePointer<CChar>) -> Int32
+
 @main
 struct ArchiveTests {
     static func main() throws {
+        guard CommandLine.arguments.count >= 3 else {
+            FileHandle.standardError.write(Data("usage: test_addon_archive <fixtures> <package-fixtures>\n".utf8))
+            exit(2)
+        }
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
+        let packageFixtures = CommandLine.arguments[2]
         let work = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: work) }
         var checks = 0
@@ -53,6 +61,13 @@ struct ArchiveTests {
             work.appendingPathComponent("import").path.withCString { temporary in testImport(fixtures, temporary) }
         }
         check(importResult == 0, "real import lifecycle")
+        // The bundled package, installed the way the recommendation page installs it.
+        let bundledResult = packageFixtures.withCString { fixtures in
+            work.appendingPathComponent("bundled").path.withCString { temporary in
+                testBundledPackageInstall(fixtures, temporary)
+            }
+        }
+        check(bundledResult == 0, "bundled package install lifecycle")
         print("ADDON ARCHIVE PASS: \(checks) checks, production Swift and pinned ZIPFoundation")
     }
 }

@@ -1073,13 +1073,15 @@ static void TestPhoneDisplayDefaults(void) {
     [scroll scrollRectToVisible:[label convertRect:label.bounds toView:scroll] animated:NO];
     // The largest text sizes stack the cards whatever the width - which is the same layout a
     // phone in portrait uses, so this is the only place that arrangement is exercised on an
-    // iPad. The empty cell beside the fifth card goes with it: stacked, it would be a blank box.
+    // iPad. All six cards stack, including the Launcher Manager that used to be the grid's
+    // empty cell.
     UIStackView *grid=(id)Find(self.controller.view,@"wow.grid");
     for (UIStackView *row in grid.arrangedSubviews)
         assert(row.axis==UILayoutConstraintAxisVertical);
-    assert(Find(self.controller.view,@"wow.grid.spacer").hidden);
+    assert(Find(self.controller.view,@"wow.grid.spacer")==nil);
+    assert(grid.arrangedSubviews.count==3);
     [self capture:@"wow-home-large-text.png"];
-    NSLog(@"PAGE_STACKED: five cards in one column at the largest text size");
+    NSLog(@"PAGE_STACKED: six cards in one column at the largest text size");
     self.controller.traitOverrides.preferredContentSizeCategory=UIContentSizeCategoryLarge;
     [self performSelector:@selector(captureDefaultText) withObject:nil afterDelay:0.3];
 }
@@ -1217,7 +1219,8 @@ static void TestPhoneDisplayDefaults(void) {
                           @[@"wow.heading.addons", @"ADD-ON MANAGER"],
                           @[@"wow.heading.voice", @"DICTATION (V2T) MANAGER"],
                           @[@"wow.heading.profile", @"PERFORMANCE MANAGER"],
-                          @[@"wow.heading.performance", @"UI MANAGER"]];
+                          @[@"wow.heading.performance", @"UI MANAGER"],
+                          @[@"wow.heading.launcherManager", @"LAUNCHER MANAGER"]];
     for (NSArray *pair in headings) {
         UILabel *label = (id)Find(self.controller.view, pair[0]);
         assert(label != nil && [label.text isEqual:pair[1]]);
@@ -1231,8 +1234,9 @@ static void TestPhoneDisplayDefaults(void) {
     assert([top.arrangedSubviews.firstObject.accessibilityIdentifier isEqual:mark]);
     UIStackView *grid = columns.arrangedSubviews[1];
     assert([grid.accessibilityIdentifier isEqual:@"wow.grid"] && grid.arrangedSubviews.count == 3);
-    // The fifth card sits beside an empty cell. The cell is part of the grid and is named as a
-    // spacer rather than skipped silently, but it is not a card and has no rows.
+    // The fifth and sixth cards share the last row. The cell beside UI Manager used to be a
+    // named spacer; it now holds the Launcher Manager, so the grid has six cards and no
+    // spacer at all.
     NSMutableArray *cells = [NSMutableArray new], *boxes = [NSMutableArray new];
     UIScrollView *measure = (id)Find(self.controller.view, @"wow.scroll");
     [measure layoutIfNeeded];
@@ -1243,18 +1247,18 @@ static void TestPhoneDisplayDefaults(void) {
         // not change with the axis, which is the whole point of laying them out this way.
         assert(row.axis == (wide ? UILayoutConstraintAxisHorizontal : UILayoutConstraintAxisVertical));
         for (UIView *cell in row.arrangedSubviews) {
-            assert([cell.accessibilityIdentifier hasPrefix:@"wow.box."] ||
-                   [cell.accessibilityIdentifier isEqual:@"wow.grid.spacer"]);
+            assert([cell.accessibilityIdentifier hasPrefix:@"wow.box."]);
             [cells addObject:cell];
             if ([cell.accessibilityIdentifier hasPrefix:@"wow.box."]) [boxes addObject:cell];
         }
     }
     NSArray *expectedCells = @[@"wow.box.edition", @"wow.box.addons",
                                @"wow.box.voice", @"wow.box.profile",
-                               @"wow.box.performance", @"wow.grid.spacer"];
+                               @"wow.box.performance", @"wow.box.launcherManager"];
     assert([[cells valueForKey:@"accessibilityIdentifier"] isEqualToArray:expectedCells]);
     NSArray *expectedBoxes = @[@"wow.box.edition", @"wow.box.addons",
-                               @"wow.box.voice", @"wow.box.profile", @"wow.box.performance"];
+                               @"wow.box.voice", @"wow.box.profile", @"wow.box.performance",
+                               @"wow.box.launcherManager"];
     assert([[boxes valueForKey:@"accessibilityIdentifier"] isEqualToArray:expectedBoxes]);
     // --- each box's heading and rows, exactly
     NSDictionary *expectedRows = @{
@@ -1276,6 +1280,8 @@ static void TestPhoneDisplayDefaults(void) {
         @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.backup",
                                   @"wow.performance.restore", @"wow.performance.reset",
                                   @"wow.performance.settingsFolder", @"wow.performance.gamepad"],
+        // The sixth card: the interface this launcher drives. One setting, one row.
+        @"wow.box.launcherManager": @[@"wow.heading.launcherManager", @"wow.launcher.interfaceMode"],
     };
     for (UIView *box in boxes) {
         UIStackView *stack = box.subviews.firstObject;
@@ -1292,7 +1298,7 @@ static void TestPhoneDisplayDefaults(void) {
     [scroll layoutIfNeeded];
     NSLog(@"PAGE_FIT: content=%.0f×%.0f bounds=%.0f×%.0f", scroll.contentSize.width,
           scroll.contentSize.height, scroll.bounds.size.width, scroll.bounds.size.height);
-    // Scrolling down is allowed - a phone is a narrow page with five cards on it - and scrolling
+    // Scrolling down is allowed - a phone is a narrow page with six cards on it - and scrolling
     // across is not: a card that hangs past the right edge is one nobody can reach.
     assert(scroll.contentSize.width <= scroll.bounds.size.width + 1);
     for (UIView *box in boxes) {
@@ -1302,7 +1308,7 @@ static void TestPhoneDisplayDefaults(void) {
     }
     // The two-column layout was made so that an iPad shows the whole page at once, and that still
     // holds. A phone is allowed to scroll: landscape is 750 points across and 304 down, and no
-    // arrangement of five cards fits that. What a phone is not allowed is a card out of reach,
+    // arrangement of six cards fits that. What a phone is not allowed is a card out of reach,
     // which the checks above cover.
     if (self.controller.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad)
         assert(scroll.contentSize.height <= scroll.bounds.size.height + 1);
@@ -1321,7 +1327,12 @@ static void TestPhoneDisplayDefaults(void) {
     assert(Find(self.controller.view, @"wow.performance.restoreDefaults") == nil);
     assert(Find(self.controller.view, @"wow.compatibility") == nil);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.directory") configuration].title isEqual:@"Open Add-on Directory"]);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title isEqual:@"Download Mac-Ever (Perf Optimization)"]);
+    // The recommendation row keeps its identifier and names the add-ons for this interface.
+    // iPadOS is the default, so the row names Mac-Ever.
+    assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
+        isEqual:@"Install Recommended Add-ons (Mac-Ever)"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
+        isEqual:@"Interface Mode: iPadOS"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.permissions") configuration].title isEqual:@"Toggle Permissions (Mic & Speech)"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.voice") configuration].title isEqual:@"Key / Button Configuration"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.voice.test") configuration].title isEqual:@"Test Voice & Dictation"]);
@@ -1349,13 +1360,140 @@ static void TestPhoneDisplayDefaults(void) {
     assert(CGColorEqualToColor([(UILabel *)Find(self.controller.view, @"wow.performance.overlay.label") textColor].CGColor,
                                [(UIButton *)Find(self.controller.view, @"wow.performance.settingsFolder") configuration].baseForegroundColor.CGColor));
 
-    // --- Download Mac-Ever asks for exactly the CurseForge project page, and no browser opens
-    __block NSURL *requested = nil;
-    self.controller.openExternalURL = ^(NSURL *url) { requested = url; };
-    [self row:@"wow.addons.macEver"].enabled = YES;
+    // --- The recommendation row opens the Add-On Manager, and never installs silently.
+    // The launch checks above leave a recoverable failure on the page; the Launcher Manager's
+    // own pictures are of the ready page, so put that back before opening anything over it.
+    [self.controller setValue:nil forKey:@"_startupFailure"];
+    [self.controller render];
+    [self.window layoutIfNeeded];
+    assert([[self status] isEqual:@"Ready to play"]);
+    // iPadOS is the default, so the page it opens is filtered to Mac-Ever (CurseForge 1733200).
     [[self row:@"wow.addons.macEver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
-    assert([requested.absoluteString isEqual:@"https://www.curseforge.com/wow/addons/mac-ever"]);
-    self.controller.openExternalURL = nil;
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController != nil); }, 5.0);
+    UINavigationController *recommended = (id)self.controller.presentedViewController;
+    assert([recommended isKindOfClass:UINavigationController.class]);
+    // Dismissing a page sheet while it is still arriving leaves it presented, and the next
+    // sheet then has nowhere to go. Wait for it to be on screen first.
+    PumpUntil(^{ return (BOOL)(recommended.viewIfLoaded.window != nil && !recommended.isBeingPresented); }, 5.0);
+    TKWoWAddonManagerViewController *recommendedPage = (id)recommended.topViewController;
+    assert([recommendedPage isKindOfClass:TKWoWAddonManagerViewController.class]);
+    assert(recommendedPage.recommendation == TKAddonRecommendationMacEver);
+    assert([recommendedPage.recommendedProjectID isEqual:@1733200]);
+    Pump(0.5);
+    RemoveAnimations(self.window.layer);
+    [self capture:@"wow-addons-recommended-macever.png"];
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+    assert(self.controller.presentedViewController == nil);
+
+    // --- The interface mode selector: exactly two choices, persisted, and no package touched.
+    NSString *addonsDirectory = [fixture.directory stringByAppendingPathComponent:@"Interface/AddOns"];
+    NSArray *addonsBefore = [[NSFileManager.defaultManager contentsOfDirectoryAtPath:addonsDirectory error:NULL]
+        sortedArrayUsingSelector:@selector(compare:)];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverInterfaceModeV1"];
+    [self.controller render];
+    assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
+        isEqual:@"Interface Mode: iPadOS"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
+        isEqual:@"Install Recommended Add-ons (Mac-Ever)"]);
+    // The page in its default state: the Launcher Manager row says iPadOS and the
+    // recommendation row names Mac-Ever. The selector's own choices are asserted below;
+    // the baseline is the page, not a translucent sheet.
+    Pump(0.5);
+    RemoveAnimations(self.window.layer);
+    [self capture:@"wow-launcher-ipados.png"];
+    [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
+    UIAlertController *modeSheet = (id)self.controller.presentedViewController;
+    assert([modeSheet.title isEqual:@"Interface Mode"]);
+    assert(CancelActions(modeSheet) == 1);
+    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[@"✓ iPadOS", @"iOS on Duo", @"Cancel"])]);
+    UIAlertAction *duo = nil;
+    for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iOS on Duo"]) duo = action;
+    assert(duo != nil);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(duo);
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ios"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
+        isEqual:@"Interface Mode: iOS on Duo"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
+        isEqual:@"Install Recommended Add-ons (WolkaraRoue)"]);
+    // The page after the switch: the selector names iOS on Duo and the recommendation row
+    // names WolkaraRoue. The game's AddOns folder is exactly as it was.
+    Pump(0.5);
+    RemoveAnimations(self.window.layer);
+    [self capture:@"wow-launcher-duo.png"];
+    // A mode is a setting: the game's AddOns folder is exactly as it was.
+    NSArray *addonsAfterSwitch = [[NSFileManager.defaultManager contentsOfDirectoryAtPath:addonsDirectory error:NULL]
+        sortedArrayUsingSelector:@selector(compare:)];
+    assert([addonsAfterSwitch isEqualToArray:addonsBefore]);
+
+    // --- On iOS on Duo the recommendation opens the bundled package, explicitly.
+    [[self row:@"wow.addons.macEver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController != nil); }, 5.0);
+    UINavigationController *bundledFrame = (id)self.controller.presentedViewController;
+    assert([bundledFrame isKindOfClass:UINavigationController.class]);
+    TKWoWAddonManagerViewController *bundledPage = (id)bundledFrame.topViewController;
+    assert([bundledPage isKindOfClass:TKWoWAddonManagerViewController.class]);
+    assert(bundledPage.recommendation == TKAddonRecommendationWolkaraRoue);
+    assert(bundledPage.recommendedProjectID == nil);
+    PumpUntil(^{ return (BOOL)(bundledFrame.viewIfLoaded.window != nil && !bundledFrame.isBeingPresented); }, 5.0);
+    // A verified package, shaped as the shipped verifier returns it.
+    bundledPage.bundledPackageProvider = ^NSDictionary *(NSError **error) {
+        (void)error;
+        return @{@"archive":[NSURL fileURLWithPath:@"/tmp/WolkaraRoue-0.9.1.zip"],
+                 @"manifest":[NSURL fileURLWithPath:@"/tmp/WolkaraRoue-0.9.1.json"],
+                 @"release":@"0.9.1",
+                 @"sha256":@"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                 @"folder":@"WolkaraRoue", @"files":@24};
+    };
+    [bundledPage reloadBundledPackage];
+    [bundledPage.view layoutIfNeeded];
+    [bundledPage.tableView layoutIfNeeded];
+    assert([[(UILabel *)Find(bundledPage.view, @"wow.addons.bundled.name") text] isEqual:@"WolkaraRoue (bundled)"]);
+    NSString *bundledDetail = [(UILabel *)Find(bundledPage.view, @"wow.addons.bundled.detail") text];
+    assert([bundledDetail containsString:@"0.9.1"] && [bundledDetail containsString:@"SHA-256"]);
+    UIButton *bundledInstall = (id)Find(bundledPage.view, @"wow.addons.bundled.install");
+    assert(bundledInstall != nil && !bundledInstall.hidden && bundledInstall.enabled);
+    Pump(0.5);
+    RemoveAnimations(self.window.layer);
+    [self capture:@"wow-addons-recommended-wolkararoue.png"];
+    // A package that does not verify is refused, and nothing is written.
+    bundledPage.bundledPackageProvider = ^NSDictionary *(NSError **error) {
+        if (error) *error = [NSError errorWithDomain:@"WolkaraForever.AddOns" code:1
+            userInfo:@{NSLocalizedDescriptionKey:@"The bundled add-on archive is not the one this app shipped."}];
+        return nil;
+    };
+    [bundledPage reloadBundledPackage];
+    [bundledPage.view layoutIfNeeded];
+    [bundledPage.tableView layoutIfNeeded];
+    assert([[(UILabel *)Find(bundledPage.view, @"wow.addons.bundled.detail") text]
+        containsString:@"not the one this app shipped"]);
+    assert(((UIButton *)Find(bundledPage.view, @"wow.addons.bundled.install")).hidden);
+    NSArray *addonsAfterRefusal = [[NSFileManager.defaultManager contentsOfDirectoryAtPath:addonsDirectory error:NULL]
+        sortedArrayUsingSelector:@selector(compare:)];
+    assert([addonsAfterRefusal isEqualToArray:addonsBefore]);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+    assert(self.controller.presentedViewController == nil);
+
+    // Back to iPadOS through the same sheet: the recommendation is Mac-Ever again.
+    [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
+    modeSheet = (id)self.controller.presentedViewController;
+    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[@"iPadOS", @"✓ iOS on Duo", @"Cancel"])]);
+    UIAlertAction *ipados = nil;
+    for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iPadOS"]) ipados = action;
+    assert(ipados != nil);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(ipados);
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ipados"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
+        isEqual:@"Install Recommended Add-ons (Mac-Ever)"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
+        isEqual:@"Interface Mode: iPadOS"]);
 
     // --- the overlay switch writes the shared store, keeping the layout's own values
     UISwitch *overlay = [self toggle:@"wow.performance.overlay"];
@@ -1814,7 +1952,9 @@ static int backupsBeforePerformance;
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.backup") configuration].title
         isEqual:@"WoW-Oberflächenkonfiguration sichern"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
-        isEqual:@"Mac-Ever laden (Leistungsoptimierung)"]);
+        isEqual:@"Empfohlene Add-ons installieren (Mac-Ever)"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
+        isEqual:@"Oberflächenmodus: iPadOS"]);
     // A product name stays itself in both languages.
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text]
         isEqual:@"Gamepad-Oberfläche"]);
@@ -1822,6 +1962,7 @@ static int backupsBeforePerformance;
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"SPIELVERWALTUNG"]);
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.profile") text] isEqual:@"LEISTUNGSVERWALTUNG"]);
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.performance") text] isEqual:@"OBERFLÄCHENVERWALTUNG"]);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.heading.launcherManager") text] isEqual:@"STARTVERWALTUNG"]);
     // The row that made the change, and the accessibility labels VoiceOver reads.
     assert([[(UIButton *)Find(self.controller.view, @"wow.language") configuration].title
         isEqual:@"App-Sprache: Deutsch"]);
@@ -2217,6 +2358,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // --- and no control on the page is dead: every one has a target and an action
     for (NSString *identifier in @[@"wow.edition", @"wow.preferences", @"wow.language",
                                    @"wow.addons.manage", @"wow.addons.macEver", @"wow.addons.directory",
+                                   @"wow.launcher.interfaceMode",
                                    @"wow.permissions", @"wow.voice", @"wow.voice.test",
                                    @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
                                    @"wow.performance.backup",
@@ -2228,7 +2370,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     for (UIBarButtonItem *item in @[gear, refresh])
         assert(item.target != nil && item.action != NULL);
 
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and Mac-Ever URL; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and the recommendation row; the Launcher Manager card (exactly iPadOS and iOS on Duo, persisted, and no package moved by a switch) and the bundled-package page it opens; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.

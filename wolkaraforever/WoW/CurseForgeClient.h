@@ -67,8 +67,12 @@ FOUNDATION_EXPORT TKCurseForgeFileCandidate *_Nullable TKCurseForgeChooseFile(NS
                     classID:(nullable NSNumber *)classID index:(NSUInteger)index
                  completion:(TKCurseForgeCompletion)completion;
 
+// One project by its CurseForge id, for a caller that already knows which project it wants -
+// the recommendation row names Mac-Ever (1733200) and must show that project, not a search
+// result that happens to be named similarly. The reply is the API's own project object.
+- (void)projectForModID:(NSNumber *)modID completion:(TKCurseForgeCompletion)completion;
+
 // The file this build would install for a project.
-//
 // A Forever-tagged, available file wins when there is one. When there is not, the newest
 // available file is offered with `TKCurseForgeCompatibilityUnverified` - it is no longer an
 // error for a project to have no Forever-tagged file, because a version tag is advice and not

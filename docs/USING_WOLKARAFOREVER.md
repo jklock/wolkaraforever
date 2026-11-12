@@ -86,15 +86,33 @@ Choose **Install Addons (Curse & Direct)** to manage add-ons for the selected ed
   the app reports the provider's reason.
 - The **plus** control imports one add-on archive from Files. **Open Add-on Directory** opens
   the relevant folder. Nothing changes until you select an archive or confirm an action.
+- **Install Recommended Add-ons** opens the Add-On Manager rather than installing anything by
+  itself. On **iPadOS** it reads **Install Recommended Add-ons (Mac-Ever)** and opens Browse
+  filtered to Mac-Ever, with the same API key and Install flow as any other project. On
+  **iOS on Duo** it reads **Install Recommended Add-ons (WolkaraRoue)** and opens the bundled
+  WolkaraRoue package, showing its version and SHA-256; tap **Install** to install it. A
+  package that is not the one this app shipped is refused, and nothing is written.
 
 Do not change add-ons while a download, update, or game startup is active.
 
+## Launcher Manager and interface mode
+
+The **Launcher Manager** card holds one setting, **Interface Mode**, with exactly two choices:
+
+- **iPadOS** — the standard interface. This is the default, and what a missing or unrecognised
+  setting means.
+- **iOS on Duo** — the mobile arrangement built for the phone form factor.
+
+The choice is remembered across launches. Changing it only records the setting: it never
+installs, disables, removes or updates an add-on, and it does not change your game files. The
+recommendation row in the Add-On Manager card follows the choice, as described above.
+
 ## Performance, device profile and UI recovery
 
-The home screen groups its controls into five cards — **Game Edition**, **Add-On Manager**,
-**Voice & Input Manager**, **Performance Manager**, and **UI Manager**. Each card is one job.
-They sit two across on an iPad and stack into one column on an iPhone or at the largest text
-sizes; a phone scrolls down, and no card ever hangs off the side.
+The home screen groups its controls into six cards — **Game Settings Manager**, **Add-On
+Manager**, **Dictation (V2T) Manager**, **Performance Manager**, **UI Manager**, and **Launcher
+Manager**. Each card is one job. They sit two across on an iPad and stack into one column on an
+iPhone or at the largest text sizes; a phone scrolls down, and no card ever hangs off the side.
 
 ### Device profile
 

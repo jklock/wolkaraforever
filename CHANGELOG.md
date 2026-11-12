@@ -13,6 +13,21 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **The Launcher Manager, and the interface it drives.** A sixth card now sits beside UI
+  Manager (and after it on a phone): `wow.launcher.interfaceMode`, with exactly two choices,
+  `iPadOS` and `iOS on Duo`, remembered across launches. Choosing a mode writes that one key
+  and nothing else - it never installs, disables, removes or updates an add-on. The
+  recommendation row keeps its identifier and its explicit, never-silent install: on iPadOS it
+  reads `Install Recommended Add-ons (Mac-Ever)` and opens the Add-On Manager filtered to
+  CurseForge project 1733200, with the existing Core API key and Install flow; on iOS on Duo
+  it reads `Install Recommended Add-ons (WolkaraRoue)` and opens the bundled package, its
+  release and SHA-256, and its own Install action. The bundled package is verified against its
+  manifest - including the release inside the archive's own TOC - before it is offered, and a
+  malformed, missing or unexpected archive is refused with nothing extracted. Every other
+  card keeps its position, width and behaviour; the amendment is recorded in
+  [the UI policy](development/architecture/UI_POLICY.md) and
+  [the baseline](development/architecture/LAUNCHER_UI_BASELINE.md).
+
 - **French, for the app and for the game.** The app's own labels now come in French as well
   as English and German: a complete `fr.lproj` (548 keys, every one of them answered), the
   language in the settings row and the picker, and `fr` in an exported settings file, so a

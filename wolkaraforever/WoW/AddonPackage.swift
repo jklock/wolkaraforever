@@ -33,6 +33,23 @@ final class TKAddonPackage: NSObject {
         return false
     }
 
+    private static func failureDictionary(_ message: String, _ output: NSErrorPointer) -> NSDictionary? {
+        _ = fail(message, output)
+        return nil
+    }
+
+    /// The `## Version:` line inside the archive's own TOC. It is the add-on's word about
+    /// itself, and it is what makes a manifest's `release` checkable rather than merely
+    /// believed: a manifest edited to name another release cannot change the bytes inside
+    /// the ZIP, and the archive's hash is taken over those bytes.
+    private static func tocRelease(_ data: Data) -> String? {
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        for line in text.split(whereSeparator: \.isNewline) where line.hasPrefix("## Version:") {
+            return line.dropFirst("## Version:".count).trimmingCharacters(in: .whitespaces)
+        }
+        return nil
+    }
+
     private static func hash(of url: URL) -> String? {
         guard let stream = InputStream(url: url) else { return nil }
         stream.open()
@@ -114,6 +131,7 @@ final class TKAddonPackage: NSObject {
 
         var seen = Set<String>()
         var measured = 0
+        var tocData: Data?
         for entry in archive {
             guard entry.type == .file else {
                 return fail("The add-on archive contains an entry that is not a file.", output)
@@ -132,19 +150,63 @@ final class TKAddonPackage: NSObject {
             }
             var hasher = SHA256()
             var written: UInt64 = 0
+            var captured = Data()
+            let isTOC = entry.path == "\(folder)/\(folder).toc"
             _ = try? archive.extract(entry, bufferSize: 1 << 16, skipCRC32: false) { chunk in
                 written += UInt64(chunk.count)
                 hasher.update(data: chunk)
+                if isTOC { captured.append(chunk) }
             }
             let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
             guard written == expected.size, digest == expected.sha256 else {
                 return fail("The add-on archive failed its integrity check.", output)
             }
+            if isTOC { tocData = captured }
             measured += 1
         }
         guard measured == manifest.files.count else {
             return fail("The add-on archive is missing files its manifest names.", output)
         }
+        if let tocData, let declared = tocRelease(tocData), declared != manifest.release {
+            return fail("The bundled add-on is release \(declared), not \(manifest.release).", output)
+        }
         return true
+    }
+
+    /// The package this app ships, found in a directory that holds its two files. The manifest
+    /// names the release, so that is the release the verifier is asked for; `verify` then
+    /// checks it against the TOC inside the archive, so a manifest edited to name another
+    /// release is refused rather than believed. Nothing is extracted here.
+    @objc(bundledPackageInDirectory:error:)
+    static func bundled(in directory: URL, error output: NSErrorPointer) -> NSDictionary? {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let archives = names.filter { $0.hasPrefix("\(folder)-") && $0.hasSuffix(".zip") }.sorted()
+        guard let archiveName = archives.first else {
+            return failureDictionary("The bundled add-on archive is missing.", output)
+        }
+        guard archives.count == 1 else {
+            return failureDictionary("More than one bundled add-on archive is present.", output)
+        }
+        let manifestName = String(archiveName.dropLast(4)) + ".json"
+        let archiveURL = directory.appendingPathComponent(archiveName)
+        let manifestURL = directory.appendingPathComponent(manifestName)
+        guard let manifest = readManifest(manifestURL, output) else { return nil }
+        guard manifest.archive == archiveName else {
+            return failureDictionary("That manifest belongs to another archive.", output)
+        }
+        guard verify(archive: archiveURL, manifest: manifestURL,
+                     expectedRelease: manifest.release, error: output) else { return nil }
+        return ["archive": archiveURL, "manifest": manifestURL, "release": manifest.release,
+                "sha256": manifest.sha256, "folder": folder, "files": manifest.files.count]
+    }
+
+    /// The same lookup in the running app's own bundle. The package and its manifest ship as
+    /// resources, so the app reads the exact pair a fixture rebuilds from `addons/WolkaraRoue`.
+    @objc(bundledPackageWithError:)
+    static func bundledPackage(error output: NSErrorPointer) -> NSDictionary? {
+        guard let directory = Bundle.main.resourceURL else {
+            return failureDictionary("The app bundle has no resources.", output)
+        }
+        return bundled(in: directory, error: output)
     }
 }

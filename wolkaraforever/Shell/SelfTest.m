@@ -1229,6 +1229,45 @@ static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
                    CGRectGetWidth(bounded) <= 850.5 && CGRectGetHeight(bounded) <= 680.5
                     _:@"a popup is bounded to 85 % of the presenting view"];
 
+    // The Launcher Manager's two recommendation pages, on the installed build. The bundled
+    // package is the one in this app's own bundle, located and verified by the shipped code;
+    // merely building the page installs nothing.
+    TKWoWAddonManagerViewController *bundledPage =
+        [[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:addons edition:@"Forever"
+                                                          recommendation:TKAddonRecommendationWolkaraRoue];
+    UIView *bundledView = bundledPage.view;
+    bundledView.frame = CGRectMake(0, 0, 834, 1100);
+    [bundledView layoutIfNeeded];
+    [bundledPage.tableView layoutIfNeeded];
+    [recorder check:bundledPage.recommendation == TKAddonRecommendationWolkaraRoue
+                    _:@"the Duo recommendation opens the bundled-package page"];
+    NSDictionary *bundle = bundledPage.bundledPackage;
+    [recorder check:bundle != nil _:@"the app's own bundle carries a verified WolkaraRoue package"];
+    NSString *release = [bundle[@"release"] isKindOfClass:NSString.class] ? bundle[@"release"] : nil;
+    NSString *hash = [bundle[@"sha256"] isKindOfClass:NSString.class] ? bundle[@"sha256"] : nil;
+    [recorder check:release.length > 0 && hash.length == 64
+                    _:@"and the page knows its release and its SHA-256"];
+    UILabel *bundledDetail = (id)AKSelfTestFind(bundledView, @"wow.addons.bundled.detail");
+    [recorder check:bundledDetail != nil && release.length > 0 &&
+                   [bundledDetail.text containsString:release]
+                    _:@"the row shows that release"];
+    UIButton *bundledInstall = (id)AKSelfTestFind(bundledView, @"wow.addons.bundled.install");
+    [recorder check:bundledInstall != nil && !bundledInstall.hidden
+                    _:@"with its own explicit Install action"];
+    // Opening the page installed nothing: the temporary AddOns folder has only the fixtures.
+    [recorder check:![[NSFileManager.defaultManager contentsOfDirectoryAtPath:addons error:NULL]
+                        containsObject:@"WolkaraRoue"]
+                    _:@"and opening the page installed nothing"];
+
+    TKWoWAddonManagerViewController *macEverPage =
+        [[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:addons edition:@"Forever"
+                                                          recommendation:TKAddonRecommendationMacEver];
+    (void)macEverPage.view;
+    [recorder check:macEverPage.recommendation == TKAddonRecommendationMacEver
+                    _:@"the iPadOS recommendation opens the Mac-Ever page"];
+    [recorder check:[macEverPage.recommendedProjectID isEqual:@1733200]
+                    _:@"filtered to CurseForge project 1733200"];
+
     [files removeItemAtPath:root error:NULL];
 }
 
