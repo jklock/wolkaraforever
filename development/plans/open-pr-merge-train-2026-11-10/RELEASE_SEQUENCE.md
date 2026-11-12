@@ -1,6 +1,6 @@
 # Release sequence and patch registry
 
-Do not begin a later feature release before prior exact-main validation, tag, GitHub release, and evidence-record docs PR are complete.
+Do not begin a later feature release before prior pre-release validation, tag and GitHub release are complete.
 
 | Work | Patch allocation |
 | --- | --- |
@@ -24,11 +24,10 @@ Allocation notes, in the order they were corrected:
   contributor's `0048`–`0053` names therefore never reach a tagged tree. Recorded
   as R-010.
 
-Versions are v1.0.2 through v1.0.10 in README.md. Evidence-only docs PRs receive no tag.
+Versions are v1.0.2 through v1.0.10 in README.md.
 
 Landed: #40 shipped as the in-place modification of `0047-pump-native-control-tracking` in
-**v1.0.7** (`bd234b9`), with its record in `development/validation/bd234b9.md` and its
-execution notes in `PR-40.md`.
+**v1.0.7** (`bd234b9`), with its execution notes in `PR-40.md`.
 
 Landed: #23 shipped as patches `0055`–`0060` in **v1.0.8**, with its execution notes in
 `PR-23.md`.

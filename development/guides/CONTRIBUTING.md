@@ -27,6 +27,10 @@ compatibility layer:
 - Never commit signing teams, device identifiers, pairing records, provisioning
   profiles, credentials, or files from `build/` and `logs/`. Personal settings
   belong in the ignored `local.env`.
+- Validation reports, simulator/device logs, captures and temporary support bundles are also
+  local-only. Read them to decide whether work can proceed, then run
+  `wolkaraforever/tools/clear_validation_reports.sh`; report commands and outcomes in a PR,
+  never the generated output itself.
 - If your change is based on someone else's code, say so and add its licence to
   [NOTICE.md](../../NOTICE.md). Reading public protocol documentation is fine.
 

@@ -119,12 +119,11 @@ wolkaraforever/tools/validate.sh --full     # add the slow platform suites
 wolkaraforever/tools/validate.sh --device   # also install and pilot on the iPad
 ```
 
-`validate.sh` writes one file per commit under `development/validation/`, naming the
-commit, whether the tree was clean, the host and Xcode, every command with its exit
-status, and the tail of what it printed. It refuses a dirty tree unless you pass
-`--allow-dirty`, and scrubs device identifiers from the output so the record can be
-committed. A run that names a commit it did not build is worse than no evidence; that is
-what this script exists to prevent.
+`validate.sh` writes a local report under ignored `logs/validation/`, naming the commit,
+whether the tree was clean, the host and Xcode, every command with its exit status, and the
+tail of what it printed. It refuses a dirty tree unless you pass `--allow-dirty`, and
+scrubs device identifiers from the output. The report is a pre-release check and is not
+committed.
 
 When the platform's suite fails only on failures the platform itself owns, the list in
 [`known_platform_failures.txt`](../../wolkaraforever/tools/known_platform_failures.txt) names

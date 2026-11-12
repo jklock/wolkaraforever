@@ -9,8 +9,9 @@
 - Squash ordinary pull requests. A merge commit is reserved for an intentional integration
   branch. Do not mix upstream ingestion, product behavior, documentation-only work, and
   formatting cleanup in one pull request.
-- A change carries its narrowest relevant test, documentation when behavior changes, and
-  exact-SHA evidence for any claim beyond source-level behavior.
+- A change carries its narrowest relevant test and documentation when behavior changes. Report
+  the command, source SHA, device/mode (when applicable), and result in the PR; generated
+  validation output is local-only and never committed.
 - `platform/`, execution/security code, device tools, release automation, and repository
   policy require maintainer review. See `.github/CODEOWNERS`.
 
@@ -24,6 +25,11 @@
 - `wolkaraforever/tools/`: the layer's scripts - prepare, the gate, and the wrappers that run the platform's own build, install, run and test scripts against the prepared tree. The platform's own tools are `platform/tools/` and run inside that tree. `docs/` is user-facing; engineering documentation is under `development/`.
 - `platform/`: upstream tolkara, vendored byte-identical to `upstream/main` and never edited by hand; `wolkaraforever/`: our layer above it. Start at `development/architecture/ARCHITECTURE.md`.
 - `build/` and `logs/` are ignored outputs. Third-party applications and assets are never committed.
+  Validation reports, simulator logs, device captures and temporary support bundles exist only to
+  decide whether a PR or release may proceed; remove them after that decision with
+  `wolkaraforever/tools/clear_validation_reports.sh`. Do not attach or link them from a PR,
+  release, changelog, or repository document. Reviewed UI baselines and source fixtures are the
+  exception: they are deliberate source assets, not generated validation output.
 - `development/architecture/PROJECT_MAP.md`: canonical map of engine, layer modules, patches,
   overlays, scripts, tests, and WolkaraForever enhancements. Read it before a cross-cutting change.
 - `development/guides/REPOSITORY_WORKFLOW.md`: durable branching, review, CI, release, and
@@ -70,7 +76,7 @@ Standalone native executables and Python `unittest`, with ASan/UBSan where confi
 
 Before a pull request is ready, run `wolkaraforever/tools/check_layers.sh` for layer or
 platform-facing changes, `wolkaraforever/tools/check_docs.sh` for documentation, and the
-focused suite that owns the changed behavior. `validate.sh` records exact-SHA evidence;
+focused suite that owns the changed behavior. `validate.sh` writes an ignored local report;
 physical claims require the installed build, device, iPadOS, client build, and execution mode.
 
 ## Test devices

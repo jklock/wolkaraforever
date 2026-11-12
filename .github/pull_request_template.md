@@ -6,6 +6,8 @@ Describe the user-visible or technical behavior changed.
 
 - [ ] No direct edit to `platform/`; any platform change is a patch/overlay and passes the layer gate.
 - [ ] No game data, credentials, signing material, pairing records, device identifiers, or generated output is included.
+- [ ] Generated validation reports, logs, captures, and temporary support bundles were removed
+  locally; the PR names commands and outcomes rather than attaching output artifacts.
 - [ ] No game automation, integrity workaround, or runtime inspection beyond the project policy is introduced.
 
 ## WolkaraForever UI review

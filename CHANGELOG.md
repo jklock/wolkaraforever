@@ -4,8 +4,7 @@
 
 This page names no source revision on purpose: it describes whatever commit you are
 reading, and a pinned hash here would be stale by the next commit. Physical results are
-kept as dated records under [development/validation/](development/validation/), where
-they name the revision that actually ran.
+reported when they occur but are not retained as release artifacts.
 
 This changelog records release history. It is not a compatibility guarantee: read the current
 [installation guide](docs/INSTALLATION.md), [user guide](docs/USING_WOLKARAFOREVER.md), and
@@ -207,6 +206,4 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Historical releases
 
-Earlier release claims and dated validation evidence are retained in Git history and in
-[`development/validation/`](development/validation/). They apply only to the revisions,
-devices, and game builds they name.
+Earlier release claims apply only to the revisions, devices, and game builds they name.
