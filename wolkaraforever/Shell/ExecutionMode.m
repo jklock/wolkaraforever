@@ -190,9 +190,15 @@ TKExecutionMode TKWolkaraForeverExecutionMode(NSArray<NSString *> *arguments, NS
     // a completed download end at a disabled "Startup unavailable" button.
     NSString *resolvedSource=nil;
     TKExecutionMode mode=TKExecutionModeResolve(arguments,defaults,preselected,&resolvedSource);
-    // "none" is the one source that means nothing chose; an unusable argument or
-    // preselection keeps its own diagnostic and is never overridden.
-    if(mode || ![resolvedSource isEqualToString:TKExecutionModeSourceNone]) {
+    // Only a saved choice or a preselection is replaceable, and only when this
+    // build cannot run it: the two targets share a bundle id, so a mode saved by
+    // TolkaraDiagnostics (External JIT) can meet Tolkara, where it is not in the
+    // build and the public home has no chooser to change it. A per-launch flag,
+    // and an unusable flag or preselection, keep their own answer and
+    // diagnostic.
+    if(TKExecutionModeSourceIsInvalid(resolvedSource)
+        || [resolvedSource isEqualToString:TKExecutionModeSourceArgument]
+        || (mode && TKExecutionModeAvailable(mode,NULL))) {
         if(source) *source=resolvedSource;
         return mode;
     }

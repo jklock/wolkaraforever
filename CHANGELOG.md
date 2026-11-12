@@ -22,8 +22,11 @@ This changelog records release history. It is not a compatibility guarantee: rea
   resolves the way the platform does - an explicit `--execution-mode`, then the
   saved choice, then the build's `TOLKARA_MODE` - and only then falls back to the
   route the build includes: Developer service in Tolkara, External JIT in
-  TolkaraDiagnostics. An unusable `--execution-mode` or `TOLKARA_MODE` still keeps
-  its own diagnostic rather than being replaced by the fallback.
+  TolkaraDiagnostics. A saved choice this build cannot run falls back the same
+  way - the two targets share a bundle id, so a mode saved by a TolkaraDiagnostics
+  install can meet Tolkara, where the public home has no chooser to change it -
+  while an unusable `--execution-mode` or `TOLKARA_MODE` still keeps its own
+  diagnostic rather than being replaced by the fallback.
 
 - **The Launcher Manager, and the interface it drives.** A sixth card now sits beside UI
   Manager (and after it on a phone): `wow.launcher.interfaceMode`, with exactly two choices,
