@@ -60,12 +60,40 @@ int main(void) {
         assert(TKExecutionModeLoad(defaults)==TKExecutionModeNone);
         NSString *wowSource=nil;
         TKExecutionMode wowMode=TKWolkaraForeverExecutionMode(@[@"WolkaraForever"],defaults,@"local-signing",&wowSource);
-        assert([wowSource isEqual:@"wolkaraforever-build"]);
+        assert(wowMode==TKExecutionModeLocalSigning && [wowSource isEqual:TKExecutionModeSourcePreselected]);
+        [defaults removeObjectForKey:TKExecutionModeDefaultsKey];
+        wowMode=TKWolkaraForeverExecutionMode(@[@"WolkaraForever"],defaults,nil,&wowSource);
 #if TOLKARA_INTEGRATED_AUTH
         assert(wowMode==TKExecutionModeDeveloperService);
 #else
         assert(wowMode==TKExecutionModeExternalJIT);
 #endif
+        assert([wowSource isEqual:@"wolkaraforever-build"]);
+        assert(TKWolkaraForeverExecutionMode(@[@"WolkaraForever"],defaults,nil,NULL)==wowMode);
+        TKExecutionModeSave(defaults,TKExecutionModeLocalSigning);
+        wowMode=TKWolkaraForeverExecutionMode(@[@"WolkaraForever"],defaults,nil,&wowSource);
+        assert(wowMode==TKExecutionModeLocalSigning && [wowSource isEqual:TKExecutionModeSourceSaved]);
+        // A saved choice this build cannot run - the other target shares the
+        // bundle id, so a diagnostics install can leave External JIT saved for
+        // Tolkara - falls back to the route this build does have, rather than
+        // leaving the public home at a mode it cannot start.
+#if TOLKARA_INTEGRATED_AUTH
+        TKExecutionModeSave(defaults,TKExecutionModeExternalJIT);
+        assert(TKWolkaraForeverExecutionMode(@[@"WolkaraForever"],defaults,nil,&wowSource)==TKExecutionModeDeveloperService);
+        assert([wowSource isEqual:@"wolkaraforever-build"]);
+        // An explicit per-launch flag is never replaced, even when unusable.
+        assert(TKWolkaraForeverExecutionMode(@[@"WolkaraForever",@"--execution-mode=external-jit"],
+            defaults,nil,&wowSource)==TKExecutionModeExternalJIT);
+        assert([wowSource isEqual:TKExecutionModeSourceArgument]);
+#else
+        TKExecutionModeSave(defaults,TKExecutionModeDeveloperService);
+        assert(TKWolkaraForeverExecutionMode(@[@"WolkaraForever"],defaults,nil,&wowSource)==TKExecutionModeExternalJIT);
+        assert([wowSource isEqual:@"wolkaraforever-build"]);
+        assert(TKWolkaraForeverExecutionMode(@[@"WolkaraForever",@"--execution-mode=developer-service"],
+            defaults,nil,&wowSource)==TKExecutionModeDeveloperService);
+        assert([wowSource isEqual:TKExecutionModeSourceArgument]);
+#endif
+        TKExecutionModeSave(defaults,TKExecutionModeLocalSigning);
         assert(TKWolkaraForeverExecutionMode(@[@"WolkaraForever",@"--execution-mode=local-signing"],defaults,nil,&wowSource)==TKExecutionModeLocalSigning);
         TKExecutionModeSave(defaults,TKExecutionModeLocalSigning);
         assert([[defaults stringForKey:@"TolkaraExecutionMode"] isEqualToString:@"local-signing"]);

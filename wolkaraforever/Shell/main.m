@@ -518,12 +518,14 @@ static NSString *AKAudioStateDescription(void) {
     // the UI can reach this. See SelfTest.h for why it exists.
     NSString *selfTest=AKSelfTestRequestedFromArguments(arguments);
     if (selfTest) dispatch_async(dispatch_get_main_queue(), ^{ AKRunSelfTest(selfTest); });
-    // Normal WolkaraForever launches use the route included in this build. Development
-    // arguments retain the original explicit mode selection.
+    // The WolkaraForever resolver: an explicit argument, the user's saved choice and the
+    // build's TOLKARA_MODE win, and a build with none of them falls back to the route it
+    // includes. Without that last step a plain launch stays at no mode, and a completed
+    // download ends at a disabled "Startup unavailable".
     NSString *source=nil;
     NSString *saveProblem=nil;
     if(TKExecutionModeApplySaveArgument(arguments,NSUserDefaults.standardUserDefaults,&saveProblem))
-        self.executionMode=TKExecutionModeResolve(arguments,NSUserDefaults.standardUserDefaults,
+        self.executionMode=TKWolkaraForeverExecutionMode(arguments,NSUserDefaults.standardUserDefaults,
             [NSBundle.mainBundle objectForInfoDictionaryKey:TKExecutionModePreselectionKey],&source);
     else { self.executionMode=TKExecutionModeNone;source=saveProblem; }
     self.executionModeSource=source;

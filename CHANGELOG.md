@@ -12,6 +12,21 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **A finished download no longer ends at "Startup unavailable".** A build made in
+  Xcode has no `TOLKARA_MODE`, and the launcher resolved its execution mode
+  without the route the build was compiled with: the log said `execution mode=none
+  source=none`, and the completed installation correctly showed a disabled
+  "Startup unavailable" button with nothing in the public home to change it.
+  Reported on an iPhone Duo running a build made in Xcode. The launcher now
+  resolves the way the platform does - an explicit `--execution-mode`, then the
+  saved choice, then the build's `TOLKARA_MODE` - and only then falls back to the
+  route the build includes: Developer service in Tolkara, External JIT in
+  TolkaraDiagnostics. A saved choice this build cannot run falls back the same
+  way - the two targets share a bundle id, so a mode saved by a TolkaraDiagnostics
+  install can meet Tolkara, where the public home has no chooser to change it -
+  while an unusable `--execution-mode` or `TOLKARA_MODE` still keeps its own
+  diagnostic rather than being replaced by the fallback.
+
 - **The Launcher Manager, and the interface it drives.** A sixth card now sits beside UI
   Manager (and after it on a phone): `wow.launcher.interfaceMode`, with exactly two choices,
   `iPadOS` and `iOS on Duo`, remembered across launches. Choosing a mode writes that one key

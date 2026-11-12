@@ -184,7 +184,24 @@ NSString *TKHomeDisplayPath(NSString *path, NSString *home) {
 }
 
 TKExecutionMode TKWolkaraForeverExecutionMode(NSArray<NSString *> *arguments, NSUserDefaults *defaults, NSString *preselected, NSString **source) {
-    if (arguments.count > 1) return TKExecutionModeResolve(arguments,defaults,preselected,source);
+    // Keep an explicit launch override, the user's saved choice, and a build
+    // preselection ahead of the public app's route. An Xcode build has no
+    // TOLKARA_MODE by default, though; leaving that first launch at None makes
+    // a completed download end at a disabled "Startup unavailable" button.
+    NSString *resolvedSource=nil;
+    TKExecutionMode mode=TKExecutionModeResolve(arguments,defaults,preselected,&resolvedSource);
+    // Only a saved choice or a preselection is replaceable, and only when this
+    // build cannot run it: the two targets share a bundle id, so a mode saved by
+    // TolkaraDiagnostics (External JIT) can meet Tolkara, where it is not in the
+    // build and the public home has no chooser to change it. A per-launch flag,
+    // and an unusable flag or preselection, keep their own answer and
+    // diagnostic.
+    if(TKExecutionModeSourceIsInvalid(resolvedSource)
+        || [resolvedSource isEqualToString:TKExecutionModeSourceArgument]
+        || (mode && TKExecutionModeAvailable(mode,NULL))) {
+        if(source) *source=resolvedSource;
+        return mode;
+    }
     if (source) *source = @"wolkaraforever-build";
 #if TOLKARA_INTEGRATED_AUTH
     return TKExecutionModeDeveloperService;
