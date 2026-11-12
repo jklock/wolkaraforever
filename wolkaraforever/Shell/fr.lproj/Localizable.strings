@@ -54,6 +54,9 @@
 "home.launcher.interfaceSetup.saveTitle" = "Enregistrer la disposition";
 "home.launcher.interfaceSetup.savePlaceholder" = "Nom";
 "home.launcher.interfaceSetup.delete" = "Supprimer une disposition enregistrée…";
+"home.launcher.interfaceSetup.buttons" = "Touches…";
+"home.launcher.interfaceSetup.buttons.message" = "Quelle touche de manette chaque commande envoie. Les affectations de manette du jeu décident ensuite de ce que fait cette touche.";
+"home.launcher.interfaceSetup.buttons.choose" = "Choisissez la touche envoyée par cette commande";
 
 "home.addons.install" = "Installer des addons (CurseForge et direct)";
 "home.addons.install.needsgame" = "Installer des addons (CurseForge et direct) (installez d’abord le jeu)";

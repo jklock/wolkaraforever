@@ -234,6 +234,22 @@ static void TestPreferences(void) {
     [defaults setObject:stored forKey:@"WolkaraForeverTouchLayoutV1"];
     AKGamepadLayout *updated=[[AKGamepadLayout alloc] initWithDefaults:defaults];
     assert(fabs(updated.opacity-.55)<.001 && updated.floatingSticks && updated.keepFree.count==1);
+    // Which element each control sends is data too, it is unique per control, and it survives.
+    [updated clearElementMapping];
+    assert([[updated elementForSlot:GCInputButtonA] isEqual:GCInputButtonA]);
+    assert([updated setElement:GCInputLeftShoulder forSlot:GCInputButtonA]);
+    assert([[updated elementForSlot:GCInputButtonA] isEqual:GCInputLeftShoulder]);
+    // One element cannot be two controls: the second is refused, not silently won.
+    assert(![updated setElement:GCInputLeftShoulder forSlot:GCInputButtonB]);
+    assert([[updated elementForSlot:GCInputButtonB] isEqual:GCInputButtonB]);
+    // Nonsense is refused.
+    assert(![updated setElement:@"Nonsense" forSlot:GCInputButtonA]);
+    assert(![updated setElement:GCInputButtonX forSlot:@"Nonsense"]);
+    [updated save];
+    AKGamepadLayout *mapped=[[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert([[mapped elementForSlot:GCInputButtonA] isEqual:GCInputLeftShoulder]);
+    [mapped clearElementMapping];
+    assert([[mapped elementForSlot:GCInputButtonA] isEqual:GCInputButtonA]);
     [defaults removePersistentDomainForName:suite];
 }
 // With sticks only, the jump is the one button under the camera stick, and its reach is the

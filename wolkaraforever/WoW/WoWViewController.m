@@ -20,6 +20,7 @@
 // The arrangement the on-screen controls read, as data: the same functions the adapter uses, so
 // a choice made here is what the next guest starts with.
 #import "LayoutStore.h"
+#import <GameController/GameController.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 static UIColor *Gold(void) { return [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1]; }
@@ -1661,8 +1662,7 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     picker.delegate=self;
     [self presentViewController:picker animated:YES completion:nil];
 }
-static NSString *InterfaceModeLabel(NSString *name) {
-    if ([name isEqual:AKInterfaceModeIPadOS]) return WKLocalized(@"home.launcher.interfaceMode.ipados");
+static NSString *InterfaceModeLabel(NSString *name) {    if ([name isEqual:AKInterfaceModeIPadOS]) return WKLocalized(@"home.launcher.interfaceMode.ipados");
     if ([name isEqual:AKInterfaceModeIOSDuo]) return WKLocalized(@"home.launcher.interfaceMode.iosduo");
     return WKLocalized(@"home.launcher.interfaceMode.ios");
 }
@@ -1700,6 +1700,20 @@ static NSString *InterfaceModeLabel(NSString *name) {
     WKLog("ui", @"interface mode: %@ (resolves to %@)", name, AKInterfaceModeName());
     [self render];
 }
+// How a gamepad element reads in a list. Short, because these are the labels on the controls.
+static NSString *ElementLabel(NSString *element) {
+    static NSDictionary *labels;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        labels = @{GCInputButtonA:@"A", GCInputButtonB:@"B", GCInputButtonX:@"X", GCInputButtonY:@"Y",
+                   GCInputLeftShoulder:@"LB", GCInputLeftTrigger:@"LT", GCInputRightTrigger:@"RT",
+                   GCInputRightShoulder:@"RB", GCInputButtonMenu:@"Menu",
+                   GCInputLeftThumbstick:@"Left stick", GCInputRightThumbstick:@"Right stick",
+                   @"dpad.up":@"D-pad ↑", @"dpad.right":@"D-pad →", @"dpad.down":@"D-pad ↓",
+                   @"dpad.left":@"D-pad ←"};
+    });
+    return labels[element] ?: element;
+}
 // The arrangement row. It writes only the dictionary the on-screen controls read, through the
 // same functions the adapter uses, so a choice here is what the next guest starts with; it
 // touches no game file and no package.
@@ -1730,10 +1744,43 @@ static NSString *InterfaceModeLabel(NSString *name) {
     }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.save")
         style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [self saveInterfaceSetup]; }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.buttons")
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [self chooseButtonMapping]; }]];
     if (AKLayoutSavedNames(defaults).count) {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
             style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
             [self deleteInterfaceSetup];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_interfaceSetupButton];
+}
+- (void)chooseButtonMapping {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.buttons")
+        message:WKLocalized(@"home.launcher.interfaceSetup.buttons.message")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSString *slot in AKLayoutSlots()) {
+        NSString *title=[NSString stringWithFormat:@"%@ → %@", ElementLabel(slot),
+                         ElementLabel(AKLayoutElementForSlot(defaults, slot))];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) { [self chooseElementForSlot:slot]; }]];
+    }
+    [self presentSheet:sheet anchor:_interfaceSetupButton];
+}
+- (void)chooseElementForSlot:(NSString *)slot {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSString *current=AKLayoutElementForSlot(defaults, slot);
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:ElementLabel(slot)
+        message:WKLocalized(@"home.launcher.interfaceSetup.buttons.choose")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSString *element in AKLayoutElements()) {
+        NSString *title=ElementLabel(element);
+        if ([element isEqualToString:current]) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            if (!AKLayoutSetElement(defaults, element, slot))
+                WKLog("ui", @"interface setup: %@ cannot send %@ (another control already does)", slot, element);
+            [self render];
         }]];
     }
     [self presentSheet:sheet anchor:_interfaceSetupButton];

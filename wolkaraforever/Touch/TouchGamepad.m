@@ -27,6 +27,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 
 @interface AKGamepadButton : UIButton
 @property(nonatomic, copy) NSString *element;
+@property(nonatomic, copy) NSString *slot;
 @property(nonatomic, readonly) BOOL pressed;
 @property(nonatomic) NSInteger sector;
 - (void)releaseInput;
@@ -224,6 +225,8 @@ static const CGFloat AKFloatLeftMinY = 0.42, AKFloatLeftLowY = 0.86;
 static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRightMaxY = 0.92;
 @implementation AKGamepadOverlay {
     NSDictionary<NSString *,UIView *> *_items;
+    NSDictionary<NSString *,AKGamepadButton *> *_slots;
+    AKGamepadButton *_jumpButton;
     NSMutableDictionary<NSString *,NSValue *> *_dragOrigins;
     UIView *_settings;
     UIButton *_editDone;
@@ -260,26 +263,34 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
             GCInputButtonMenu,@"dpad.up",@"dpad.right",@"dpad.down",@"dpad.left"];
         NSArray *titles = @[@"A",@"B",@"X",@"Y",@"LB",@"LT",@"RT",@"RB",@"+",@"↑",@"→",@"↓",@"←"];
         NSMutableDictionary *buttons = [NSMutableDictionary new];
+        NSMutableDictionary *slots = [NSMutableDictionary new];
         UIView *left = [UIView new], *right = [UIView new];
         left.multipleTouchEnabled = right.multipleTouchEnabled = YES;
         [self addSubview:left]; [self addSubview:right];
         for (NSUInteger i=0; i<elements.count; i++) {
-            AKGamepadButton *button = [AKGamepadButton new]; button.element = elements[i];
+            // The slot is where the control sits and what it is called; the element is what it
+            // sends to the game, which the player may have changed in the layout.
+            AKGamepadButton *button = [AKGamepadButton new];
+            button.slot = elements[i];
+            button.element = [_preferences elementForSlot:elements[i]];
             [button setTitle:titles[i] forState:UIControlStateNormal];
             button.accessibilityLabel = AKHostLocalizedFormat(@"touch.gamepad.button", elements[i]);
             button.accessibilityIdentifier = [@"tolkara.gamepad." stringByAppendingString:elements[i]];
-            buttons[elements[i]] = button;
+            buttons[button.element] = button;
+            slots[button.slot] = button;
             [(i<4 ? right : i>=9 ? left : self) addSubview:button];
         }
         _buttons = buttons;
+        _slots = slots;
+        _jumpButton = slots[GCInputButtonA];
         _leftStick = [AKGamepadStick new]; _rightStick = [AKGamepadStick new];
         _leftStick.element = GCInputLeftThumbstick; _rightStick.element = GCInputRightThumbstick;
         _leftStick.accessibilityLabel = AKHostLocalized(@"touch.gamepad.leftStick");
         _rightStick.accessibilityLabel = AKHostLocalized(@"touch.gamepad.rightStick");
         _leftStick.accessibilityIdentifier = @"tolkara.gamepad.leftStick"; _rightStick.accessibilityIdentifier = @"tolkara.gamepad.rightStick";
         [left addSubview:_leftStick]; [right addSubview:_rightStick];
-        _items = @{@"left":left,@"right":right,@"LB":buttons[GCInputLeftShoulder],@"LT":buttons[GCInputLeftTrigger],
-            @"RB":buttons[GCInputRightShoulder],@"RT":buttons[GCInputRightTrigger],@"menu":buttons[GCInputButtonMenu]};
+        _items = @{@"left":left,@"right":right,@"LB":slots[GCInputLeftShoulder],@"LT":slots[GCInputLeftTrigger],
+            @"RB":slots[GCInputRightShoulder],@"RT":slots[GCInputRightTrigger],@"menu":slots[GCInputButtonMenu]};
         for (NSString *name in _items) {
             UIView *item = _items[name]; item.accessibilityIdentifier = [@"wolkaraforever.layout." stringByAppendingString:name];
             // Retain button identifiers used by input tests and accessibility.
@@ -349,7 +360,7 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
     BOOL sticksOnly = _preferences.sticksOnly && !self.configuring && AKInterfaceModeIsMobile();
     NSArray<UIView *> *placed = _items.allValues;
     for (AKGamepadButton *button in _buttons.allValues) {
-        BOOL jump = [button.element isEqualToString:GCInputButtonA];
+        BOOL jump = [button.slot isEqualToString:GCInputButtonA];
         if (sticksOnly) button.hidden = !jump;
         else if (![placed containsObject:button]) button.hidden = NO;
         if (jump) [button setTitle:sticksOnly ? AKHostLocalized(@"touch.gamepad.jump") : @"A" forState:UIControlStateNormal];
@@ -444,7 +455,7 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
     }
     CGFloat corner = hypot(size.width - point.x, h - point.y);
     if (corner <= AKFloatJumpRadius * h) {
-        AKGamepadButton *jump = _buttons[GCInputButtonA];
+        AKGamepadButton *jump = _jumpButton;
         return jump.enabled ? jump : nil;
     }
     if (fx <= AKFloatLeftMaxX && (fy >= AKFloatLeftLowY || (fx >= AKFloatLeftMinX && fy >= AKFloatLeftMinY)))
@@ -462,7 +473,7 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
 static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachAngle = M_PI / 3;
 - (AKGamepadButton *)jumpAround:(CGPoint)point event:(UIEvent *)event {
     if (!AKInterfaceModeIsMobile() || !_preferences.sticksOnly || self.configuring) return nil;
-    AKGamepadButton *jump = _buttons[GCInputButtonA];
+    AKGamepadButton *jump = _jumpButton;
     UIView *ring = _items[@"right"];
     if (!jump || jump.hidden || !jump.enabled || !ring || ring.hidden) return nil;
     CGPoint local = [self convertPoint:point toView:ring];
@@ -505,7 +516,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     NSArray *leftNames = @[@"dpad.up",@"dpad.right",@"dpad.down",@"dpad.left"];
     NSArray *rightNames = @[GCInputButtonY,GCInputButtonB,GCInputButtonA,GCInputButtonX];
     for (NSUInteger i=0; i<4; i++) {
-        AKGamepadButton *a = _buttons[leftNames[i]], *b = _buttons[rightNames[i]];
+        AKGamepadButton *a = _slots[leftNames[i]], *b = _slots[rightNames[i]];
         if (a.sector != (NSInteger)i) a.sector = i;
         if (b.sector != (NSInteger)i) b.sector = i;
         a.frame = b.frame = CGRectMake(0,0,216,216);
@@ -843,7 +854,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
 // as the finger is (a held Space swims or flies up), and a release always goes out, even if
 // the controls were hidden meanwhile. A host without the key method keeps the gamepad's A.
 - (BOOL)jumpsWithSpace:(AKGamepadButton *)button {
-    return [button.element isEqualToString:GCInputButtonA] && _overlay.preferences.sticksOnly &&
+    return [button.slot isEqualToString:GCInputButtonA] && _overlay.preferences.sticksOnly &&
         [_host respondsToSelector:@selector(touchKey:characters:pressed:)];
 }
 - (void)holdSpace:(BOOL)down {

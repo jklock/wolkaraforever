@@ -57,6 +57,9 @@
 "home.launcher.interfaceSetup.saveTitle" = "Layout sichern";
 "home.launcher.interfaceSetup.savePlaceholder" = "Bezeichnung";
 "home.launcher.interfaceSetup.delete" = "Gesichertes Layout löschen…";
+"home.launcher.interfaceSetup.buttons" = "Tasten…";
+"home.launcher.interfaceSetup.buttons.message" = "Welche Gamepad-Taste jedes Bedienelement sendet. Welche Aktion diese Taste auslöst, bestimmen die Controller-Belegungen des Spiels.";
+"home.launcher.interfaceSetup.buttons.choose" = "Wählen Sie die Taste, die dieses Bedienelement sendet";
 
 "home.addons.install" = "Add-ons installieren (Curse & direkt)";
 "home.addons.install.needsgame" = "Add-ons installieren (Curse & direkt) (zuerst Spiel installieren)";

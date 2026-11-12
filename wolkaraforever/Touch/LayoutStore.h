@@ -33,5 +33,12 @@ FOUNDATION_EXPORT BOOL AKLayoutDeleteProfile(NSUserDefaults *defaults, NSString 
 FOUNDATION_EXPORT void AKLayoutApplyPayload(NSUserDefaults *defaults, NSDictionary<NSString *, id> *payload);
 /// Put a built-in starting point in force. NO when the name is not one we ship.
 FOUNDATION_EXPORT BOOL AKLayoutApplyTemplate(NSUserDefaults *defaults, NSString *name);
-
+/// The controls this build places, and the elements any of them may send.
+FOUNDATION_EXPORT NSArray<NSString *> *AKLayoutSlots(void);
+FOUNDATION_EXPORT NSArray<NSString *> *AKLayoutElements(void);
+/// Which element a control currently sends (its own name when unmapped).
+FOUNDATION_EXPORT NSString *AKLayoutElementForSlot(NSUserDefaults *defaults, NSString *slot);
+/// Point a control at another element. NO when either name is unknown, or another control
+/// already sends that element - one button cannot be two controls.
+FOUNDATION_EXPORT BOOL AKLayoutSetElement(NSUserDefaults *defaults, NSString *element, NSString *slot);
 NS_ASSUME_NONNULL_END

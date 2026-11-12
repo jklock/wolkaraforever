@@ -1,4 +1,5 @@
 #import "LayoutStore.h"
+#import <GameController/GameController.h>
 
 NSString *const AKLayoutStoredKey = @"WolkaraForeverTouchLayoutV1";
 NSString *const AKLayoutProfilesKey = @"WolkaraForeverProfilesV1";
@@ -65,6 +66,50 @@ BOOL AKLayoutApplyProfile(NSUserDefaults *defaults, NSString *name) {
     id saved = [all isKindOfClass:NSDictionary.class] ? all[name] : nil;
     if (![saved isKindOfClass:NSDictionary.class]) return NO;
     AKLayoutApplyPayload(defaults, saved);
+    return YES;
+}
+
+NSArray<NSString *> *AKLayoutSlots(void) {
+    static NSArray *slots;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        slots = @[GCInputButtonA, GCInputButtonB, GCInputButtonX, GCInputButtonY,
+                  GCInputLeftShoulder, GCInputLeftTrigger, GCInputRightTrigger, GCInputRightShoulder,
+                  GCInputButtonMenu, @"dpad.up", @"dpad.right", @"dpad.down", @"dpad.left"];
+    });
+    return slots;
+}
+NSArray<NSString *> *AKLayoutElements(void) {
+    static NSArray *elements;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        elements = [AKLayoutSlots() arrayByAddingObjectsFromArray:
+            @[GCInputLeftThumbstick, GCInputRightThumbstick]];
+    });
+    return elements;
+}
+static NSDictionary<NSString *, NSString *> *CurrentMapping(NSUserDefaults *defaults) {
+    id stored = [defaults objectForKey:AKLayoutStoredKey];
+    id mapping = [stored isKindOfClass:NSDictionary.class] ? ((NSDictionary *)stored)[@"elements"] : nil;
+    return [mapping isKindOfClass:NSDictionary.class] ? mapping : @{};
+}
+NSString *AKLayoutElementForSlot(NSUserDefaults *defaults, NSString *slot) {
+    NSString *element = CurrentMapping(defaults)[slot];
+    return element && [AKLayoutElements() containsObject:element] ? element : slot;
+}
+BOOL AKLayoutSetElement(NSUserDefaults *defaults, NSString *element, NSString *slot) {
+    if (![AKLayoutSlots() containsObject:slot] || ![AKLayoutElements() containsObject:element]) return NO;
+    NSMutableDictionary *mapping = [NSMutableDictionary dictionaryWithDictionary:CurrentMapping(defaults)];
+    for (NSString *other in mapping) {
+        if (![other isEqualToString:slot] && [mapping[other] isEqualToString:element]) return NO;
+    }
+    if ([slot isEqualToString:element]) [mapping removeObjectForKey:slot];
+    else mapping[slot] = element;
+    id stored = [defaults objectForKey:AKLayoutStoredKey];
+    NSMutableDictionary *layout = [stored isKindOfClass:NSDictionary.class] ? [stored mutableCopy]
+                                                                            : [NSMutableDictionary new];
+    layout[@"elements"] = [mapping copy];
+    [defaults setObject:[layout copy] forKey:AKLayoutStoredKey];
     return YES;
 }
 

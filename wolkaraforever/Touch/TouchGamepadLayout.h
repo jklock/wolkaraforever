@@ -30,6 +30,13 @@ FOUNDATION_EXPORT NSNotificationName const AKGamepadLayoutDidChangeNotification;
 // reserved for anything unless the person using it asks, which is what keeps an add-on from
 // defining this interface. Each is @{@"x",@"y",@"w",@"h"} in 0...1.
 @property(nonatomic, copy) NSArray<NSDictionary<NSString *, NSNumber *> *> *keepFree;
+// Which gamepad element each on-screen control sends, as data: slot (its element name, e.g.
+// "A" or "LB") -> element. Empty means every control sends its own name, which is what every
+// release has done. Two controls may not send the same element.
+@property(nonatomic, copy) NSDictionary<NSString *, NSString *> *elements;
+- (NSString *)elementForSlot:(NSString *)slot;
+- (BOOL)setElement:(NSString *)element forSlot:(NSString *)slot;
+- (void)clearElementMapping;
 - (void)addKeepFreeAreaWithX:(CGFloat)x y:(CGFloat)y width:(CGFloat)w height:(CGFloat)h;
 - (void)clearKeepFreeAreas;
 // A whole arrangement as data: every value above, saved under a name the user chooses, and

@@ -1,6 +1,7 @@
 #import "TouchGamepadLayout.h"
 #import "InterfaceMode.h"
 #import "LayoutStore.h"
+#import <GameController/GameController.h>
 #include <math.h>
 
 static NSString *const LayoutKey = @"WolkaraForeverTouchLayoutV1";
@@ -55,6 +56,13 @@ static CGFloat Number(id value, CGFloat fallback) {
             if (area && areas.count < 16) [areas addObject:area];
         }
         _keepFree = areas;
+        NSMutableDictionary<NSString *, NSString *> *mapping = [NSMutableDictionary new];
+        id mapped = values[@"elements"];
+        if ([mapped isKindOfClass:NSDictionary.class]) for (NSString *slot in (NSDictionary *)mapped) {
+            NSString *element = ((NSDictionary *)mapped)[slot];
+            if ([self knownElement:element] && [self knownSlot:slot]) mapping[slot] = element;
+        }
+        _elements = mapping;
         _positions = [NSMutableDictionary new];
         id positions = values[@"positions"];
         if ([positions isKindOfClass:NSDictionary.class]) for (NSString *key in positions) {
@@ -89,7 +97,7 @@ static CGFloat Number(id value, CGFloat fallback) {
     [_defaults setObject:@{@"opacity":@(_opacity),@"rearScale":@(_rearScale),
         @"frontScale":@(_frontScale),@"hapticsEnabled":@(_hapticsEnabled),@"swapShoulders":@(_swapShoulders),
         @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),
-        @"floatingSticks":@(_floatingSticks),@"keepFree":_keepFree,@"positions":_positions} forKey:LayoutKey];
+        @"floatingSticks":@(_floatingSticks),@"keepFree":_keepFree,@"elements":_elements,@"positions":_positions} forKey:LayoutKey];
     [NSNotificationCenter.defaultCenter postNotificationName:AKGamepadLayoutDidChangeNotification object:_defaults];
 }
 - (void)reset {
@@ -99,6 +107,7 @@ static CGFloat Number(id value, CGFloat fallback) {
     self.sticksOnly = AKInterfaceModeIsMobile();
     self.floatingSticks = NO;
     self.keepFree = @[];
+    self.elements = @{};
     [_positions removeAllObjects]; [self save];
 }
 // A stored or proposed area, or nil when it is not four finite fractions of the screen. Kept
@@ -121,6 +130,48 @@ static CGFloat Number(id value, CGFloat fallback) {
 }
 - (void)clearKeepFreeAreas { _keepFree = @[]; }
 
+#pragma mark - Which gamepad element each control sends
+
+// The slots this build places, and the elements they may send. The element names are the ones
+// the game already understands; nothing here invents a button.
+- (NSArray<NSString *> *)knownSlotsList {
+    static NSArray *slots;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        slots = @[GCInputButtonA, GCInputButtonB, GCInputButtonX, GCInputButtonY,
+                  GCInputLeftShoulder, GCInputLeftTrigger, GCInputRightTrigger, GCInputRightShoulder,
+                  GCInputButtonMenu, @"dpad.up", @"dpad.right", @"dpad.down", @"dpad.left"];
+    });
+    return slots;
+}
+- (BOOL)knownSlot:(NSString *)slot {
+    return [slot isKindOfClass:NSString.class] && [self.knownSlotsList containsObject:slot];
+}
+- (BOOL)knownElement:(NSString *)element {
+    if (![element isKindOfClass:NSString.class] || !element.length) return NO;
+    NSSet *allowed = [NSSet setWithArray:[self.knownSlotsList arrayByAddingObjectsFromArray:
+        @[GCInputLeftThumbstick, GCInputRightThumbstick]]];
+    return [allowed containsObject:element];
+}
+- (NSString *)elementForSlot:(NSString *)slot {
+    NSString *element = _elements[slot];
+    return [self knownElement:element] ? element : slot;
+}
+// One element per control: mapping two controls onto the same button would make one of them
+// unreachable, so the second is refused instead of silently winning.
+- (BOOL)setElement:(NSString *)element forSlot:(NSString *)slot {
+    if (![self knownSlot:slot] || ![self knownElement:element]) return NO;
+    NSMutableDictionary *mapping = [NSMutableDictionary dictionaryWithDictionary:_elements];
+    for (NSString *other in mapping) {
+        if (![other isEqualToString:slot] && [mapping[other] isEqualToString:element]) return NO;
+    }
+    if ([slot isEqualToString:element]) [mapping removeObjectForKey:slot];
+    else mapping[slot] = element;
+    _elements = [mapping copy];
+    return YES;
+}
+- (void)clearElementMapping { _elements = @{}; }
+
 #pragma mark - Arrangements, templates and saved profiles
 
 // Everything this layout is, as property-list data. Used for the built-in starting points, for
@@ -130,7 +181,7 @@ static CGFloat Number(id value, CGFloat fallback) {
              @"hapticsEnabled":@(_hapticsEnabled), @"swapShoulders":@(_swapShoulders),
              @"performanceOverlayEnabled":@(_performanceOverlayEnabled),
              @"sticksOnly":@(_sticksOnly), @"floatingSticks":@(_floatingSticks),
-             @"keepFree":_keepFree, @"positions":[_positions copy]};
+             @"keepFree":_keepFree, @"elements":_elements, @"positions":[_positions copy]};
 }
 - (void)applyArrangement:(NSDictionary<NSString *, id> *)arrangement {
     if (![arrangement isKindOfClass:NSDictionary.class]) return;
@@ -150,6 +201,14 @@ static CGFloat Number(id value, CGFloat fallback) {
         if (area && areas.count < 16) [areas addObject:area];
     }
     _keepFree = areas;
+    NSMutableDictionary<NSString *, NSString *> *mappedElements = [NSMutableDictionary new];
+    if ([values[@"elements"] isKindOfClass:NSDictionary.class]) {
+        for (NSString *slot in (NSDictionary *)values[@"elements"]) {
+            NSString *element = ((NSDictionary *)values[@"elements"])[slot];
+            if ([self knownElement:element] && [self knownSlot:slot]) mappedElements[slot] = element;
+        }
+    }
+    _elements = mappedElements;
     if ([values[@"positions"] isKindOfClass:NSDictionary.class]) {
         [_positions removeAllObjects];
         for (NSString *key in (NSDictionary *)values[@"positions"]) {
