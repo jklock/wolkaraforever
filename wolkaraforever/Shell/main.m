@@ -447,7 +447,10 @@ static NSString *AKAudioStateDescription(void) {
 }
 - (void)receivedMemoryWarning:(NSNotification *)notification {
     (void)notification;
-    if (self.executionMode==TKExecutionModeExternalJIT) WKExternalJITDiagnosticsCheckpoint(@"memory-warning");
+    if (self.executionMode==TKExecutionModeExternalJIT) {
+        WKExternalJITDiagnosticsCheckpoint(@"memory-warning");
+        WKExternalJITDiagnosticsMemory(@"warning");
+    }
 }
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)s options:(UISceneConnectionOptions *)o {
     static BOOL started;
@@ -1022,6 +1025,7 @@ static NSString *AKAudioStateDescription(void) {
 - (void)startExternalJITGame {
     WKExternalJITDiagnosticsBegin(self.executionModeSource);
     WKExternalJITDiagnosticsCheckpoint(@"external-route-selected");
+    WKExternalJITDiagnosticsMemory(@"route-selected");
     (void)ng_use_external_authorization();
     [self runNativeGame:YES app:self.launchingApp container:nil];
 }
@@ -1085,6 +1089,7 @@ static NSString *AKAudioStateDescription(void) {
     if (!container && self.executionMode==TKExecutionModeExternalJIT) {
         WKExternalJITDiagnosticsBegin(self.executionModeSource);
         WKExternalJITDiagnosticsCheckpoint(@"external-route-selected");
+        WKExternalJITDiagnosticsMemory(@"route-selected");
         NSString *unavailable=nil;
         if (!TKExecutionModeAvailable(TKExecutionModeExternalJIT,&unavailable) || !ng_use_external_authorization()) {
             [self refuseNativeGame:unavailable?:@"External JIT could not be selected for this run."];return;
@@ -1302,7 +1307,10 @@ static NSString *AKAudioStateDescription(void) {
     }
     NSArray<NSString *> *arguments=NSProcessInfo.processInfo.arguments;
     BOOL externalJIT = !container && self.executionMode==TKExecutionModeExternalJIT;
-    if (externalJIT) WKExternalJITDiagnosticsCheckpoint(@"native-startup-entered");
+    if (externalJIT) {
+        WKExternalJITDiagnosticsCheckpoint(@"native-startup-entered");
+        WKExternalJITDiagnosticsMemory(@"native-startup-entered");
+    }
     UIApplication.sharedApplication.idleTimerDisabled = YES;
     NSString *logPath = TKDocumentsPath(@"native-guest.log");
     FILE *log = fopen(logPath.fileSystemRepresentation, "w");
@@ -1405,7 +1413,10 @@ static NSString *AKAudioStateDescription(void) {
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestAlert.Last"];
     BOOL ok = ng_initialize(path.fileSystemRepresentation, NSBundle.mainBundle.privateFrameworksPath.fileSystemRepresentation, map.fileSystemRepresentation, log, fullStartup);
-    if (externalJIT) WKExternalJITDiagnosticsFinish(ok);
+    if (externalJIT) {
+        WKExternalJITDiagnosticsMemory(@"native-return");
+        WKExternalJITDiagnosticsFinish(ok);
+    }
     NSString *guestDamage=[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
     NSString *guestAlert=[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForever.GuestAlert.Last"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
