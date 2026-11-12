@@ -31,46 +31,46 @@ to a running application.
 
 ## Simulator devices
 
-Install an iOS simulator runtime from Xcode Components, then run this once:
+Simulator device data stays where CoreSimulator puts it: a real directory at
+`~/Library/Developer/CoreSimulator` on the boot volume. Install an iOS simulator
+runtime from Xcode Components, then run this once:
 
 ```bash
 wolkaraforever/tools/setup_simulators.sh --apply
 ```
 
-The test matrix is three devices and no others, and the script ensures only the
-two simulators among them:
+**Do not put that directory on a disk image.** An APFS sparse bundle mounted at
+`~/Library/Developer/CoreSimulator` was tried and is withdrawn, because it does
+not fail cleanly — every device booted from it hangs for ever at the Apple logo:
+SpringBoard gets a PID, `com.apple.springboard.services` never registers,
+`simctl io screenshot` returns a static frame, writes stop dead, and
+`simctl bootstatus -b` hangs, so the fault reads as a slow boot rather than as
+the layout. The same runtime on the same device on the boot volume reaches its
+home screen in seconds. Proven on 2026-11-06 by booting a throwaway device in a
+device set on the boot disk and comparing the two.
 
-- `iPad Pro 13-inch (M5)` — simulator
-- `iPhone Duo` — simulator
-- `iPad Pro 12.9-inch (5th generation)` — the physical iPad, no simulator
+The test matrix is three devices and no others. The two simulators among them are the
+requirement; the physical iPad is nice to have, and the script ensures only the two
+simulators:
+
+- `iPad Pro 13-inch (M5)` — simulator, required
+- `iPhone Duo` — simulator, required
+- `iPad Pro 12.9-inch (5th generation)` — the physical iPad, no simulator, nice to have
 
 It creates each one only if it is not already there. A device it creates is boot-checked once
 and shut down again; a device that already exists is reported and left exactly as it is. It
 deletes nothing and shuts nothing else down: every other simulator on the Mac is left alone.
 
-### Device data stays on the boot volume
+A Mac still carrying the withdrawn layout — a disk image mounted at that path, or
+the old `com.wolkaraforever.coresimulator-storage` LaunchAgent — is refused by the
+script, which prints the commands that undo it. The image is never deleted for
+you; it holds your device data, and copying that data back into the real
+directory is what keeps your simulators.
 
-`~/Library/Developer/CoreSimulator` must be a real directory on the boot volume. Do not move it
-to the external Storage volume, by symlink, by `simctl --set`, or by mounting a disk image there.
-
-A disk image there looks like it works — devices list, `simctl` starts them — and then every
-device hangs on the Apple logo forever: SpringBoard gets a PID but never registers
-`com.apple.springboard.services`, the screen never leaves the logo, and the writes stop. The
-same device on the boot volume reaches the home screen in seconds. That was measured on
-2026-11-06 with both matrix simulators, and it is why this repository no longer relocates the
-data root.
-
-The space it would save is small: device data is under a gigabyte, while the runtime images
-beside it are tens of gigabytes and live on the boot volume either way.
-
-If an image is already mounted there, the setup script refuses to run and prints the way back:
+Confirm the devices with:
 
 ```bash
-xcrun simctl shutdown all
-launchctl bootout gui/$(id -u)/com.wolkaraforever.coresimulator-storage
-diskutil unmount force ~/Library/Developer/CoreSimulator
-mkdir -p ~/Library/Developer/CoreSimulator
-cp -a <backup>/Devices ~/Library/Developer/CoreSimulator/Devices
+xcrun simctl list devices available
 ```
 
 The sealed iOS and iPadOS simulator runtimes are Apple-managed Cryptex content

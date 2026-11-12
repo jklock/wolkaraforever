@@ -171,3 +171,42 @@ int TestRealAddonImport(const char *fixtures, const char *temporary) {
         return 0;
     }
 }
+
+// The bundled WolkaraRoue package, installed the way the recommendation page installs it:
+// explicitly, through the store, from the archive the app ships. The good and the tampered
+// archives come from `package_addon_zip.py --fixtures`, so this is the same pair the
+// verifier is tested against.
+int TestBundledPackageInstall(const char *packageFixtures, const char *temporary) {
+    @autoreleasepool {
+        NSString *fixtures = [NSString stringWithUTF8String:packageFixtures];
+        NSString *good = [fixtures stringByAppendingPathComponent:@"good"];
+        NSString *root = [NSString stringWithUTF8String:temporary];
+        NSString *directory = [root stringByAppendingPathComponent:@"Bundled/Interface/AddOns"];
+        NSFileManager *fm = NSFileManager.defaultManager;
+        NSError *error = nil;
+        CHECK([fm createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error], "create the bundled sandbox");
+        NSString *archiveName = nil;
+        for (NSString *name in [fm contentsOfDirectoryAtPath:good error:&error])
+            if ([name hasPrefix:@"WolkaraRoue-"] && [name hasSuffix:@".zip"]) { archiveName = name; break; }
+        CHECK(archiveName != nil, "the package fixture names its archive");
+        NSURL *archive = [NSURL fileURLWithPath:[good stringByAppendingPathComponent:archiveName]];
+        TKAddonStore *store = [[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wowf" gameVersion:@"1.60.1"];
+        CHECK([store importZIPAtURL:archive error:&error], "the bundled package installs through the store");
+        CHECK(store.records.count == 1, "and is listed exactly once");
+        CHECK([store.records.firstObject.folders containsObject:@"WolkaraRoue"], "as its own reviewed folder");
+        NSString *toc = [directory stringByAppendingPathComponent:@"WolkaraRoue/WolkaraRoue.toc"];
+        CHECK([fm fileExistsAtPath:toc], "with the reviewed TOC in place");
+        // A second Install is an Update of the one record, not a second copy of the folder.
+        CHECK([store updateRecord:store.records.firstObject archiveURL:archive provider:nil error:&error],
+              "reinstalling updates the one record");
+        CHECK(store.records.count == 1, "and does not add a second");
+        // A tampered archive is refused and leaves the installed tree exactly as it was.
+        NSData *before = [NSData dataWithContentsOfFile:toc];
+        NSURL *tampered = [NSURL fileURLWithPath:[fixtures stringByAppendingPathComponent:
+            [@"tampered" stringByAppendingPathComponent:archiveName]]];
+        CHECK(![store importZIPAtURL:tampered error:&error], "a tampered bundled archive is refused");
+        CHECK([before isEqual:[NSData dataWithContentsOfFile:toc]], "and nothing installed was replaced");
+        puts("BUNDLED PACKAGE PASS: installs, updates in place, refuses a tampered archive");
+        return 0;
+    }
+}

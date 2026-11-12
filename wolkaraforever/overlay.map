@@ -48,6 +48,7 @@ wolkaraforever/WoW/AddonCredentialStore.h launcher/WoW/AddonCredentialStore.h ad
 wolkaraforever/WoW/AddonCredentialStore.m launcher/WoW/AddonCredentialStore.m add
 wolkaraforever/WoW/AddonManager.h launcher/WoW/AddonManager.h add
 wolkaraforever/WoW/AddonManager.m launcher/WoW/AddonManager.m add
+wolkaraforever/WoW/AddonPackage.swift launcher/WoW/AddonPackage.swift add
 wolkaraforever/WoW/AddonStore.h launcher/WoW/AddonStore.h add
 wolkaraforever/WoW/AddonStore.m launcher/WoW/AddonStore.m add
 wolkaraforever/WoW/CASC.h launcher/WoW/CASC.h add
@@ -58,6 +59,8 @@ wolkaraforever/WoW/CurseForgeClient.h launcher/WoW/CurseForgeClient.h add
 wolkaraforever/WoW/CurseForgeClient.m launcher/WoW/CurseForgeClient.m add
 wolkaraforever/WoW/DeviceProfile.h launcher/WoW/DeviceProfile.h add
 wolkaraforever/WoW/DeviceProfile.m launcher/WoW/DeviceProfile.m add
+wolkaraforever/WoW/DownloadStatus.h launcher/WoW/DownloadStatus.h add
+wolkaraforever/WoW/DownloadStatus.m launcher/WoW/DownloadStatus.m add
 wolkaraforever/WoW/ForeverUI.h launcher/WoW/ForeverUI.h add
 wolkaraforever/WoW/ForeverUI.m launcher/WoW/ForeverUI.m add
 wolkaraforever/WoW/ForeverUIArchive.swift launcher/WoW/ForeverUIArchive.swift add
@@ -73,16 +76,54 @@ wolkaraforever/WoW/WoWViewController.h launcher/WoW/WoWViewController.h add
 wolkaraforever/WoW/WoWViewController.m launcher/WoW/WoWViewController.m add
 wolkaraforever/WoW/tests/test_addon_archive.swift tests/test_addon_archive.swift add
 wolkaraforever/WoW/tests/test_addon_import.m tests/test_addon_import.m add
+wolkaraforever/WoW/tests/test_addon_package.swift tests/test_addon_package.swift add
 wolkaraforever/WoW/tests/test_curseforge.m tests/test_curseforge.m add
 wolkaraforever/WoW/tests/test_device_profile.m tests/test_device_profile.m add
 wolkaraforever/WoW/tests/test_forever_config.m tests/test_forever_config.m add
 wolkaraforever/WoW/tests/test_forever_ui_archive.swift tests/test_forever_ui_archive.swift add
 wolkaraforever/WoW/tests/test_wow_client.m tests/test_wow_client.m add
+wolkaraforever/WoW/tests/test_wow_download_status.m tests/test_wow_download_status.m add
 wolkaraforever/WoW/tests/test_wow_installation.m tests/test_wow_installation.m add
 wolkaraforever/WoW/tests/test_wow_launcher_app.m tests/test_wow_launcher_app.m add
 wolkaraforever/WoW/tests/test_wow_manifest.m tests/test_wow_manifest.m add
 wolkaraforever/WoW/tests/test_wow_update.m tests/test_wow_update.m add
 wolkaraforever/WoW/tests/test_wow_verification.m tests/test_wow_verification.m add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/addons-popup.png tests/ui-baselines/launcher/ipad-pro-13-m5/addons-popup.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/voice-settings.png tests/ui-baselines/launcher/ipad-pro-13-m5/voice-settings.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/voice-test.png tests/ui-baselines/launcher/ipad-pro-13-m5/voice-test.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-recommended-macever.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-recommended-macever.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-recommended-wolkararoue.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-recommended-wolkararoue.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-downloading.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-downloading.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de-large-text.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de-large-text.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-large-text.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-large-text.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-launcher-duo.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-launcher-duo.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-launcher-ipados.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-launcher-ipados.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-running.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-running.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-starting.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-starting.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-startup-failed.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-startup-failed.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-test-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-test-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/addons-popup.png tests/ui-baselines/launcher/iphone-duo/addons-popup.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/voice-settings.png tests/ui-baselines/launcher/iphone-duo/voice-settings.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/voice-test.png tests/ui-baselines/launcher/iphone-duo/voice-test.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-addons-de.png tests/ui-baselines/launcher/iphone-duo/wow-addons-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-addons-recommended-macever.png tests/ui-baselines/launcher/iphone-duo/wow-addons-recommended-macever.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-addons-recommended-wolkararoue.png tests/ui-baselines/launcher/iphone-duo/wow-addons-recommended-wolkararoue.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-downloading.png tests/ui-baselines/launcher/iphone-duo/wow-downloading.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home-de-large-text.png tests/ui-baselines/launcher/iphone-duo/wow-home-de-large-text.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home-de.png tests/ui-baselines/launcher/iphone-duo/wow-home-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home-large-text.png tests/ui-baselines/launcher/iphone-duo/wow-home-large-text.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home.png tests/ui-baselines/launcher/iphone-duo/wow-home.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-launcher-duo.png tests/ui-baselines/launcher/iphone-duo/wow-launcher-duo.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-launcher-ipados.png tests/ui-baselines/launcher/iphone-duo/wow-launcher-ipados.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-running.png tests/ui-baselines/launcher/iphone-duo/wow-running.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-starting.png tests/ui-baselines/launcher/iphone-duo/wow-starting.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-startup-failed.png tests/ui-baselines/launcher/iphone-duo/wow-startup-failed.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-voice-de.png tests/ui-baselines/launcher/iphone-duo/wow-voice-de.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-voice-test-de.png tests/ui-baselines/launcher/iphone-duo/wow-voice-test-de.png add
 wolkaraforever/WoW/tests/wow_installation_fixture.h tests/wow_installation_fixture.h add
 wolkaraforever/WoW/wow_cdn.m tools/wow_cdn.m add
 #
@@ -94,6 +135,8 @@ wolkaraforever/Touch/AKPerformanceOverlay.m translation/AppKit/AKPerformanceOver
 wolkaraforever/Touch/AKTouchEventPump.h translation/AppKit/AKTouchEventPump.h add
 wolkaraforever/Touch/Fonts.h translation/AppKit/Fonts.h add
 wolkaraforever/Touch/Fonts.m translation/AppKit/Fonts.m add
+wolkaraforever/Touch/InterfaceMode.h translation/AppKit/InterfaceMode.h add
+wolkaraforever/Touch/InterfaceMode.m translation/AppKit/InterfaceMode.m add
 wolkaraforever/Touch/TouchControls.h translation/AppKit/TouchControls.h replace
 wolkaraforever/Touch/TouchControls.m translation/AppKit/TouchControls.m replace
 wolkaraforever/Touch/TouchGamepad.h translation/AppKit/TouchGamepad.h add
@@ -104,6 +147,10 @@ wolkaraforever/Touch/TouchHaptics.h translation/AppKit/TouchHaptics.h add
 wolkaraforever/Touch/TouchHaptics.m translation/AppKit/TouchHaptics.m add
 wolkaraforever/Touch/tests/test_touch_controls_app.m tests/test_touch_controls_app.m replace
 wolkaraforever/Touch/tests/test_touch_gamepad_app.m tests/test_touch_gamepad_app.m add
+#
+# AppKit: the content-view sizing test for patch 0054, which has to make
+# its own window and host because a bare test process has neither.
+wolkaraforever/AppKit/tests/test_appkit_content_view.m tests/test_appkit_content_view.m add
 #
 # Bridge: what the patched platform files and the public APIs call into
 wolkaraforever/Bridge/AuthorizationBlockedState.h authorization/App/AuthorizationBlockedState.h add
@@ -150,6 +197,13 @@ wolkaraforever/Input/Trigger.m launcher/Input/Trigger.m add
 # for the game's playback lease. Patch 0005 stopped the adapter taking the
 # session itself, so a bare test process has no route to report.
 wolkaraforever/CoreAudio/tests/test_audio_hardware.m tests/test_audio_hardware.m replace
+#
+# Addons: the bundled Interface mobile add-on package - one versioned ZIP of the
+# reviewed Lua in addons/WolkaraRoue, and the manifest that binds it to its release
+# and to every file's hash. A fixture rebuilds both from the sources and compares,
+# so the archive the app ships cannot drift from the Lua that was reviewed.
+wolkaraforever/Addons/WolkaraRoue-0.9.1.json launcher/Addons/WolkaraRoue-0.9.1.json add
+wolkaraforever/Addons/WolkaraRoue-0.9.1.zip launcher/Addons/WolkaraRoue-0.9.1.zip add
 #
 # Notices: this repository's own licence and notice, which the packaged app must
 # carry. The prepared tree already has a LICENSE and a NOTICE.md at its top level,

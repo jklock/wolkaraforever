@@ -1,0 +1,120 @@
+# WolkaraForever layer patch 0052 - runtime: an enabler's region must execute before the detach
+#
+# Why: on the test iPad (iPad Pro 12.9-inch, 5th generation, iPadOS 27.2, StikDebug 3.2.2,
+# 2026-11-11) the enabler granted a region the runtime could adopt but not execute:
+#
+#   [debugger] requesting 1073741824 bytes, attempt 1
+#   [debugger] region 0x7000000000 of 1073741824 bytes was granted but not prepared:
+#              it lies past the addresses the enabler writes to; given back
+#   [debugger] requesting 536870912 bytes, attempt 1
+#   [debugger] arena rx=0x109ef0000 rw=0x129ef0000 size=536870912 protection=0x1
+#   [debugger] asked to let go; no longer attached
+#   [debugger] the arena is no longer executable (protection 0x1)
+#
+# protection 0x1 is read-only. The contributor's log from the same enabler version shows 0x5
+# (read+execute), so the difference is the device, not the protocol. The runtime discovered
+# this only in da_release_debugger, after it had already asked the debugger to let go - the
+# one moment when it could still have asked for execute itself. Every launch therefore gave
+# the arena back and fell back to mapping its own, which is why an enabler-provided arena was
+# never used on this device.
+#
+# What it does: da_request_arena makes the adopted region executable before anything
+# detaches, and refuses (giving it back) if the kernel will not allow it. The detach check is
+# unchanged, so a region whose execute the kernel drops on detach is still refused: that is
+# the device's answer and the runtime must not enter it.
+#
+# The helper lives outside the breakpoint protocol, so the Mac suite can test it: adopt a
+# read-only region, make it executable, and check the protection really changed.
+#
+# Applies to: runtime/DebuggerArena.c, runtime/DebuggerArena.h, tests/test_debugger_arena.c
+# Upstream: candidate.
+
+diff --git a/runtime/DebuggerArena.c b/runtime/DebuggerArena.c
+index 277f842..02e38c6 100644
+--- a/runtime/DebuggerArena.c
++++ b/runtime/DebuggerArena.c
+@@ -103,6 +103,8 @@ bool da_request_arena(NativeCodeMemory *memory, size_t size, FILE *log) {
+     }
+     // What comes back is execute-only; the writable view is ours.
+     if (!da_adopt_region(memory, executable, size, log)) return false;
++    // Before the detach, because afterwards nothing may be able to change it.
++    if (!da_make_executable(memory, log)) { nc_destroy(memory); return false; }
+     if (log) fprintf(log, "[debugger] arena rx=%p rw=%p size=%zu protection=%#x\n",
+                      memory->executable, memory->writable, memory->size,
+                      hd_protection(memory->executable));
+@@ -130,6 +132,24 @@ bool da_adopt_region(NativeCodeMemory *memory, void *region, size_t size, FILE *
+     return false;
+ }
+ 
++// An enabler can grant a region the kernel lets it map but not mark executable; entering it
++// would fault on the first instruction. The runtime owns the region here, so it asks for
++// execute while it still can instead of discovering the problem after the detach.
++bool da_make_executable(NativeCodeMemory *memory, FILE *log) {
++    if (!memory || !memory->executable || !memory->size) return false;
++    unsigned before = hd_protection(memory->executable);
++    if (before & VM_PROT_EXECUTE) return true;
++    if (mprotect(memory->executable, memory->size, PROT_READ | PROT_EXEC)) {
++        if (log) fprintf(log, "[debugger] the region %p is not executable (%#x) and cannot be made so errno=%d\n",
++                         memory->executable, before, errno);
++        return false;
++    }
++    unsigned after = hd_protection(memory->executable);
++    if (log) fprintf(log, "[debugger] the region %p was not executable (%#x); it is now %#x\n",
++                     memory->executable, before, after);
++    return (after & VM_PROT_EXECUTE) != 0;
++}
++
+ bool da_release_debugger(const NativeCodeMemory *memory, FILE *log) {
+     if (!memory || !memory->executable) return false;
+     (void)da_detached(log);
+diff --git a/runtime/DebuggerArena.h b/runtime/DebuggerArena.h
+index 71b06c5..b616774 100644
+--- a/runtime/DebuggerArena.h
++++ b/runtime/DebuggerArena.h
+@@ -19,6 +19,9 @@ bool da_request_arena(NativeCodeMemory *memory, size_t size, FILE *log);
+ bool da_adopt_region(NativeCodeMemory *memory, void *region, size_t size, FILE *log);
+ // Ask the debugger to detach; report whether execute survived.
+ bool da_release_debugger(const NativeCodeMemory *memory, FILE *log);
++// Ask the kernel for execute on a region already adopted, before anything detaches.
++// Returns whether the region now executes.
++bool da_make_executable(NativeCodeMemory *memory, FILE *log);
+ // Guest entry: nothing attached, and the arena executes.
+ bool da_entry_allowed(const NativeCodeMemory *memory, FILE *log);
+ // Test support: answer the attachment question with this instead.
+diff --git a/tests/test_debugger_arena.c b/tests/test_debugger_arena.c
+index caf3904..896423e 100644
+--- a/tests/test_debugger_arena.c
++++ b/tests/test_debugger_arena.c
+@@ -2,6 +2,7 @@
+ #include "HostDiagnostics.h"
+ #include <assert.h>
+ #include <mach/mach.h>
++#include <mach/vm_prot.h>
+ #include <stdbool.h>
+ #include <stdint.h>
+ #include <stdio.h>
+@@ -119,9 +120,24 @@ int main(void) {
+     assert(!da_adopt_region(&unreached, missed, 2 * page, record));
+     assert(!unreached.executable && !unreached.writable && !hd_protection(missed));
+     assert(!fflush(record) && strstr(text, "granted but not prepared") && !strstr(text, "prepared: it lies past the addresses the enabler writes to; not given back"));
++
++    // A region an enabler granted may be readable but not executable. The runtime makes it
++    // execute before it detaches, and refuses one it cannot make executable.
++    void *readonly_region = mmap(NULL, 2 * page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
++    assert(readonly_region != MAP_FAILED);
++    NativeCodeMemory adopted_region = {0};
++    assert(nc_adopt(&adopted_region, readonly_region, 2 * page));
++    assert(!(hd_protection(adopted_region.executable) & VM_PROT_EXECUTE));
++    assert(da_make_executable(&adopted_region, record));
++    assert(hd_protection(adopted_region.executable) & VM_PROT_EXECUTE);
++    nc_destroy(&adopted_region);
++    NativeCodeMemory nothing = {0};
++    assert(!da_make_executable(&nothing, record));
++    assert(!da_make_executable(NULL, record));
+     fclose(record); free(text);
+ 
+     puts("PASS: debugger region validation, refused request with nothing attached (no breakpoint executed),"
+          " no entry while a debugger holds on, a refused region given back");
+     puts("PASS: a granted region past the enabler's reach is given back unless its pages were written");
++    puts("PASS: a granted region that does not execute is made executable before the detach");
+ }

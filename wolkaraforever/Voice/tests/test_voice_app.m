@@ -141,6 +141,87 @@ static UIView *Find(UIView *view, NSString *identifier) {
 
 #pragma mark - The tests
 
+@interface AKControllerInspector (MouseTest)
+- (void)attachMouse:(GCMouse *)mouse;
+@end
+
+@interface FakeMouseButton : NSObject
+@property (nonatomic) float value;
+@property (nonatomic, getter=isPressed) BOOL pressed;
+@property (nonatomic, copy) GCControllerButtonValueChangedHandler pressedChangedHandler;
+@end
+@implementation FakeMouseButton
+@end
+
+@interface FakeMouseInput : NSObject
+@property (nonatomic) FakeMouseButton *leftButton, *rightButton, *middleButton;
+@property (nonatomic, copy) GCMouseMoved mouseMovedHandler;
+@property (nonatomic, copy) void (^valueDidChangeHandler)(GCPhysicalInputProfile *, GCControllerElement *);
+- (void)sendButton:(FakeMouseButton *)button pressed:(BOOL)pressed;
+@end
+@implementation FakeMouseInput
+- (void)sendButton:(FakeMouseButton *)button pressed:(BOOL)pressed {
+    button.pressed=pressed; button.value=pressed ? 1 : 0;
+    if (button.pressedChangedHandler) button.pressedChangedHandler((id)button,button.value,pressed);
+    if (self.valueDidChangeHandler) self.valueDidChangeHandler((id)self,(id)button);
+}
+@end
+
+@interface FakeMouse : NSObject
+@property (nonatomic) FakeMouseInput *mouseInput;
+@property (nonatomic, copy) NSString *vendorName;
+@end
+@implementation FakeMouse
+@end
+
+static void TestMouseCallbacks(void) {
+    NSUInteger before=failures;
+    FakeMouse *mouse=[FakeMouse new]; mouse.vendorName=@"Fixture trackpad";
+    FakeMouseInput *input=[FakeMouseInput new]; mouse.mouseInput=input;
+    input.leftButton=[FakeMouseButton new]; input.rightButton=[FakeMouseButton new]; input.middleButton=[FakeMouseButton new];
+    AKControllerInspector *inspector=[AKControllerInspector new]; inspector.interest=AKInputInterest.learning;
+    __block NSUInteger motion=0, buttons=0;
+    NSMutableArray<NSString *> *observed=[NSMutableArray new];
+    inspector.onInput=^(NSString *element,double value,BOOL pressed) {
+        (void)value;
+        [observed addObject:[NSString stringWithFormat:@"%@:%d",element,pressed]];
+    };
+    for (NSUInteger refresh=0;refresh<2;refresh++) {
+        // The host installs its callbacks when a view or device connects. The inspector
+        // can refresh afterwards, including when a different device disconnects.
+        input.mouseMovedHandler=^(GCMouseInput *profile,float x,float y) { (void)profile;(void)x;(void)y;motion++; };
+        for (FakeMouseButton *button in @[input.leftButton,input.rightButton,input.middleButton])
+            button.pressedChangedHandler=^(GCControllerButtonInput *b,float value,BOOL pressed) { (void)b;(void)value;(void)pressed;buttons++; };
+        [inspector attachMouse:(id)mouse];
+        [inspector attachMouse:(id)mouse];
+        for (FakeMouseButton *button in @[input.leftButton,input.rightButton,input.middleButton]) {
+            [input sendButton:button pressed:YES];
+            input.mouseMovedHandler((id)input,4,-3);
+            [input sendButton:button pressed:NO];
+        }
+    }
+    Pump(0.05);
+    CHECK(motion==6,@"inspector refresh preserves the host's relative mouse motion");
+    CHECK(buttons==12,@"inspector refresh preserves all host mouse-button edges");
+    CHECK(observed.count==12,@"each mouse-button edge is observed once after repeated attachment");
+    for (NSString *button in @[@"left",@"right",@"middle"]) {
+        for (NSNumber *pressed in @[@YES,@NO]) {
+            NSString *edge=[NSString stringWithFormat:@"mouse.button.%@:%d",button,pressed.boolValue];
+            CHECK(([[observed filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF == %@",edge]] count]==2),
+                  @"both attachment cycles retain %@",edge);
+        }
+    }
+    inspector.interest=AKInputInterest.none;
+    NSUInteger observedBefore=observed.count;
+    [input sendButton:input.leftButton pressed:YES];
+    input.mouseMovedHandler((id)input,1,2);
+    [input sendButton:input.leftButton pressed:NO];
+    Pump(0.05);
+    CHECK(motion==7 && buttons==14,@"uninterested diagnostics still preserve host input");
+    CHECK(observed.count==observedBefore,@"uninterested diagnostics do not publish mouse input");
+    if (failures==before) puts("MOUSE_CALLBACKS PASS: host motion and buttons survive inspector attachment and refresh");
+}
+
 // The input-interest snapshot, the aggregation counters, and the fact that a GameController
 // callback for something nobody asked about costs nothing.
 //
@@ -211,6 +292,10 @@ static void TestInputInterest(void) {
     AKTrigger *trigger = [AKTrigger new];
     trigger.element = @"controller.button.a";
     trigger.pattern = AKTriggerPatternPushToTalk;
+    // No physical controller is connected in this fixture. An any-device mapping is
+    // therefore the mapping that can apply and must reach the inspector snapshot;
+    // the named mapping exercises trigger delivery for the synthetic pad below.
+    [settings setTrigger:trigger forDevice:nil];
     [settings setTrigger:trigger forDevice:@"pad"];
     settings.enabled = YES;
     [AKInputRouter.shared refreshInterest];
@@ -257,6 +342,7 @@ static void TestInputInterest(void) {
     AKInputRouter.shared.onLearned = nil;
 
     // Put the shared state back for the suites that run after this one.
+    [settings clearMappingForDevice:nil];
     [settings clearMappingForDevice:@"pad"];
     settings.enabled = wasEnabled;
     AKInputRouter.shared.onTriggerBegan = nil;
@@ -1317,6 +1403,11 @@ static void CheckLayout(UIView *root, NSString *page, NSArray<NSString *> *ident
     UIView *host = root.window ?: root;
     CGRect bounds = host.bounds;
     CHECK((bounds.size.width > 0 && bounds.size.height > 0), @"%@: the page is on a screen with a size", page);
+    UIScrollView *(^scroller)(UIView *) = ^UIScrollView *(UIView *view) {
+        for (UIView *parent = view.superview; parent; parent = parent.superview)
+            if ([parent isKindOfClass:UIScrollView.class]) return (UIScrollView *)parent;
+        return nil;
+    };
     for (NSString *identifier in identifiers) {
         UIView *view = Find(root, identifier);
         CHECK((view != nil), @"%@: %@ is on the page", page, identifier);
@@ -1327,6 +1418,19 @@ static void CheckLayout(UIView *root, NSString *page, NSArray<NSString *> *ident
         if (view.hidden || view.alpha < 0.01) continue;
         CGRect frame = [view convertRect:view.bounds toView:host];
         CGRect intersection = CGRectIntersection(frame, bounds);
+        // A page taller than the screen is a page that scrolls - the phone in landscape is
+        // shorter than its own settings page. The row must then be reachable, which is what
+        // scrolling to it proves; a row that is still off screen afterwards, or one the page
+        // never gives a size, is what this check is for.
+        if (CGRectIsNull(intersection) || CGRectIsEmpty(intersection)) {
+            UIScrollView *scroll = scroller(view);
+            if (scroll) {
+                [scroll scrollRectToVisible:[view convertRect:view.bounds toView:scroll] animated:NO];
+                [scroll layoutIfNeeded];
+                frame = [view convertRect:view.bounds toView:host];
+                intersection = CGRectIntersection(frame, bounds);
+            }
+        }
         CHECK((!CGRectIsNull(intersection) && !CGRectIsEmpty(intersection)),
               @"%@: %@ is on screen at %.0f,%.0f %.0fx%.0f", page, identifier,
               frame.origin.x, frame.origin.y, frame.size.width, frame.size.height);
@@ -1578,6 +1682,7 @@ static void TestConfigWriteFailure(void) {
     // means the screenshot path is exercised end to end rather than in pieces.
     [AKInputRouter.shared begin];
 
+    TestMouseCallbacks();
     TestElements();
     TestInputInterest();
     TestTriggers();

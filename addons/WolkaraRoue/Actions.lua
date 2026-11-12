@@ -8,13 +8,13 @@ local _, ns = ...
 
 -- Les actions toutes faites du sélecteur : des lignes de macro que le jeu exécute lui-même.
 ns.BUILTIN = {
-    { kind = "macrotext", id = "/targetenemy", name = "Target enemy", icon = "Interface\\Icons\\Ability_Hunter_SniperShot" },
-    { kind = "macrotext", id = "/startattack", name = "Auto attack", icon = "Interface\\Icons\\INV_Sword_04" },
-    { kind = "macrotext", id = "/assist", name = "Assist", icon = "Interface\\Icons\\Ability_Warrior_BattleShout" },
-    { kind = "macrotext", id = "/targetfriend", name = "Target friend", icon = "Interface\\Icons\\Spell_Holy_Heal" },
-    { kind = "macrotext", id = "/cleartarget", name = "Clear target", icon = "Interface\\Icons\\Spell_Shadow_Teleport" },
-    { kind = "macrotext", id = "/follow", name = "Follow", icon = "Interface\\Icons\\Ability_Rogue_Sprint" },
-    { kind = "macrotext", id = "/sit", name = "Sit", icon = "Interface\\Icons\\Spell_Nature_Sleep" },
+    { kind = "macrotext", id = "/targetenemy", name = "Cibler un ennemi", icon = "Interface\\Icons\\Ability_Hunter_SniperShot" },
+    { kind = "macrotext", id = "/startattack", name = "Attaque auto", icon = "Interface\\Icons\\INV_Sword_04" },
+    { kind = "macrotext", id = "/assist", name = "Assister", icon = "Interface\\Icons\\Ability_Warrior_BattleShout" },
+    { kind = "macrotext", id = "/targetfriend", name = "Cibler un allié", icon = "Interface\\Icons\\Spell_Holy_Heal" },
+    { kind = "macrotext", id = "/cleartarget", name = "Effacer la cible", icon = "Interface\\Icons\\Spell_Shadow_Teleport" },
+    { kind = "macrotext", id = "/follow", name = "Suivre", icon = "Interface\\Icons\\Ability_Rogue_Sprint" },
+    { kind = "macrotext", id = "/sit", name = "S'asseoir", icon = "Interface\\Icons\\Spell_Nature_Sleep" },
 }
 
 function ns.EntryIcon(entry)
@@ -32,7 +32,7 @@ function ns.EntryName(entry)
     if not entry then return nil end
     if entry.kind == "spell" then return ns.SpellName(entry.id) end
     if entry.kind == "item" then return ns.ItemName(entry.id) end
-    return entry.name and ns.T(entry.name) or entry.id
+    return entry.name or entry.id
 end
 
 -- Le sort, l'objet ou la macro d'un bouton, en attributs sécurisés. Hors combat seulement.
@@ -44,7 +44,7 @@ function ns.ApplyButton(button)
     button:SetAttribute("item", nil)
     button:SetAttribute("macro", nil)
     button:SetAttribute("macrotext", nil)
-    if ns.editing or ns.slotEditing or not entry then
+    if ns.editing or not entry then
         button:SetAttribute("type", nil)
     elseif entry.kind == "spell" then
         button:SetAttribute("type", "spell")
@@ -93,59 +93,33 @@ ticker:SetScript("OnUpdate", function(_, elapsed)
     end
 end)
 
-local LOCKOUT = { [17] = 6788, [592] = 6788, [600] = 6788, [3747] = 6788, [6065] = 6788, [6066] = 6788,
-    [10898] = 6788, [10899] = 6788, [10900] = 6788, [10901] = 6788 }
-
-local function Lockout(button, entry)
-    local debuff = entry and entry.kind == "spell" and LOCKOUT[entry.id]
-    if not debuff or not (AuraUtil and AuraUtil.FindAuraByName) then return false end
-    local unit = (UnitExists("target") and UnitIsFriend("player", "target")) and "target" or "player"
-    local name = ns.SpellName(debuff)
-    local ok, auraName, _, _, _, duration, expiration = pcall(AuraUtil.FindAuraByName, name, unit, "HARMFUL")
-    if not ok or not auraName then return false end
-    button.icon:SetDesaturated(true)
-    local timed = pcall(function()
-        button.cooldown:SetCooldown(expiration - duration, duration)
-        ticking[button] = expiration
-        if button.timer then button.timer:SetText(ns.CooldownText(math.max(0, expiration - GetTime()))) end
-    end)
-    if not timed then button.cooldown:Hide() end
-    return true
-end
-
-local function SecretCooldown(button, entry, start, duration, onGCD)
+-- Sur les clients récents, le jeu peut rendre un temps de recharge « secret » : l'addon ne peut
+-- ni le comparer ni en faire le calcul, seulement le passer au cadre de recharge du jeu, qui le
+-- dessine (constat et méthode de scarrdi94, jklock/wolkaraforever#26). Le balayage et les
+-- chiffres viennent alors du jeu, dont on allume l'option des chiffres ; l'icône ne passe pas
+-- au gris, faute de savoir s'il y a vraiment un temps de recharge.
+local function SecretCooldown(button, entry, start, duration)
     local cooldown = button.cooldown
+    ticking[button] = nil
+    if button.timer then button.timer:SetText("") end
+    button.icon:SetDesaturated(false)
     local drawn = false
-    if entry.kind == "spell" and C_Spell and C_Spell.GetSpellCooldownDuration and cooldown.SetCooldownFromDurationObject then
+    if entry and entry.kind == "spell" and C_Spell and C_Spell.GetSpellCooldownDuration
+            and cooldown.SetCooldownFromDurationObject then
         drawn = pcall(function() cooldown:SetCooldownFromDurationObject(C_Spell.GetSpellCooldownDuration(entry.id)) end)
     end
     if not drawn then drawn = pcall(cooldown.SetCooldown, cooldown, start, duration) end
     if not drawn then cooldown:Hide(); return end
     cooldown:Show()
-    ticking[button] = nil
-    if button.timer then button.timer:SetText("") end
-    local known, global = pcall(function() return onGCD == true end)
-    if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(known and global) end
-    button.icon:SetDesaturated(not (known and global))
-    if not button.cooldownWatched then
-        button.cooldownWatched = true
-        cooldown:HookScript("OnCooldownDone", function() button.icon:SetDesaturated(false) end)
+    if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(false) end
+    if GetCVar and SetCVar and GetCVar("countdownForCooldowns") == "0" then
+        pcall(SetCVar, "countdownForCooldowns", "1")
     end
 end
 
-function ns.UpdateCooldown(button)
-    local entry = button:GetEntry()
-    local start, duration, enable, onGCD
-    if entry and entry.kind == "spell" then
-        start, duration, enable, onGCD = ns.SpellCooldown(entry.id)
-    elseif entry and entry.kind == "item" then
-        start, duration, enable = ns.ItemCooldown(entry.id)
-    end
-    local plain, active = pcall(function() return start and duration and duration > 0 and enable ~= 0 and enable ~= false end)
-    if not plain then return SecretCooldown(button, entry, start, duration, onGCD) end
-    local real = active and duration > GLOBAL_COOLDOWN
-    if not real and Lockout(button, entry) then return end
-    if active then
+local function PlainCooldown(button, start, duration, enable)
+    if button.cooldown.SetHideCountdownNumbers then button.cooldown:SetHideCountdownNumbers(true) end
+    if start and duration and duration > 0 and enable ~= 0 and enable ~= false then
         if CooldownFrame_Set then
             CooldownFrame_Set(button.cooldown, start, duration, 1)
         else
@@ -163,6 +137,20 @@ function ns.UpdateCooldown(button)
         if button.cooldown.Clear then button.cooldown:Clear() end
         button.cooldown:Hide()
         StopTimer(button)
+    end
+end
+
+function ns.UpdateCooldown(button)
+    local entry = button:GetEntry()
+    local start, duration, enable
+    if entry and entry.kind == "spell" then
+        start, duration, enable = ns.SpellCooldown(entry.id)
+    elseif entry and entry.kind == "item" then
+        start, duration, enable = ns.ItemCooldown(entry.id)
+    end
+    -- Une valeur secrète fait échouer la première comparaison : on passe alors la main au jeu.
+    if not pcall(PlainCooldown, button, start, duration, enable) then
+        SecretCooldown(button, entry, start, duration)
     end
 end
 
@@ -211,7 +199,7 @@ end
 -- Ranger une entrée dans un bouton : enregistre, redessine, et réapplique hors combat.
 function ns.AssignEntry(button, entry)
     button:SetEntry(entry)
-    ns.MarkChanged()
+    ns.MarkChanged("case " .. (button.GetName and button:GetName() or "?") .. " : " .. (ns.EntryName(entry) or "vidée"))
     ns.RefreshButton(button)
     ns.ApplyButton(button)
     if button.OnAssigned then button:OnAssigned() end
@@ -219,7 +207,7 @@ end
 
 function ns.AssignFromCursor(button)
     if InCombatLockdown() then
-        ns.Print(ns.T("slots can only be filled out of combat."))
+        ns.Print("on remplit les cases hors combat.")
         return
     end
     local entry = ns.CursorEntry()
@@ -232,8 +220,24 @@ function ns.AssignFromCursor(button)
 end
 
 -- getEntry et setEntry disent où l'entrée est rangée (une roue, un bouton libre).
+-- Le gabarit sécurisé de l'appui et du relâchement : la roue qui tourne y accroche son code de
+-- combat (Turn.lua). Le jeu refuse d'envelopper OnMouseDown et OnMouseUp d'un bouton
+-- (« Unsupported script type », General.log du 2026-11-09) ; il n'accepte ces deux moments
+-- que par ce gabarit, porté par le bouton lui-même. Sans code accroché, il ne fait rien.
+local MOUSE_TEMPLATE = "SecureHandlerMouseUpDownTemplate"
+local function HasTemplate(template)
+    if C_XMLUtil and C_XMLUtil.GetTemplateInfo then
+        local ok, info = pcall(C_XMLUtil.GetTemplateInfo, template)
+        return ok and info ~= nil
+    end
+    return true
+end
+
 function ns.CreateActionButton(name, parent, size, getEntry, setEntry)
-    local button = CreateFrame("Button", name, parent, "SecureActionButtonTemplate")
+    local mouse = HasTemplate(MOUSE_TEMPLATE)
+    local button = CreateFrame("Button", name, parent,
+        mouse and ("SecureActionButtonTemplate," .. MOUSE_TEMPLATE) or "SecureActionButtonTemplate")
+    button.securePressRelease = mouse
     button:SetSize(size, size)
     -- Les deux, parce que le gabarit d'action ne réagit qu'à l'un des deux selon le réglage
     -- « lancer à l'appui » du jeu ; il choisit lui-même lequel.
@@ -274,11 +278,20 @@ function ns.CreateActionButton(name, parent, size, getEntry, setEntry)
     local highlight = ns.Disc(button, "HIGHLIGHT", 1, 1, 1, 0.18, 0)
     highlight:SetBlendMode("ADD")
 
-    -- Un curseur plein, une case vide ou le mode Personnaliser : le toucher sert à ranger,
-    -- pas à lancer.
-    button:SetScript("PreClick", function(self)
+    -- Une case vide ou le mode Personnaliser : le toucher sert à ranger, pas à lancer. Un
+    -- curseur plein aussi, mais en jeu seulement sur une case vide : un objet pris dans un sac
+    -- et un toucher sur un sort pour le lancer ne doivent pas remplacer ce sort.
+    -- L'appui long (l'app le donne en clic droit, après 0,45 s) appelle OnLongPress hors combat,
+    -- sans lancer ; en combat, il lance le sort comme un toucher.
+    button:SetScript("PreClick", function(self, mouse)
         if InCombatLockdown() or self.swiped then return end
-        if ns.editing or ns.slotEditing or GetCursorInfo() or not self:GetEntry() then
+        if mouse == "RightButton" and self.OnLongPress then
+            self:SetAttribute("type", nil)
+            self.suppressed, self.longPress = true, true
+            return
+        end
+        local cursor = GetCursorInfo() and (ns.editing or not self:GetEntry())
+        if ns.editing or cursor or not self:GetEntry() then
             self:SetAttribute("type", nil)
             self.suppressed = true
         end
@@ -287,19 +300,17 @@ function ns.CreateActionButton(name, parent, size, getEntry, setEntry)
         -- Un glissé sur la roue l'a fait tourner : ni lancer ni sélecteur (Turn.lua).
         if self.swiped and not down then self.swiped = nil; return end
         if InCombatLockdown() or down or not self.suppressed then return end
-        if GetCursorInfo() then
+        if self.longPress then
+            self.longPress = nil
+            self:OnLongPress()
+        elseif GetCursorInfo() then
             ns.AssignFromCursor(self)
         elseif ns.Picker then
             ns.Picker:Open(self)
         end
         ns.ApplyButton(self)
     end)
+    -- Un sort glissé depuis le grimoire et lâché ici : voulu, il prend la case.
     button:SetScript("OnReceiveDrag", function(self) ns.AssignFromCursor(self) end)
     return button
-end
-
-if ns.On then
-    ns.On("PLAYER_LOGIN", function()
-        if GetCVar and SetCVar and GetCVar("countdownForCooldowns") == "0" then pcall(SetCVar, "countdownForCooldowns", "1") end
-    end)
 end

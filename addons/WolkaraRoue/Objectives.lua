@@ -5,7 +5,7 @@
 
 local _, ns = ...
 
-local Objectives = ns.Register("Quests", {})
+local Objectives = ns.Register("Quêtes", {})
 local WIDTH = 320
 local MAX_QUESTS = 5
 local MAX_LINES = 4
@@ -67,8 +67,7 @@ local function Render()
     if not card or not ns.db then return end
     local quests = Collect()
     local settings = ns.db.quests
-    header.text:SetText((ns.T("Quests (%d)  %s")):format(#quests, settings.collapsed and "+" or "-"))
-    if header.log and not InCombatLockdown() then header.log:SetShown(not settings.collapsed) end
+    header.text:SetText(("Quêtes (%d)  %s"):format(#quests, settings.collapsed and "+" or "-"))
     local y = 0
     for i = 1, MAX_QUESTS do
         local block, quest = blocks[i], quests[i]
@@ -80,7 +79,7 @@ local function Render()
             for j = 1, MAX_LINES do
                 local line, objective = block.lines[j], quest.objectives[j]
                 if quest.complete and j == 1 then
-                    line:SetText(ns.T("Ready to turn in"))
+                    line:SetText("À rendre")
                     line:SetTextColor(0.3, 1, 0.3)
                     line:Show()
                 elseif objective and not quest.complete then
@@ -106,8 +105,6 @@ local function Render()
     end
     body:SetHeight(math.max(1, y))
     card:SetHeight(header:GetHeight() + (settings.collapsed and 0 or y) + 6)
-    local width = settings.collapsed and math.ceil(header.text:GetStringWidth() + 30) or WIDTH
-    card:SetWidth(width); header:SetWidth(width)
 end
 
 function Objectives:Init()
@@ -116,7 +113,8 @@ function Objectives:Init()
     card:SetFrameStrata("LOW")
     ns.Box(card, "BACKGROUND", 0, 0, 0, 0.35)
     card.glow = ns.EditFrame(card)
-    ns.Movable(card, function() return ns.db.quests end, "pos", { "TOPLEFT", "TOPLEFT", 12, -92 })
+    -- Sous ta barre et tes effets (Buffs.lua), à gauche, tant qu'on ne l'a pas déplacée.
+    ns.Movable(card, function() return ns.db.quests end, "pos", { "TOPLEFT", "TOPLEFT", 12, -150 })
 
     header = CreateFrame("Button", nil, card)
     header:SetSize(WIDTH, 34)
@@ -124,30 +122,12 @@ function Objectives:Init()
     header:RegisterForClicks("AnyUp")
     header.text = ns.Label(header, "GameFontNormalLarge")
     header.text:SetPoint("LEFT", 10, 0)
-    header:SetScript("OnMouseUp", function(self)
-        if ns.editing or not self:IsMouseOver() then return end
+    header:SetScript("OnClick", function()
+        if ns.editing then return end
         ns.db.quests.collapsed = not ns.db.quests.collapsed
         Render()
     end)
     ns.DragHandle(header, card)
-
-    local log = CreateFrame("Button", "WolkaraMobileQuestLogButton", header, "SecureActionButtonTemplate")
-    log:SetSize(28, 28)
-    log:SetPoint("RIGHT", header, "RIGHT", -6, 0)
-    log:RegisterForClicks("AnyUp", "AnyDown")
-    if _G.QuestLogMicroButton then
-        log:SetAttribute("type", "click")
-        log:SetAttribute("clickbutton", _G.QuestLogMicroButton)
-    else
-        log:SetScript("PostClick", function(_, _, down) if not down and ToggleQuestLog then ToggleQuestLog() end end)
-    end
-    log.icon = log:CreateTexture(nil, "ARTWORK")
-    log.icon:SetAllPoints()
-    log.icon:SetTexture("Interface\\GossipFrame\\AvailableQuestIcon")
-    local glow = log:CreateTexture(nil, "HIGHLIGHT")
-    glow:SetAllPoints()
-    glow:SetColorTexture(1, 1, 1, 0.15)
-    header.log = log
 
     body = CreateFrame("Frame", nil, card)
     body:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)

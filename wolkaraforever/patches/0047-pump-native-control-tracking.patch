@@ -1,4 +1,4 @@
-# Keep native control tracking responsive inside a guest-owned event loop.
+# Service native tracking during held mouse buttons and control editing.
 --- a/translation/AppKit/AppKit.m
 +++ b/translation/AppKit/AppKit.m
 @@ -3,6 +3,7 @@
@@ -13,7 +13,7 @@
  
  @interface AKHostView : UIView <UIPointerInteractionDelegate, AKTouchControlsDelegate>
  @property (nonatomic, weak) NSWindow *nsWindow;
-+- (BOOL)ak_configuringTouchControls;
++- (BOOL)ak_needsTrackingEvents;
  @end
  
  @implementation AKHostView { CGPoint _last; NSEventModifierFlags _mods; BOOL _pressedRight, _pressedLeft, _pointerInside, _softwareCursor; UIImageView *_cursorView; UIPointerInteraction *_pointer; UIPointerStyle *_gamePointerStyle; unsigned _hoverUpdates, _pointerUpdates, _cursorVisibilityReasons; NSTimeInterval _pointerReportTime; CGPoint _cursorHotSpot; unsigned short _swallowedKey;
@@ -21,7 +21,7 @@
      NSInteger _touchClickCount;
      CGSize _touchViewportSize;
  }
-+- (BOOL)ak_configuringTouchControls { return _touchControls.configuring; }
++- (BOOL)ak_needsTrackingEvents { return _touchControls.configuring || _touchControls.keyboardVisible || _pressedLeft || _pressedRight || _pressedMiddle; }
  - (instancetype)initWithFrame:(CGRect)f {
      if ((self = [super initWithFrame:f])) {
          self.multipleTouchEnabled = NO;
@@ -29,11 +29,20 @@
      for(CALayer *child in layer.sublayers) logLayer(child,depth+1);
  }
  @implementation NSWindow { UIWindow *_uiWindow; AKHostView *_host; NSRect _contentRect; NSResponder *_firstResponder; NSUInteger _collectionBehavior; }
-+- (BOOL)ak_configuringTouchControls { return [_host ak_configuringTouchControls]; }
++- (BOOL)ak_needsTrackingEvents { return [_host ak_needsTrackingEvents]; }
  - (instancetype)initWithContentRect:(NSRect)r styleMask:(NSUInteger)m backing:(NSUInteger)b defer:(BOOL)d {
      static _Atomic NSInteger numbers;
      if ((self = [super init])) { _contentRect = r; _styleMask=m; self.nextResponder = NSApp; _windowNumber = ++numbers; }
-@@ -1126,20 +1130,20 @@
+@@ -1106,6 +1110,8 @@
+     if(diagnostics<3 && now>=nextDiagnostic && [NSProcessInfo.processInfo.arguments containsObject:@"--sample-native"]) {
+         diagnostics++; nextDiagnostic=now+15; [self.keyWindow ak_logLayers];
+     }
++    // Tracking sources must run even when a queued guest event is ready.
++    if ([self.keyWindow ak_needsTrackingEvents]) AKPumpTouchEvents(YES);
+     for (BOOL pumped = NO;; pumped = YES) {
+         for (NSUInteger i = 0; i < _queue.count; i++) {
+             NSEvent *e = _queue[i];
+@@ -1126,20 +1132,19 @@
          }
          NSTimeInterval left = date ? date.timeIntervalSinceNow : 0;
          if (pumped && left <= 0) return nil;
@@ -41,21 +50,20 @@
 -        // gesture and key work. The former 1 ms duration slept the guest once
 -        // per frame in the observed run. A zero-duration turn services ready
 -        // sources without waiting for new work.
-+        // Our settings need complete default and tracking turns while the
-+        // desktop loop owns the main thread. Keep idle gameplay polls free
-+        // of a deliberate wait when settings and layout editing are closed.
++        // Idle polls stay nonblocking; held buttons and native controls also
++        // service tracking sources during a blocking wait.
          static unsigned long pumpPolls, pumpTurns; static double pumpMs;
          pumpPolls++;
          if(left<=0) {
              NSTimeInterval now2=NSProcessInfo.processInfo.systemUptime;
 -            CFRunLoopRunInMode(kCFRunLoopDefaultMode,0,false);
-+            AKPumpTouchEvents([self.keyWindow ak_configuringTouchControls]);
++            AKPumpTouchEvents(NO);
              pumpTurns++; pumpMs+=(NSProcessInfo.processInfo.systemUptime-now2)*1000.0;
              if(pumpPolls%2000==0)
                  AKLog(@"pump polls=%lu turns=%lu in_runloop_ms=%.0f (%.2f ms per poll)",
                        pumpPolls,pumpTurns,pumpMs,pumpMs/(double)pumpPolls);
          }
-+        else if ([self.keyWindow ak_configuringTouchControls]) AKPumpTouchEvents(YES);
++        else if ([self.keyWindow ak_needsTrackingEvents]) AKPumpTouchEvents(YES);
          else CFRunLoopRunInMode(kCFRunLoopDefaultMode,MIN(left,.25),true);
      }
  }

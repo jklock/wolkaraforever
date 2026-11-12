@@ -60,18 +60,7 @@ The dated record for that run is
 the commands with captured success exits from the observed self-test results in the matrix;
 the matrix runner's final terminal exit was not retained by the host capture.
 
-### iPhone, branch `experience-mobile` (2026-11-05)
-
-Human full-game, one device and one session: an **iPhone Duo, iOS 27.2, Developer service**,
-WoW Forever 1.60.1.70790 (client executable sha256 `4e262ff6...`), on Wi-Fi, with the build of
-`582c597` (it differed from that commit only in comments). The login at 17:14 went through
-and the session continued past the login screen: 148 more shader libraries compiled and the
-game captured the pointer for its camera. From 11:44 to 16:15 the same login had been refused
-at Battle.net's logon form submission (BLZ51914400, BLZ51914500), on mobile data and on Wi-Fi,
-while the same client on a Mac was accepted with the same account; the refusal ended on
-Blizzard's side. A session started on mobile data alone was not tried again after that.
-
-### Not run, and deliberately not claimed
+### Not run in the `96133d9` validation
 
 - **Human full-game.** No launch, login, in-world session, performance measurement, or
   gameplay check was part of this work. Nothing here says the game works.
@@ -88,6 +77,32 @@ Blizzard's side. A session started on mobile data alone was not tried again afte
   iPadOS reports for a particular pad's buttons.
 - **The store and the account.** No install, update or repair was performed against the
   client's own files.
+
+### 2026-11-11: held mouse-button tracking — simulators only
+
+The v1.0.7 held-button change (`0047-pump-native-control-tracking`, and the mouse observer in
+`ControllerInspector.m`) was measured on the two matrix simulators and on no other device:
+
+```text
+touch-controls fixture --mouse-tracking-test       iPad Pro 13-inch (M5)  PASS 18/18
+touch-controls fixture --mouse-tracking-test       iPhone Duo            PASS 18/18
+touch-controls fixture --tracking-progress-test    iPad Pro 13-inch (M5)  PASS
+touch-controls fixture --tracking-progress-test    iPhone Duo            PASS (10/10 runs)
+gamepad fixture --self-test / --self-test-input    both                  PASS
+voice/input fixture (MOUSE_CALLBACKS)              both                  PASS
+```
+
+Each held-button case is one mouse button (left, right, middle) × one queue condition (empty,
+busy, blocking) × one cycle, twice over. The tracking fixture asserts that a default-mode and a
+tracking-mode timer both progress while the native keyboard or the gamepad settings surface is
+open. This is a bounded input result, not a latency measurement and not a long-session result.
+
+**No physical trackpad result is claimed.** The contributor reported three click-hold-drag-release
+cycles on their own iPad at revision `d6fc0bb9b1ba3c683c52c0dbdc853d0c8f74f8ea`; that report is
+not a measurement this repository can check, and it is not this head. `git diff` shows the four
+production input files byte-identical between that revision and the merged one, but byte-identity
+is not device evidence, so neither the report nor the identity is carried as a compatibility
+result. The hardware entry for held-button dragging stays absent until it is measured here.
 
 ## Before you rely on it
 

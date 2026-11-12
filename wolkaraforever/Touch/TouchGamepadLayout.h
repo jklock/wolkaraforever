@@ -19,7 +19,6 @@ FOUNDATION_EXPORT NSNotificationName const AKGamepadLayoutDidChangeNotification;
 // Only the two sticks are shown (movement and camera); the buttons stay hidden. On by
 // default: on a phone the buttons cover the game, and the game's own UI does the rest.
 @property(nonatomic) BOOL sticksOnly;
-@property(nonatomic) BOOL floatingSticks;
 - (CGRect)frameForItem:(NSString *)item defaultFrame:(CGRect)frame inBounds:(CGRect)bounds;
 - (void)moveItem:(NSString *)item toFrame:(CGRect)frame inBounds:(CGRect)bounds;
 - (void)save;

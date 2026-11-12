@@ -47,11 +47,6 @@ typedef NS_ENUM(NSInteger, AKVoiceMode) {
 // The mapping for a device, or nil when there is none - which is the normal state
 // until the user makes one. Never invents a trigger.
 - (nullable AKTrigger *)triggerForDevice:(nullable NSString *)device;
-// Every element that is mapped to any device, connected or not. The router tells the
-// controller inspector what to admit from this: a mapping for a pad that has not
-// connected yet still means that button is meant to do dictation, and a button the
-// inspector is not watching is dictation that silently does not work.
-- (NSArray<NSString *> *)mappedElements;
 // Remember a learned trigger for the device it came from.
 - (void)setTrigger:(AKTrigger *)trigger forDevice:(nullable NSString *)device;
 // Adopt the element that was just pressed, using the pattern this mode needs.

@@ -147,25 +147,6 @@ static NSTimeInterval const AKTriggerDoubleMaximum = 2.0;
     return [self triggerFromStored:stored];
 }
 
-// Every mapped element, whatever device it belongs to and whether or not that device is
-// connected. Reading the stored keys is the point: the router has to be interested in a
-// mapped button before the pad that carries it has connected, or the first press after
-// connecting is missed.
-+ (NSArray<NSString *> *)mappedElementsInDefaults:(NSUserDefaults *)defaults {
-    NSMutableOrderedSet<NSString *> *elements = [NSMutableOrderedSet orderedSet];
-    for (NSString *key in defaults.dictionaryRepresentation.allKeys) {
-        if (![key hasPrefix:AKTriggerDefaultsPrefix]) continue;
-        NSString *device = [key substringFromIndex:AKTriggerDefaultsPrefix.length];
-        if (!device.length) continue;
-        NSDictionary *stored = [defaults dictionaryForKey:key];
-        if (![stored isKindOfClass:NSDictionary.class]) continue;
-        id element = stored[@"element"];
-        if (![element isKindOfClass:NSString.class] || ![element length]) continue;
-        [elements addObject:element];
-    }
-    return elements.array;
-}
-
 - (void)saveForDevice:(nullable NSString *)device defaults:(NSUserDefaults *)defaults {
     [defaults setObject:[self storedForm] forKey:[AKTrigger defaultsKeyForDevice:device]];
 }

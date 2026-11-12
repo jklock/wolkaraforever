@@ -21,6 +21,42 @@
     if (!data || data.length>limit) { if (error) *error=TKWoWError(@"Synthetic transport failure."); return nil; }
     return data;
 }
+- (NSData *)fetch:(NSURL *)url limit:(NSUInteger)limit window:(uint64_t)window error:(NSError **)error {
+    (void)window;return [self fetch:url limit:limit error:error];
+}
+@end
+// Delays are virtual: the downloader asks this clock for a deadline instead of
+// sleeping, so every retry assertion below is exact rather than timing based.
+@interface TKFakeRetryScheduler : TKWoWRetryScheduler
+@property(nonatomic) NSTimeInterval now;
+@property(nonatomic) NSMutableArray<NSNumber *> *delays;
+@property(nonatomic) NSTimeInterval lastDeadline;
+@property(nonatomic, copy) void (^duringWait)(void);
+// Hold the wait until the client itself signals it, proving cancellation and a
+// terminal sibling failure wake a request that is already waiting.
+@property(nonatomic) BOOL hold;
+@property(nonatomic) BOOL signalled;
+@property(nonatomic) dispatch_semaphore_t entered;
+@end
+@implementation TKFakeRetryScheduler
+- (instancetype)init {
+    if((self=[super init])){_now=1000;_delays=[NSMutableArray new];_lastDeadline=NAN;}
+    return self;
+}
+- (NSTimeInterval)monotonicNow { return _now; }
+- (BOOL)waitUntil:(NSTimeInterval)deadline lock:(NSCondition *)lock {
+    // An unrelated broadcast re-enters the wait with the same deadline; the
+    // schedule records each delay once, not once per wake-up.
+    if (!(deadline==self.lastDeadline)) { [self.delays addObject:@(deadline-self.now)];self.lastDeadline=deadline; }
+    if (self.duringWait) self.duringWait();
+    self.now=deadline;
+    if (!self.hold) return YES;
+    if (self.entered) dispatch_semaphore_signal(self.entered);
+    // A test barrier, not a simulated delay: the only early exit is the client's
+    // own condition being signalled. The cap only stops a hung test.
+    self.signalled=[lock waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:10]];
+    return NO;
+}
 @end
 static NSData *Text(NSString *s) { return [s dataUsingEncoding:NSUTF8StringEncoding]; }
 static void BE(NSMutableData *d, uint64_t n, NSUInteger size) {
@@ -34,16 +70,24 @@ static NSData *Hash(NSData *data) {
 static NSData *Wrap(NSData *data) {
     NSMutableData *raw=[Text(@"BLTE") mutableCopy]; BE(raw,0,4); BE(raw,'N',1); [raw appendData:data]; return raw;
 }
-static NSString *Reference(NSString *name, NSData *data, TKFixtureClient *client) {
-    NSData *raw=Wrap(data); client.responses[TKWoWMD5(raw)]=raw;
+static NSString *ReferenceResponses(NSString *name,NSData *data,NSMutableDictionary *responses) {
+    NSData *raw=Wrap(data);
+    responses[TKWoWMD5(raw)]=raw;
     return [NSString stringWithFormat:@"%@ = %@ %@\n%@-size = %lu %lu\n",name,TKWoWMD5(data),TKWoWMD5(raw),name,(unsigned long)data.length,(unsigned long)raw.length];
+}
+static NSString *Reference(NSString *name, NSData *data, TKFixtureClient *client) {
+    return ReferenceResponses(name,data,client.responses);
 }
 // Exercise the real NSURLSession delegate routing with synthetic HTTPS objects.
 // No socket, credentials, application code or live CDN request is used.
 static NSDictionary<NSString *,NSDictionary *> *ProtocolResponses;
 static NSUInteger ActiveRequests,PeakRequests,StartedRequests,StoppedRequests;
+static NSUInteger InjectedConnectionLosses;
 static uint64_t ActiveBytes,PeakBytes;
 static dispatch_semaphore_t FourStarted;
+static dispatch_semaphore_t FiveStarted;
+static dispatch_semaphore_t StartedReached;
+static NSUInteger StartedTarget;
 static dispatch_group_t ProtocolDeliveries;
 @interface TKDownloadProtocol : NSURLProtocol
 @property(nonatomic) BOOL finished;
@@ -51,7 +95,12 @@ static dispatch_group_t ProtocolDeliveries;
 @property(nonatomic) dispatch_semaphore_t deliveryGate;
 @end
 @implementation TKDownloadProtocol
-+ (BOOL)canInitWithRequest:(NSURLRequest *)request { return [request.URL.host isEqual:@"fixture.invalid"]; }
+// Claim the version service and every advertised CDN host too, so no suite in
+// this binary can reach the network even with a synthetic server list.
++ (BOOL)canInitWithRequest:(NSURLRequest *)request {
+    NSString *host=request.URL.host.lowercaseString;
+    return [host isEqual:@"fixture.invalid"] || [host hasSuffix:@".battle.net"] || [host hasSuffix:@".blizzard.com"];
+}
 + (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
 - (void)finishCount:(BOOL)stopped {
     if(_finished)return;_finished=YES;
@@ -75,15 +124,38 @@ static dispatch_group_t ProtocolDeliveries;
     if(reply[@"truncate"])body=[body subdataWithRange:NSMakeRange(0,body.length-1)];
     if(reply[@"corrupt"]) { NSMutableData *bad=[body mutableCopy];((uint8_t *)bad.mutableBytes)[bad.length-1]^=1;body=bad; }
     _bytes=body.length;
+    BOOL dropConnection=NO;
     @synchronized(TKDownloadProtocol.class) {
+        if (InjectedConnectionLosses<[reply[@"connectionLosses"] unsignedIntegerValue] &&
+            (!reply[@"dropRange"] || [range isEqual:reply[@"dropRange"]])) {
+            InjectedConnectionLosses++;
+            dropConnection=YES;
+        }
         ActiveRequests++;StartedRequests++;ActiveBytes+=_bytes;
         PeakRequests=MAX(PeakRequests,ActiveRequests);PeakBytes=MAX(PeakBytes,ActiveBytes);
         if(ActiveRequests==4 && FourStarted)dispatch_semaphore_signal(FourStarted);
+        if(StartedRequests==5 && FiveStarted)dispatch_semaphore_signal(FiveStarted);
+        if(StartedTarget && StartedRequests==StartedTarget && StartedReached)dispatch_semaphore_signal(StartedReached);
+    }
+    if(reply[@"holdAll"] && !dropConnection)_deliveryGate=dispatch_semaphore_create(0);
+    if(reply[@"failWith"]) {
+        NSDictionary *failure=reply[@"failWith"];
+        dispatch_group_enter(ProtocolDeliveries);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)([reply[@"delay"] doubleValue]*NSEC_PER_SEC)),
+            dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{\
+            @synchronized(self) { @try {
+                [self finishCount:NO];
+                [self.client URLProtocol:self didFailWithError:
+                    [NSError errorWithDomain:failure[@"domain"] code:[failure[@"code"] integerValue] userInfo:nil]];
+            } @finally { dispatch_group_leave(ProtocolDeliveries); } }
+        });
+        return;
     }
     NSMutableDictionary *headers=[@{@"Content-Length":[NSString stringWithFormat:@"%lu",(unsigned long)body.length]} mutableCopy];
     if(contentRange)headers[@"Content-Range"]=contentRange;
     NSHTTPURLResponse *response=[[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:(NSInteger)status HTTPVersion:@"HTTP/1.1" headerFields:headers];
     double delay=[reply[@"delay"] doubleValue];
+    if(reply[@"delays"] && range)delay=[reply[@"delays"][range] doubleValue];
     dispatch_group_enter(ProtocolDeliveries);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(delay*NSEC_PER_SEC)),dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
         if(self.deliveryGate)assert(!dispatch_semaphore_wait(self.deliveryGate,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC)));
@@ -94,6 +166,13 @@ static dispatch_group_t ProtocolDeliveries;
             // Distinct response lengths/chunks arrive interleaved across tasks.
             NSUInteger half=body.length/2;
             [self.client URLProtocol:self didLoadData:[body subdataWithRange:NSMakeRange(0,half)]];
+            if (dropConnection) {
+                NSError *loss=[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNetworkConnectionLost userInfo:nil];
+                [self.client URLProtocol:self didFailWithError:loss];
+                dispatch_semaphore_t dropped=reply[@"dropped"];
+                if (dropped) dispatch_semaphore_signal(dropped);
+                return;
+            }
             [self.client URLProtocol:self didLoadData:[body subdataWithRange:NSMakeRange(half,body.length-half)]];
             [self.client URLProtocolDidFinishLoading:self];
         }} @finally { dispatch_group_leave(ProtocolDeliveries); }
@@ -115,7 +194,8 @@ static void ResetProtocol(NSDictionary *responses) {
     @synchronized(TKDownloadProtocol.class) {
         if(!ProtocolDeliveries)ProtocolDeliveries=dispatch_group_create();
         assert(!ActiveRequests);ProtocolResponses=responses;PeakRequests=StartedRequests=StoppedRequests=0;
-        ActiveBytes=PeakBytes=0;FourStarted=nil;
+        ActiveBytes=PeakBytes=0;FourStarted=nil;FiveStarted=nil;InjectedConnectionLosses=0;
+        StartedReached=nil;StartedTarget=0;
     }
 }
 static NSData *ArchiveIndex(NSArray<NSData *> *objects,NSArray<NSNumber *> *offsets) {
@@ -134,7 +214,8 @@ static NSData *ArchiveIndex(NSArray<NSData *> *objects,NSArray<NSNumber *> *offs
 @property(nonatomic) dispatch_semaphore_t releaseFirst;
 @end
 @implementation TKDelayedRangeClient
-- (NSData *)range:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size error:(NSError **)error {
+- (NSData *)range:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size window:(uint64_t)window error:(NSError **)error {
+    (void)window;
     if(offset==37 && dispatch_semaphore_wait(_releaseFirst,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC))) {
         if(error)*error=TKWoWError(@"Other ranges stalled behind the first range");return nil;
     }
@@ -183,8 +264,8 @@ static void TestReadyRanges(void) {
 @property(nonatomic) dispatch_semaphore_t gate;
 @end
 @implementation TKBudgetClient
-- (NSData *)range:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size error:(NSError **)error {
-    (void)url;assert(offset==37);
+- (NSData *)range:(NSURL *)url offset:(uint64_t)offset size:(NSUInteger)size window:(uint64_t)window error:(NSError **)error {
+    (void)url;(void)window;assert(offset==37);
     @synchronized(self) {
         _active++;_rangeCalls++;_bytes+=size;_peak=MAX(_peak,_active);_peakBytes=MAX(_peakBytes,_bytes);
         if(_active==_expected)for(NSUInteger i=0;i<_expected;i++)dispatch_semaphore_signal(_gate);
@@ -245,6 +326,7 @@ static void TestConcurrentDownloads(void) {
     NSDictionary *plan=@{@"cdn":@"https://fixture.invalid/tpr/wow",@"version":@{@"CDNConfig":TKWoWMD5(config)}};
     NSString *indices=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];NSError *error=nil;
     ResetProtocol(responses);TKSessionClient *client=[TKSessionClient new];
+    TKFakeRetryScheduler *clock=[TKFakeRetryScheduler new];client.retryScheduler=clock;
     // Prime the archive catalogue, outside both benchmark intervals.
     assert([client encodedKey:TKWoWMD5(objects[0]) size:[objects[0] length] plan:plan indices:indices error:&error]);
     ResetProtocol(responses);double start=NSDate.timeIntervalSinceReferenceDate;
@@ -261,13 +343,50 @@ static void TestConcurrentDownloads(void) {
     assert(result && seen.count==objects.count && PeakRequests==4 && PeakBytes<=64*1024*1024 && !ActiveRequests);
     // Timing is diagnostic, never a load-dependent test pass condition.
     printf("Synthetic downloader: 14 latency-bound requests, serial %.3fs, four-way %.3fs (%.2fx); no live CDN.\n",serial,parallel,serial/parallel);
-    // A transport error cancels siblings and the next window is not scheduled.
+    // Lose the first archive range halfway through. Retry only that exact range
+    // after the first delay, discard its partial bytes, and deliver every
+    // verified object exactly once.
     NSMutableDictionary *faulty=[responses mutableCopy];
+    NSUInteger firstOffset=[offsets[0] unsignedIntegerValue];
+    NSString *firstRange=[NSString stringWithFormat:@"bytes=%lu-%lu",(unsigned long)firstOffset,
+        (unsigned long)(firstOffset+[objects[0] length]-1)];
+    faulty[archiveKey]=@{@"data":archive,@"dropRange":firstRange,@"connectionLosses":@1};
+    ResetProtocol(faulty);[seen removeAllObjects];error=nil;
+    clock=[TKFakeRetryScheduler new];client.retryScheduler=clock;
+    BOOL retried=[client downloadEntries:records plan:plan indices:indices consume:^BOOL(NSData *data,NSString *key,NSError **problem){
+        (void)problem;assert([TKWoWMD5(data) isEqual:key] && ![seen containsObject:key]);[seen addObject:key];return YES;
+    } error:&error];
+    if(!retried)fprintf(stderr,"Retried fixture: %s seen=%lu started=%lu losses=%lu\n",error.localizedDescription.UTF8String,(unsigned long)seen.count,(unsigned long)StartedRequests,(unsigned long)InjectedConnectionLosses);
+    assert(retried);
+    assert(!error && seen.count==objects.count && InjectedConnectionLosses==1 && StartedRequests==objects.count+1);
+    assert(([clock.delays isEqual:@[@1]] && clock.delays.count==1));
+
+    // Cancelling a request that is already waiting out a delay ends it at once
+    // and starts no further attempt.
+    TKSessionClient *paused=[TKSessionClient new];
+    TKFakeRetryScheduler *waiting=[TKFakeRetryScheduler new];waiting.hold=YES;waiting.entered=dispatch_semaphore_create(0);
+    paused.retryScheduler=waiting;
+    NSURL *offline=[NSURL URLWithString:@"https://fixture.invalid/object"];
+    ResetProtocol(@{@"object":@{@"data":objects[0],@"connectionLosses":@100}});
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        dispatch_semaphore_wait(waiting.entered,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC));
+        [paused cancel];
+    });
+    error=nil;
+    assert(![paused fetch:offline limit:[objects[0] length] error:&error]);
+    assert(paused.cancelled && error && StartedRequests==1 && waiting.signalled);
+    assert(([waiting.delays isEqual:@[@1]]));
+
+    // Invalid range responses still cancel siblings without scheduling another window.
     faulty[archiveKey]=@{@"data":archive,@"delay":@0.01,@"contentRange":@"bytes 0-0/1"};
     ResetProtocol(faulty);[seen removeAllObjects];error=nil;
     assert(![client downloadEntries:records plan:plan indices:indices consume:^BOOL(NSData *data,NSString *key,NSError **problem){
         (void)data;(void)key;(void)problem;[seen addObject:key];return YES;
     } error:&error]);
+    // NSURLSession may return the terminal transport error before its cancelled
+    // NSURLProtocol siblings run their stop-loading cleanup. Drain those scheduled
+    // fixture deliveries before asserting the protocol accounting boundary.
+    assert(!dispatch_group_wait(ProtocolDeliveries,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC)));
     assert(error && !seen.count && StartedRequests<=4 && !ActiveRequests);
     // Error state is scoped to this operation. A verified retry still works.
     ResetProtocol(responses);error=nil;
@@ -324,6 +443,198 @@ static void TestConcurrentDownloads(void) {
     FourStarted=nil;
     assert([NSFileManager.defaultManager removeItemAtPath:indices error:NULL]);
 }
+// The synthetic metadata every plan is derived from, so an unretried run and a
+// retried run can be compared field for field.
+static NSMutableDictionary *MetadataFixture(void) {
+    NSMutableDictionary *responses=[NSMutableDictionary new];
+    NSData *original=Text(@"test"),*raw=Wrap(original);
+    responses[TKWoWMD5(raw)]=raw;
+    NSMutableData *install=[Text(@"IN") mutableCopy];BE(install,1,1);BE(install,16,1);BE(install,0,2);BE(install,1,4);
+    [install appendData:Text(@"Test.app/Contents/MacOS/Test")];BE(install,0,1);[install appendData:Hash(original)];BE(install,original.length,4);
+    NSMutableData *encoding=[Text(@"EN") mutableCopy];BE(encoding,1,1);BE(encoding,16,1);BE(encoding,16,1);
+    BE(encoding,1,2);BE(encoding,1,2);BE(encoding,1,4);BE(encoding,0,4);BE(encoding,0,1);BE(encoding,0,4);
+    [encoding appendData:[NSMutableData dataWithLength:32]];
+    BE(encoding,1,1);BE(encoding,original.length,5);[encoding appendData:Hash(original)];[encoding appendData:Hash(raw)];
+    encoding.length=22+32+1024;
+    NSString *config=[NSString stringWithFormat:@"build-uid = wowf\n%@%@",
+        ReferenceResponses(@"install",install,responses),ReferenceResponses(@"encoding",encoding,responses)];
+    NSString *build=TKWoWMD5(Text(config)),*cdn=TKWoWMD5(Text(@"cdn"));
+    responses[build]=Text(config);
+    responses[@"versions"]=Text([NSString stringWithFormat:@"Region|BuildConfig|CDNConfig|VersionsName\neu|%@|%@|synthetic-1\n",build,cdn]);
+    responses[@"cdns"]=Text(@"Name|Path|Hosts|Servers\neu|tpr/wow|level3.ssl.blizzard.com|https://level3.ssl.blizzard.com/?maxhosts=4&fallback=1\n");
+    return responses;
+}
+// The retry schedule is exact and the clock is virtual: five attempts at most,
+// each after twice the previous delay, then the final transport error.
+static void TestRetrySchedule(void) {
+    TKSessionClient *client=[TKSessionClient new];
+    TKFakeRetryScheduler *clock=[TKFakeRetryScheduler new];client.retryScheduler=clock;
+    NSData *body=Wrap(Text(@"synthetic retried object"));
+    NSURL *offline=[NSURL URLWithString:@"https://fixture.invalid/object"];
+    NSError *error=nil;
+    ResetProtocol(@{@"object":@{@"data":body,@"connectionLosses":@100}});
+    assert(![client fetch:offline limit:body.length error:&error]);
+    assert([error.domain isEqual:NSURLErrorDomain] && error.code==NSURLErrorNetworkConnectionLost);
+    assert(([clock.delays isEqual:@[@1,@2,@4,@8]] && StartedRequests==5 && InjectedConnectionLosses==5));
+    assert(!ActiveRequests);
+    // One drop costs exactly one delay, and the whole body arrives: the half
+    // received before the drop is discarded, never appended to.
+    clock=[TKFakeRetryScheduler new];client.retryScheduler=clock;
+    ResetProtocol(@{@"object":@{@"data":body,@"connectionLosses":@1}});
+    error=nil;
+    NSData *data=[client fetch:offline limit:body.length error:&error];
+    assert(([data isEqual:body] && !error && [clock.delays isEqual:@[@1]] && StartedRequests==2));
+    assert(!ActiveRequests);
+}
+// Every other failure class fails on its first attempt: no delay is scheduled
+// and the original error reaches the caller.
+static void TestTerminalFailures(void) {
+    TKSessionClient *client=[TKSessionClient new];
+    NSData *body=Wrap(Text(@"synthetic terminal object"));
+    NSURL *offline=[NSURL URLWithString:@"https://fixture.invalid/object"];
+    NSError *error=nil;
+    NSArray *terminal=@[@(NSURLErrorSecureConnectionFailed),@(NSURLErrorServerCertificateHasBadDate),
+        @(NSURLErrorServerCertificateUntrusted),@(NSURLErrorServerCertificateNotYetValid),
+        @(NSURLErrorClientCertificateRejected),@(NSURLErrorClientCertificateRequired),
+        @(NSURLErrorHTTPTooManyRedirects),@(NSURLErrorBadServerResponse),@(NSURLErrorResourceUnavailable),
+        @(NSURLErrorCancelled),@(NSURLErrorUserCancelledAuthentication),@(NSURLErrorZeroByteResource),
+        @(NSURLErrorDataLengthExceedsMaximum),@(NSURLErrorFileDoesNotExist),
+        @(NSURLErrorNoPermissionsToReadFile),@(NSURLErrorUnsupportedURL),
+        @(NSURLErrorAppTransportSecurityRequiresSecureConnection)];
+    for(NSNumber *code in terminal) {
+        TKFakeRetryScheduler *clock=[TKFakeRetryScheduler new];client.retryScheduler=clock;
+        ResetProtocol(@{@"object":@{@"data":body,@"failWith":@{@"domain":NSURLErrorDomain,@"code":code}}});
+        error=nil;
+        assert(![client fetch:offline limit:body.length error:&error]);
+        assert(error && [error.domain isEqual:NSURLErrorDomain] && error.code==code.integerValue);
+        assert(clock.delays.count==0 && StartedRequests==1 && !ActiveRequests);
+    }
+    // HTTP status, a wrong Content-Range and a short body are our own terminal
+    // errors, not transport failures.
+    TKFakeRetryScheduler *clock=[TKFakeRetryScheduler new];client.retryScheduler=clock;
+    ResetProtocol(@{@"object":@{@"data":body,@"status":@500}});
+    error=nil;
+    assert(![client fetch:offline limit:body.length error:&error]);
+    assert([error.localizedDescription containsString:@"HTTP 500"] && clock.delays.count==0 && StartedRequests==1);
+    clock=[TKFakeRetryScheduler new];client.retryScheduler=clock;
+    ResetProtocol(@{@"object":@{@"data":body,@"contentRange":@"bytes 0-0/1"}});
+    error=nil;
+    assert(![client range:offline offset:0 size:16 error:&error]);
+    assert(error && clock.delays.count==0 && StartedRequests==1);
+    clock=[TKFakeRetryScheduler new];client.retryScheduler=clock;
+    ResetProtocol(@{@"object":@{@"data":body,@"truncate":@YES}});
+    error=nil;
+    assert(![client range:offline offset:0 size:body.length error:&error]);
+    assert([error.localizedDescription containsString:@"Incomplete range"] && clock.delays.count==0 && StartedRequests==1);
+    assert(!ActiveRequests);
+}
+// A sibling's terminal failure ends a request that is already waiting, instead
+// of letting it wait out the remaining delay.
+static void TestSiblingFailureWakesWait(void) {
+    NSMutableArray *objects=[NSMutableArray new],*offsets=[NSMutableArray new];
+    NSMutableData *archive=[NSMutableData dataWithLength:37];
+    NSData *present=Wrap(Text(@"synthetic archive member"));
+    [objects addObject:present];[offsets addObject:@(archive.length)];[archive appendData:present];
+    NSString *archiveKey=TKWoWMD5(archive);
+    NSData *waiting=Wrap(Text(@"synthetic waiting object")),*failing=Wrap(Text(@"synthetic failing object"));
+    NSMutableData *records=[NSMutableData new];
+    for(NSData *raw in @[waiting,failing]) {
+        TKWoWDownloadEntry entry={0};assert(TKWoWUnhex(TKWoWMD5(raw),entry.key));entry.size=raw.length;
+        [records appendBytes:&entry length:sizeof(entry)];
+    }
+    NSData *config=Text([NSString stringWithFormat:@"archives = %@\n",archiveKey]);
+    NSDictionary *responses=@{archiveKey:@{@"data":archive},
+        [archiveKey stringByAppendingString:@".index"]:@{@"data":ArchiveIndex(objects,offsets)},
+        TKWoWMD5(config):@{@"data":config},
+        TKWoWMD5(waiting):@{@"data":waiting,@"connectionLosses":@100},
+        TKWoWMD5(failing):@{@"data":failing,@"status":@500,@"delay":@0.3}};
+    NSDictionary *plan=@{@"cdn":@"https://fixture.invalid/tpr/wow",@"version":@{@"CDNConfig":TKWoWMD5(config)}};
+    NSString *indices=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    TKSessionClient *client=[TKSessionClient new];
+    TKFakeRetryScheduler *clock=[TKFakeRetryScheduler new];clock.hold=YES;clock.entered=dispatch_semaphore_create(0);
+    client.retryScheduler=clock;
+    ResetProtocol(responses);
+    NSError *error=nil;
+    assert(![client downloadEntries:records plan:plan indices:indices consume:^BOOL(NSData *data,NSString *key,NSError **problem){
+        (void)data;(void)key;(void)problem;assert(!"No object is consumed from a failed operation");return NO;
+    } error:&error]);
+    assert((clock.signalled && [clock.delays isEqual:@[@1]]));
+    assert([error.localizedDescription containsString:@"HTTP 500"]);
+    // Configuration, archive index, the waiting object and the failed one.
+    assert(StartedRequests==4 && InjectedConnectionLosses==1 && !ActiveRequests);
+    assert([NSFileManager.defaultManager removeItemAtPath:indices error:NULL]);
+}
+// A retry delay is not an occupied transfer slot: while one range waits, four
+// unrelated ranges still transfer, and cancellation then wakes the waiting one.
+static void TestDelayFreesTransferSlot(void) {
+    NSMutableArray *objects=[NSMutableArray new],*offsets=[NSMutableArray new];
+    NSMutableData *archive=[NSMutableData dataWithLength:37],*records=[NSMutableData new];
+    for(NSUInteger i=0;i<6;i++) {
+        NSData *raw=Wrap(Text([NSString stringWithFormat:@"Synthetic slot range %lu",(unsigned long)i]));
+        [objects addObject:raw];[offsets addObject:@(archive.length)];[archive appendData:raw];archive.length+=65537;
+        TKWoWDownloadEntry entry={0};assert(TKWoWUnhex(TKWoWMD5(raw),entry.key));entry.size=raw.length;
+        [records appendBytes:&entry length:sizeof(entry)];
+    }
+    NSString *archiveKey=TKWoWMD5(archive);
+    NSUInteger offset=[offsets[0] unsignedIntegerValue];
+    NSString *dropRange=[NSString stringWithFormat:@"bytes=%lu-%lu",(unsigned long)offset,
+        (unsigned long)(offset+[objects[0] length]-1)];
+    NSData *config=Text([NSString stringWithFormat:@"archives = %@\n",archiveKey]);
+    NSDictionary *responses=@{archiveKey:@{@"data":archive,@"dropRange":dropRange,@"connectionLosses":@1,
+            @"holdAll":@YES},
+        [archiveKey stringByAppendingString:@".index"]:@{@"data":ArchiveIndex(objects,offsets)},
+        TKWoWMD5(config):@{@"data":config}};
+    NSDictionary *plan=@{@"cdn":@"https://fixture.invalid/tpr/wow",@"version":@{@"CDNConfig":TKWoWMD5(config)}};
+    NSString *indices=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    TKSessionClient *client=[TKSessionClient new];
+    TKFakeRetryScheduler *clock=[TKFakeRetryScheduler new];clock.hold=YES;clock.entered=dispatch_semaphore_create(0);
+    client.retryScheduler=clock;
+    ResetProtocol(responses);StartedReached=dispatch_semaphore_create(0);StartedTarget=7;
+    dispatch_semaphore_t finished=dispatch_semaphore_create(0);__block BOOL result=YES;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        NSError *problem=nil;
+        result=[client downloadEntries:records plan:plan indices:indices consume:^BOOL(NSData *data,NSString *key,NSError **error){
+            (void)data;(void)key;(void)error;assert(!"No payload is consumed");return NO;
+        } error:&problem];
+        dispatch_semaphore_signal(finished);
+    });
+    // The dropped range is waiting out its delay ...
+    assert(!dispatch_semaphore_wait(clock.entered,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC)));
+    // ... and the fifth object still starts: the only slot it could take is the
+    // one the waiting range handed back, because the other three are held open.
+    assert(!dispatch_semaphore_wait(StartedReached,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC)));
+    assert(StartedRequests==StartedTarget && ActiveRequests==4);
+    [client cancel];
+    assert(!dispatch_semaphore_wait(finished,dispatch_time(DISPATCH_TIME_NOW,10*NSEC_PER_SEC)));
+    assert((!result && client.cancelled && clock.signalled && [clock.delays isEqual:@[@1]]));
+    StartedReached=nil;StartedTarget=0;
+    assert(!dispatch_group_wait(ProtocolDeliveries,dispatch_time(DISPATCH_TIME_NOW,10*NSEC_PER_SEC)));
+    assert(!ActiveRequests);
+    assert([NSFileManager.defaultManager removeItemAtPath:indices error:NULL]);
+}
+// A retried metadata request re-requests exactly that object. The plan the
+// launcher derives from it is field-for-field identical, so a retry cannot move
+// metadata, verification inputs, activation or Play eligibility.
+static void TestMetadataContract(void) {
+    NSMutableDictionary *plain=MetadataFixture(),*replies=[NSMutableDictionary new];
+    for(NSString *key in plain)replies[key]=@{@"data":plain[key]};
+    TKSessionClient *clean=[TKSessionClient new];clean.retryScheduler=[TKFakeRetryScheduler new];
+    NSError *error=nil;
+    ResetProtocol(replies);
+    NSDictionary *expected=[clean planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error];
+    if(!expected)fprintf(stderr,"Metadata fixture: %s\n",error.localizedDescription.UTF8String);
+    assert(expected && !error);
+    NSUInteger baseline=StartedRequests,losses=InjectedConnectionLosses;
+    NSMutableDictionary *faulty=[replies mutableCopy];
+    faulty[@"versions"]=@{@"data":plain[@"versions"],@"connectionLosses":@1};
+    TKSessionClient *retried=[TKSessionClient new];
+    TKFakeRetryScheduler *clock=[TKFakeRetryScheduler new];retried.retryScheduler=clock;
+    ResetProtocol(faulty);error=nil;
+    NSDictionary *actual=[retried planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error];
+    assert(actual && !error && [actual isEqual:expected]);
+    assert(StartedRequests==baseline+1 && InjectedConnectionLosses==losses+1);
+    assert(([clock.delays isEqual:@[@1]] && !ActiveRequests));
+}
 int main(void) {
     @autoreleasepool {
         TKFixtureClient *client=[TKFixtureClient new]; client.responses=[NSMutableDictionary new];
@@ -342,6 +653,8 @@ int main(void) {
         NSError *error=nil;
         NSDictionary *plan=[client planForProduct:@"wowf" region:@"eu" locale:@"enUS" error:&error];
         assert(plan && !error && [plan[@"files"] count]==1 && ![plan[@"complete"] boolValue]);
+        assert([plan[@"cdnServers"] isEqual:@"https://level3.ssl.blizzard.com/?fallback=1"]);
+        assert([plan[@"cdnHosts"] isEqual:@"level3.ssl.blizzard.com"]);
         NSDictionary *file=plan[@"files"][0];
         NSString *directory=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
         NSString *path=[client stageFile:file plan:plan directory:directory error:&error];
@@ -377,6 +690,11 @@ int main(void) {
     TestTransferBudget();
     TestReadyRanges();
     TestConcurrentDownloads();
-    puts("WoW client tests PASS: bounded concurrent transfers, serial consumption, range validation, cancellation, verified staging, cache repair, patch invalidation, malformed metadata and failed transport.");
+    TestRetrySchedule();
+    TestTerminalFailures();
+    TestSiblingFailureWakesWait();
+    TestDelayFreesTransferSlot();
+    TestMetadataContract();
+    puts("WoW client tests PASS: bounded concurrent transfers, serial consumption, range validation, cancellation, verified staging, cache repair, patch invalidation, malformed metadata and failed transport; retries are 1/2/4/8 s on a virtual clock, discard partial bytes, free their transfer slot, wake on cancellation or a terminal sibling, fail every other class at once, and leave metadata unchanged.");
     return 0;
 }

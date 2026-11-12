@@ -8,6 +8,7 @@
 #import "../App/WKLocalization.h"
 #import "Installation.h"
 #import "DeviceProfile.h"
+#import "DownloadStatus.h"
 #import "ForeverUI.h"
 #import "Updater.h"
 #import "../App/LaunchProgressView.h"
@@ -87,6 +88,17 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 // layout's own values, which the store then reads back unchanged.
 static NSString *const TKForeverLayoutKey = @"WolkaraForeverTouchLayoutV1";
 static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidChange";
+// The interface mode's one key and its two values, by value, for the same reason as the
+// layout key above: the Touch module owns them (Touch/InterfaceMode.h), but WoW must not
+// import it. A value that is missing, unrecognised, or hand-edited to anything else means
+// iPadOS, exactly as AKInterfaceModeIsMobile resolves it.
+static NSString *const TKForeverInterfaceModeKey = @"WolkaraForeverInterfaceModeV1";
+static NSString *const TKForeverInterfaceModeIPadOS = @"ipados";
+static NSString *const TKForeverInterfaceModeIOS = @"ios";
+static BOOL TKForeverInterfaceModeIsMobile(void) {
+    id value = [NSUserDefaults.standardUserDefaults objectForKey:TKForeverInterfaceModeKey];
+    return [value isKindOfClass:NSString.class] && [value isEqual:TKForeverInterfaceModeIOS];
+}
 
 
 // A settings row that reads as a switch, not as a command: the words stay the
@@ -152,6 +164,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 @end
 
 @interface TKWoWViewController () <UIDocumentPickerDelegate>
+- (BOOL)inFront;
 @end
 
 @implementation TKWoWViewController {
@@ -172,21 +185,27 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // appearance: leaving a popup used to send us straight back to the network.
     BOOL _checkedThisLaunch;
     BOOL _resumeCheck, _launchWhenReady, _checkOwnsIdleTimer, _previousIdleTimerDisabled;
+    // Whether this page has been told the app is in front, since the last time it was told it
+    // is not. The page's own foreground/background notifications are what a device gives it,
+    // and they are also the only thing a fixture can give it: simctl launches the fixture in a
+    // state UIKit reports as Inactive for its whole life, so a bare applicationState test would
+    // refuse every resume in the fixture while working on a device.
+    BOOL _sawActive;
     NSString *_startupFailure;
     UILabel *_updatesLabel;
     NSString *_updatePhase;
     uint64_t _updateDone, _updateTotal;
+    double _downloadMBps;
     UIProgressView *_progressBar;
     CAGradientLayer *_background;
     UIStackView *_columns;
     NSLayoutConstraint *_markWidth;
     UIStackView *_gridRow1, *_gridRow2, *_gridRow3, *_topRow;
-    UIView *_gridSpacer;
     UILabel *_stateLabel, *_detailLabel, *_versionLabel;
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_voiceTestButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
-        *_renderProfileButton, *_deviceProfileButton;
+        *_renderProfileButton, *_deviceProfileButton, *_interfaceModeButton;
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
@@ -203,12 +222,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     _product=TKWoWProducts()[0];
     for (NSDictionary *p in TKWoWProducts()) if ([p[@"id"] isEqual:[defaults stringForKey:@"WoWProduct"]]) _product=p;
-    // A region the user has not chosen follows the device rather than being Europe
-    // whatever the device is. The first install writes the portal into the client's own
-    // settings once and never rewrites it, so a portal that does not match the account
-    // leaves sign-in at "Connecting" for ever with nothing on screen saying why. A
-    // region the user chose is never replaced.
-    _region=[defaults stringForKey:@"WoWRegion"]?:TKWoWDefaultRegion(NSLocale.currentLocale);
+    _region=[defaults stringForKey:@"WoWRegion"]?:@"eu";
     if (![@[@"eu",@"us",@"kr",@"tw"] containsObject:_region]) _region=@"eu";
     _locale=[defaults stringForKey:@"WoWLocale"]?:TKWoWDefaultLocale(_product);
     if (![@[@"enUS",@"frFR",@"esES",@"deDE"] containsObject:_locale]) _locale=@"enUS";
@@ -276,12 +290,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 // The cell beside a card that has no neighbour: nothing, but the same width, so the page keeps
 // its grid instead of stretching one card across the column and reading as a footer.
-- (UIView *)emptyBox {
-    UIView *view=[UIView new];
-    view.accessibilityIdentifier=@"wow.grid.spacer";
-    view.userInteractionEnabled=NO;
-    return view;
-}
 // The layer's mark, where the wordmark used to sit. It is drawn at the top
 // row's width, so it grows and shrinks with the window, with one cap: it may
 // never take more than a fifth of the height, so the boxes below it always have
@@ -355,7 +363,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // Mac-Ever is a Forever-compatible add-on that is downloaded from CurseForge
     // by the person using Safari, then installed with the row above. No scrape,
     // no embedded download URL, and opening the page is not an installation.
-    _macEverButton=[self button:@"wow.addons.macEver" action:@selector(downloadMacEver)];
+    // The recommended add-ons for the chosen interface. The row opens the Add-On Manager,
+    // where the package is chosen and installed explicitly; it never installs silently.
+    _macEverButton=[self button:@"wow.addons.macEver" action:@selector(openRecommendedAddons)];
     _addonsDirectoryButton=[self button:@"wow.addons.directory" action:@selector(openAddonDirectory)];
     // Straight to this app's own page in Settings, which is where the Microphone and Speech Recognition
     // switches live. Available before the game is installed, because it is a setting and not a game
@@ -373,6 +383,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
+    // The interface this launcher drives. One setting, one row: it writes the single key the
+    // guest reads and never touches an installed package.
+    _interfaceModeButton=[self button:@"wow.launcher.interfaceMode" action:@selector(chooseInterfaceMode)];
 
     // Five sections, as boxes, in the order they are read. The compatibility note belongs to
     // the edition it is about, so it lives in that box rather than loose on the page. The
@@ -392,6 +405,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // order a person needs them when something has gone wrong.
     UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
         rows:@[_backupButton,_restoreButton,_resetButton,_settingsFolderButton,_gamepadRow]];
+    // The sixth card, in the cell that used to be the grid's spacer: the interface mode, and
+    // the one place the recommendation row's own card sends a person to install it. It sits
+    // beside UI Manager on a wide page and after it on a narrow one, and it changes no other
+    // card's width, inset or order.
+    UIView *launcherManagerBox=[self sectionBoxWithIdentifier:@"wow.box.launcherManager"
+        rows:@[_interfaceModeButton]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _activity.color=Gold(); _activity.hidesWhenStopped=YES;
@@ -432,11 +451,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _markWidth.active=YES;
     _gridRow1=[self boxRow:@[editionBox,addonsBox]];
     _gridRow2=[self boxRow:@[voiceBox,profileBox]];
-    // The fifth card sits on its own row beside an empty cell of the same width, so it keeps
-    // the column width it would have had next to a neighbour instead of stretching across the
-    // page and reading as a footer.
-    _gridSpacer=[self emptyBox];
-    _gridRow3=[self boxRow:@[performanceBox,_gridSpacer]];
+    // The fifth and sixth cards share the last row. The sixth used to be an empty cell whose
+    // only job was to keep the fifth card the same width as the ones above it; now it holds
+    // the Launcher Manager, so the same geometry carries a card instead of a blank.
+    _gridRow3=[self boxRow:@[performanceBox,launcherManagerBox]];
     UIStackView *grid=Stack(@[_gridRow1,_gridRow2,_gridRow3],16);
     grid.accessibilityIdentifier=@"wow.grid";
     _columns=Stack(@[top,grid],20); _columns.accessibilityIdentifier=@"wow.columns";
@@ -498,9 +516,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         row.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
         row.distribution=horizontal?UIStackViewDistributionFillEqually:UIStackViewDistributionFill;
     }
-    // The empty cell beside the fifth card exists to keep the columns equal; stacked, it would
-    // be an empty box at the foot of the page.
-    _gridSpacer.hidden=!horizontal;
     // The mark sits beside the status when there are two columns to fill. Stacked, the status
     // takes the full width and the mark goes above it, so the Play button is never squeezed.
     _topRow.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
@@ -528,17 +543,26 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (void)foreground:(NSNotification *)note {
     (void)note;
     WKLog("ui", @"home: back in front");
+    _sawActive=YES;
     // Only unfinished work resumes. Returning from a popup after a completed
     // check still does not fetch manifests again, and never launches a guest.
     [self resumeCheckIfVisible];
 }
 - (void)inactive:(NSNotification *)note {
     (void)note;
+    _sawActive=NO;
     // A notification or Control Centre must not cancel file verification.
     // A pending Play action, however, must not launch after the user leaves.
     _launchWhenReady=NO;
 }
-- (void)background:(NSNotification *)note { (void)note; [self pauseCheck]; }
+- (void)background:(NSNotification *)note { (void)note; _sawActive=NO; [self pauseCheck]; }
+// Whether this page may act as if the user is looking at it. A device answers that with
+// applicationState; a fixture, which simctl keeps in an Inactive state for its whole life,
+// answers with the notification it posts. Both are the same question, and the notification is
+// the one the page already reacts to.
+- (BOOL)inFront {
+    return _sawActive || UIApplication.sharedApplication.applicationState==UIApplicationStateActive;
+}
 - (void)releaseCheckIdleTimer {
     if (!_checkOwnsIdleTimer) return;
     UIApplication.sharedApplication.idleTimerDisabled=_previousIdleTimerDisabled;
@@ -556,7 +580,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)resumeCheckIfVisible {
     if (!_resumeCheck || _busy || _starting || _sessionUsed ||
-        UIApplication.sharedApplication.applicationState!=UIApplicationStateActive ||
+        ![self inFront] ||
         !self.view.window || self.navigationController.topViewController!=self || self.presentedViewController) return;
     WKLog("wow", @"resuming interrupted check without launching the game");
     [self checkForUpdatesAndLaunch:NO];
@@ -602,18 +626,44 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         NSError *error=nil;
         NSDictionary *plan=[client planForProduct:product[@"id"] region:region locale:locale error:&error];
         TKWoWInstallation *installation=plan?TKWoWInspectInstallation(self->_library,product,plan):nil;
+        // Releases before CDN Servers existed can look current to the launcher
+        // but crash before the first frame. Repair that one metadata file before
+        // offering Play; no game content is downloaded or replaced.
+        if(installation.state==TKWoWInstallationReady && installation.metadataNeedsRepair && installation.app) {
+            NSString *directory=[self->_library workingDirectoryForApp:installation.app error:&error];
+            NSString *root=directory?directory.stringByDeletingLastPathComponent:nil;
+            TKWoWUpdater *updater=[[TKWoWUpdater alloc] initWithClient:client];
+            if(root && [updater repairBuildInfoForPlan:plan root:root error:&error]) {
+                [self->_library discover];
+                installation=TKWoWInspectInstallation(self->_library,product,plan);
+            }
+        }
         BOOL updateAttempted=plan && (install || installation.state==TKWoWInstallationOutdated) && !client.cancelled;
         if(updateAttempted) {
             __block NSString *lastPhase=nil;
             __block NSTimeInterval lastProgressLog=0;
+            // Verified payload throughput, not socket throughput: the updater reports the bytes it
+            // has checked, so a cached or re-sent byte never raises the rate. The window belongs to
+            // this attempt and is emptied by every other phase - a rate measured across a verify
+            // pass or after a restart would describe a transfer that is not happening.
+            __block TKDownloadWindow speedWindow={0};
             void (^progress)(NSString *,uint64_t,uint64_t)=^(NSString *phase,uint64_t done,uint64_t total) {
                 NSTimeInterval now=NSDate.timeIntervalSinceReferenceDate;
                 if(![lastPhase isEqual:phase] || now-lastProgressLog>=5) {
                     lastPhase=phase;lastProgressLog=now;
                     WKLog("wow", @"update progress: %@ %llu/%llu",phase,done,total);
                 }
+                double speed=-1;
+                if ([phase isEqual:@"download"]) {
+                    // A monotonic clock: NSDate jumps when the user changes it, and a rate computed
+                    // across that jump is not a measurement of anything.
+                    speed=TKDownloadWindowSpeedMBps(&speedWindow,NSProcessInfo.processInfo.systemUptime,done);
+                } else {
+                    speedWindow.count=0;
+                }
                 dispatch_async(dispatch_get_main_queue(),^{
                     if(generation!=self->_generation)return;
+                    self->_downloadMBps=speed;
                     self->_plan=plan;self->_installation=installation;self->_updating=YES;
                     self->_updatePhase=phase;self->_updateDone=done;self->_updateTotal=total;[self render];
                 });
@@ -663,7 +713,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             self->_checkedAt=plan?NSDate.date:nil; self->_busy=NO; self->_updating=NO; self->_updateError=updateAttempted && error; [self render];
             WKLog("wow", @"checked: state=%ld error=%@", (long)installation.state, error.localizedDescription ?: @"none");
             // Returning from the background or changing edition invalidates this request.
-            if (launch && self->_launchWhenReady && UIApplication.sharedApplication.applicationState==UIApplicationStateActive &&
+            if (launch && self->_launchWhenReady && [self inFront] &&
                 !error && !client.cancelled && installation.state==TKWoWInstallationReady && installation.app && !self->_sessionUsed &&
                 self.view.window && self.navigationController.topViewController==self && self.startApp) self.startApp(installation.app);
         });
@@ -732,6 +782,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _headings[@"wow.box.voice"].text=WKLocalized(@"home.box.voice").uppercaseString;
     _headings[@"wow.box.profile"].text=WKLocalized(@"home.box.profile").uppercaseString;
     _headings[@"wow.box.performance"].text=WKLocalized(@"home.box.performance").uppercaseString;
+    _headings[@"wow.box.launcherManager"].text=WKLocalized(@"home.box.launcherManager").uppercaseString;
     [_gamepadRow applyTitle:WKLocalized(@"home.performance.gamepad")];
     [_overlayRow applyTitle:WKLocalized(@"home.performance.overlay")];
     [_diagnosticsButton setTitle:WKLocalized(@"home.diagnostics") forState:UIControlStateNormal];
@@ -753,7 +804,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         message:WKLocalized(@"lang.message") preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSNumber *each in WKLocalization.choices) {
         WKAppLanguage language=each.integerValue;
-        // The two languages are named in themselves - a language is the one word a person
+        // The languages are named in themselves - a language is the one word a person
         // is most likely to recognise - and only the "follow the iPad" choice is translated.
         NSString *title=language==WKAppLanguageSystem
             ? [NSString stringWithFormat:@"%@ (%@)", WKLocalized(@"lang.system"), localization.resolvedLanguageName]
@@ -774,10 +825,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // -presentSheet: waits for that; the log line says so when the wait is what happened.
     [self offerGermanGameLanguage];
 }
-// The first time the app is put into German, offer to put the *game* into German too -
-// rather than doing it silently, because the two settings cost different things: this one
-// is a redraw, that one is a multi-gigabyte download. Once offered, never offered again;
-// the Game language row is always there for a later change of mind.
+// The first time the app is put into a language the game also speaks, offer to put the
+// *game* into it too - rather than doing it silently, because the two settings cost
+// different things: this one is a redraw, that one is a multi-gigabyte download. Once
+// offered, never offered again; the Game language row is always there for a later change
+// of mind.
 - (void)offerGermanGameLanguage {
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     WKAppLanguage appLanguage=WKLocalization.shared.resolvedLanguage;
@@ -793,7 +845,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [self setGameLocale:gameLocale];
         [self presentMessage:WKLocalized(@"lang.gameChanged.title") message:WKLocalized(@"lang.confirm.changed")];
     }]];
-    // Declining is an answer, not a cancellation: the app language stays German, and only
+    // Declining is an answer, not a cancellation: the app language stays as chosen, and only
     // the download is left alone.
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"lang.confirm.no") style:UIAlertActionStyleCancel handler:nil]];
     [self presentSheet:sheet anchor:_languageButton];
@@ -815,9 +867,14 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_addonsButton title:_installation.app?WKLocalized(@"home.addons.install"):WKLocalized(@"home.addons.install.needsgame") filled:NO];
     _addonsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _addonsButton.enabled=_installation.app && !_busy && !_starting && !_running && !_sessionUsed;
-    [self configureButton:_macEverButton title:WKLocalized(@"home.addons.macever") filled:NO];
+    // The recommendation row keeps its identifier and changes only its words and its
+    // destination. It opens the Add-On Manager, which is where installing is explicit:
+    // pressing this row never installs, disables, removes or updates anything by itself.
+    [self configureButton:_macEverButton
+        title:TKForeverInterfaceModeIsMobile()?WKLocalized(@"home.addons.recommended.wolkaraRoue")
+                                               :WKLocalized(@"home.addons.recommended.macEver") filled:NO];
     _macEverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    // Navigation only: the page is opened for the user to download the ZIP.
+    // Navigation only: the page is opened for the user to choose and install there.
     // Starting and an ended session grey it with everything else.
     _macEverButton.enabled=!_starting && !_running && !_sessionUsed;
     [self configureButton:_addonsDirectoryButton title:_installation.app?WKLocalized(@"home.addons.directory"):WKLocalized(@"home.addons.directory.needsgame") filled:NO];
@@ -853,6 +910,15 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_resetButton title:WKLocalized(@"home.performance.reset") filled:NO];
     [self configureButton:_restoreButton title:WKLocalized(@"home.performance.restore") filled:NO];
     [self configureButton:_settingsFolderButton title:WKLocalized(@"home.performance.settingsFolder") filled:NO];
+    // The Launcher Manager's one row: which interface the guest runs. It is a setting, so it
+    // follows the page's idle rule, and choosing a mode writes the one key the guest reads -
+    // never a package, a file or an installation.
+    [self configureButton:_interfaceModeButton
+        title:WKLocalizedFormat(@"home.launcher.interfaceMode.row",
+            TKForeverInterfaceModeIsMobile()?WKLocalized(@"home.launcher.interfaceMode.ios")
+                                            :WKLocalized(@"home.launcher.interfaceMode.ipados")) filled:NO];
+    _interfaceModeButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _interfaceModeButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     // Switches, not changing commands: the label is fixed and the control shows
     // the state.
     _gamepadRow.enabled=foreverReady;
@@ -936,6 +1002,18 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             NSString *total=counted?[bytes stringFromByteCount:(int64_t)_updateTotal]
                 :[number stringFromNumber:@(_updateTotal)];
             detail=[detail stringByAppendingFormat:@" · %@ / %@",done,total];
+            // The speed and the estimate are additive: they follow the byte counts only while data
+            // is being downloaded, and only when each of them is a measurement rather than a guess.
+            // Every other phase, an unknown rate, a stalled rate and an estimate past a day write
+            // nothing at all, so the line a user already knows is unchanged.
+            if ([_updatePhase isEqual:@"download"]) {
+                NSLocale *locale=number.locale;
+                NSString *speed=TKDownloadSpeedText(_downloadMBps,locale);
+                NSString *remaining=speed?TKDownloadRemainingText(_downloadMBps,_updateDone,_updateTotal,
+                    locale,WKLocalized(@"home.download.remaining")):nil;
+                if (speed.length) detail=[detail stringByAppendingFormat:@" · %@",speed];
+                if (remaining.length) detail=[detail stringByAppendingFormat:@" · %@",remaining];
+            }
         }
         action=WKLocalized(@"home.action.updating");
     } else if (_busy) {
@@ -972,7 +1050,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _refreshItem.enabled=!_busy && !_sessionUsed && !_starting && !_running;
     for (UIButton *button in @[_editionButton,_preferencesButton,_addonsButton,_macEverButton,_addonsDirectoryButton,
                                 _permissionsButton,_voiceButton,_voiceTestButton,_backupButton,_resetButton,
-                                _restoreButton,_settingsFolderButton])
+                                _restoreButton,_settingsFolderButton,_interfaceModeButton])
         [self stylePlainButton:button];
     [self stylePrimaryButton];
     _diagnosticsButton.tintColor=_diagnosticsButton.enabled?Gold():RowGrey();
@@ -1582,16 +1660,53 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     picker.delegate=self;
     [self presentViewController:picker animated:YES completion:nil];
 }
-// Mac-Ever's CurseForge page, in the browser. The user downloads the ZIP there
-// and comes back to Install Addons (Curse & Direct); opening the page is not an
-// installation and is never reported as one.
-- (void)downloadMacEver {
-    NSURL *url=[NSURL URLWithString:@"https://www.curseforge.com/wow/addons/mac-ever"];
-    if (!url) return;
-    if (self.openExternalURL) { self.openExternalURL(url); return; }
-    [UIApplication.sharedApplication openURL:url options:@{} completionHandler:^(BOOL opened) {
-        WKLog("host", @"mac-ever: download page opened: %@", opened?@"yes":@"no");
-    }];
+// Which interface this launcher drives. Exactly two choices, named as the two interfaces
+// are: iPadOS and iOS on Duo. The current one carries the app's own checkmark, the same
+// marker every other selector on this page uses.
+- (void)chooseInterfaceMode {
+    if (_busy || _starting || _running || _sessionUsed) {
+        WKLog("ui", @"interface mode: declined while the page is busy");
+        return;
+    }
+    BOOL mobile=TKForeverInterfaceModeIsMobile();
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceMode.title")
+        message:WKLocalized(@"home.launcher.interfaceMode.message")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSNumber *each in @[@NO,@YES]) {
+        BOOL chosen=each.boolValue;
+        NSString *title=WKLocalized(chosen?@"home.launcher.interfaceMode.ios"
+                                            :@"home.launcher.interfaceMode.ipados");
+        if (chosen==mobile) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            [self applyInterfaceMode:chosen];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_interfaceModeButton];
+}
+// One key, and nothing else. A mode is a setting the guest reads on its next use; it is not
+// an installation, a disable, a removal or an update, and this path touches no package.
+- (void)applyInterfaceMode:(BOOL)mobile {
+    [NSUserDefaults.standardUserDefaults setObject:(mobile?TKForeverInterfaceModeIOS:TKForeverInterfaceModeIPadOS)
+                                            forKey:TKForeverInterfaceModeKey];
+    WKLog("ui", @"interface mode: %@", mobile?@"ios":@"ipados");
+    [self render];
+}
+// The recommendation row. It opens the Add-On Manager, which is where a package is chosen
+// and installed explicitly; pressing the row never installs anything by itself. Which
+// recommendation it opens follows the interface mode: Mac-Ever on iPadOS, the bundled
+// WolkaraRoue package on iOS on Duo.
+- (void)openRecommendedAddons {
+    NSError *error=nil;
+    NSString *addons=[self addOnsDirectoryWithError:&error];
+    if (!addons) { [self presentAddonsUnavailable:error]; return; }
+    TKAddonRecommendation recommendation=TKForeverInterfaceModeIsMobile()
+        ? TKAddonRecommendationWolkaraRoue : TKAddonRecommendationMacEver;
+    WKLog("ui", @"recommendation: opening the add-on manager for %@",
+          recommendation==TKAddonRecommendationWolkaraRoue?@"WolkaraRoue":@"Mac-Ever");
+    TKWoWAddonManagerViewController *manager=[[TKWoWAddonManagerViewController alloc]
+        initWithAddOnsDirectory:addons edition:_product[@"name"] recommendation:recommendation];
+    [self presentPage:manager];
 }
 - (void)presentAddonsUnavailable:(nullable NSError *)error {
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.addons.unavailable.title")

@@ -1,6 +1,7 @@
 -- The Interface mobile add-on's cooldowns (addons/WolkaraRoue/Actions.lua), run outside the
 -- game: a spell on cooldown shows the time left and a grey icon until it is ready, the global
--- cooldown keeps only its sweep, and the text goes when the cooldown ends or is reset.
+-- cooldown keeps only its sweep, and the text goes when the cooldown ends or is reset. A secret
+-- value (newer clients) is handed to the game's own cooldown frame and numbers instead.
 --
 -- usage: luajit test_mobile_addon_cooldown.lua <path to Actions.lua>
 
@@ -15,10 +16,12 @@ CreateFrame = function()
     return frame
 end
 InCombatLockdown = function() return false end
+local cvars = { countdownForCooldowns = "0" }
+GetCVar = function(name) return cvars[name] end
+SetCVar = function(name, value) cvars[name] = value end
 
 local cooldown = { start = 0, duration = 0, enabled = true }
 local ns = {}
-ns.T = ns.T or function(text) return text end
 function ns.SpellCooldown() return cooldown.start, cooldown.duration, cooldown.enabled end
 assert(loadfile(path))("WolkaraRoue", ns)
 
@@ -26,7 +29,8 @@ local button = {
     icon = { desaturated = false, SetDesaturated = function(self, on) self.desaturated = on end },
     timer = { text = "", SetText = function(self, text) self.text = text end },
     cooldown = { shown = false, SetCooldown = function(self, s, d) self.s, self.d = s, d end,
-        Show = function(self) self.shown = true end, Hide = function(self) self.shown = false end },
+        Show = function(self) self.shown = true end, Hide = function(self) self.shown = false end,
+        SetHideCountdownNumbers = function(self, hide) self.numbersHidden = hide end },
     GetEntry = function() return { kind = "spell", id = 42 } end,
 }
 local function Tick(seconds) now = now + seconds; ticker.OnUpdate(ticker, 0.2) end
@@ -61,4 +65,20 @@ assert(not button.cooldown.shown and button.timer.text == "" and not button.icon
 Tick(1)
 assert(button.timer.text == "")
 
-print("mobile add-on cooldowns: time left on the spell, grey until ready, global cooldown untouched, reset clears: PASS")
+-- A secret duration cannot be compared: the game's frame gets it, with the game's numbers on,
+-- no text of ours and no grey (whether it is really cooling down cannot be known).
+local secret = setmetatable({}, {})
+cooldown.start, cooldown.duration = secret, secret
+ns.UpdateCooldown(button)
+assert(button.cooldown.shown and button.cooldown.s == secret and button.cooldown.d == secret)
+assert(button.cooldown.numbersHidden == false, "the game's numbers stay hidden on a secret cooldown")
+assert(cvars.countdownForCooldowns == "1", "the game's cooldown numbers were not switched on")
+assert(button.timer.text == "" and button.icon.desaturated == false)
+Tick(1)
+assert(button.timer.text == "")
+-- Back to plain values: our own numbers again, the game's hidden.
+cooldown.start, cooldown.duration = now, 12
+ns.UpdateCooldown(button)
+assert(button.cooldown.numbersHidden == true and button.timer.text == "12" and button.icon.desaturated)
+
+print("mobile add-on cooldowns: time left on the spell, grey until ready, global cooldown untouched, reset clears, secret values drawn by the game: PASS")

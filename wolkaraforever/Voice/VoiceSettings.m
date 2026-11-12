@@ -166,14 +166,6 @@ static NSUInteger const AKKeyboardUsageMaximum = 0xE7;
     return trigger;
 }
 
-// Every mapped element, whatever device it belongs to and whether or not that device
-// is connected. Reading the stored keys rather than walking GCController.controllers is
-// the point: the inspector has to be interested in a mapped button before the pad that
-// carries it has connected, or the first press after connecting is missed.
-- (NSArray<NSString *> *)mappedElements {
-    return [AKTrigger mappedElementsInDefaults:NSUserDefaults.standardUserDefaults];
-}
-
 - (void)setLearnedElement:(NSString *)element forDevice:(nullable NSString *)device {
     AKTrigger *trigger = [AKTrigger new];
     trigger.element = element;

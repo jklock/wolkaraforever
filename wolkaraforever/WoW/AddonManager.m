@@ -305,36 +305,29 @@ static UIImage *TKAddonPlaceholderIcon(void) {
     // pressed again; an installed row says it is installed; an author who does not allow API
     // downloads gets an action that explains rather than a button that would 403.
     _installButton.hidden=NO;
-    NSString *actionTitle=WKLocalized(@"addons.action.install");
-    BOOL actionEnabled=YES;
     switch (state) {
         case TKAddonInstallStateBusy:
-            actionTitle=WKLocalized(@"addons.action.installing");
-            actionEnabled=NO;
+            [_installButton setTitle:WKLocalized(@"addons.action.installing") forState:UIControlStateNormal];
+            _installButton.enabled=NO;
             break;
         case TKAddonInstallStateInstalled:
-            actionTitle=WKLocalized(@"addons.action.installed");
-            actionEnabled=NO;
+            [_installButton setTitle:WKLocalized(@"addons.action.installed") forState:UIControlStateNormal];
+            _installButton.enabled=NO;
             break;
         case TKAddonInstallStateUnavailable:
-            actionTitle=WKLocalized(@"addons.action.unavailable");
-            actionEnabled=NO;
+            [_installButton setTitle:WKLocalized(@"addons.action.unavailable") forState:UIControlStateNormal];
+            _installButton.enabled=NO;
             break;
         case TKAddonInstallStateFailed:
-            actionTitle=WKLocalized(@"addons.action.retry");
-            actionEnabled=YES;
+            [_installButton setTitle:WKLocalized(@"addons.action.retry") forState:UIControlStateNormal];
+            _installButton.enabled=YES;
             break;
         case TKAddonInstallStateIdle:
         default:
-            actionTitle=WKLocalized(@"addons.action.install");
-            actionEnabled=YES;
+            [_installButton setTitle:WKLocalized(@"addons.action.install") forState:UIControlStateNormal];
+            _installButton.enabled=YES;
             break;
     }
-    // The word is set for the disabled state as well: three of these five states disable the
-    // button, and a button carrying only a Normal title shows nothing once it is disabled.
-    [_installButton setTitle:actionTitle forState:UIControlStateNormal];
-    [_installButton setTitle:actionTitle forState:UIControlStateDisabled];
-    _installButton.enabled=actionEnabled;
     NSNumber *identifier=[project[@"id"] isKindOfClass:NSNumber.class]?project[@"id"]:nil;
     _installButton.accessibilityIdentifier=identifier
         ? [NSString stringWithFormat:@"wow.addons.project.%@.install", identifier]
@@ -496,6 +489,75 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
 }
 @end
 
+// The bundled WolkaraRoue package, as a row with its own explicit Install action. It appears
+// only when the launcher's recommendation row asked for it, so the Installed list a person
+// reaches from Install Addons is exactly what it was. The version and the archive hash are
+// what the verifier accepted, not what the page hopes the archive is.
+@interface TKAddonBundledCell : UITableViewCell
+@property (nonatomic, copy, nullable) void (^onInstall)(void);
+@property (nonatomic, readonly) UIButton *installButton;
+- (void)configureWithPackage:(nullable NSDictionary *)package error:(nullable NSError *)error
+                        busy:(BOOL)busy installed:(BOOL)installed;
+@end
+@implementation TKAddonBundledCell {
+    UILabel *_titleLabel, *_detailLabel;
+    UIButton *_installButton;
+}
+- (UIButton *)installButton { return _installButton; }
+- (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)identifier {
+    if ((self=[super initWithStyle:style reuseIdentifier:identifier])) {
+        self.backgroundColor=[UIColor colorWithRed:0.07 green:0.09 blue:0.13 alpha:1];
+        self.selectionStyle=UITableViewCellSelectionStyleNone;
+        _titleLabel=[UILabel new];
+        _titleLabel.font=[UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+        _titleLabel.textColor=[UIColor colorWithRed:0.9 green:0.72 blue:0.35 alpha:1];
+        _titleLabel.numberOfLines=0;
+        _titleLabel.accessibilityIdentifier=@"wow.addons.bundled.name";
+        _detailLabel=[UILabel new];
+        _detailLabel.font=[UIFont systemFontOfSize:11.5 weight:UIFontWeightRegular];
+        _detailLabel.textColor=[UIColor colorWithWhite:0.75 alpha:1];
+        _detailLabel.numberOfLines=0;
+        _detailLabel.accessibilityIdentifier=@"wow.addons.bundled.detail";
+        UIStackView *text=[[UIStackView alloc] initWithArrangedSubviews:@[_titleLabel,_detailLabel]];
+        text.axis=UILayoutConstraintAxisVertical; text.spacing=2;
+        [text setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+        _installButton=[UIButton buttonWithType:UIButtonTypeSystem];
+        _installButton.titleLabel.font=[UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+        _installButton.tintColor=WKGold();
+        _installButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentRight;
+        _installButton.accessibilityIdentifier=@"wow.addons.bundled.install";
+        [_installButton.widthAnchor constraintEqualToConstant:TKAddonActionWidth].active=YES;
+        [_installButton addTarget:self action:@selector(tappedInstall) forControlEvents:UIControlEventTouchUpInside];
+        UIStackView *row=[[UIStackView alloc] initWithArrangedSubviews:@[text,_installButton]];
+        row.axis=UILayoutConstraintAxisHorizontal; row.spacing=10; row.alignment=UIStackViewAlignmentCenter;
+        row.translatesAutoresizingMaskIntoConstraints=NO;
+        [self.contentView addSubview:row];
+        [NSLayoutConstraint activateConstraints:@[
+            [row.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:TKAddonPageMargin],
+            [row.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-TKAddonPageMargin],
+            [row.topAnchor constraintEqualToAnchor:self.contentView.topAnchor constant:9],
+            [row.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor constant:-9],
+        ]];
+    }
+    return self;
+}
+- (void)tappedInstall { if (self.onInstall) self.onInstall(); }
+- (void)configureWithPackage:(NSDictionary *)package error:(NSError *)error
+                        busy:(BOOL)busy installed:(BOOL)installed {
+    NSString *release=[package[@"release"] isKindOfClass:NSString.class]?package[@"release"]:nil;
+    NSString *hash=[package[@"sha256"] isKindOfClass:NSString.class]?package[@"sha256"]:nil;
+    _titleLabel.text=WKLocalized(@"addons.bundled.name");
+    BOOL verified=release.length>0 && hash.length>0;
+    _detailLabel.text=verified?WKLocalizedFormat(@"addons.bundled.detail",release,hash)
+                             :(error.localizedDescription?:WKLocalized(@"addons.bundled.unavailable"));
+    self.accessibilityValue=_detailLabel.text;
+    _installButton.hidden=!verified;
+    [_installButton setTitle:WKLocalized(installed?@"addons.bundled.update":@"addons.bundled.install")
+                    forState:UIControlStateNormal];
+    _installButton.enabled=!busy;
+}
+@end
+
 @interface TKAddonColumnsHeaderView : UIView
 - (void)configureWithColumns:(NSUInteger)columns compact:(BOOL)compact;
 @end
@@ -603,6 +665,14 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 @property(nonatomic) NSUInteger totalCount;
 @property(nonatomic) BOOL loadingMore;
 @property(nonatomic) BOOL startInBrowse;
+// The recommendation the launcher asked for, the project it is filtered to, and the bundled
+// package it offers. `None` leaves every one of these exactly as it was before this page had a
+// recommendation mode at all.
+@property(nonatomic) TKAddonRecommendation recommendation;
+@property(nonatomic, copy, nullable) NSNumber *recommendedProjectID;
+@property(nonatomic, copy, nullable) NSDictionary *bundledPackage;
+@property(nonatomic, copy, nullable) NSError *bundledPackageError;
+@property(nonatomic) BOOL bundledInstalling;
 @property(nonatomic) NSArray<NSDictionary *> *categories;
 @property(nonatomic,copy) NSString *browseStatus;
 // The site's list controls: a game-version filter, the seven sort fields and
@@ -646,11 +716,21 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 
 @implementation TKWoWAddonManagerViewController
 - (instancetype)initWithAddOnsDirectory:(NSString *)directory edition:(NSString *)edition {
-    return [self initWithAddOnsDirectory:directory edition:edition browse:NO];
+    return [self initWithAddOnsDirectory:directory edition:edition recommendation:TKAddonRecommendationNone];
 }
 - (instancetype)initWithAddOnsDirectory:(NSString *)directory edition:(NSString *)edition browse:(BOOL)browse {
-    if (!(self=[super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
+    if (!(self=[self initWithAddOnsDirectory:directory edition:edition recommendation:TKAddonRecommendationNone])) return nil;
     _startInBrowse=browse;
+    return self;
+}
+- (instancetype)initWithAddOnsDirectory:(NSString *)directory edition:(NSString *)edition
+                         recommendation:(TKAddonRecommendation)recommendation {
+    if (!(self=[super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
+    _recommendation=recommendation;
+    // Mac-Ever is a Browse list of exactly one project, so it starts where that list lives.
+    // The bundled package is an Installed-row action, so that mode starts on Installed.
+    _startInBrowse=recommendation==TKAddonRecommendationMacEver;
+    _recommendedProjectID=recommendation==TKAddonRecommendationMacEver?@1733200:nil;
     _addOnsDirectory=directory.copy; _edition=edition.copy; _addons=@[]; self.title=WKLocalized(@"addons.title").uppercaseString;
     _store=[[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wowf" gameVersion:TKForeverGameVersion]; _results=@[]; _sortField=TKCurseForgeDefaultSortField(); _sortOrder=@"desc";
     _credentials=[TKAddonCredentialStore new];
@@ -686,23 +766,47 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     self.tableView.accessibilityIdentifier=@"wow.addons";
     self.tableView.tableHeaderView=[self header];
     [self reloadAddons];
+    // Resolve the bundled package after the installed list, because the row's own word
+    // (Install or Update) depends on whether this store already owns WolkaraRoue.
+    if (_recommendation==TKAddonRecommendationWolkaraRoue) [self reloadBundledPackage];
     [self updateToolbar];
     if (_startInBrowse) {
         _mode.selectedSegmentIndex=1;
         [self updateToolbar];
         if ([self hasKey]) [self beginBrowse];
+        // No key is a named state, not an empty page: the footer says what is missing, and
+        // Refresh runs the same explicit key prompt it always has.
+        else { _browseStatus=WKLocalized(@"addons.enterKey.long"); [self updateToolbar]; [self.tableView reloadData]; }
+    }
+}
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    // UITableView does not re-size a tableHeaderView after it has accepted the view. This page
+    // is commonly created before a popover/sheet reaches its final width, so leaving the
+    // original frame here made the constrained header remain narrow beside full-width rows.
+    UIView *header=self.tableView.tableHeaderView;
+    CGFloat width=CGRectGetWidth(self.tableView.bounds);
+    if (header && width>0 && fabs(CGRectGetWidth(header.frame)-width)>0.5) {
+        CGRect frame=header.frame;
+        frame.size.width=width;
+        header.frame=frame;
+        self.tableView.tableHeaderView=header;
     }
 }
 - (UIView *)header {
     UIColor *gold=WKGold();
     // Laid out with constraints against this view's own layout margins, which inherit the
-    // table's because of preservesSuperviewLayoutMargins. The frames this replaces were
-    // computed from the table's width when the header was created - before the sheet had its
-    // final size - and then stretched by an autoresizing mask, so the edition panel hung
-    // fourteen points past the right edge of the table and the whole page read as ragged next
-    // to cells inset by sixteen. Measured in the fixture on 2026-10-22.
+    // table's. The frames this replaces were computed from the table's width when the header
+    // was created - before the sheet had its final size - and then stretched by an autoresizing
+    // mask, so the edition panel hung fourteen points past the right edge of the table and the
+    // whole page read as ragged next to cells inset by sixteen. Measured in the fixture on
+    // 2026-10-22.
     UIView *header=[[UIView alloc] initWithFrame:CGRectMake(0,0,MAX(CGRectGetWidth(self.tableView.bounds),320),212)];
     header.autoresizingMask=UIViewAutoresizingFlexibleWidth;
+    // The header takes the table's own margins, safe area included, so its panels share the
+    // rows' gutters. On an iPhone in landscape those margins are asymmetric - the notch is on
+    // one side - and a symmetric header would put its panels under the notch while every cell
+    // stayed clear of it. Measured in the fixture on 2026-11-09: safe area left 76, right 0.
     header.preservesSuperviewLayoutMargins=YES;
     UILayoutGuide *gutters=header.layoutMarginsGuide;
     UIView *editionPanel=[[UIView alloc] init];
@@ -818,12 +922,6 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _countLabel.hidden=!browse; _sortButton.hidden=!browse; _filterButton.hidden=!browse; _columnsButton.hidden=!browse;
     _selectionLabel.hidden=browse; _selectAllButton.hidden=browse; _clearSelectionButton.hidden=browse;
     _updateSelectedButton.hidden=browse; _updateAllButton.hidden=browse;
-    // The menus are built for both lists. They are cheap, they describe the current sort and
-    // filter rather than the current rows, and building them only while Browse is showing left
-    // the two controls half-built - a button with no menu - for as long as the other list was up.
-    _sortButton.menu=[self sortMenu];
-    _filterButton.menu=[self filterMenu];
-    _columnsButton.menu=[self columnsMenu];
     self.navigationItem.rightBarButtonItems[0].enabled=!self.bulkUpdating;
     _refreshItem.enabled=!_refreshing && !self.bulkUpdating;
     if (!browse) {
@@ -851,6 +949,9 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     // label a person reads, never a raw version id.
     NSString *filterValue = _categoryLabel ?: (_gameVersion.length ? WKLocalizedFormat(@"addons.filters.forever", _gameVersion) : nil);
     [_filterButton setTitle:filterValue?WKLocalizedFormat(@"addons.filters.active",filterValue):WKLocalized(@"addons.filters") forState:UIControlStateNormal];
+    _sortButton.menu=[self sortMenu];
+    _filterButton.menu=[self filterMenu];
+    _columnsButton.menu=[self columnsMenu];
     BOOL ready=[self hasKey] && !_refreshing;
     _sortButton.enabled=ready; _filterButton.enabled=ready; _columnsButton.enabled=ready;
 }
@@ -971,8 +1072,39 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 - (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar { [searchBar resignFirstResponder]; [self beginBrowse]; }
 - (BOOL)hasKey { return [_credentials curseForgeKey:NULL].length>0; }
 - (BOOL)canLoadMore { return _results.count>0 && _results.count<_totalCount; }
-- (void)beginBrowse { [self fetchPageAtIndex:0 append:NO]; }
+- (void)beginBrowse { if (_recommendedProjectID) { [self fetchRecommendedProject]; return; } [self fetchPageAtIndex:0 append:NO]; }
 - (void)loadMore { if (_loadingMore) return; [self fetchPageAtIndex:_results.count append:YES]; }
+// The Mac-Ever recommendation: exactly one project, asked for by id. A search that happened to
+// return a project with a similar name is not the project the row names, and a reply carrying
+// another id is refused rather than shown.
+- (void)fetchRecommendedProject {
+    NSString *key=[_credentials curseForgeKey:NULL];
+    if (!key.length) { _browseStatus=WKLocalized(@"addons.enterKey.long"); _results=@[]; _totalCount=0; [self.tableView reloadData]; return; }
+    _results=@[]; _totalCount=0; _browseStatus=WKLocalized(@"addons.loading"); _loadingMore=YES; [self.tableView reloadData];
+    TKCurseForgeClient *client=[[TKCurseForgeClient alloc] initWithAPIKey:key];
+    NSUInteger generation=(_browseGeneration+=1);
+    NSNumber *projectID=_recommendedProjectID;
+    [client projectForModID:projectID completion:^(id value,NSError *error){
+        dispatch_async(dispatch_get_main_queue(),^{
+            if (generation != self.browseGeneration) return;
+            self.loadingMore=NO;
+            if (error) { self.browseStatus=error.localizedDescription; }
+            else if ([value isKindOfClass:NSDictionary.class]) {
+                NSNumber *returned=[value[@"id"] isKindOfClass:NSNumber.class]?value[@"id"]:nil;
+                if ([returned isEqual:projectID]) {
+                    self.results=@[value]; self.totalCount=1;
+                    self.browseStatus=WKLocalizedFormat(@"addons.projectsShown",1UL,1UL);
+                } else {
+                    self.results=@[]; self.totalCount=0;
+                    self.browseStatus=WKLocalized(@"addons.recommended.unexpected");
+                }
+            }
+            self.refreshing=NO;
+            [self updateToolbar];
+            [self.tableView reloadData];
+        });
+    }];
+}
 - (void)fetchPageAtIndex:(NSUInteger)index append:(BOOL)append {
     NSString *key=[_credentials curseForgeKey:NULL];
     if (!key.length) { _browseStatus=WKLocalized(@"addons.enterKey.long"); _results=@[]; _totalCount=0; [self.tableView reloadData]; return; }
@@ -1232,6 +1364,81 @@ static NSString *BrowseSortLabel(NSInteger field) {
     [_mode setTitle:WKLocalizedFormat(@"addons.mode.installed",(unsigned long)_store.records.count) forSegmentAtIndex:0];
 }
 
+#pragma mark - The bundled WolkaraRoue package
+
+// The package this app ships, located and verified. The app's verifier is Swift and the
+// fixture does not link it, so it is found by name exactly as the store finds the archive
+// extractor; a fixture supplies the same shape through `bundledPackageProvider` instead.
+- (nullable NSDictionary *)loadBundledPackage:(NSError **)error {
+    Class packageClass=NSClassFromString(@"TKAddonPackage");
+    SEL selector=NSSelectorFromString(@"bundledPackageWithError:");
+    if (!packageClass || ![packageClass respondsToSelector:selector]) {
+        if (error) *error=[NSError errorWithDomain:@"WolkaraForever.AddOns" code:2
+            userInfo:@{NSLocalizedDescriptionKey:WKLocalized(@"addons.bundled.unavailable")}];
+        return nil;
+    }
+    NSMethodSignature *signature=[packageClass methodSignatureForSelector:selector];
+    NSInvocation *invocation=[NSInvocation invocationWithMethodSignature:signature];
+    invocation.target=packageClass; invocation.selector=selector;
+    NSError *__autoreleasing localError=nil;
+    NSError *__autoreleasing *pointer=&localError;
+    [invocation setArgument:&pointer atIndex:2];
+    [invocation invoke];
+    __unsafe_unretained NSDictionary *result=nil;
+    [invocation getReturnValue:&result];
+    if (error) *error=localError;
+    return result;
+}
+- (void)reloadBundledPackage {
+    NSError *error=nil;
+    NSDictionary *package=nil;
+    if (self.bundledPackageProvider) package=self.bundledPackageProvider(&error);
+    else package=[self loadBundledPackage:&error];
+    _bundledPackage=package;
+    _bundledPackageError=error;
+    if (self.isViewLoaded) [self.tableView reloadData];
+}
+// The record this store already owns for the bundled folder, if any. It is what makes a
+// second Install an Update of the same package instead of a second copy of it.
+- (nullable TKAddonRecord *)bundledRecord {
+    for (TKAddonRecord *record in _store.records)
+        if ([record.folders containsObject:@"WolkaraRoue"]) return record;
+    return nil;
+}
+// Explicit, and transactional: the store stages the archive, validates it, copies it under
+// the update lock and commits the manifest, and a failure leaves the game's AddOns folder and
+// the manifest exactly where they were. Nothing is installed by opening the page.
+- (void)installBundledPackage {
+    if (_bundledInstalling) return;
+    NSURL *archive=[_bundledPackage[@"archive"] isKindOfClass:NSURL.class]?_bundledPackage[@"archive"]:nil;
+    NSString *release=[_bundledPackage[@"release"] isKindOfClass:NSString.class]?_bundledPackage[@"release"]:nil;
+    if (!archive || !release.length) {
+        [self showError:WKLocalized(@"addons.bundled.title")
+                message:_bundledPackageError.localizedDescription?:WKLocalized(@"addons.bundled.unavailable")];
+        return;
+    }
+    _bundledInstalling=YES; [self.tableView reloadData];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
+        NSError *error=nil;
+        TKAddonRecord *existing=[self bundledRecord];
+        BOOL ok=existing
+            ? [self.store updateRecord:existing archiveURL:archive provider:nil error:&error]
+            : [self.store importZIPAtURL:archive provider:nil error:&error];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.bundledInstalling=NO;
+            if (!ok) {
+                [self showError:WKLocalized(@"addons.error.installTitle")
+                        message:error.localizedDescription?:WKLocalized(@"addons.error.importMessage")];
+                [self.tableView reloadData];
+                return;
+            }
+            self.browseStatus=WKLocalizedFormat(@"addons.bundled.installed",release);
+            [self reloadAddons];
+            [self checkForUpdates];
+        });
+    });
+}
+
 #pragma mark - Update detection, selection and bulk update
 
 - (nullable TKAddonRecord *)recordForIdentifier:(NSString *)identifier {
@@ -1474,7 +1681,7 @@ static NSString *BrowseSortLabel(NSInteger field) {
     }
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { (void)tableView; return 2; }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { (void)tableView; if (_mode.selectedSegmentIndex==1) return section==0?0:_results.count+([self canLoadMore]?1:0); return section==0?1:_store.records.count; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { (void)tableView; if (_mode.selectedSegmentIndex==1) return section==0?0:_results.count+([self canLoadMore]?1:0); if (section==0) return _recommendation==TKAddonRecommendationWolkaraRoue?2:1; return _store.records.count; }
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
     (void)tableView;
     if (_mode.selectedSegmentIndex==1 && section==1 && _results.count) {
@@ -1537,6 +1744,16 @@ static NSString *BrowseSortLabel(NSInteger field) {
             return project;
         }
     } else if (indexPath.section==0) {
+        if (indexPath.row==1 && _recommendation==TKAddonRecommendationWolkaraRoue) {
+            TKAddonBundledCell *bundled=[tableView dequeueReusableCellWithIdentifier:@"bundled"];
+            if (!bundled) bundled=[[TKAddonBundledCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"bundled"];
+            bundled.accessibilityIdentifier=@"wow.addons.bundled";
+            __weak TKWoWAddonManagerViewController *weakSelf=self;
+            bundled.onInstall=^{ [weakSelf installBundledPackage]; };
+            [bundled configureWithPackage:_bundledPackage error:_bundledPackageError
+                                     busy:_bundledInstalling installed:[self bundledRecord]!=nil];
+            return bundled;
+        }
         cell.textLabel.text=_addons.count?WKLocalizedCountFormat(@"addons.count",(NSInteger)_addons.count,(unsigned long)_addons.count):WKLocalized(@"addons.count.none");
         cell.detailTextLabel.text=nil; cell.selectionStyle=UITableViewCellSelectionStyleNone;
     }

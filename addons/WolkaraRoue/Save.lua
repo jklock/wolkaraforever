@@ -4,58 +4,68 @@
 -- proprement. Sur le téléphone, une session finit souvent autrement : l'app balayée, iOS qui
 -- la ferme en arrière-plan, la maison de la barre d'outils. Rien n'était alors écrit : le
 -- 2026-11-05, une session entière n'a laissé aucune sauvegarde, et les sorts rangés pendant
--- celle-ci manquaient au lancement suivant.
+-- celle-ci manquaient au lancement suivant. Et le jeu ne recharge l'interface pour un add-on
+-- que sur un vrai toucher, par son propre /reload : appelé par une minuterie, ReloadUI ne fait
+-- rien (mesuré sur l'iPhone, 2026-11-09).
 --
--- Après un changement (un sort rangé ou retiré, un élément déplacé, un réglage), l'interface
--- se recharge donc d'elle-même dès qu'on a fini : hors combat, sans sélecteur, réglages, menu
--- ni mode Personnaliser ouverts, et rien touché depuis quelques secondes. C'est ce
--- rechargement qui écrit le fichier.
+-- Jusqu'à la 0.7, un changement faisait donc paraître, quelques secondes plus tard et en plein
+-- jeu, un bouton « Enregistrer » au milieu de l'écran : il « apparaissait de manière random »
+-- (iPhone, 2026-11-09). Maintenant rien ne surgit pendant qu'on joue. On enregistre en
+-- finissant ce qu'on faisait : « Terminé » du mode Personnaliser et « Fermer » des réglages
+-- rechargent l'interface s'il y a quelque chose à écrire. Entre-temps, un point doré sur le
+-- bouton « ☰ » le rappelle, et son menu rapide a « Enregistrer » ; la tuile Quitter enregistre
+-- aussi. Chaque changement note sa raison dans ns.db.saveLog, pour savoir ce qui l'a demandé.
 
 local _, ns = ...
 
-local AFTER_CHANGE = 4  -- secondes sans nouveau changement
-local AFTER_IDLE = 1.5  -- secondes sans rien d'ouvert
-local changedAt, idleSince
+ns.RELOAD = "/stopmacro [combat]\n/reload"
+local KEEP_LOG = 8
+local pending = false
+local listeners = {}
 
-function ns.MarkChanged()
-    if ns.db then changedAt = GetTime() end
+-- fn(pending) : appelée quand il y a quelque chose à enregistrer.
+function ns.OnSavePending(fn) listeners[#listeners + 1] = fn end
+
+function ns.MarkChanged(reason)
+    local db = ns.db
+    if not db then return end
+    if type(db.saveLog) ~= "table" then db.saveLog = {} end
+    table.insert(db.saveLog, 1, { reason = tostring(reason or "?"), at = time and time() or nil })
+    while #db.saveLog > KEEP_LOG do table.remove(db.saveLog) end
+    if pending then return end
+    pending = true
+    for _, fn in ipairs(listeners) do ns.Guard("enregistrement", fn, true) end
 end
 
-function ns.SavePending() return changedAt ~= nil end
+function ns.SavePending() return pending end
 
-local function Busy()
-    if InCombatLockdown() or ns.editing then return true end
-    for _, module in ipairs({ ns.Picker, ns.Settings, ns.Menu }) do
-        if module and module.IsOpen and module:IsOpen() then return true end
-    end
-    return false
+-- Juste avant le clic d'un bouton d'enregistrement : le /reload du jeu s'il y a quelque chose
+-- à écrire (hors combat), rien sinon ; la ligne « réglages enregistrés » suivra le rechargement.
+function ns.SavePreClick(secure, always)
+    if InCombatLockdown() then return end
+    local save = ns.db ~= nil and (pending or always == true)
+    secure:SetAttribute("type", save and "macro" or nil)
+    if save then ns.db.justSaved = true end
 end
 
--- Une vérification : vrai quand elle a lancé l'enregistrement.
-function ns.SaveTick(now)
-    if not changedAt or not ns.db then return false end
-    if Busy() then idleSince = nil; return false end
-    idleSince = idleSince or now
-    if now - changedAt < AFTER_CHANGE or now - idleSince < AFTER_IDLE then return false end
-    changedAt, idleSince = nil, nil
-    ns.db.justSaved = true
-    ns.Print(ns.T("saving your settings: the interface is reloading."))
-    ReloadUI()
-    return true
+-- Un bouton sécurisé transparent posé sur `button` (Terminé, Fermer) : enregistre s'il y a
+-- quelque chose à écrire, puis fait ce que fait le bouton (`after`).
+function ns.SaveOver(button, after)
+    local over = CreateFrame("Button", nil, button, "SecureActionButtonTemplate")
+    over:SetAllPoints(button)
+    over:SetFrameLevel(button:GetFrameLevel() + 5)
+    over:RegisterForClicks("AnyUp", "AnyDown")
+    over:SetAttribute("macrotext", ns.RELOAD)
+    over:SetScript("PreClick", function(self) ns.SavePreClick(self) end)
+    over:SetScript("PostClick", function(_, _, down)
+        if not down and after then ns.Guard("enregistrement", after) end
+    end)
+    return over
 end
-
-local saver = CreateFrame("Frame")
-local since = 0
-saver:SetScript("OnUpdate", function(_, elapsed)
-    since = since + elapsed
-    if since < 0.5 then return end
-    since = 0
-    ns.SaveTick(GetTime())
-end)
 
 ns.On("PLAYER_LOGIN", function()
     if ns.db and ns.db.justSaved then
         ns.db.justSaved = nil
-        ns.Print(ns.T("settings saved."))
+        ns.Print("réglages enregistrés.")
     end
 end)

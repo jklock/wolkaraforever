@@ -37,10 +37,18 @@
 "home.box.voice" = "Dictation (V2T) Manager";
 "home.box.profile" = "Performance Manager";
 "home.box.performance" = "UI Manager";
+"home.box.launcherManager" = "Launcher Manager";
+
+"home.launcher.interfaceMode.row" = "Interface Mode: %@";
+"home.launcher.interfaceMode.title" = "Interface Mode";
+"home.launcher.interfaceMode.message" = "Choose the interface this launcher drives. Changing it never installs, disables, removes or updates an add-on.";
+"home.launcher.interfaceMode.ipados" = "iPadOS";
+"home.launcher.interfaceMode.ios" = "iOS on Duo";
 
 "home.addons.install" = "Install Addons (Curse & Direct)";
 "home.addons.install.needsgame" = "Install Addons (Curse & Direct) (install game first)";
-"home.addons.macever" = "Download Mac-Ever (Perf Optimization)";
+"home.addons.recommended.macEver" = "Install Recommended Add-ons (Mac-Ever)";
+"home.addons.recommended.wolkaraRoue" = "Install Recommended Add-ons (WolkaraRoue)";
 "home.addons.directory" = "Open Add-on Directory";
 "home.addons.directory.needsgame" = "Open Add-on Directory (install game first)";
 "home.voice.keys" = "Key / Button Configuration";
@@ -101,6 +109,7 @@
 "home.phase.verify" = "Checking existing data";
 "home.phase.reuse" = "Comparing installed content";
 "home.phase.indices" = "Locating download files";
+"home.download.remaining" = "~%@ left";
 "home.phase.download" = "Downloading new data";
 "home.phase.files" = "Installing game files";
 "home.phase.activate" = "Finishing the update";
@@ -329,12 +338,9 @@
 /* ---- On-screen controls and keyboard ---- */
 "touch.draft.label" = "Replacement text";
 "touch.draft.hint" = "Tap Replace to replace the selected game field, or leave this empty to clear it. Existing game text is not shown here.";
-"touch.draft.placeholder" = "Return sends to the chat · Replace writes into the selected field";
+"touch.draft.placeholder" = "Draft · Replaces the field; empty clears it";
+"touch.draft.placeholder.mobile" = "Return sends to the chat · Replace writes into the selected field";
 "touch.draft.replace" = "Replace";
-"touch.composer.message" = "Message";
-"touch.composer.send" = "Send";
-"touch.composer.send.hint" = "Hold to type into the selected game text box instead of the chat";
-"touch.autorun" = "Auto-run";
 "touch.draft.replace.hint" = "Replaces the whole selected game field. An empty draft clears it. Does not press Return.";
 "touch.draft.clear" = "Clear draft";
 "touch.keyboard.show" = "Show keyboard";
@@ -446,6 +452,14 @@
 "addons.noCategories" = "CurseForge returned no add-on categories.";
 "addons.projectsShown" = "%lu of %lu projects · compatibility is advisory, not a gate";
 "addons.projectsOfShown" = "%lu of %lu projects shown";
+"addons.recommended.unexpected" = "CurseForge returned a different project. Refresh to try again.";
+"addons.bundled.name" = "WolkaraRoue (bundled)";
+"addons.bundled.detail" = "Version %@ · SHA-256 %@";
+"addons.bundled.install" = "Install";
+"addons.bundled.update" = "Update";
+"addons.bundled.installed" = "Installed WolkaraRoue %@ from this app's bundle.";
+"addons.bundled.unavailable" = "The bundled add-on package is missing or is not the one this app shipped.";
+"addons.bundled.title" = "Bundled add-on";
 "addons.by" = "By %@";
 "addons.downloads" = "%@ downloads on CurseForge";
 "addons.installLatest" = "Install latest compatible file";
@@ -586,3 +600,7 @@
 
 "home.status.paused" = "Check paused";
 "home.status.paused.detail" = "The check will continue when you return to this page.";
+"shell.repairRequired.title" = "Game files need repair";
+"shell.repairRequired.status" = "World of Warcraft reported damaged game files.";
+"shell.repairRequired.message" = "World of Warcraft could not start because its installed data is damaged. Repair verifies the game files, downloads only replacements, and keeps your settings and add-ons.\n\nReported error: %@";
+"shell.repairRequired.action" = "Repair game files";

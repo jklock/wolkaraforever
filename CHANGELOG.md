@@ -13,65 +13,114 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
-- **iPhone Duo layout.** On an iPhone Duo (`iPhone19,4`) the touch controls and the WolkaraRoue
-  add-on switch to a layout made for its screen. The app: sticks that appear under the thumb, an
-  L-shaped move area and a camera area that curve around a corner skill fan, a corner Jump, auto-run
-  (hold forward, slide onto the lock), a toolbar folded into a handle at the top, and a typing bar
-  with Send. The add-on: a corner skill fan with a slot edit mode and three presets, a quick bar
-  (5 slots, 5 pages), a chat button with a peek and a full chat in WoW's own layout, a quick menu,
-  a buff row and panel, party frames, cast bars, and one Mobile UI settings window that holds
-  pookee's options and the new ones. Everything Duo-specific sits behind the layout switch, which
-  is on by default only on the Duo: other devices keep the existing layout, and the system Done key
-  still replaces, as [the iPhone guide](docs/IPHONE.md#iphone-duo-layout) and the touch-controls
-  assertion say. Health, auras, cooldowns and names that newer clients return as secret values no
-  longer stop the HUD. The add-on's source strings are now English, with French, Spanish and German
-  tables, and its tests read the English source text. Duo UI by scarrdi94, built on pookee's Mobile
-  Interface.
-- **The iPhone interface work is on `main`.** French as both an app and a game language, the
-  WolkaraRoue mobile add-on (turning wheels, cooldowns, bags, minimap, windows, chat), direct
-  touch as tap/hold/drag/pinch, the mobile keyboard, and the device-safe helper scripts
-  (`push_addon.sh`, `forget_login.sh`). Rebased onto `main` rather than merged as it stood:
-  the French table predated #11 (35 keys added, 10 that #17 removed), the keyboard's system
-  Done key had been rerouted from Replace to chat — contradicting `docs/TOUCH_INPUT.md` and
-  the touch-controls assertion, which now says Done replaces and the explicit Return key
-  sends — and `0048` needs a two-finger pinch, so `multipleTouchEnabled` assertions that pinned
-  single-touch were updated (patch 0053). `test_touch_gamepad_ui.sh` no longer depends on
-  machine speed: one pump call is not guaranteed to reach a before-waiting observer.
-- **A guest crash in a system library now names the function, not just the dylib.** Issue #13
-  arrived as `EXC_BAD_ACCESS: KERN_INVALID_ADDRESS at 0x198` with frame 0 in
-  `libsystem_pthread.dylib`. The client's own crash handler prints a frame outside the guest
-  arena as an image name and nothing else, and layer patch 0039 had stopped writing dlsym
-  resolution to the guest log, so a symbol that was not found left no trace either. The
-  guest's `dladdr` now answers a system frame as `image+offset symbol=name`, and a `dlsym`
-  that found nothing is logged without tracing; both are bounded to 64 lines and neither
-  changes what the guest is returned. Asking `dladdr` for the same distance from
-  `_pthread_start` in an iOS 27.2 runtime gives
-  `libsystem_pthread.dylib+0x88 symbol=pthread_rwlock_rdlock` — the line that report was
-  missing. It puts the fault in a read lock taken on a null object, not in the loader.
-- **A first run no longer starts in Europe whatever the device is.** The launcher's region
-  defaulted to `eu` on every device, and the first install writes that portal into the
-  client's own `Config.wtf` once and never rewrites it. An account outside Europe then sat
-  at "Connecting" for ever with nothing on screen saying why (issue #16, a US iPhone Duo
-  player, resolved by changing the region by hand). `TKWoWDefaultRegion` now takes the
-  region from the device's own locale: the US portal for the Americas and Oceania, `kr` and
-  `tw` for their own regions, Europe for everywhere else and for a locale with no country.
-  A region the user chose is still never replaced, and an unusable stored value still falls
-  back to Europe. Covered by `test_wow_launcher_ui.sh`, which now stands a locale in for
-  the device so the assertion means the same thing on any Mac.
-- **Dictation interest no longer depends on the pad being connected.** The router told the
-  controller inspector about the mapped button only for controllers already connected, so a mapping
-  made for a pad that connected later left the inspector uninterested and the first press was
-  missed. `AKTrigger +mappedElementsInDefaults:` reads every stored mapping instead, which is what
-  `DEVICE_CONTRACT.md` §5 already promised. Found by `test_voice.sh` the moment the simulator
-  worked again: 2 of 341 checks, now `VOICE PASS: 341 checks`.
-- **Simulator device data is no longer moved onto a disk image.**
-  `setup_simulators.sh` used to mount an APFS sparse bundle on `/Volumes/Storage` at
-  `~/Library/Developer/CoreSimulator`. Every device booted from it hung on the Apple logo: SpringBoard
-  got a PID but never registered `com.apple.springboard.services`, the screen never changed and the
-  writes stopped. The same device on the boot volume reaches the home screen in seconds — measured
-  2026-11-06 on both matrix simulators. The script now only ensures the two matrix simulators exist,
-  refuses to run while such an image is mounted, and prints the way back; `BUILDING.md` documents
-  why device data has to stay on the boot volume.
+- **The Launcher Manager, and the interface it drives.** A sixth card now sits beside UI
+  Manager (and after it on a phone): `wow.launcher.interfaceMode`, with exactly two choices,
+  `iPadOS` and `iOS on Duo`, remembered across launches. Choosing a mode writes that one key
+  and nothing else - it never installs, disables, removes or updates an add-on. The
+  recommendation row keeps its identifier and its explicit, never-silent install: on iPadOS it
+  reads `Install Recommended Add-ons (Mac-Ever)` and opens the Add-On Manager filtered to
+  CurseForge project 1733200, with the existing Core API key and Install flow; on iOS on Duo
+  it reads `Install Recommended Add-ons (WolkaraRoue)` and opens the bundled package, its
+  release and SHA-256, and its own Install action. The bundled package is verified against its
+  manifest - including the release inside the archive's own TOC - before it is offered, and a
+  malformed, missing or unexpected archive is refused with nothing extracted. Every other
+  card keeps its position, width and behaviour; the amendment is recorded in
+  [the UI policy](development/architecture/UI_POLICY.md) and
+  [the baseline](development/architecture/LAUNCHER_UI_BASELINE.md).
+
+- **French, for the app and for the game.** The app's own labels now come in French as well
+  as English and German: a complete `fr.lproj` (548 keys, every one of them answered), the
+  language in the settings row and the picker, and `fr` in an exported settings file, so a
+  French choice survives export and import instead of being refused. World of Warcraft's own
+  download language offers French between English and Spanish, in the app's language, and a
+  first choice now starts from the language the installed game is already in - a copy pushed
+  from a Mac keeps its `Config.wtf` - instead of planning an English download over a French
+  installation. The one-time "put the game in the same language too" offer, which used to be
+  German-only, covers French. Nothing changes for an English or German setup: the same keys
+  answer the same words, and `check_localization.py` holds all three tables to the same
+  rules.
+
+- **The iPhone interface's foundation, dormant.** The mobile arrangement the phone needs -
+  a toolbar folded into a handle at the bottom centre, a keyboard whose Send puts the line in
+  the game's chat, sticks and jump without the other buttons, tap/hold/drag/pinch instead of
+  a cursor - is now in the build and switched off. One key decides it,
+  `WolkaraForeverInterfaceModeV1`, read wherever a decision depends on it; iPadOS is what a
+  missing, `ipados`, or hand-edited value means, and Standard is indistinguishable from
+  v1.0.7 - the same toolbar geometry, the same keyboard key, the same gamepad, the same
+  multi-touch contract, and the launcher's baseline comparison passes unchanged on both
+  matrix simulators. Choosing the mobile interface is the next release's job; this one only
+  makes it possible.
+
+- **The Interface mobile add-on, packaged and verifiable.** `addons/WolkaraRoue` (release
+  0.9.1) ships with twelve Lua suites, and as a versioned ZIP plus manifest in the app
+  bundle: the archive, its release, its interface and every file's SHA-256 are recorded, a
+  fixture rebuilds both from the sources and compares them byte for byte, and the app's
+  verifier refuses any package that is not that one - tampered, truncated, a stale per-file
+  hash, extra or missing files, a path outside the folder, another release, a missing
+  manifest, a missing archive, another add-on's manifest. Nothing installs it yet, and no
+  row or card was added.
+
+- **A function key is never text, and secure input is real.** F12's invisible U+F70F could be
+  inserted ahead of whatever followed it in a focused field - a login screen's password field
+  included, because the mobile keyboard sends F12 before a chat line. The reserved function
+  key characters are no longer inserted, commands are unchanged, and the Apple logo still
+  types (patch 0057). Carbon's secure event input, which a game turns on when a password
+  field has the keyboard, is now real and reference counted instead of a generated stub, and
+  announces each change so the keyboard can type exactly what was written there (0058). A
+  held local-service refusal now repeats the last attempt's own report, and a launch on
+  mobile data names how iOS classifies the route (0056).
+
+- **The launcher's own fixture runs again, end to end.** `resumeCheckIfVisible` refused to
+  resume an interrupted check whenever `UIApplication.applicationState` was not `Active`,
+  which a simctl-launched process never reports - so the fixture's resume step aborted, and
+  with it every step after it, in the v1.0.6 and v1.0.7 exact-main records too. The page now
+  keeps the activation its own foreground/background notifications tell it about, and asks
+  that instead: on a device the two agree, and the fixture now verifies the rest of the page,
+  including the baseline comparison it had stopped reaching. Also fixes two things found
+  while carrying the work: a nil toolbar handle could abort every touch on a Standard guest,
+  and v1.0.7's controller-arrival guard had to be kept, not dropped.
+
+- **A held mouse button drags continuously, and native control surfaces keep tracking.**
+  Two faults combined to make a physical trackpad drag update only when the button was
+  released. The input inspector installed the same `mouseMovedHandler` and per-button
+  handlers the AppKit bridge owns, so an input-device refresh could leave its no-op motion
+  handler in place and the game saw no movement until the next button edge; it now observes
+  the profile's `valueDidChangeHandler`, which nothing else uses. And the event loop returned
+  a queued guest event before it ever reached the tracking pump, so UIKit's default and
+  tracking modes never ran while events were flowing; the pump now covers a held left, right
+  or middle button as well as the touch-controls editor and the on-screen keyboard, and runs
+  before the guest queue is scanned (patch `0047`, edited in place). The gamepad settings
+  panel also stays open on a device that already has a controller: it used to close on any
+  keyboard, window or application notification, not only when a controller connected. Both
+  fixtures pass on the two matrix simulators, including 18 held-button cases per device.
+
+- **The game's window is the size of the game's content, from the first frame.** AppKit
+  documents that the content view "is resized to fit precisely within the content area of
+  the window", and the adapter only did that once the window had a host view. A view made
+  by `-[NSView init]` therefore stayed 0×0 until the window was on screen, so a guest that
+  sizes its window right after `setContentView:` — which Forever 1.60.1 does, before
+  showing it — read `convertSizeToBacking:{0, 0}`, clamped its window to its 320×240
+  minimum, and grew the height 0.5 pt per pass for about three seconds. Its `CAMetalLayer`
+  ended up 320 wide and ~4.69 million points tall, and the render target was 320 pixels
+  wide. `setContentView:` now sizes the view to the content rect when there is no host
+  yet; with a host, `ak_attach` still sizes it from the host's bounds (patch 0054). The
+  layer's own test runs on both matrix simulators and fails against the unpatched adapter.
+- **External JIT: a JIT enabler's memory is cleared before the game is placed in it.** The
+  runtime assumed the region an enabler hands back is zero-filled, but StikDebug writes one
+  byte, `0x69`, at the start of every page it prepares. Only the pages the game image has bytes
+  for were written afterwards, so every zero-initialised page of the image began with that
+  byte. Reported on an iPhone Duo outside this project's test matrix (iOS 27.2, AltStore with
+  a free Apple ID, StikDebug 3.2.2): Forever 1.60.1 (70862) closed about 35 seconds after its
+  window appeared, on every launch, with `ERROR #132` at address `0x71`. The image's extent is
+  now cleared through the writable view before the image is placed across it (patch 0050).
+- **External JIT: memory an enabler granted but never prepared is handed back.** Reported on
+  the same phone: about one launch in three closed the moment the game was entered. StikDebug,
+  and the StikJIT library other enablers share, write their page-preparation packets with nine
+  hex digits of address, so a region at or above 2^36 is granted and reported ready while the
+  writes go elsewhere. The kernel puts the region there, at `0x7000000000`, whenever nothing
+  lower down has room for it, and the launch reservation asks for up to 1 GiB. Such a region
+  is now given back and a smaller one asked for, and what was asked and granted is written to
+  `wolkaraforever.log` under `[jit]` (patch 0051).
 - **One test matrix: three devices, enforced by the tools.** The suites used to take whichever
   iPad or iPhone happened to be installed, and to keep trying devices until one booted. Now
   `wolkaraforever/tools/simulators.sh` names the only devices this project measures —

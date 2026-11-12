@@ -13,6 +13,9 @@
 -- conversation choisie, Dire par défaut, parce que l'app appuie d'abord sur F12, que ce module
 -- relie à « ouvrir la saisie sur la conversation choisie ». Une commande (/…) passe par la
 -- touche / du jeu, sans conversation.
+-- « Masquer », à droite des onglets rapides, range le chat dans un bouton posé juste à gauche
+-- du clavier de la barre de l'app : il compte ce que les joueurs disent entre-temps, et le
+-- toucher rouvre le fil. Écrire reste possible chat masqué.
 
 local _, ns = ...
 
@@ -24,20 +27,27 @@ local OPEN_KEY = "F12"
 local PAD, GAP, ROW, HINT, ARROW, QUICK_H = 8, 6, 36, 20, 44, 28
 local BOTTOM = 0.12      -- en hauteur d'écran : sous le chat, la barre de l'app
 local STRIP = 0.36       -- en largeur d'écran : le fil, entre les sorts les plus bas des roues
+local HIDE_W = 84        -- le bouton Masquer
+-- La barre de l'app repliée, mesurée sur l'iPhone Duo (2026-11-06) : 96 x 34 pt au centre d'un
+-- écran de 669 pt de haut, à 42 pt du bas, son clavier à gauche. Le chat masqué devient un
+-- bouton de 44 x 34 pt, 8 pt à gauche de ce clavier, à sa hauteur. En hauteur d'écran :
+local BAR_HALF, BAR_BOTTOM, BAR_HEIGHT, BAR_GAP, MINI_WIDTH = 48 / 669, 42 / 669, 34 / 669, 8 / 669, 44 / 669
 
 local messages = {}
 local target = { kind = "say" }
 local lastWhisper
 local unread = 0
+local pending = 0        -- ce que les joueurs ont dit depuis que le chat est masqué
 local ticker, panel, list, tabButtons, quick, chips, to, hint, badge, opener, close, arrows, holder
+local hideButton, mini, miniCount
 local hider = CreateFrame("Frame")
 hider:Hide()
 
 local TABS = {
-    { key = "talk", label = "Chat" }, { key = "whisper", label = "Whispers" },
-    { key = "system", label = "System" }, { key = "all", label = "All" },
+    { key = "talk", label = "Discussion" }, { key = "whisper", label = "Privé" },
+    { key = "system", label = "Système" }, { key = "all", label = "Tout" },
 }
-local QUICK = { { key = "talk", label = "Chat" }, { key = "system", label = "System" } }
+local QUICK = { { key = "talk", label = "Discussion" }, { key = "system", label = "Système" } }
 local KNOWN = { talk = true, whisper = true, system = true, all = true }
 
 -- Ce que chaque message du jeu devient : son étiquette et ses onglets.
@@ -46,25 +56,25 @@ local PRIVATE = { all = true, talk = true, whisper = true }
 local NPC = { all = true }
 local SYSTEM = { system = true }
 local EVENTS = {
-    CHAT_MSG_SAY = { label = "Say", tabs = TALK },
-    CHAT_MSG_YELL = { label = "Yell", tabs = TALK },
+    CHAT_MSG_SAY = { label = "Dire", tabs = TALK },
+    CHAT_MSG_YELL = { label = "Crier", tabs = TALK },
     CHAT_MSG_EMOTE = { emote = true, tabs = TALK },
     CHAT_MSG_TEXT_EMOTE = { raw = true, tabs = TALK },
-    CHAT_MSG_PARTY = { label = "Party", tabs = TALK },
-    CHAT_MSG_PARTY_LEADER = { label = "Party Leader", tabs = TALK },
+    CHAT_MSG_PARTY = { label = "Groupe", tabs = TALK },
+    CHAT_MSG_PARTY_LEADER = { label = "Chef", tabs = TALK },
     CHAT_MSG_RAID = { label = "Raid", tabs = TALK },
-    CHAT_MSG_RAID_LEADER = { label = "Raid Leader", tabs = TALK },
-    CHAT_MSG_RAID_WARNING = { label = "Raid Warning", tabs = TALK },
+    CHAT_MSG_RAID_LEADER = { label = "Chef de raid", tabs = TALK },
+    CHAT_MSG_RAID_WARNING = { label = "Alerte", tabs = TALK },
     CHAT_MSG_INSTANCE_CHAT = { label = "Instance", tabs = TALK },
     CHAT_MSG_INSTANCE_CHAT_LEADER = { label = "Instance", tabs = TALK },
-    CHAT_MSG_GUILD = { label = "Guild", tabs = TALK },
-    CHAT_MSG_OFFICER = { label = "Officer", tabs = TALK },
-    CHAT_MSG_WHISPER = { label = "From", tabs = PRIVATE, incoming = true },
-    CHAT_MSG_WHISPER_INFORM = { label = "To", tabs = PRIVATE },
+    CHAT_MSG_GUILD = { label = "Guilde", tabs = TALK },
+    CHAT_MSG_OFFICER = { label = "Officier", tabs = TALK },
+    CHAT_MSG_WHISPER = { label = "De", tabs = PRIVATE, incoming = true },
+    CHAT_MSG_WHISPER_INFORM = { label = "À", tabs = PRIVATE },
     CHAT_MSG_CHANNEL = { channel = true, tabs = TALK },
-    CHAT_MSG_MONSTER_SAY = { label = "Says", tabs = NPC },
-    CHAT_MSG_MONSTER_YELL = { label = "Yells", tabs = NPC },
-    CHAT_MSG_MONSTER_WHISPER = { label = "Whispers", tabs = NPC },
+    CHAT_MSG_MONSTER_SAY = { label = "Dit", tabs = NPC },
+    CHAT_MSG_MONSTER_YELL = { label = "Crie", tabs = NPC },
+    CHAT_MSG_MONSTER_WHISPER = { label = "Murmure", tabs = NPC },
     CHAT_MSG_MONSTER_EMOTE = { emote = true, tabs = NPC },
     CHAT_MSG_SYSTEM = { raw = true, tabs = { all = true, system = true } },
     CHAT_MSG_LOOT = { raw = true, tabs = SYSTEM },
@@ -75,11 +85,11 @@ local EVENTS = {
 }
 
 local TARGETS = {
-    { kind = "say", label = "Say" }, { kind = "party", label = "Party" }, { kind = "guild", label = "Guild" },
-    { kind = "general", label = "General" }, { kind = "whisper", label = "Reply" },
+    { kind = "say", label = "Dire" }, { kind = "party", label = "Groupe" }, { kind = "guild", label = "Guilde" },
+    { kind = "general", label = "Général" }, { kind = "whisper", label = "Répondre" },
 }
 
-local WRITE = "To write, tap 'Tap to type' above the chat; Send posts it."
+local WRITE = "Pour écrire, touche le clavier juste sous le chat ; Entrée envoie."
 
 -- ---------------------------------------------------------------------------------------
 -- Messages
@@ -109,11 +119,11 @@ local function Format(info, text, author, channelIndex, channelBase)
     local stamp = date and date("%H:%M ") or ""
     if info.raw then return stamp .. text end
     if info.emote then return stamp .. PlayerLink(author) .. " " .. text end
-    local label = ns.T(info.label)
+    local label = info.label
     if info.channel then
-        label = (channelIndex and (channelIndex .. ". ") or "") .. (channelBase ~= "" and channelBase or ns.T("Channel"))
+        label = (channelIndex and (channelIndex .. ". ") or "") .. (channelBase ~= "" and channelBase or "Canal")
     end
-    return (ns.T("%s[%s] %s: %s")):format(stamp, label, PlayerLink(author), text)
+    return ("%s[%s] %s : %s"):format(stamp, label, PlayerLink(author), text)
 end
 
 local function Shows(entry) return entry.tabs[Tab()] end
@@ -139,6 +149,10 @@ local function Add(event, text, author, _, _, _, _, _, channelIndex, channelBase
     Store({ line = Format(info, text, author, channelIndex, channelBase), r = r, g = g, b = b, tabs = info.tabs })
     if badge then Chat:UpdateBadge() end
     if info.incoming and UpdateChips then UpdateChips() end
+    if mini and info.tabs.talk and ns.db and ns.db.chat.hidden then
+        pending = pending + 1
+        Chat:UpdateMini()
+    end
 end
 
 -- Le panneau reprend tout l'onglet ; le fil, ses derniers messages, qui s'effacent comme les autres.
@@ -190,12 +204,10 @@ function UpdateChips()
     for _, chip in ipairs(chips) do
         if chip.kind == "whisper" then
             local name = target.name or lastWhisper
-            chip.text:SetText(name and (ns.T("To ") .. Short(name)) or ns.T("Reply"))
+            chip.text:SetText(name and ("À " .. Short(name)) or "Répondre")
         end
         Paint(chip, chip.kind == target.kind)
-        if chip.kind == target.kind then ns.chatChannelLabel = chip.text:GetText() end
     end
-    if ns.OnChatChannel then ns.OnChatChannel(ns.chatChannelLabel) end
 end
 
 local function UpdateTabs()
@@ -310,6 +322,23 @@ local function ArrowButton(parent, texture, onClick)
     return button
 end
 
+-- Ce qui se voit : le fil, ou le panneau ouvert, ou, chat masqué, son bouton près du clavier.
+-- Le mode Personnaliser montre toujours le fil, pour qu'on puisse le déplacer.
+local function Arrange()
+    local settings = ns.db.chat
+    if not settings.custom then
+        ticker:Hide(); panel:Hide(); mini:Hide()
+        return
+    end
+    if settings.hidden and not ns.editing then
+        panel:Hide(); ticker:Hide(); mini:Show()
+    else
+        mini:Hide()
+        if not panel:IsShown() then ticker:Show() end
+    end
+    Chat:UpdateMini()
+end
+
 local function Open()
     if ns.editing then return end
     panel:Show()
@@ -322,46 +351,32 @@ end
 
 local function Close()
     panel:Hide()
-    if ns.db.chat.custom then ticker:Show() end
+    Arrange()
     Rebuild()
 end
 Chat.Open, Chat.Close = Open, Close
 
+-- Comme l'onglet, l'état masqué est retenu au prochain enregistrement, sans en provoquer un :
+-- recharger l'interface pour si peu se verrait plus que le chat.
+local function SetHidden(on)
+    ns.db.chat.hidden = on and true or false
+    pending = 0
+    Arrange()
+    if not on then Rebuild() end
+end
+Chat.SetHidden = SetHidden
+
 function Chat:UpdateBadge()
-    badge:SetText(unread > 0 and (unread .. (unread == 1 and ns.T(" new whisper") or ns.T(" new whispers"))) or "")
+    badge:SetText(unread > 0 and (unread .. (unread == 1 and " nouveau privé" or " nouveaux privés")) or "")
+end
+
+function Chat:UpdateMini()
+    if not miniCount then return end
+    miniCount:SetText(pending > 99 and "99+" or pending > 0 and tostring(pending) or "")
 end
 
 -- Le panneau ouvert : onglets et croix en haut, messages et flèches au milieu, conversation en bas.
-local function LayoutDuoPanel(width, height)
-    panel:SetSize(width, height)
-    close:ClearAllPoints()
-    close:SetSize(ARROW - 10, ROW - 10)
-    close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD, -PAD)
-    local tabW = math.min(120, (width - 2 * PAD) / #tabButtons - 4)
-    for i, button in ipairs(tabButtons) do
-        button:SetSize(tabW, ROW - 6)
-        button:ClearAllPoints()
-        button:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", PAD + (i - 1) * (tabW + 4), -1)
-        button.text:SetWidth(math.max(1, tabW - 8))
-    end
-    local input = UIParent:GetHeight() * 0.05 + PAD
-    hint:Hide()
-    to:ClearAllPoints()
-    to:SetPoint("LEFT", panel, "BOTTOMLEFT", PAD + ARROW + GAP, input + GAP + ROW / 2)
-    local label = (to:GetStringWidth() or 30) + GAP
-    Row(panel, chips, "BOTTOMLEFT", PAD + ARROW + GAP + label, input + GAP, width - 2 * PAD - ARROW - GAP - label, ROW)
-    list:ClearAllPoints()
-    list:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD + ARROW + GAP, -PAD)
-    list:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -(PAD + ARROW), input + GAP + ROW + GAP)
-    for i, arrow in ipairs(arrows) do
-        arrow:ClearAllPoints()
-        arrow:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD, -(PAD + (i - 1) * (ARROW + GAP)))
-    end
-end
-
 local function LayoutPanel(width, height)
-    if ns.DuoLayout and ns.DuoLayout() then return LayoutDuoPanel(width, height) end
-    hint:Show()
     panel:SetSize(width, height)
     close:SetSize(ARROW, ROW)
     close:ClearAllPoints()
@@ -386,11 +401,26 @@ local function LayoutPanel(width, height)
     end
 end
 
--- Au-dessus du fil : les deux onglets rapides à gauche, les privés non lus à droite.
+-- Au-dessus du fil : les deux onglets rapides à gauche, Masquer à droite, et au-dessus de lui
+-- les privés non lus.
 local function LayoutStrip(width)
     Row(ticker, quick, "TOPLEFT", 0, QUICK_H + 4, width * 0.6 - GAP, QUICK_H)
+    local hideWidth = math.min(HIDE_W, width * 0.4 - GAP)
+    hideButton:SetSize(hideWidth, QUICK_H)
+    hideButton.text:SetWidth(math.max(1, hideWidth - 8))
+    hideButton:ClearAllPoints()
+    hideButton:SetPoint("TOPRIGHT", ticker, "TOPRIGHT", 0, QUICK_H + 4)
     badge:ClearAllPoints()
-    badge:SetPoint("BOTTOMRIGHT", ticker, "TOPRIGHT", 0, 10)
+    badge:SetPoint("BOTTOMRIGHT", hideButton, "TOPRIGHT", 0, 4)
+end
+
+-- Le chat masqué : son bouton, juste à gauche du clavier de la barre de l'app.
+local function LayoutMini(height)
+    local size = height * BAR_HEIGHT
+    mini:SetSize(height * MINI_WIDTH, size)
+    mini:ClearAllPoints()
+    mini:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOM", -height * (BAR_HALF + BAR_GAP), height * BAR_BOTTOM)
+    mini.icon:SetSize(size * 0.8, size * 0.8)
 end
 
 function Chat:Init()
@@ -414,15 +444,31 @@ function Chat:Init()
     ticker.glow = ns.EditFrame(ticker)
     quick = {}
     for i, info in ipairs(QUICK) do
-        local button = ns.UIButton(ticker, ns.T(info.label), 100, QUICK_H, function() SetTab(info.key) end)
+        local button = ns.UIButton(ticker, info.label, 100, QUICK_H, function() SetTab(info.key) end)
         button.text:SetFontObject("GameFontHighlight")
         button.key = info.key
         quick[i] = button
     end
+    hideButton = ns.UIButton(ticker, "Masquer", HIDE_W, QUICK_H, function() SetHidden(true) end)
+    hideButton.text:SetFontObject("GameFontHighlight")
+    if hideButton.text.SetWordWrap then hideButton.text:SetWordWrap(false) end
     badge = ns.Label(ticker, "GameFontNormal")
     badge:SetTextColor(1, 0.5, 1)
     ns.Movable(ticker, function() return ns.db.chat end, "pos",
         function() return { "BOTTOM", "BOTTOM", 0, UIParent:GetHeight() * BOTTOM } end)
+
+    -- Le chat masqué : une bulle, et en rose ce qui a été dit depuis.
+    mini = ns.UIButton(UIParent, "", 44, 34, function() SetHidden(false) end)
+    mini:SetFrameStrata("LOW")
+    mini.back:SetVertexColor(0.05, 0.05, 0.08, 0.7)
+    mini.icon = mini:CreateTexture(nil, "ARTWORK")
+    mini.icon:SetTexture("Interface\\ChatFrame\\UI-ChatIcon-Chat-Up")
+    mini.icon:SetPoint("CENTER")
+    miniCount = ns.Label(mini, "GameFontNormal")
+    miniCount:SetTextColor(1, 0.5, 1)
+    miniCount:SetPoint("TOPRIGHT", mini, "TOPRIGHT", -2, -2)
+    mini:Hide()
+    Chat.mini = mini
 
     -- Le panneau ouvert, posé sur le fil.
     panel = CreateFrame("Frame", "WolkaraMobileChat", UIParent)
@@ -435,7 +481,7 @@ function Chat:Init()
 
     tabButtons = {}
     for i, info in ipairs(TABS) do
-        local button = ns.UIButton(panel, ns.T(info.label), 90, ROW, function() SetTab(info.key) end)
+        local button = ns.UIButton(panel, info.label, 90, ROW, function() SetTab(info.key) end)
         button.key = info.key
         tabButtons[i] = button
     end
@@ -452,7 +498,7 @@ function Chat:Init()
         if name then
             target = { kind = "whisper", name = name }
             UpdateChips()
-            hint:SetText((ns.T("Whisper to %s: tap 'Tap to type' above the chat.")):format(Short(name)))
+            hint:SetText("Message privé à " .. Short(name) .. " : touche le clavier juste sous le chat.")
         elseif SetItemRef then
             SetItemRef(link, text, button, self)
         end
@@ -468,25 +514,25 @@ function Chat:Init()
         ArrowButton(panel, "Interface\\ChatFrame\\UI-ChatIcon-ScrollEnd", function() list:ScrollToBottom() end),
     }
 
-    to = ns.Label(panel, "GameFontNormal", ns.T("To:"))
+    to = ns.Label(panel, "GameFontNormal", "À :")
     chips = {}
     for i, info in ipairs(TARGETS) do
-        local chip = ns.UIButton(panel, ns.T(info.label), 100, ROW, function()
+        local chip = ns.UIButton(panel, info.label, 100, ROW, function()
             target = { kind = info.kind }
             if info.kind == "whisper" then target.name = lastWhisper end
             UpdateChips()
-            hint:SetText(ns.T(WRITE))
+            hint:SetText(WRITE)
         end)
         chip.kind = info.kind
         chips[i] = chip
     end
-    hint = ns.Label(panel, "GameFontHighlightSmall", ns.T(WRITE))
+    hint = ns.Label(panel, "GameFontHighlightSmall", WRITE)
     hint:SetJustifyH("LEFT")
     if hint.SetWordWrap then hint:SetWordWrap(false) end
 
     -- F12 : la touche que l'app envoie avant un message.
     opener = CreateFrame("Button", "WolkaraMobileChatOpener", UIParent)
-    opener:SetScript("OnClick", function() ns.Guard(ns.T("open input"), OpenInput) end)
+    opener:SetScript("OnClick", function() ns.Guard("ouvrir la saisie", OpenInput) end)
 
     -- Les messages de l'addon, quand le chat du jeu est rangé : rares et utiles, ils passent dans
     -- les deux onglets rapides.
@@ -509,19 +555,18 @@ function Chat:Layout()
     local side = W * ns.STICK_X + H * 0.10
     LayoutPanel(ns.Clamp(W - 2 * side, W * 0.5, W - 16), H * 0.55)
     SetFont(list, size)
+    LayoutMini(H)
     ticker:PlaceSaved()
     UpdateTabs()
     UpdateChips()
     if settings.custom then
         TuckGameChat(true)
-        if not panel:IsShown() then ticker:Show() end
     else
         TuckGameChat(false)
-        ticker:Hide()
-        panel:Hide()
         local frame = ChatFrame1
         if frame and FCF_SetChatWindowFontSize then pcall(FCF_SetChatWindowFontSize, nil, frame, size) end
     end
+    Arrange()
     -- La touche d'ouverture sert dans les deux cas : l'app envoie F12 avant chaque message.
     if SetOverrideBindingClick then
         ClearOverrideBindings(opener)
@@ -532,7 +577,8 @@ end
 function Chat:SetEditing(on)
     ticker.glow:SetShown(on)
     ticker.back:SetVertexColor(0, 0, 0, on and 0.45 or 0.25)
-    if on then panel:Hide(); ticker:Show() end
+    if on then panel:Hide() end
+    Arrange()
 end
 
 for event in pairs(EVENTS) do

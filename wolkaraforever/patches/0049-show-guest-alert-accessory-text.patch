@@ -1,0 +1,82 @@
+# Preserve the text that a guest puts in an NSAlert accessory NSTextView.
+# Without this minimal bridge a fatal startup dialog has only its title, which
+# hides the condition needed to diagnose it. A known damaged-installation
+# alert is handed to the launcher so it can offer the user a real repair path.
+--- a/translation/AppKit/Alerts.m
++++ b/translation/AppKit/Alerts.m
+@@ -1,17 +1,48 @@
+ #import "AppKit.h"
+ // Alert configuration is a desktop model and may be built on a worker thread.
+ // Only presentation creates UIKit objects, always on the main thread.
++@interface NSTextView : AKStubObject
++@property(copy) NSString *string;
++@property BOOL editable, drawsBackground;
++- (instancetype)initWithFrame:(NSRect)frame;
++@end
++@implementation NSTextView { NSString *_string; }
++- (instancetype)initWithFrame:(NSRect)frame { (void)frame; return [super init]; }
++- (NSString *)string { return _string; }
++- (void)setString:(NSString *)string {
++    _string=[string copy];
++    AKLog(@"guest alert text view: %@",_string);
++}
++- (void)insertText:(id)text replacementRange:(NSRange)range {
++    (void)range;
++    NSString *value=[text isKindOfClass:NSString.class] ? text : [text description];
++    self.string=[(self.string ?: @"") stringByAppendingString:value ?: @""];
++}
++- (id)textStorage { return self; }
++- (void)setAttributedString:(id)text {
++    NSString *value=[text isKindOfClass:NSString.class] ? text :
++        ([text respondsToSelector:@selector(string)] ? [text string] : [text description]);
++    self.string=value;
++}
++- (void)appendAttributedString:(id)text {
++    NSString *value=[text respondsToSelector:@selector(string)] ? [text string] : [text description];
++    self.string=[(self.string ?: @"") stringByAppendingString:value ?: @""];
++}
++@end
++
+ @interface AKAlertButton : AKStubObject
+ @property(copy) NSString *title, *keyEquivalent;
+ @property BOOL enabled;
+ @end
+ @implementation AKAlertButton
+ @end
+ @interface NSAlert : AKStubObject
+ @property(copy) NSString *messageText, *informativeText;
++@property(strong) id accessoryView;
+ @property NSUInteger alertStyle;
+ @property(readonly) NSArray *buttons;
+ - (id)addButtonWithTitle:(NSString *)title;
++- (void)layout;
+ - (NSInteger)runModal;
+ @end
+ @implementation NSAlert { NSMutableArray<AKAlertButton *> *_buttons; }
+@@ -19,9 +50,24 @@
+ - (NSArray *)buttons { return _buttons; }
+ - (id)addButtonWithTitle:(NSString *)title { AKAlertButton *button=[AKAlertButton new]; button.title=title; button.enabled=YES; [_buttons addObject:button]; return button; }
++- (void)layout {}
+ - (NSInteger)runModal {
+-    AKLog(@"guest alert: %@ — %@",self.messageText,self.informativeText);
++    NSString *accessoryText=nil;
++    if([self.accessoryView respondsToSelector:@selector(string)]) accessoryText=[self.accessoryView string];
++    AKLog(@"guest alert accessory: class=%@ text=%@",self.accessoryView ? NSStringFromClass([self.accessoryView class]) : @"(none)",accessoryText);
++    NSString *informative=self.informativeText.length ? self.informativeText : accessoryText;
++    if(informative.length) {
++        [NSUserDefaults.standardUserDefaults setObject:informative forKey:@"WolkaraForever.GuestAlert.Last"];
++    }
++    if([informative containsString:@"battle.net/support/article/6572"]) {
++        // The host owns recovery. Returning abort closes the guest without
++        // presenting an opaque guest-owned popup that cannot repair anything.
++        [NSUserDefaults.standardUserDefaults setObject:informative forKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
++        AKLog(@"guest installation damage reported to host: %@",informative);
++        return -1001;
++    }
++    AKLog(@"[guest-alert] title=%@ message=%@",self.messageText,informative);
+     if(!_buttons.count) [self addButtonWithTitle:@"OK"];
+-    NSArray *buttons=[_buttons copy]; NSString *title=[self.messageText copy],*message=[self.informativeText copy];
++    NSArray *buttons=[_buttons copy]; NSString *title=[self.messageText copy],*message=[informative copy];
+     dispatch_semaphore_t completion=dispatch_semaphore_create(0);
+     __block NSInteger result=-1001; // NSModalResponseAbort
+     __block BOOL finished=NO;

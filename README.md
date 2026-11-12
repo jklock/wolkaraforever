@@ -14,39 +14,6 @@ voice input, add-on tooling, UI recovery, and diagnostics around it. It is not s
 Mac. You provide the device (iPad or iPhone), Apple development account, eligible WoW account, and game data;
 this repository includes none of them.
 
-## This fork: playing on an iPhone
-
-This fork of [jklock/wolkaraforever](https://github.com/jklock/wolkaraforever) is tuned for
-playing on a phone. It was tested on an **iPhone Duo with iOS 27.2**, Developer service mode,
-WoW Forever 1.60.1.70790: login, character selection and an in-world session on Wi-Fi
-(2026-11-05). On mobile data the developer service needs the app's documented recovery (turn
-mobile data off while it waits for the local connection, back on once the game starts). What
-it adds:
-
-- **Interface mobile**, a touch add-on in [addons/WolkaraRoue](addons/WolkaraRoue): two spell
-  wheels, one by each stick (the left one mirrors the right), that you turn by dragging a spell
-  (a tap casts), with adjustable spacing; shortcuts and a tile menu, health bars with your
-  portrait, a quest card, and a chat at the bottom between the wheels that switches between the
-  players' talk and the system's messages with one touch. The game's windows (world map,
-  quests, merchants, journal) shrink to fit the screen and stay clear of the sticks, so the
-  map's close button and "Complete quest" can be reached; the minimap's size can be set, or it
-  can be put away. Its settings save themselves after each change: WoW only writes add-on
-  settings on a clean exit, which a phone session rarely gets.
-- **Jumping while running**: the Jump button of the "sticks only" layout sends the game's own
-  Space and reaches the whole area under the camera stick.
-- **The app's toolbar at the bottom** (keyboard, mouse, gamepad, settings), centred between the
-  thumbs and just under the add-on's chat: its keyboard opens the chat, and Return sends the
-  line to the conversation chosen there, Say by default. While typing it moves to the top,
-  clear of the keyboard.
-- **Typing a password**: a password field receives exactly what was typed, and function keys are
-  never turned into text.
-- **Tools**: [push_addon.sh](wolkaraforever/tools/push_addon.sh) installs the add-on on the
-  device, `DEVICE_LOG_FILE=… device_log.sh` reads the game's own logs (its Battle.net login
-  steps), and [forget_login.sh](wolkaraforever/tools/forget_login.sh) clears a remembered login.
-
-Install as below, then run `wolkaraforever/tools/push_addon.sh` with the game closed. Not yet
-checked on the device: turning the wheel during combat, which only the game's secure code can do.
-
 ## Credit and lineage
 
 WolkaraForever builds directly on [Wolkara by fJavierLasso](https://github.com/fJavierLasso/wolkara),
@@ -65,7 +32,8 @@ platform/                 Tolkara, vendored byte-identical to upstream
 ```
 
 The upstream history, MIT licence, and third-party notices are retained. See
-[NOTICE.md](NOTICE.md) for source and reference attributions.
+[NOTICE.md](NOTICE.md) for source and reference attributions and
+[CONTRIBUTORS.md](CONTRIBUTORS.md) for the people behind the work.
 
 ## What WolkaraForever provides
 
@@ -200,6 +168,8 @@ The public user guide is under [docs/](docs/README.md). Engineering material is 
 - [Tooling](development/guides/TOOLING.md) and [Testing](development/testing/TESTING.md) — command
   reference and what each test proves.
 - [Contributing](development/guides/CONTRIBUTING.md) — code and data boundaries.
+- [Contributors](CONTRIBUTORS.md) — the people whose work this carries, and how a
+  contribution is recorded.
 
 `platform/` must remain byte-identical to Tolkara upstream. Product changes belong in
 `wolkaraforever/` through a layer file, patch, and/or `overlay.map` entry.

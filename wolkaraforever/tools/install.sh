@@ -30,6 +30,16 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 
+# A private signed device build is allowed to use this Mac's public trust roots;
+# the public, redistributable IPA intentionally is not.  Never let a release-style
+# rootless artifact reach a user's device through this installer.
+if [ "${TOLKARA_SYSTEM_ROOTS:-YES}" = "NO" ]; then
+    echo "install: refusing TOLKARA_SYSTEM_ROOTS=NO for a private device install." >&2
+    echo "         Use wolkaraforever/tools/package_altstore_ipa.sh for the rootless public IPA lane." >&2
+    exit 2
+fi
+export TOLKARA_SYSTEM_ROOTS=YES
+
 replace_running=0
 force_kill=0
 build_only=0
@@ -189,7 +199,45 @@ step "2/$total build (the platform's own script)"
 # process even when its own command later fails. The EXIT trap owns restoring
 # the visible app state in both the success and failure paths.
 [ "$build_only" = 1 ] || cleanup_needed=1
+# --build-only exists to prove the app compiles and signs, and to leave the iPad alone. The
+# platform's script asks xcodebuild for a destination by device id, and xcodebuild refuses to
+# resolve that id when the iPad is asleep, disconnected, or not there - so a compile check
+# needed hardware it never touches. With no available device, one shim rewrites that argument
+# to the generic iOS destination and everything else runs unchanged: the same script, the same
+# settings checks, the same generate step, flags, log and post-checks, the same compile, link
+# and signing. The shim is not installed when the device is there, so an install is untouched.
+device_available() {
+    xcrun devicectl list devices 2>/dev/null | grep -F "$DEVICE" | grep -q "available"
+}
+if [ "$build_only" = 1 ] && ! device_available; then
+    echo "   the iPad is not available: building for the generic iOS destination"
+    destination_shim=$(mktemp -d -t wolkaraforever-build-destination)
+    cat > "$destination_shim/xcodebuild" <<'SHIM'
+#!/bin/bash
+args=()
+for word in "$@"; do
+    case "$word" in
+        platform=iOS,id=*) args+=("generic/platform=iOS");;
+        *) args+=("$word");;
+    esac
+done
+exec /usr/bin/xcodebuild "${args[@]}"
+SHIM
+    chmod +x "$destination_shim/xcodebuild"
+    PATH="$destination_shim:$PATH"
+    export PATH
+fi
 tools/install.sh ${args[@]+"${args[@]}"}
+
+# The platform-side pre-deployment gate checks this too.  Keep a second check
+# here so --build-only proves the exact artifact before anybody chooses to
+# install it later.
+root_store="$ROOT/build/platform/build/device/Build/Products/Release-iphoneos/Tolkara.app/CompatibilityRootCertificates.plist"
+if [ ! -s "$root_store" ] || ! plutil -lint "$root_store" >/dev/null; then
+    echo "install: private build is missing a valid CompatibilityRootCertificates.plist; refusing to continue." >&2
+    exit 1
+fi
+echo "   private trust store: present and valid"
 
 if [ "$build_only" = 1 ]; then
     step "2/$total done: built, and the device was left alone"

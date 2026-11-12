@@ -1,7 +1,6 @@
 #import "TouchGamepadLayout.h"
+#import "InterfaceMode.h"
 #include <math.h>
-#include <string.h>
-#include <sys/utsname.h>
 
 static NSString *const LayoutKey = @"WolkaraForeverTouchLayoutV1";
 NSNotificationName const AKGamepadLayoutDidChangeNotification = @"AKGamepadLayoutDidChange";
@@ -10,11 +9,6 @@ static CGFloat Clamp(CGFloat value, CGFloat minimum, CGFloat maximum, CGFloat fa
 }
 static CGFloat Number(id value, CGFloat fallback) {
     return [value isKindOfClass:NSNumber.class] ? [value doubleValue] : fallback;
-}
-static BOOL AKIsIPhoneDuo(void) {
-    struct utsname system;
-    if (uname(&system) != 0) return NO;
-    return strcmp(system.machine, "iPhone19,4") == 0;
 }
 @implementation AKGamepadLayout {
     NSUserDefaults *_defaults;
@@ -41,8 +35,9 @@ static BOOL AKIsIPhoneDuo(void) {
         // triggers inside; an explicit stored choice always takes precedence.
         self.swapShoulders = Number(values[@"swapShoulders"],values.count ? 0 : 1) != 0;
         self.performanceOverlayEnabled = Number(values[@"performanceOverlayEnabled"],0) != 0;
-        self.sticksOnly = Number(values[@"sticksOnly"],1) != 0;
-        self.floatingSticks = Number(values[@"floatingSticks"],AKIsIPhoneDuo() ? 1 : 0) != 0;
+        // Only a mobile-interface default: Standard keeps every button, as every release
+        // through v1.0.7 has, even for a layout saved before this key existed.
+        self.sticksOnly = Number(values[@"sticksOnly"],AKInterfaceModeIsMobile() ? 1 : 0) != 0;
         _positions = [NSMutableDictionary new];
         id positions = values[@"positions"];
         if ([positions isKindOfClass:NSDictionary.class]) for (NSString *key in positions) {
@@ -76,15 +71,14 @@ static BOOL AKIsIPhoneDuo(void) {
 - (void)save {
     [_defaults setObject:@{@"opacity":@(_opacity),@"rearScale":@(_rearScale),
         @"frontScale":@(_frontScale),@"hapticsEnabled":@(_hapticsEnabled),@"swapShoulders":@(_swapShoulders),
-        @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),@"floatingSticks":@(_floatingSticks),@"positions":_positions} forKey:LayoutKey];
+        @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),@"positions":_positions} forKey:LayoutKey];
     [NSNotificationCenter.defaultCenter postNotificationName:AKGamepadLayoutDidChangeNotification object:_defaults];
 }
 - (void)reset {
     self.opacity = 0.8; self.rearScale = 1; self.frontScale = 1;
     self.hapticsEnabled = YES; self.swapShoulders = YES;
     self.performanceOverlayEnabled = NO;
-    self.sticksOnly = YES;
-    self.floatingSticks = AKIsIPhoneDuo();
+    self.sticksOnly = AKInterfaceModeIsMobile();
     [_positions removeAllObjects]; [self save];
 }
 @end

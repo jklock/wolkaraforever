@@ -1,9 +1,0 @@
-<Ui xmlns="http://www.blizzard.com/wow/ui/">
-    <EditBox name="WolkaraMobileKeyboardSignal" parent="UIParent" password="true" autoFocus="false" frameStrata="BACKGROUND">
-        <Size x="2" y="2"/>
-        <Anchors>
-            <Anchor point="TOPRIGHT" relativePoint="BOTTOMLEFT"/>
-        </Anchors>
-        <FontString inherits="ChatFontNormal"/>
-    </EditBox>
-</Ui>

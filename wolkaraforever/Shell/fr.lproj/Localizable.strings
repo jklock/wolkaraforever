@@ -34,10 +34,18 @@
 "home.box.voice" = "Voix et commandes";
 "home.box.profile" = "Performances";
 "home.box.performance" = "Interface du jeu";
+"home.box.launcherManager" = "Gestionnaire du lanceur";
+
+"home.launcher.interfaceMode.row" = "Mode d’interface : %@";
+"home.launcher.interfaceMode.title" = "Mode d’interface";
+"home.launcher.interfaceMode.message" = "Choisissez l’interface pilotée par ce lanceur. En changer n’installe, ne désactive, ne supprime et ne met jamais à jour un addon.";
+"home.launcher.interfaceMode.ipados" = "iPadOS";
+"home.launcher.interfaceMode.ios" = "iOS on Duo";
 
 "home.addons.install" = "Installer des addons (CurseForge et direct)";
 "home.addons.install.needsgame" = "Installer des addons (CurseForge et direct) (installez d’abord le jeu)";
-"home.addons.macever" = "Télécharger Mac-Ever";
+"home.addons.recommended.macEver" = "Installer les addons recommandés (Mac-Ever)";
+"home.addons.recommended.wolkaraRoue" = "Installer les addons recommandés (WolkaraRoue)";
 "home.addons.directory" = "Ouvrir le dossier des addons";
 "home.addons.directory.needsgame" = "Ouvrir le dossier des addons (installez d’abord le jeu)";
 "home.voice.keys" = "Configuration des touches et boutons";
@@ -98,6 +106,7 @@
 "home.phase.verify" = "Vérification des données existantes";
 "home.phase.reuse" = "Comparaison du contenu installé";
 "home.phase.indices" = "Repérage des fichiers à télécharger";
+"home.download.remaining" = "~%@ restantes";
 "home.phase.download" = "Téléchargement des nouvelles données";
 "home.phase.files" = "Installation des fichiers du jeu";
 "home.phase.activate" = "Finalisation de la mise à jour";
@@ -328,12 +337,9 @@
 /* ---- Commandes et clavier à l'écran ---- */
 "touch.draft.label" = "Texte de remplacement";
 "touch.draft.hint" = "Touchez Remplacer pour remplacer le champ du jeu sélectionné, ou laissez vide pour l’effacer. Le texte déjà présent dans le jeu n’est pas affiché ici.";
-"touch.draft.placeholder" = "Entrée envoie dans le chat · Remplacer écrit dans le champ choisi";
+"touch.draft.placeholder" = "Brouillon · remplace le champ ; vide l’efface";
+"touch.draft.placeholder.mobile" = "Entrée envoie dans le chat · Remplacer écrit dans le champ choisi";
 "touch.draft.replace" = "Remplacer";
-"touch.composer.message" = "Message";
-"touch.composer.send" = "Envoyer";
-"touch.composer.send.hint" = "Maintiens pour écrire dans la zone de texte sélectionnée du jeu plutôt que dans la discussion";
-"touch.autorun" = "Course auto";
 "touch.draft.replace.hint" = "Remplace tout le champ du jeu sélectionné. Un brouillon vide l’efface. N’appuie pas sur Entrée.";
 "touch.draft.clear" = "Effacer le brouillon";
 "touch.keyboard.show" = "Afficher le clavier";
@@ -445,6 +451,14 @@
 "addons.noCategories" = "CurseForge n’a renvoyé aucune catégorie d’addons.";
 "addons.projectsShown" = "%lu projets sur %lu · la compatibilité Forever est vérifiée à l’installation";
 "addons.projectsOfShown" = "%lu projets affichés sur %lu";
+"addons.recommended.unexpected" = "CurseForge a renvoyé un autre projet. Actualisez pour réessayer.";
+"addons.bundled.name" = "WolkaraRoue (fourni)";
+"addons.bundled.detail" = "Version %@ · SHA-256 %@";
+"addons.bundled.install" = "Installer";
+"addons.bundled.update" = "Mettre à jour";
+"addons.bundled.installed" = "WolkaraRoue %@ installé depuis le paquet de cette app.";
+"addons.bundled.unavailable" = "Le paquet d’addon fourni est absent ou n’est pas celui que cette app a livré.";
+"addons.bundled.title" = "Addon fourni";
 "addons.by" = "Par %@";
 "addons.downloads" = "%@ téléchargements sur CurseForge";
 "addons.installLatest" = "Installer le dernier fichier compatible";
@@ -586,3 +600,7 @@
 
 "home.status.paused" = "Vérification en pause";
 "home.status.paused.detail" = "La vérification reprendra quand vous reviendrez sur cette page.";
+"shell.repairRequired.title" = "Les fichiers du jeu doivent être réparés";
+"shell.repairRequired.status" = "World of Warcraft a signalé des fichiers de jeu endommagés.";
+"shell.repairRequired.message" = "World of Warcraft n’a pas pu démarrer car les données installées sont endommagées. La réparation vérifie les fichiers du jeu, ne télécharge que les remplacements et conserve vos réglages et vos add-ons.\n\nErreur signalée : %@";
+"shell.repairRequired.action" = "Réparer les fichiers du jeu";

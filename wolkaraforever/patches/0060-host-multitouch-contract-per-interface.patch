@@ -1,0 +1,72 @@
+# WolkaraForever layer patch 0060 - tests: the host's multi-touch rule, in each interface
+#
+# Why: 0055 gives the host view a direct-touch pinch in the mobile interface, which needs a
+# second finger; there the host takes several fingers whether the trackpad is on or not, and
+# the pinch recognizer is what follows the trackpad. Standard is unchanged: several fingers
+# exactly while the trackpad is on, and no pinch recognizer at all. 0014's assertions pinned
+# only the old rule, so the AppKit view suite aborted at "!plainHost.multipleTouchEnabled"
+# on an iPhone simulator - where the trackpad is on by default - before it reached anything
+# else (issue R-011). The assertions now state both rules, and set the interface mode
+# themselves, so the suite passes on both matrix devices and proves the gate.
+#
+# Applies after: 0055-direct-touch-gestures.patch
+# Applies to: tests/test_appkit_views.m
+# Upstream: candidate.
+#
+--- a/tests/test_appkit_views.m
++++ b/tests/test_appkit_views.m
+@@ -4,6 +4,11 @@
+ #import "AppKit.h"
+ #import "TouchControls.h"
+ #include <assert.h>
++// The host view's trackpad switch: the touch controls call it when the user turns the
++// trackpad on or off, and this suite drives it directly to cover both interface modes.
++@interface NSObject (FixtureTrackpadMode)
++- (void)touchTrackpadChanged:(BOOL)enabled;
++@end
+ @interface NSScreen (FixtureBackingCoordinates)
+ - (CGRect)convertRectToBacking:(CGRect)rect;
+ - (CGRect)convertRectFromBacking:(CGRect)rect;
+@@ -173,12 +178,21 @@
+     // wolkaraforever/Touch/TouchControls.m and docs/TOUCH_INPUT.md.
+     UIView *plainHost=[NSClassFromString(@"AKHostView") new];
+     assert(AKTouchControls.enabled && !![plainHost valueForKey:@"_touchControls"]);
+-    // Multi-touch on the host follows the trackpad, not the on-screen controls: with the
+-    // trackpad off, direct touch stays single-touch.
+-    assert(!plainHost.multipleTouchEnabled);
++    // Standard (the default): multi-touch on the host follows the trackpad, not the on-screen
++    // controls - several fingers exactly while the trackpad is on, which is the platform's
++    // default on a phone and off on an iPad, and which every release through v1.0.7 has.
++    AKTouchControls *plainControls=[plainHost valueForKey:@"_touchControls"];
++    assert(plainHost.multipleTouchEnabled == plainControls.trackpadEnabled);
++    assert([plainHost valueForKey:@"_pinch"] == nil);
+     [defaults setBool:NO forKey:AKTouchControlsDefaultsKey];
+     plainHost=[NSClassFromString(@"AKHostView") new];
+     assert(![plainHost valueForKey:@"_touchControls"] && !plainHost.multipleTouchEnabled);
++    // Mobile (WolkaraForeverInterfaceModeV1 = ios): the direct gestures need a second finger
++    // for their pinch, so the host takes several fingers whether or not the trackpad is on.
++    [defaults setObject:@"ios" forKey:@"WolkaraForeverInterfaceModeV1"];
++    plainHost=[NSClassFromString(@"AKHostView") new];
++    assert(plainHost.multipleTouchEnabled && [plainHost valueForKey:@"_pinch"] != nil);
++    [defaults removeObjectForKey:@"WolkaraForeverInterfaceModeV1"];
+     [defaults setBool:YES forKey:AKTouchControlsDefaultsKey];
+     id host=[NSClassFromString(@"AKHostView") new];
+     [host setValue:window forKey:@"nsWindow"];
+@@ -276,7 +290,17 @@
+     [host touchButton:0 pressed:YES]; [host touchButton:0 pressed:NO];
+     assert(next_input().clickCount == 2); (void)next_input();
+     controls.trackpadEnabled = NO;
++    // Standard: the trackpad off is single-touch again, as it has always been.
+     assert(!hostView.multipleTouchEnabled);
++    // Mobile: several fingers in both modes, and the pinch recognizer is what follows the
++    // trackpad rather than multi-touch itself.
++    [defaults setObject:@"ios" forKey:@"WolkaraForeverInterfaceModeV1"];
++    id mobileHost=[NSClassFromString(@"AKHostView") new];
++    UIGestureRecognizer *pinch=[mobileHost valueForKey:@"_pinch"];
++    assert(((UIView *)mobileHost).multipleTouchEnabled && pinch != nil && pinch.enabled);
++    [(id)mobileHost touchTrackpadChanged:YES];
++    assert(((UIView *)mobileHost).multipleTouchEnabled && !pinch.enabled);
++    [defaults removeObjectForKey:@"WolkaraForeverInterfaceModeV1"];
+ 
+     // Windows are numbered once each; with none on screen, none is found.
+     assert(window.windowNumber > 0 && other.windowNumber != window.windowNumber && panel.windowNumber != other.windowNumber);

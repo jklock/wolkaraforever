@@ -54,7 +54,6 @@ local function Open(frame) ShowUIPanel(frame); panelHook(frame) end
 
 local handlers, module = {}, nil
 local ns = { STICK_X = 0.12, STICK_Y = 0.222 }
-ns.T = ns.T or function(text) return text end
 function ns.Register(_, m) module = m; return m end
 function ns.On(event, fn) handlers[event] = fn end
 assert(loadfile(path))("WolkaraRoue", ns)

@@ -230,7 +230,7 @@ static NSBundle *WKResourceBundleOverride;
 
 - (NSString *)settingDisplayName {
     if (self.language == WKAppLanguageSystem)
-        return [self.resolvedLanguageName stringByAppendingFormat:@" · %@", WKLocalized(@"lang.system")];
+        return [self.resolvedLanguageName stringByAppendingFormat:@" — %@", WKLocalized(@"lang.system")];
     return self.resolvedLanguageName;
 }
 

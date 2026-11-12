@@ -164,6 +164,13 @@ TKCurseForgeFileCandidate *TKCurseForgeChooseFile(NSArray *files, NSString *game
     NSURL *url=[NSURL URLWithString:[BaseURL stringByAppendingFormat:@"/mods/search?%@",c.percentEncodedQuery]]; NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];[request setValue:@"application/json" forHTTPHeaderField:@"Accept"];[request setValue:_key forHTTPHeaderField:@"x-api-key"];
     [[_session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *failure){NSHTTPURLResponse *http=(id)response;if(failure){TKAddonLog(@"mods/search failed: %@",failure.localizedDescription);completion(nil,failure);return;}if(http.statusCode<200||http.statusCode>=300){NSError *refusal=CFHTTPError(http.statusCode,data);TKAddonLog(@"mods/search -> HTTP %ld: %@",(long)http.statusCode,refusal.localizedDescription);completion(nil,refusal);return;}id value=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:NULL]:nil;if(![value isKindOfClass:NSDictionary.class]){completion(nil,CFError(@"CurseForge returned invalid JSON."));return;}if(![value[@"data"] isKindOfClass:NSArray.class]){completion(nil,CFError(@"CurseForge returned no mod list."));return;}completion(value,nil);} ] resume];
 }
+- (void)projectForModID:(NSNumber *)modID completion:(TKCurseForgeCompletion)completion {
+    [self get:[NSString stringWithFormat:@"/mods/%@", modID] completion:^(id value, NSError *error) {
+        if (error) { completion(nil, error); return; }
+        if (![value isKindOfClass:NSDictionary.class]) { completion(nil, CFError(@"CurseForge returned an invalid project.")); return; }
+        completion(value, nil);
+    }];
+}
 - (void)fetchFilesForModID:(NSNumber *)modID completion:(void (^)(NSArray *_Nullable files, NSError *_Nullable error))completion {
     [self get:[NSString stringWithFormat:@"/mods/%@/files?pageSize=50", modID] completion:^(id value, NSError *error) {
         if (error) { completion(nil, error); return; }

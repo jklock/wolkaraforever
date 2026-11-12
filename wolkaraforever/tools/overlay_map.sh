@@ -61,6 +61,16 @@ intent() {
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
+    echo "# AppKit: the content-view sizing test for patch 0054, which has to make"
+    echo "# its own window and host because a bare test process has neither."
+    git ls-files wolkaraforever/AppKit | while read -r f; do
+        case "$f" in
+            wolkaraforever/AppKit/tests/*) dst=tests/${f#wolkaraforever/AppKit/tests/};;
+            *) echo "# not overlaid yet (source of a pending patch): $f"; continue;;
+        esac
+        echo "$f $dst $(intent "$dst")"
+    done
+    echo "#"
     echo "# Bridge: what the patched platform files and the public APIs call into"
     git ls-files wolkaraforever/Bridge | while read -r f; do
         case "$f" in
@@ -105,6 +115,15 @@ intent() {
             wolkaraforever/CoreAudio/tests/*) dst=tests/${f#wolkaraforever/CoreAudio/tests/};;
             *) echo "# not overlaid yet (source of a pending patch): $f"; continue;;
         esac
+        echo "$f $dst $(intent "$dst")"
+    done
+    echo "#"
+    echo "# Addons: the bundled Interface mobile add-on package - one versioned ZIP of the"
+    echo "# reviewed Lua in addons/WolkaraRoue, and the manifest that binds it to its release"
+    echo "# and to every file's hash. A fixture rebuilds both from the sources and compares,"
+    echo "# so the archive the app ships cannot drift from the Lua that was reviewed."
+    git ls-files wolkaraforever/Addons | while read -r f; do
+        dst=launcher/Addons/${f#wolkaraforever/Addons/}
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
