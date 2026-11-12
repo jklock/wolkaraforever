@@ -113,6 +113,25 @@ BOOL AKLayoutSetElement(NSUserDefaults *defaults, NSString *element, NSString *s
     return YES;
 }
 
+BOOL AKLayoutAddKeepFreeArea(NSUserDefaults *defaults, CGFloat x, CGFloat y,
+                             CGFloat width, CGFloat height) {
+    CGFloat values[4] = {x, y, width, height};
+    for (int i = 0; i < 4; i++) if (!isfinite(values[i])) return NO;
+    if (width < 0.02 || height < 0.02) return NO;
+    x = MAX(0, MIN(1, x)); y = MAX(0, MIN(1, y));
+    width = MIN(MAX(0.02, width), 1 - x); height = MIN(MAX(0.02, height), 1 - y);
+    id stored = [defaults objectForKey:AKLayoutStoredKey];
+    NSMutableDictionary *layout = [stored isKindOfClass:NSDictionary.class] ? [stored mutableCopy]
+                                                                            : [NSMutableDictionary new];
+    NSMutableArray *areas = [NSMutableArray array];
+    id existing = layout[@"keepFree"];
+    if ([existing isKindOfClass:NSArray.class]) [areas addObjectsFromArray:existing];
+    if (areas.count >= 16) return NO;
+    [areas addObject:@{@"x":@(x), @"y":@(y), @"w":@(width), @"h":@(height)}];
+    layout[@"keepFree"] = [areas copy];
+    [defaults setObject:[layout copy] forKey:AKLayoutStoredKey];
+    return YES;
+}
 BOOL AKLayoutDeleteProfile(NSUserDefaults *defaults, NSString *name) {
     NSMutableDictionary *all = [NSMutableDictionary dictionaryWithDictionary:
         ([defaults dictionaryForKey:AKLayoutProfilesKey] ?: @{})];

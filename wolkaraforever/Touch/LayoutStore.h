@@ -41,4 +41,9 @@ FOUNDATION_EXPORT NSString *AKLayoutElementForSlot(NSUserDefaults *defaults, NSS
 /// Point a control at another element. NO when either name is unknown, or another control
 /// already sends that element - one button cannot be two controls.
 FOUNDATION_EXPORT BOOL AKLayoutSetElement(NSUserDefaults *defaults, NSString *element, NSString *slot);
+
+/// Reserve an area the controls must leave alone. Fractions of the screen, clamped into it,
+/// refused when degenerate, and capped so a layout cannot grow without bound.
+FOUNDATION_EXPORT BOOL AKLayoutAddKeepFreeArea(NSUserDefaults *defaults, CGFloat x, CGFloat y,
+                                               CGFloat width, CGFloat height);
 NS_ASSUME_NONNULL_END

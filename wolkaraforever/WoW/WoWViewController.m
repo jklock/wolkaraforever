@@ -163,6 +163,74 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (BOOL)inFront;
 @end
 
+// Drawing an area the on-screen controls must leave alone. The rectangle is read in the same
+// normalised space the layout stores, so what is drawn is exactly what the overlay honours.
+@interface TKAreaPickerViewController : UIViewController
+@property(nonatomic, copy) void (^onArea)(CGRect area);
+@end
+@implementation TKAreaPickerViewController {
+    UIView *_selection;
+    CGPoint _start;
+    CGRect _drawn;
+    BOOL _hasArea;
+}
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor=[UIColor colorWithWhite:0 alpha:0.55];
+    UILabel *hint=[UILabel new];
+    hint.text=WKLocalized(@"home.launcher.interfaceSetup.reserve.hint");
+    hint.numberOfLines=0; hint.textAlignment=NSTextAlignmentCenter;
+    hint.textColor=UIColor.whiteColor;
+    hint.font=[UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
+    hint.translatesAutoresizingMaskIntoConstraints=NO;
+    [self.view addSubview:hint];
+    _selection=[UIView new];
+    _selection.userInteractionEnabled=NO;
+    _selection.backgroundColor=[UIColor colorWithWhite:1 alpha:0.12];
+    _selection.layer.borderColor=UIColor.systemYellowColor.CGColor;
+    _selection.layer.borderWidth=2; _selection.layer.cornerRadius=8;
+    [self.view addSubview:_selection];
+    [self.view addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(draw:)]];
+    UIButton *cancel=[UIButton buttonWithType:UIButtonTypeSystem];
+    [cancel setTitle:WKLocalized(@"common.cancel") forState:UIControlStateNormal];
+    [cancel addTarget:self action:@selector(dismissSelf) forControlEvents:UIControlEventTouchUpInside];
+    UIButton *save=[UIButton buttonWithType:UIButtonTypeSystem];
+    [save setTitle:WKLocalized(@"common.ok") forState:UIControlStateNormal];
+    save.titleLabel.font=[UIFont boldSystemFontOfSize:17];
+    [save addTarget:self action:@selector(confirm) forControlEvents:UIControlEventTouchUpInside];
+    for (UIButton *button in @[cancel,save]) {
+        button.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:button];
+    }
+    [NSLayoutConstraint activateConstraints:@[
+        [hint.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:24],
+        [hint.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:24],
+        [hint.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-24],
+        [save.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-20],
+        [save.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [cancel.bottomAnchor constraintEqualToAnchor:save.topAnchor constant:-8],
+        [cancel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor]]];
+}
+- (void)draw:(UIPanGestureRecognizer *)pan {
+    CGPoint point=[pan locationInView:self.view];
+    if (pan.state==UIGestureRecognizerStateBegan) { _start=point; _hasArea=YES; }
+    if (!_hasArea) return;
+    _drawn=CGRectMake(MIN(_start.x,point.x),MIN(_start.y,point.y),
+                      fabs(point.x-_start.x),fabs(point.y-_start.y));
+    _selection.frame=_drawn;
+}
+- (void)confirm {
+    CGSize size=self.view.bounds.size;
+    if (!_hasArea || size.width<=0 || size.height<=0) { [self dismissSelf]; return; }
+    CGRect area=CGRectMake(_drawn.origin.x/size.width,_drawn.origin.y/size.height,
+                           _drawn.size.width/size.width,_drawn.size.height/size.height);
+    // Too small to mean anything: closing rather than reserving a sliver.
+    if (area.size.width<0.02 || area.size.height<0.02) { [self dismissSelf]; return; }
+    void (^onArea)(CGRect)=self.onArea;
+    [self dismissViewControllerAnimated:YES completion:^{ if (onArea) onArea(area); }];
+}
+- (void)dismissSelf { [self dismissViewControllerAnimated:YES completion:nil]; }
+@end
+
 @implementation TKWoWViewController {
     TKAppLibrary *_library;
     TKWoWClient *_client;
@@ -1744,26 +1812,21 @@ static NSString *ElementLabel(NSString *element) {
     }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.save")
         style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [self saveInterfaceSetup]; }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.buttons")
-        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [self chooseButtonMapping]; }]];
-    if (AKLayoutSavedNames(defaults).count) {
-        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
-            style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
-            [self deleteInterfaceSetup];
-        }]];
-    }
-    [self presentSheet:sheet anchor:_interfaceSetupButton];
-}
-- (void)chooseButtonMapping {
-    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.buttons")
-        message:WKLocalized(@"home.launcher.interfaceSetup.buttons.message")
-        preferredStyle:UIAlertControllerStyleActionSheet];
+    // The controls themselves, each named with the element it sends, so changing one is a
+    // single step from here rather than a menu inside a menu.
     for (NSString *slot in AKLayoutSlots()) {
         NSString *title=[NSString stringWithFormat:@"%@ → %@", ElementLabel(slot),
                          ElementLabel(AKLayoutElementForSlot(defaults, slot))];
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
             handler:^(__unused UIAlertAction *action) { [self chooseElementForSlot:slot]; }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.reserve")
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [self reserveInterfaceArea]; }]];
+    if (AKLayoutSavedNames(defaults).count) {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
+            style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            [self deleteInterfaceSetup];
+        }]];
     }
     [self presentSheet:sheet anchor:_interfaceSetupButton];
 }
@@ -1784,6 +1847,19 @@ static NSString *ElementLabel(NSString *element) {
         }]];
     }
     [self presentSheet:sheet anchor:_interfaceSetupButton];
+}
+- (void)reserveInterfaceArea {
+    TKAreaPickerViewController *picker=[TKAreaPickerViewController new];
+    picker.modalPresentationStyle=UIModalPresentationOverFullScreen;
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    __weak TKWoWViewController *weakSelf=self;
+    picker.onArea=^(CGRect area) {
+        if (!AKLayoutAddKeepFreeArea(defaults, area.origin.x, area.origin.y,
+                                     area.size.width, area.size.height))
+            WKLog("ui", @"interface setup: never mind - that area was refused");
+        [weakSelf render];
+    };
+    [self presentViewController:picker animated:YES completion:nil];
 }
 - (void)saveInterfaceSetup {
     UIAlertController *prompt=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.saveTitle")

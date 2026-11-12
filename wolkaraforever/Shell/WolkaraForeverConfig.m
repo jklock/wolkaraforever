@@ -46,6 +46,10 @@ static NSInteger const TKWolkaraForeverConfigVersion = 1;
 static NSUInteger const TKWolkaraForeverConfigWordLimit = 512;
 static NSUInteger const TKWolkaraForeverConfigWordLength = 64;
 static NSUInteger const TKWolkaraForeverConfigStringLimit = 64;
+// A controller layout is a bounded dictionary of the controls' own values: enough for every
+// slot, every reserved area and their positions, and no more.
+static NSUInteger const TKWolkaraForeverConfigArrangementKeysLimit = 64;
+static NSUInteger const TKWolkaraForeverConfigArrangementBytesLimit = 64 * 1024;
 // The file itself. It holds a handful of choices, so a megabyte of JSON is not a config
 // file - and it is read at launch, on the main path, from a directory the user can write to.
 static unsigned long long const TKWolkaraForeverConfigFileLimit = 1024 * 1024;
@@ -105,6 +109,12 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
             @"AKVoiceTrailingSpace": @{@"kind": @"bool"},
             @"AKVoiceCustomWords": @{@"kind": @"words"},
             @"AKVoiceTakeButtonFromGame": @{@"kind": @"bool"},
+            // The on-screen controller: where the controls sit, how big they are, which areas
+            // they leave alone, which button each sends, and the layouts a person saved. A
+            // dictionary, bounded and checked, so nothing here can smuggle in a value the
+            // controls would not accept.
+            @"WolkaraForeverTouchLayoutV1": @{@"kind": @"arrangement"},
+            @"WolkaraForeverProfilesV1": @{@"kind": @"arrangements"},
         };
     });
     return schema;
@@ -174,6 +184,30 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
             if (![words containsObject:word]) [words addObject:word];
         }
         return words;
+    }
+    if ([kind isEqualToString:@"arrangement"] || [kind isEqualToString:@"arrangements"]) {
+        // A layout is a dictionary of the controls' own values. It is carried as data rather
+        // than rebuilt field by field, so a setting added by a later version still travels; what
+        // is checked here is that it is a bounded, readable property list of the shape the
+        // controls use, not that every key is one this build knows.
+        BOOL many = [kind isEqualToString:@"arrangements"];
+        if (![value isKindOfClass:NSDictionary.class]) { *problem = many ? @"not a list of layouts" : @"not a layout"; return nil; }
+        NSDictionary *object = value;
+        if (object.count > (many ? 16u : TKWolkaraForeverConfigArrangementKeysLimit)) {
+            *problem = @"too many entries"; return nil;
+        }
+        for (id key in object) {
+            if (![key isKindOfClass:NSString.class] || ![(NSString *)key length] || [(NSString *)key length] > 40) {
+                *problem = @"an entry's name is the wrong length"; return nil;
+            }
+            id entry = object[key];
+            if (many && ![entry isKindOfClass:NSDictionary.class]) { *problem = @"a layout is not a layout"; return nil; }
+        }
+        NSData *encoded = [NSJSONSerialization isValidJSONObject:value]
+            ? [NSJSONSerialization dataWithJSONObject:value options:0 error:NULL] : nil;
+        if (!encoded) { *problem = @"not a property list"; return nil; }
+        if (encoded.length > TKWolkaraForeverConfigArrangementBytesLimit) { *problem = @"too large"; return nil; }
+        return value;
     }
     *problem = @"the rule for this key is not one we know";
     return nil;

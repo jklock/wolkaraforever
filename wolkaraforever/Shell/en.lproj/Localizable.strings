@@ -60,6 +60,8 @@
 "home.launcher.interfaceSetup.buttons" = "Buttons…";
 "home.launcher.interfaceSetup.buttons.message" = "Which gamepad button each on-screen control sends. The game's own controller bindings then decide what that button does.";
 "home.launcher.interfaceSetup.buttons.choose" = "Choose the button this control sends";
+"home.launcher.interfaceSetup.reserve" = "Reserve an Area…";
+"home.launcher.interfaceSetup.reserve.hint" = "Drag over the part of the screen the controls must leave alone - where an add-on puts its own buttons - then tap OK.";
 
 "home.addons.install" = "Install Addons (Curse & Direct)";
 "home.addons.install.needsgame" = "Install Addons (Curse & Direct) (install game first)";
