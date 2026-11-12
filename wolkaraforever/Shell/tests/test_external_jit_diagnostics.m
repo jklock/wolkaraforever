@@ -8,10 +8,12 @@ int main(void) {
         [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
         WKExternalJITDiagnosticsBegin(@"saved");
         WKExternalJITDiagnosticsCheckpoint(@"native-startup-entered");
+        WKExternalJITDiagnosticsMemory(@"fixture");
         WKExternalJITDiagnosticsFinish(YES);
         NSString *record = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL];
         assert([record containsString:@"launch-begin source=saved"]);
         assert([record containsString:@"native-startup-entered"]);
+        assert([record containsString:@"memory checkpoint=fixture footprint="]);
         assert([record containsString:@"native-return success"]);
         puts("PASS: External-JIT diagnostics persist host checkpoints");
     }

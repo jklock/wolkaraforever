@@ -320,6 +320,11 @@ reported a Metal failure, or stopped after original `main` with no host-side cau
 files and the source SHA, device, OS, signing tier, sideloading tool, JIT enabler, and game build
 to a compatibility report; neither file includes game memory or account data.
 
+For a memory-warning outcome, the app-owned log also records the host process's physical
+footprint, resident, virtual, internal, compressed, and currently available memory at route
+selection, native startup, every warning, and native return. Values are bytes and describe only
+TolkaraDiagnostics; they do not read game memory.
+
 A generic build also works with the other modes where they are available:
 `NATIVE_GUEST_SHIMS=GENERIC tools/install.sh` needs no `GUEST_EXE` (with Local
 signing, set `GUEST_EXE` anyway so its page containers are built). Imports that
