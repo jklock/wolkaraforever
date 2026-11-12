@@ -52,8 +52,12 @@ else
     if [[ " $* " != *" --self-test "* ]]; then
         set -- --self-test "$@"
     fi
-    # simctl may report success even when the app aborts an assertion.
-    LOG=build/touch-controls-fixture/self-test.log
-    xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls "$@" 2>&1 | tee "$LOG"
-    grep -q 'TOUCH_UI_SELF_TEST_PASS:' "$LOG"
+    # Both interfaces: the default (iPadOS, what every release through v1.0.7 has) and the
+    # mobile one the launcher selects with WolkaraForeverInterfaceModeV1.
+    for MODE in "" "--mobile-interface"; do
+        LOG="build/touch-controls-fixture/self-test${MODE:+-mobile}.log"
+        # simctl may report success even when the app aborts an assertion.
+        xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls "$@" $MODE 2>&1 | tee "$LOG"
+        grep -q 'TOUCH_UI_SELF_TEST_PASS:' "$LOG"
+    done
 fi

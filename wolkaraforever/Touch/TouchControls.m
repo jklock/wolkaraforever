@@ -946,7 +946,11 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
 // game. The platform's own test is what caught it.
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
     (void)event;
-    for (UIView *control in @[_trackpadButton, _keyboardButton, _gamepadButton, _settingsButton, _leaveButton, _toolbarHandle, _composer]) {
+    NSMutableArray<UIView *> *controls = [@[_trackpadButton, _keyboardButton, _gamepadButton,
+                                             _settingsButton, _leaveButton, _composer] mutableCopy];
+    // The handle exists only in the mobile interface; an array literal would refuse a nil.
+    if (_toolbarHandle) [controls addObject:_toolbarHandle];
+    for (UIView *control in controls) {
         if (control && !control.hidden && CGRectContainsPoint(control.frame, point)) return YES;
     }
     return NO;

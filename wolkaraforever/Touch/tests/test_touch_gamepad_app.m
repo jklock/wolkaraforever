@@ -1,6 +1,7 @@
 // Original fixture: tests our lifecycle with fake transports, then permits
 // manual testing of Apple's real virtual controller. No game or network.
 #import <UIKit/UIKit.h>
+#import "../translation/AppKit/InterfaceMode.h"
 #import "../translation/AppKit/TouchGamepad.h"
 #import "../translation/AppKit/TouchGamepadLayout.h"
 #import "../translation/AppKit/TouchHaptics.h"
@@ -109,8 +110,7 @@ static void TestHaptics(void) {
 @end
 
 
-static UIView *Find(UIView *view, NSString *identifier) {
-    if ([view.accessibilityIdentifier isEqual:identifier]) return view;
+static UIView *Find(UIView *view, NSString *identifier) {    if ([view.accessibilityIdentifier isEqual:identifier]) return view;
     for (UIView *child in view.subviews) { UIView *found=Find(child,identifier); if (found) return found; }
     return nil;
 }
@@ -135,6 +135,22 @@ static void Drain(void) { CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.03,false); 
 @end
 @interface UIView (LayoutFixture)
 - (void)drag:(UIPanGestureRecognizer *)pan;
+@end
+// The host, with the one delegate method the mobile jump uses: a key pressed or released. It
+// answers like the app's host view does, which is what decides Space over the gamepad's A.
+@interface AKFixtureHostView : UIView
+@property BOOL recordsKeys;
+@property(readonly) NSMutableArray<NSString *> *keys;
+@end
+@implementation AKFixtureHostView { NSMutableArray<NSString *> *_keys; }
+- (NSMutableArray<NSString *> *)keys { if (!_keys) _keys=[NSMutableArray new]; return _keys; }
+- (BOOL)respondsToSelector:(SEL)selector {
+    if (selector==@selector(touchKey:characters:pressed:)) return self.recordsKeys;
+    return [super respondsToSelector:selector];
+}
+- (void)touchKey:(unsigned short)code characters:(NSString *)characters pressed:(BOOL)pressed {
+    [self.keys addObject:[NSString stringWithFormat:@"%u'%@'%@",code,characters,pressed?@"down":@"up"]];
+}
 @end
 static void TestPreferences(void) {
     NSString *suite=[@"org.tolkara.layout-test." stringByAppendingString:NSUUID.UUID.UUIDString];
@@ -172,10 +188,66 @@ static void TestPreferences(void) {
     assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:frame inBounds:bounds],frame));
     [defaults removePersistentDomainForName:suite];
 }
+// With sticks only, the jump is the one button under the camera stick, and its reach is the
+// lower half of the space around that stick: the drawn ring, the gap next to the stick and a
+// band below the ring. Above or beside the stick, and far below it, the touch is the game's.
+static void TestJumpReach(UIView *host, AKPreviewGamepad *manager) {
+    [manager toggleSettings];
+    UISwitch *sticksOnly=(id)Find(host,@"wolkaraforever.controls.sticksOnly");
+    sticksOnly.on=YES; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    UIControl *jump=Button(host,GCInputButtonA);
+    UIView *rightStick=Find(host,@"tolkara.gamepad.rightStick"), *ring=rightStick.superview;
+    CGPoint centre=CGPointMake(CGRectGetMidX(ring.bounds),CGRectGetMidY(ring.bounds));
+    CGPoint (^at)(CGFloat, CGFloat)=^CGPoint(CGFloat radius, CGFloat degreesFromDown) {
+        CGFloat angle=M_PI_2+degreesFromDown*M_PI/180;
+        return [ring convertPoint:CGPointMake(centre.x+radius*cos(angle),centre.y+radius*sin(angle)) toView:host];
+    };
+    assert([host hitTest:at(0,0) withEvent:nil]==rightStick);
+    assert([host hitTest:at(82,0) withEvent:nil]==jump);    // the drawn ring
+    assert([host hitTest:at(56,0) withEvent:nil]==jump);    // the gap next to the stick
+    assert([host hitTest:at(118,0) withEvent:nil]==jump);   // just under the ring
+    assert([host hitTest:at(118,-50) withEvent:nil]==jump); // down and to the left
+    assert([host hitTest:at(118,50) withEvent:nil]==jump);  // down and to the right
+    assert([host hitTest:at(118,-90) withEvent:nil]!=jump); // beside the stick
+    assert([host hitTest:at(82,180) withEvent:nil]!=jump);  // above it
+    assert([host hitTest:at(160,0) withEvent:nil]!=jump);   // far below
+    [jump sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert(manager.created.controller.extendedGamepad.buttonA.pressed); // a host without keys
+    [jump sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    assert(!manager.created.controller.extendedGamepad.buttonA.pressed);
+    AKFixtureHostView *keyed=(id)host;
+    keyed.recordsKeys=YES;
+    [jump sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert([keyed.keys isEqual:@[@"49' 'down"]] && !manager.created.controller.extendedGamepad.buttonA.pressed);
+    [jump sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert(keyed.keys.count==1); // still held: no second press
+    [jump sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    assert([keyed.keys isEqual:(@[@"49' 'down",@"49' 'up"])]);
+    [jump sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    manager.keyboardVisible=YES; Drain();
+    assert([keyed.keys.lastObject isEqual:@"49' 'up"] && keyed.keys.count==4);
+    [jump sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    assert(keyed.keys.count==4); // released once only
+    manager.keyboardVisible=NO; Drain();
+    keyed.recordsKeys=NO;
+    puts("TOUCH_GAMEPAD_JUMP_REACH_PASS: with sticks only the jump takes the ring, the gap by the stick and the band below, not beside, above or far below; it holds Space while pressed and always releases it.");
+}
 static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     GCExtendedGamepad *pad=manager.created.controller.extendedGamepad;
     assert(pad && manager.visible);
     [host layoutIfNeeded];
+    // The mobile interface starts with the sticks and the jump only, because a phone's gamepad
+    // buttons cover the game; Standard starts with every button, as every release through
+    // v1.0.7 has. The nine-button layout below is what this function tests, so mobile turns the
+    // arrangement off - and its default is asserted here, where the switch first exists.
+    if (AKInterfaceModeIsMobile()) {
+        [manager toggleSettings];
+        UISwitch *sticksOnly=(id)Find(host,@"wolkaraforever.controls.sticksOnly");
+        assert(sticksOnly && sticksOnly.on);
+        sticksOnly.on=NO; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
+        [manager toggleSettings]; [host layoutIfNeeded];
+    }
     // Ring sectors own their visible area, leave the stick and separator gaps
     // untouched, and put + on the same row as the bottom labels.
     UIButton *top=(id)Button(host,@"dpad.up");
@@ -187,8 +259,17 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(![top pointInside:CGPointMake(108,108) withEvent:nil]);
     assert(![top pointInside:CGPointMake(26,108) withEvent:nil]);
     assert(![top pointInside:CGPointMake(166,50) withEvent:nil]);
+    // Mobile only, and only while the interface is on: the app's toolbar then has the bottom
+    // centre (44 pt tall, 8 pt up), so + is centred just above it instead of sharing the
+    // bottom labels' row. Standard keeps the row it has always had.
     UIButton *a=(id)Button(host,GCInputButtonA), *plus=(id)Button(host,GCInputButtonMenu);
-    assert(fabs([a convertPoint:a.titleLabel.center toView:host].y-[plus convertPoint:plus.titleLabel.center toView:host].y)<1);
+    if (AKInterfaceModeIsMobile()) {
+        CGRect plusFrame=[plus convertRect:plus.bounds toView:host];
+        assert(fabs(CGRectGetMidX(plusFrame)-CGRectGetMidX(host.bounds))<1);
+        assert(CGRectGetMaxY(plusFrame)<=CGRectGetMaxY(UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets))-8-44-4);
+    } else {
+        assert(fabs([a convertPoint:a.titleLabel.center toView:host].y-[plus convertPoint:plus.titleLabel.center toView:host].y)<1);
+    }
     assert(Find(host,@"tolkara.gamepad.minus")==nil);
     NSArray *names=@[GCInputButtonA,GCInputButtonB,GCInputButtonX,GCInputButtonY,GCInputLeftShoulder,
         GCInputRightShoulder,GCInputLeftTrigger,GCInputRightTrigger,GCInputButtonMenu];
@@ -238,6 +319,14 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(Find(host,@"wolkaraforever.controls.settings"));
     UIView *panel=Find(host,@"wolkaraforever.controls.settings");
     if (UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets).size.width>=620) assert(panel.bounds.size.width>390);
+    // Mobile: the app's toolbar sits at the bottom centre, 44 pt tall and 8 pt up, so the
+    // sheet hangs from the top and leaves that strip free. Standard: it hangs from the
+    // bottom, under the toolbar that is at the top.
+    if (AKInterfaceModeIsMobile()) {
+        CGFloat toolbarTop=CGRectGetMaxY(UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets))-8-44;
+        assert(CGRectGetMaxY([panel convertRect:panel.bounds toView:host])<=toolbarTop+0.5);
+        assert(fabs(CGRectGetMinY([panel convertRect:panel.bounds toView:host])-CGRectGetMinY(UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets))-8)<=0.5);
+    }
     CGRect normalBounds=host.bounds;
     host.bounds=CGRectMake(0,0,390,600); [host layoutIfNeeded];
     assert(CGRectContainsRect(host.bounds,[panel convertRect:panel.bounds toView:host]));
@@ -320,6 +409,14 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     [(UIButton *)Find(host,@"wolkaraforever.controls.reset") sendActionsForControlEvents:UIControlEventTouchUpInside];
     assert(((UISwitch *)Find(host,@"wolkaraforever.controls.haptics")).on);
     assert(!((UISwitch *)Find(host,@"wolkaraforever.controls.performanceOverlay")).on);
+    // The sticks-only switch exists only where sticks-only does.
+    UISwitch *sticksOnly=(id)Find(host,@"wolkaraforever.controls.sticksOnly");
+    if (AKInterfaceModeIsMobile()) {
+        assert(sticksOnly.on);
+        sticksOnly.on=NO; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
+    } else {
+        assert(sticksOnly==nil);
+    }
     [manager toggleSettings]; [host layoutIfNeeded];
     [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchDown];
     [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchUpInside];
@@ -328,6 +425,8 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(CGRectGetMidX(Button(host,GCInputLeftTrigger).frame)>CGRectGetMidX(Button(host,GCInputLeftShoulder).frame));
     assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)<CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
     TestPreferences();
+    // Sticks-only is a mobile arrangement: Standard has no switch to turn it on with.
+    if (AKInterfaceModeIsMobile()) TestJumpReach(host,manager);
     manager.keyboardVisible=YES; Drain();
     assert(!manager.visible && !pad.leftShoulder.pressed && !pad.buttonA.pressed);
     assert(!manager.feedback.enabled);
@@ -446,7 +545,14 @@ static void TestLifecycle(UIView *host) {
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
     self.window=[[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
-    UIViewController *vc=[UIViewController new]; vc.view.backgroundColor=[UIColor colorWithRed:.04 green:.07 blue:.12 alpha:1];
+    // The mobile interface is chosen before anything reads it, exactly as the launcher
+    // chooses it: by the defaults key, here in the argument domain.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--mobile-interface"]) {
+        NSMutableDictionary *modes=[[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
+        modes[@"WolkaraForeverInterfaceModeV1"]=@"ios";
+        [NSUserDefaults.standardUserDefaults setVolatileDomain:modes forName:NSArgumentDomain];
+    }
+    UIViewController *vc=[UIViewController new]; vc.view=[AKFixtureHostView new]; vc.view.backgroundColor=[UIColor colorWithRed:.04 green:.07 blue:.12 alpha:1];
     self.window.rootViewController=vc;
     self.status=[UILabel new]; self.input=[UILabel new];
     for (UILabel *label in @[self.status,self.input]) {

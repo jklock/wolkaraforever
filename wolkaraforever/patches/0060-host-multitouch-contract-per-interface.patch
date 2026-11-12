@@ -63,9 +63,9 @@
 +    [defaults setObject:@"ios" forKey:@"WolkaraForeverInterfaceModeV1"];
 +    id mobileHost=[NSClassFromString(@"AKHostView") new];
 +    UIGestureRecognizer *pinch=[mobileHost valueForKey:@"_pinch"];
-+    assert(mobileHost.multipleTouchEnabled && pinch != nil && pinch.enabled);
++    assert(((UIView *)mobileHost).multipleTouchEnabled && pinch != nil && pinch.enabled);
 +    [(id)mobileHost touchTrackpadChanged:YES];
-+    assert(mobileHost.multipleTouchEnabled && !pinch.enabled);
++    assert(((UIView *)mobileHost).multipleTouchEnabled && !pinch.enabled);
 +    [defaults removeObjectForKey:@"WolkaraForeverInterfaceModeV1"];
  
      // Windows are numbered once each; with none on screen, none is found.
