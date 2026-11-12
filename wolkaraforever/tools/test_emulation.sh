@@ -31,6 +31,10 @@ for suite in wolkaraforever/tools/test_*.sh; do
         # This script. Running it from inside itself re-prepares the tree and runs the
         # platform's suite again, for ever; the loop is for the other suites.
         *test_emulation.sh) continue;;
+        # A dispatcher, not a suite: with no subcommand it prints its own usage and exits 2,
+        # so the loop reported a failure for a script that was never asked to test anything.
+        # Each subcommand it dispatches has its own row in validate.sh.
+        *test_install.sh) continue;;
     esac
     echo "== $suite"
     bash "$suite" || layer_rc=1

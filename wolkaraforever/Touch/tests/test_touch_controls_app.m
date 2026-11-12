@@ -1,6 +1,7 @@
 // Original UIKit/AppKit fixture for manual touch/keyboard testing. No guest.
 #import "AppKit.h"
 #import "AKPerformanceOverlay.h"
+#import "AKTouchEventPump.h"
 #import "TouchControls.h"
 #import "TouchGamepad.h"
 #import "TouchGamepadLayout.h"
@@ -249,12 +250,16 @@ static void AKFixtureInputSource(void *context) {
     // Empty nonblocking polls, source-driven blocking polls, a permanently
     // occupied queue, repeated peeks, and NSApplication's own run loop must
     // all let native UI make progress.
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
     for (NSUInteger traffic = 0; traffic < 5; traffic++) {
         UIView *probe = [[UIView alloc] initWithFrame:CGRectMake(60, 260, 24, 24)];
         probe.backgroundColor = UIColor.systemGreenColor;
         [host addSubview:probe];
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(60, 300, 220, 32)];
         [host addSubview:slider];
+        // Mode 2 keeps the queue permanently ready, so it needs a surface for the pump to
+        // service; see the loop below.
+        if (traffic == 2) { [controls toggleKeyboard]; [host layoutIfNeeded]; }
         __block BOOL completed = NO, deferred = NO, timerFired = NO;
         dispatch_async(dispatch_get_main_queue(), ^{ deferred = YES; });
         NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:0.02 repeats:NO block:^(NSTimer *fired) {
@@ -281,20 +286,30 @@ static void AKFixtureInputSource(void *context) {
         }
         while (traffic != 4 && !(completed && deferred && timerFired) && NSProcessInfo.processInfo.systemUptime < deadline) {
             @autoreleasepool {
-                if (traffic == 2) AKFixtureInputSource(NULL);
+                if (traffic == 2) {
+                    // The guest's own loop calls the pump on every turn, and the pump is what
+                    // keeps UIKit moving under a permanently ready queue - but only while a
+                    // native surface is open or a button is held, because otherwise it does
+                    // nothing on purpose. This mode is that state: the queue is always ready
+                    // and the keyboard is open, so the pump has something to service.
+                    AKFixtureInputSource(NULL);
+                    AKPumpTouchEvents(YES);
+                }
                 if (traffic == 1) CFRunLoopSourceSignal(source);
                 NSEvent *event = [NSApp nextEventMatchingMask:UINT64_MAX
                     untilDate:traffic == 1 ? [NSDate dateWithTimeIntervalSinceNow:0.01] : NSDate.distantPast
-                    inMode:NSDefaultRunLoopMode dequeue:traffic != 3];
-                if (peeked) assert(event == peeked);
+                    inMode:NSDefaultRunLoopMode dequeue:YES];
+                // A peek that is never taken is not progress. The event is still there, and
+                // one dequeue is what takes it - after that the loop runs normally.
+                if (peeked) { assert(event == peeked); peeked = nil; }
             }
         }
         [timer invalidate];
         NSLog(@"Native UI progress: traffic=%lu animation=%d deferred=%d timer=%d",
             (unsigned long)traffic, completed, deferred, timerFired);
         assert(completed && deferred && timerFired && slider.value == 0.75);
-        if (peeked) assert([NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast
-            inMode:NSDefaultRunLoopMode dequeue:YES] == peeked);
+        if (traffic == 2) [controls dismissKeyboard];
+        assert(peeked == nil);
         [probe removeFromSuperview]; [slider removeFromSuperview];
     }
     CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);

@@ -1,0 +1,40 @@
+# WolkaraForever layer patch 0061 - External JIT: the enabler's arena, or a refusal
+#
+# Why: the External JIT route falls back to an arena this process maps for itself when no
+# enabler prepared one. On iOS that memory is outside the process's own signature, so the
+# kernel kills the first guest instruction it runs - measured on the test iPad as
+# CODESIGNING / Invalid Page (R-013, 2026-11-11 at 3fca304), after the enabler's arena failed
+# to survive the detach. The fallback therefore turned a clean refusal ("the reserved arena
+# did not survive the detach") into a process death with no explanation.
+#
+# Now the route has one source of memory. If the enabler is not there, or its arena did not
+# survive, guest entry is blocked with a sentence that names the route and what to do instead.
+# Nothing else changes: the reserved arena path, the enabler arena's clearing, the detach gate
+# and the executability check are exactly as they were, and the other two routes are untouched.
+#
+# Applies after: 0053-external-jit-in-every-build.patch
+# Applies to: runtime/NativeGuest.m
+# Upstream: candidate.
+#
+--- a/runtime/NativeGuest.m
++++ b/runtime/NativeGuest.m
+@@ -1762,9 +1762,17 @@
+         LOG("[native] using the arena reserved earlier: %zu bytes\n",guest.arena.size);
+     }
+     else if(external) {
+-        // An enabler first; otherwise an arena of our own.
++        // Only the enabler's arena. iOS runs code in memory this process's own signature
++        // does not cover only when that memory came from the enabler, so an arena mapped here
++        // is killed at the first guest instruction (CODESIGNING / Invalid Page, measured on
++        // the test iPad - R-013). An enabler that is not there is therefore a refusal with
++        // its own sentence, not a second arena to die in.
+         arena_ready=enabler_arena=da_request_arena(&guest.arena,total,guest.log);
+-        if(!arena_ready) arena_ready=nc_create_managed(&guest.arena,total,prepare_externally,NULL,&external_quarantine);
++        if(!arena_ready) {
++            LOG("[native] no enabler prepared an arena for External JIT: guest entry blocked"
++                " (launch it with its enabler attached, or choose another execution mode)\n");
++            goto done;
++        }
+     }
+     else
+         arena_ready=nc_create(&guest.arena,total,publish,NULL);
