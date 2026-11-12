@@ -6,8 +6,8 @@
 static NSString *const LayoutKey = @"WolkaraForeverTouchLayoutV1";
 // Named arrangements the user saved, kept apart from the live one so saving never changes what
 // is on screen until the user asks for it. The key itself lives in LayoutStore, which is what
-// the launcher uses too.
-static NSString *const AKProfilesDefaultsKey = AKLayoutProfilesKey;
+// the launcher uses too; a macro because an extern NSString's value is not a C constant.
+#define AKProfilesDefaultsKey AKLayoutProfilesKey
 NSNotificationName const AKGamepadLayoutDidChangeNotification = @"AKGamepadLayoutDidChange";
 static CGFloat Clamp(CGFloat value, CGFloat minimum, CGFloat maximum, CGFloat fallback) {
     return isfinite(value) ? MAX(minimum,MIN(maximum,value)) : fallback;
