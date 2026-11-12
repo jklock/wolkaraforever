@@ -304,12 +304,21 @@ foregrounded. After opening the app, use the installed bundle identifier if AltS
 wolkaraforever/tools/verify_external_jit.sh --bundle-id YOUR_INSTALLED_BUNDLE_ID
 # After a JIT-enabled native-launch attempt:
 wolkaraforever/tools/verify_external_jit.sh --bundle-id YOUR_INSTALLED_BUNDLE_ID --require-runtime
+# After an unexpected return to Home:
+wolkaraforever/tools/verify_external_jit.sh --bundle-id YOUR_INSTALLED_BUNDLE_ID --classify-termination
 ```
 
 The first command proves only that the app is installed. The second requires the runtime's own
 evidence that the debugger detached and executable memory survived; neither command proves game
 login or gameplay. Physical-device evidence is recorded separately in
 [COMPATIBILITY.md](../../COMPATIBILITY.md).
+
+`--classify-termination` reads `native-guest.log` together with the app-owned
+`external-jit-diagnostics.log`. It reports whether the run was refused before entry,
+lost its debugger/arena, returned from native code, saw a host lifecycle or memory warning,
+reported a Metal failure, or stopped after original `main` with no host-side cause. Attach both
+files and the source SHA, device, OS, signing tier, sideloading tool, JIT enabler, and game build
+to a compatibility report; neither file includes game memory or account data.
 
 A generic build also works with the other modes where they are available:
 `NATIVE_GUEST_SHIMS=GENERIC tools/install.sh` needs no `GUEST_EXE` (with Local

@@ -51,7 +51,7 @@ end of this page.
 | `package_altstore_ipa.sh [output.ipa]` | Clean-tree local AltStore Classic lane: packages with `TOLKARA_SYSTEM_ROOTS=NO`, then runs `verify_ipa.sh`. It refuses a dirty source tree because its report binds the package to the current source revision. |
 | `make_wolkaraforever_icon.py` | Re-renders the three committed 1024px app-icon appearances from the approved source artwork. It needs Google Chrome and writes only the icon set plus ignored preview output. |
 | `verify_ipa.sh <ipa> [report-path]` | Read-only IPA gate: validates archive structure, unsigned/ad-hoc team state, no profile or extension, External-JIT preselection, generic runtime, required memory entitlements, no Mac root certificates, SHA-256, and current source revision. |
-| `verify_external_jit.sh [--bundle-id id] [--require-runtime]` | Reads the physical iPad state only. It confirms the AltStore-installed app is present; `--require-runtime` additionally requires the app log to show a detached executable arena and ready native arena, with no blocked-entry verdict. |
+| `verify_external_jit.sh [--bundle-id id] [--require-runtime] [--classify-termination]` | Reads physical-device state only. It confirms the sideloaded app is present; `--require-runtime` requires a detached executable arena and ready native arena, while `--classify-termination` classifies host and native evidence after an unexpected return to Home. |
 | `after_install.sh <mode>` | The post-install step, decided by the execution mode. Split out of `install.sh` so it can be tested without building; run from inside `build/platform`. |
 
 ## Device pilot (never breaks a session)

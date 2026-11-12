@@ -12,6 +12,7 @@
 #import "Diagnostics.h"
 #import "DiagnosticsViewController.h"
 #import "ExecutionMode.h"
+#import "ExternalJITDiagnostics.h"
 #import "LibraryViewController.h"
 #import "../Controller/ControllerInspector.h"
 #import "../Controller/ControllerWindow.h"
@@ -407,6 +408,7 @@ static NSString *AKAudioStateDescription(void) {
     [self askForTheMicrophoneOnce];
     [self askForSpeechOnce];
     [self reserveExecutableMemory];
+    if (self.executionMode==TKExecutionModeExternalJIT) WKExternalJITDiagnosticsCheckpoint(@"lifecycle-foreground");
 }
 
 // Both of these can arrive, in either order, depending on why the app went away, so both are
@@ -421,6 +423,8 @@ static NSString *AKAudioStateDescription(void) {
 }
 
 - (void)leftTheForeground:(NSString *)why {
+    if (self.executionMode==TKExecutionModeExternalJIT)
+        WKExternalJITDiagnosticsCheckpoint([@"lifecycle-" stringByAppendingString:why]);
     // The microphone is closed here, rather than left to the dictation's own background
     // observer, for two reasons - and the audit found the second. An app that resigns active
     // without ever entering the background still has an open microphone, and the sentence
@@ -440,6 +444,10 @@ static NSString *AKAudioStateDescription(void) {
     // The router does this itself on the same notification. Doing it here as well costs
     // nothing and means the shell does not depend on that observer existing.
     [AKInputRouter.shared cancelLearning];
+}
+- (void)receivedMemoryWarning:(NSNotification *)notification {
+    (void)notification;
+    if (self.executionMode==TKExecutionModeExternalJIT) WKExternalJITDiagnosticsCheckpoint(@"memory-warning");
 }
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)s options:(UISceneConnectionOptions *)o {
     static BOOL started;
@@ -530,6 +538,8 @@ static NSString *AKAudioStateDescription(void) {
     else { self.executionMode=TKExecutionModeNone;source=saveProblem; }
     self.executionModeSource=source;
     WKLog("host", @"execution mode=%s source=%@", ModeIdentifier(self.executionMode), source ?: @"none");
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(receivedMemoryWarning:)
+        name:UIApplicationDidReceiveMemoryWarningNotification object:nil];
     // Any Local signing launch makes the container folder, so a fresh install
     // can receive containers (tools/install.sh launches once if needed).
     if (self.executionMode==TKExecutionModeLocalSigning) PrepareLocalSigningFolder();
@@ -1010,6 +1020,8 @@ static NSString *AKAudioStateDescription(void) {
     [self performSelector:@selector(startExternalJITGame) withObject:nil afterDelay:0];
 }
 - (void)startExternalJITGame {
+    WKExternalJITDiagnosticsBegin(self.executionModeSource);
+    WKExternalJITDiagnosticsCheckpoint(@"external-route-selected");
     (void)ng_use_external_authorization();
     [self runNativeGame:YES app:self.launchingApp container:nil];
 }
@@ -1071,6 +1083,8 @@ static NSString *AKAudioStateDescription(void) {
     // External JIT names its route; nothing infers it. A build without it
     // refuses rather than taking another route under that name.
     if (!container && self.executionMode==TKExecutionModeExternalJIT) {
+        WKExternalJITDiagnosticsBegin(self.executionModeSource);
+        WKExternalJITDiagnosticsCheckpoint(@"external-route-selected");
         NSString *unavailable=nil;
         if (!TKExecutionModeAvailable(TKExecutionModeExternalJIT,&unavailable) || !ng_use_external_authorization()) {
             [self refuseNativeGame:unavailable?:@"External JIT could not be selected for this run."];return;
@@ -1287,6 +1301,8 @@ static NSString *AKAudioStateDescription(void) {
         });return;
     }
     NSArray<NSString *> *arguments=NSProcessInfo.processInfo.arguments;
+    BOOL externalJIT = !container && self.executionMode==TKExecutionModeExternalJIT;
+    if (externalJIT) WKExternalJITDiagnosticsCheckpoint(@"native-startup-entered");
     UIApplication.sharedApplication.idleTimerDisabled = YES;
     NSString *logPath = TKDocumentsPath(@"native-guest.log");
     FILE *log = fopen(logPath.fileSystemRepresentation, "w");
@@ -1389,6 +1405,7 @@ static NSString *AKAudioStateDescription(void) {
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestAlert.Last"];
     BOOL ok = ng_initialize(path.fileSystemRepresentation, NSBundle.mainBundle.privateFrameworksPath.fileSystemRepresentation, map.fileSystemRepresentation, log, fullStartup);
+    if (externalJIT) WKExternalJITDiagnosticsFinish(ok);
     NSString *guestDamage=[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
     NSString *guestAlert=[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForever.GuestAlert.Last"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];

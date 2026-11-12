@@ -224,6 +224,7 @@ else
 fi
 run_step "validation distinguishes known failures from incomplete suites" wolkaraforever/tools/tests/test_validate.sh || failures=$((failures+1))
 run_step "install does the right thing per execution mode" wolkaraforever/tools/tests/test_after_install.sh || failures=$((failures+1))
+run_step "External-JIT diagnostics and termination classification" wolkaraforever/tools/test_external_jit_diagnostics.sh || failures=$((failures+1))
 run_step "pilot.sh fails closed and keeps its own session" wolkaraforever/tools/tests/test_pilot.sh || failures=$((failures+1))
 run_step "launcher pages (simulator fixture)" wolkaraforever/tools/test_wow_launcher_ui.sh || failures=$((failures+1))
 run_step "input, voice and config rules (simulator fixture)" wolkaraforever/tools/test_voice.sh || failures=$((failures+1))

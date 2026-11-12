@@ -39,4 +39,3 @@ Support two clone-from-source installation lanes without distributing a prebuilt
 - Run the External-JIT acceptance sequence once through AltStore Classic and once through SideStore,
   recording the provider, JIT enabler, LocalDevVPN state, signing tier, source SHA, device, OS, and
   game build with each result.
-
