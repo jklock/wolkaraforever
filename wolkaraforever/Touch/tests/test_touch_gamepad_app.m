@@ -191,6 +191,28 @@ static void TestPreferences(void) {
     assert(CGRectContainsRect(small,[layout frameForItem:@"menu" defaultFrame:frame inBounds:small]));
     [layout reset]; assert(layout.opacity==.8 && layout.frontScale==1 && layout.hapticsEnabled && !layout.performanceOverlayEnabled && layout.swapShoulders);
     assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:frame inBounds:bounds],frame));
+    // Templates and saved arrangements: the layout is data the user can keep and come back to.
+    [layout reset];
+    assert([AKGamepadLayout templateNames].count==3);
+    [layout applyTemplateNamed:@"plain"];
+    assert(!layout.sticksOnly && !layout.floatingSticks && layout.keepFree.count==0);
+    [layout applyTemplateNamed:@"duo"];
+    assert(layout.sticksOnly && layout.floatingSticks && layout.keepFree.count==0);
+    [layout applyTemplateNamed:@"duo-addon"];
+    assert(layout.floatingSticks && layout.keepFree.count==2);
+    assert([layout saveAsProfileNamed:@"test-setup"]);
+    assert([[AKGamepadLayout savedProfileNames] containsObject:@"test-setup"]);
+    [layout applyTemplateNamed:@"plain"];
+    assert(!layout.floatingSticks);
+    assert([layout applyProfileNamed:@"test-setup"] && layout.floatingSticks && layout.keepFree.count==2);
+    assert([layout deleteProfileNamed:@"test-setup"]);
+    assert(![[AKGamepadLayout savedProfileNames] containsObject:@"test-setup"]);
+    assert(![layout applyProfileNamed:@"test-setup"]);
+    assert(![layout saveAsProfileNamed:@""]);
+    // An arrangement from a hand-edited file cannot smuggle in an out-of-range value.
+    [layout applyArrangement:@{@"opacity":@99, @"keepFree":@[@{@"x":@(NAN),@"y":@0,@"w":@0.1,@"h":@0.1},
+                                                            @{@"x":@0.5,@"y":@0.5,@"w":@0.2,@"h":@0.2}]}];
+    assert(layout.opacity==1 && layout.keepFree.count==1);
     [defaults removePersistentDomainForName:suite];
 }
 // With sticks only, the jump is the one button under the camera stick, and its reach is the

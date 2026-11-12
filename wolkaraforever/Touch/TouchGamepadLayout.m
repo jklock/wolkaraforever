@@ -3,6 +3,9 @@
 #include <math.h>
 
 static NSString *const LayoutKey = @"WolkaraForeverTouchLayoutV1";
+// Named arrangements the user saved, kept apart from the live one so saving never changes what
+// is on screen until the user asks for it.
+static NSString *const AKProfilesDefaultsKey = @"WolkaraForeverProfilesV1";
 NSNotificationName const AKGamepadLayoutDidChangeNotification = @"AKGamepadLayoutDidChange";
 static CGFloat Clamp(CGFloat value, CGFloat minimum, CGFloat maximum, CGFloat fallback) {
     return isfinite(value) ? MAX(minimum,MIN(maximum,value)) : fallback;
@@ -115,4 +118,87 @@ static CGFloat Number(id value, CGFloat fallback) {
     _keepFree = [_keepFree arrayByAddingObject:area];
 }
 - (void)clearKeepFreeAreas { _keepFree = @[]; }
+
+#pragma mark - Arrangements, templates and saved profiles
+
+// Everything this layout is, as property-list data. Used for the built-in starting points, for
+// a profile the user saves, and for the values the config file carries.
+- (NSDictionary<NSString *, id> *)arrangement {
+    return @{@"opacity":@(_opacity), @"rearScale":@(_rearScale), @"frontScale":@(_frontScale),
+             @"hapticsEnabled":@(_hapticsEnabled), @"swapShoulders":@(_swapShoulders),
+             @"performanceOverlayEnabled":@(_performanceOverlayEnabled),
+             @"sticksOnly":@(_sticksOnly), @"floatingSticks":@(_floatingSticks),
+             @"keepFree":_keepFree, @"positions":[_positions copy]};
+}
+- (void)applyArrangement:(NSDictionary<NSString *, id> *)arrangement {
+    if (![arrangement isKindOfClass:NSDictionary.class]) return;
+    NSDictionary *values = arrangement;
+    self.opacity = Number(values[@"opacity"],_opacity);
+    self.rearScale = Number(values[@"rearScale"],_rearScale);
+    self.frontScale = Number(values[@"frontScale"],_frontScale);
+    if ([values[@"hapticsEnabled"] isKindOfClass:NSNumber.class]) _hapticsEnabled = [values[@"hapticsEnabled"] boolValue];
+    if ([values[@"swapShoulders"] isKindOfClass:NSNumber.class]) _swapShoulders = [values[@"swapShoulders"] boolValue];
+    if ([values[@"performanceOverlayEnabled"] isKindOfClass:NSNumber.class]) _performanceOverlayEnabled = [values[@"performanceOverlayEnabled"] boolValue];
+    if ([values[@"sticksOnly"] isKindOfClass:NSNumber.class]) _sticksOnly = [values[@"sticksOnly"] boolValue];
+    if ([values[@"floatingSticks"] isKindOfClass:NSNumber.class]) _floatingSticks = [values[@"floatingSticks"] boolValue];
+    NSMutableArray<NSDictionary<NSString *, NSNumber *> *> *areas = [NSMutableArray new];
+    id kept = values[@"keepFree"];
+    if ([kept isKindOfClass:NSArray.class]) for (id entry in (NSArray *)kept) {
+        NSDictionary *area = [self validArea:entry];
+        if (area && areas.count < 16) [areas addObject:area];
+    }
+    _keepFree = areas;
+    if ([values[@"positions"] isKindOfClass:NSDictionary.class]) {
+        [_positions removeAllObjects];
+        for (NSString *key in (NSDictionary *)values[@"positions"]) {
+            id point = ((NSDictionary *)values[@"positions"])[key];
+            if (![key isKindOfClass:NSString.class] || ![point isKindOfClass:NSArray.class] || [point count] != 2) continue;
+            CGFloat x = Number(point[0],NAN), y = Number(point[1],NAN);
+            if (isfinite(x) && isfinite(y)) _positions[key] = @[@(Clamp(x,0,1,0)),@(Clamp(y,0,1,0))];
+        }
+    }
+}
+// The built-in starting points. "duo" is the mobile arrangement with nothing reserved; the
+// add-on one reserves the left edge and the bottom centre, where an installed interface usually
+// puts a bar and a chat strip, so the thumbs' halves do not swallow them.
++ (NSArray<NSString *> *)templateNames { return @[@"plain", @"duo", @"duo-addon"]; }
+- (void)applyTemplateNamed:(NSString *)name {
+    if ([name isEqual:@"plain"]) {
+        [self applyArrangement:@{@"sticksOnly":@NO, @"floatingSticks":@NO, @"keepFree":@[]}];
+    } else if ([name isEqual:@"duo"]) {
+        [self applyArrangement:@{@"sticksOnly":@YES, @"floatingSticks":@YES, @"keepFree":@[]}];
+    } else if ([name isEqual:@"duo-addon"]) {
+        [self applyArrangement:@{@"sticksOnly":@YES, @"floatingSticks":@YES, @"keepFree":@[
+            @{@"x":@0.0, @"y":@0.30, @"w":@0.13, @"h":@0.70},      // a bar down the left edge
+            @{@"x":@0.28, @"y":@0.925, @"w":@0.44, @"h":@0.075},    // the chat strip
+        ]}];
+    }
+}
++ (NSArray<NSString *> *)savedProfileNames {
+    NSDictionary *all = [NSUserDefaults.standardUserDefaults dictionaryForKey:AKProfilesDefaultsKey];
+    return [[all.allKeys sortedArrayUsingSelector:@selector(compare:)] copy];
+}
+- (BOOL)saveAsProfileNamed:(NSString *)name {
+    if (!name.length || name.length > 40) return NO;
+    NSMutableDictionary *all = [NSMutableDictionary dictionaryWithDictionary:
+        ([_defaults dictionaryForKey:AKProfilesDefaultsKey] ?: @{})];
+    all[name] = [self arrangement];
+    [_defaults setObject:[all copy] forKey:AKProfilesDefaultsKey];
+    return YES;
+}
+- (BOOL)applyProfileNamed:(NSString *)name {
+    NSDictionary *all = [_defaults dictionaryForKey:AKProfilesDefaultsKey];
+    id saved = [all isKindOfClass:NSDictionary.class] ? all[name] : nil;
+    if (![saved isKindOfClass:NSDictionary.class]) return NO;
+    [self applyArrangement:saved];
+    return YES;
+}
+- (BOOL)deleteProfileNamed:(NSString *)name {
+    NSMutableDictionary *all = [NSMutableDictionary dictionaryWithDictionary:
+        ([_defaults dictionaryForKey:AKProfilesDefaultsKey] ?: @{})];
+    if (!all[name]) return NO;
+    [all removeObjectForKey:name];
+    [_defaults setObject:[all copy] forKey:AKProfilesDefaultsKey];
+    return YES;
+}
 @end

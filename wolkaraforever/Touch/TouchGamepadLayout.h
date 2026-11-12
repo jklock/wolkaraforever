@@ -32,6 +32,17 @@ FOUNDATION_EXPORT NSNotificationName const AKGamepadLayoutDidChangeNotification;
 @property(nonatomic, copy) NSArray<NSDictionary<NSString *, NSNumber *> *> *keepFree;
 - (void)addKeepFreeAreaWithX:(CGFloat)x y:(CGFloat)y width:(CGFloat)w height:(CGFloat)h;
 - (void)clearKeepFreeAreas;
+// A whole arrangement as data: every value above, saved under a name the user chooses, and
+// the built-in starting points. This is what makes a setup keepable and shareable without the
+// app knowing which add-on (if any) it is for.
+- (NSDictionary<NSString *, id> *)arrangement;
+- (void)applyArrangement:(NSDictionary<NSString *, id> *)arrangement;
++ (NSArray<NSString *> *)templateNames;
+- (void)applyTemplateNamed:(NSString *)name;
++ (NSArray<NSString *> *)savedProfileNames;
+- (BOOL)saveAsProfileNamed:(NSString *)name;
+- (BOOL)applyProfileNamed:(NSString *)name;
+- (BOOL)deleteProfileNamed:(NSString *)name;
 - (CGRect)frameForItem:(NSString *)item defaultFrame:(CGRect)frame inBounds:(CGRect)bounds;
 - (void)moveItem:(NSString *)item toFrame:(CGRect)frame inBounds:(CGRect)bounds;
 - (void)save;
