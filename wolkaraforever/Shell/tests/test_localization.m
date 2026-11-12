@@ -48,9 +48,9 @@ static void TestResolution(void) {
           @"a German first choice resolves to German");
     CHECK(([WKLocalization resolveLanguage:WKAppLanguageSystem fromPreferredLanguages:@[@"en-US", @"de-DE"]] == WKAppLanguageEnglish),
           @"an English first choice resolves to English");
-    CHECK(([WKLocalization resolveLanguage:WKAppLanguageSystem fromPreferredLanguages:@[@"fr-FR", @"de-DE"]] == WKAppLanguageGerman),
+    CHECK(([WKLocalization resolveLanguage:WKAppLanguageSystem fromPreferredLanguages:@[@"ja-JP", @"de-DE"]] == WKAppLanguageGerman),
           @"a language we do not ship is skipped, not treated as English");
-    CHECK(([WKLocalization resolveLanguage:WKAppLanguageSystem fromPreferredLanguages:@[@"fr-FR", @"ja-JP"]] == WKAppLanguageEnglish),
+    CHECK(([WKLocalization resolveLanguage:WKAppLanguageSystem fromPreferredLanguages:@[@"ja-JP", @"it-IT"]] == WKAppLanguageEnglish),
           @"nothing we ship falls back to English");
     CHECK([WKLocalization resolveLanguage:WKAppLanguageSystem fromPreferredLanguages:@[]] == WKAppLanguageEnglish,
           @"an empty list falls back to English");
@@ -61,6 +61,7 @@ static void TestResolution(void) {
     CHECK([[WKLocalization matchedCodeForLanguageIdentifier:@"de-DE"] isEqual:@"de"], @"de-DE matches");
     CHECK([[WKLocalization matchedCodeForLanguageIdentifier:@"de_AT"] isEqual:@"de"], @"de_AT matches");
     CHECK([[WKLocalization matchedCodeForLanguageIdentifier:@"de-Latn-DE"] isEqual:@"de"], @"a script subtag still matches");
+    CHECK([[WKLocalization matchedCodeForLanguageIdentifier:@"fr-CA"] isEqual:@"fr"], @"fr-CA matches French");
     CHECK([[WKLocalization matchedCodeForLanguageIdentifier:@"en-GB"] isEqual:@"en"], @"en-GB matches");
     CHECK([WKLocalization matchedCodeForLanguageIdentifier:@"eng"] == nil, @"eng is not en");
     CHECK([WKLocalization matchedCodeForLanguageIdentifier:@"dee"] == nil, @"dee is not de");
@@ -75,6 +76,7 @@ static void TestStoredValues(void) {
     CHECK([[WKLocalization storedValueForLanguage:WKAppLanguageSystem] isEqual:@"system"], @"system is stored as system");
     CHECK([[WKLocalization storedValueForLanguage:WKAppLanguageEnglish] isEqual:@"en"], @"English is stored as en");
     CHECK([[WKLocalization storedValueForLanguage:WKAppLanguageGerman] isEqual:@"de"], @"German is stored as de");
+    CHECK([[WKLocalization storedValueForLanguage:WKAppLanguageFrench] isEqual:@"fr"], @"French is stored as fr");
     CHECK([WKLocalization languageForStoredValue:@"de"] == WKAppLanguageGerman, @"de reads back as German");
     CHECK([WKLocalization languageForStoredValue:@"DE"] == WKAppLanguageGerman, @"a hand-edited DE still reads as German");
     CHECK([WKLocalization languageForStoredValue:@"en"] == WKAppLanguageEnglish, @"en reads back as English");
@@ -82,12 +84,13 @@ static void TestStoredValues(void) {
     // An installation that predates the setting, and a value nobody wrote.
     CHECK([WKLocalization languageForStoredValue:nil] == WKAppLanguageSystem, @"a missing value follows the iPad");
     CHECK([WKLocalization languageForStoredValue:@7] == WKAppLanguageSystem, @"a number follows the iPad");
-    CHECK([WKLocalization languageForStoredValue:@"fr"] == WKAppLanguageSystem, @"an invented language follows the iPad");
-    CHECK([[WKLocalization choices] count] == 3, @"three choices: English, German, System Default");
+    CHECK([WKLocalization languageForStoredValue:@"fr"] == WKAppLanguageFrench, @"fr reads back as French");
+    CHECK([WKLocalization languageForStoredValue:@"it"] == WKAppLanguageSystem, @"an invented language follows the iPad");
+    CHECK([[WKLocalization choices] count] == 4, @"four choices: English, French, German, System Default");
 }
 
 static void TestTables(void) {
-    // The shipped tables: both complete, and a key answered in both.
+    // The shipped tables: all three complete, and a key answered in each.
     [WKLocalization setPreferredLanguagesForTesting:@[@"en-US"]];
     [WKLocalization setResourceBundleForTesting:nil];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:WKAppLanguageDefaultsKey];
@@ -103,6 +106,12 @@ static void TestTables(void) {
     CHECK([WKLocalization.shared.languageCode isEqual:@"de"], @"the resolved code is de");
     CHECK([WKLocalized(@"home.status.ready") isEqual:@"Bereit zum Spielen"], @"a status line is German");
     CHECK([WKLocalized(@"voice.mapping.notSet") isEqual:@"Nicht belegt"], @"an accessibility string is German");
+
+    WKLocalization.shared.language = WKAppLanguageFrench;
+    CHECK([WKLocalized(@"home.action.play") isEqual:@"Jouer"], @"French says Jouer");
+    CHECK([WKLocalization.shared.languageCode isEqual:@"fr"], @"the resolved code is fr");
+    CHECK([WKLocalized(@"home.status.ready") isEqual:@"Prêt à jouer"], @"a status line is French");
+    CHECK([WKLocalized(@"voice.mapping.notSet") isEqual:@"Non défini"], @"an accessibility string is French");
 
     // A table that is genuinely incomplete: the German one is missing a key, so English answers.
     NSBundle *partial = MakeBundle(@{@"en": @{@"test.only": @"English only", @"test.both": @"Both"},

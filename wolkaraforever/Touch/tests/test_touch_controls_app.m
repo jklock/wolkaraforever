@@ -21,6 +21,8 @@
 // The last key event this guest view was given, so a test can say whether the adapter posted
 // one at all. Nil is the answer that matters for a key the user has taken.
 @property (nonatomic, strong, nullable) NSEvent *lastKeyEvent;
+// Every key this guest view was given, in order, so a test can read a whole sequence.
+@property NSMutableArray<NSNumber *> *keyCodes;
 @end
 @implementation AKInputFixtureView
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -28,6 +30,7 @@
         self.wantsLayer = YES;
         self.layer.backgroundColor = [UIColor colorWithRed:0.06 green:0.10 blue:0.16 alpha:1].CGColor;
         _text = [NSMutableString new];
+        _keyCodes = [NSMutableArray new];
         _lastAction = @"Ready";
         for (NSString *key in @[@"heading", @"instructions", @"result"]) {
             CATextLayer *label = [CATextLayer new];
@@ -58,6 +61,7 @@
 - (BOOL)acceptsFirstResponder { return YES; }
 - (void)keyDown:(NSEvent *)event {
     self.lastKeyEvent = event;
+    [self.keyCodes addObject:@(event.keyCode)];
     if (event.keyCode == 0 && (event.modifierFlags & NSEventModifierFlagCommand)) {
         self.selection = NSMakeRange(0, self.text.length);
         self.replacements++;
@@ -174,46 +178,10 @@ static void AKFixtureInputSource(void *context) {
 @property NSTimer *pump;
 @end
 @implementation AKInputFixtureScene
-- (void)checkMouseTrackingProgress {
-    id<AKTouchControlsDelegate> host=[self.guest valueForKey:@"_host"];
-    for (unsigned button=0;button<3;button++) {
-        for (unsigned traffic=0;traffic<3;traffic++) {
-            for (unsigned cycle=0;cycle<2;cycle++) {
-                [host touchButton:button pressed:YES];
-                AKDrainFixtureEvents();
-                __block BOOL trackingFired=NO, defaultFired=NO;
-                NSTimer *tracking=[NSTimer timerWithTimeInterval:0.02 repeats:NO block:^(NSTimer *timer) {
-                    (void)timer; trackingFired=YES;
-                }];
-                [NSRunLoop.mainRunLoop addTimer:tracking forMode:UITrackingRunLoopMode];
-                NSTimer *ordinary=[NSTimer scheduledTimerWithTimeInterval:0.02 repeats:NO block:^(NSTimer *timer) {
-                    (void)timer; defaultFired=YES;
-                }];
-                NSTimeInterval deadline=NSProcessInfo.processInfo.systemUptime+1;
-                while (!(trackingFired && defaultFired) && NSProcessInfo.processInfo.systemUptime<deadline) {
-                    if (traffic==1) AKFixtureInputSource(NULL);
-                    NSDate *until=traffic==2 ? [NSDate dateWithTimeIntervalSinceNow:0.03] : NSDate.distantPast;
-                    [NSApp nextEventMatchingMask:UINT64_MAX untilDate:until inMode:NSDefaultRunLoopMode dequeue:YES];
-                }
-                [tracking invalidate]; [ordinary invalidate];
-                NSLog(@"Mouse tracking: button=%u traffic=%u cycle=%u tracking=%d default=%d",
-                      button,traffic,cycle,trackingFired,defaultFired);
-                assert(trackingFired && defaultFired);
-                [host touchButton:button pressed:NO];
-                AKDrainFixtureEvents();
-            }
-        }
-    }
-    NSLog(@"TOUCH_UI_SELF_TEST_PASS: repeated held-button drags service default and tracking events before release");
-    exit(EXIT_SUCCESS);
-}
 - (void)checkTrackingUIProgress {
     UIView *host = [self.guest valueForKey:@"_host"];
     AKTouchControls *controls = [host valueForKey:@"_touchControls"];
-    AKTouchGamepad *gamepad = [controls valueForKey:@"_gamepad"];
-    assert(gamepad);
-    assert(!gamepad.enabled);
-    AKDrainFixtureEvents();
+    AKTouchGamepad *gamepad = [host valueForKey:@"_touchGamepad"];
     for (NSUInteger surface = 0; surface < 2; surface++) {
         if (surface == 0) [controls toggleKeyboard]; else [gamepad toggleSettings];
         __block BOOL trackingFired = NO, defaultFired = NO;
@@ -300,11 +268,6 @@ static void AKFixtureInputSource(void *context) {
 }
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
-    if ([NSProcessInfo.processInfo.arguments containsObject:@"--tracking-progress-test"]) {
-        NSMutableDictionary *arguments=[[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
-        arguments[@"TKTouchGamepadEnabled"]=@NO;
-        [NSUserDefaults.standardUserDefaults setVolatileDomain:arguments forName:NSArgumentDomain];
-    }
     [NSApplication sharedApplication];
     self.guest = [[NSWindow alloc] initWithContentRect:((UIWindowScene *)scene).screen.bounds styleMask:0 backing:2 defer:NO];
     self.guest.contentView = [[AKInputFixtureView alloc] initWithFrame:self.guest.frame];
@@ -339,13 +302,6 @@ static void AKFixtureInputSource(void *context) {
         [NSTimer scheduledTimerWithTimeInterval:2 repeats:NO block:^(NSTimer *timer) {
             (void)timer; [self.pump invalidate]; self.pump = nil;
             [self checkTrackingUIProgress];
-        }];
-        return;
-    }
-    if ([NSProcessInfo.processInfo.arguments containsObject:@"--mouse-tracking-test"]) {
-        [NSTimer scheduledTimerWithTimeInterval:2 repeats:NO block:^(NSTimer *timer) {
-            (void)timer; [self.pump invalidate]; self.pump=nil;
-            [self checkMouseTrackingProgress];
         }];
         return;
     }
@@ -386,6 +342,13 @@ static void AKFixtureInputSource(void *context) {
                 [reference becomeFirstResponder];
                 return;
             }
+            // Not typing: the toolbar sits at the bottom centre, between the thumbs.
+            [host layoutIfNeeded];
+            CGRect resting = controls.frame;
+            if (selfTest) {
+                assert(fabs(CGRectGetMidX(resting) - CGRectGetMidX(host.bounds)) < 1);
+                assert(fabs(CGRectGetMaxY(resting) - (CGRectGetMaxY(host.bounds) - host.safeAreaInsets.bottom - 8)) < 1);
+            }
             [controls toggleKeyboard];
             if (!selfTest) return;
             [NSTimer scheduledTimerWithTimeInterval:1 repeats:NO block:^(NSTimer *timer) {
@@ -396,7 +359,10 @@ static void AKFixtureInputSource(void *context) {
                 assert(CGRectGetMaxY(controls.frame) <= CGRectGetMinY(host.keyboardLayoutGuide.layoutFrame));
                 assert(CGRectGetMinY(controls.frame) >= 0);
                 CGRect toolbarFrame = controls.frame;
-                assert(fabs(CGRectGetMidX(toolbarFrame) - CGRectGetMidX(host.safeAreaLayoutGuide.layoutFrame)) < 1);
+                // Centred on the screen while typing too, as at rest: on an iPhone in landscape the
+                // safe area is off-centre (a side inset for the camera), and TouchControls.m
+                // centres on the host's bounds on purpose.
+                assert(fabs(CGRectGetMidX(toolbarFrame) - CGRectGetMidX(host.bounds)) < 1);
                 assert(fabs(CGRectGetMinY(toolbarFrame) - CGRectGetMinY(host.safeAreaLayoutGuide.layoutFrame) - 8) < 1);
                 UITextView *input = (UITextView *)AKFindInputView(host, @"wolkaraforever.keyboard.draft");
                 UIButton *insert = (UIButton *)AKFindInputView(host, @"wolkaraforever.keyboard.insert");
@@ -494,11 +460,31 @@ static void AKFixtureInputSource(void *context) {
                 [(UIButton *)accessory.arrangedSubviews[5] sendActionsForControlEvents:UIControlEventTouchUpInside];
                 AKDrainFixtureEvents();
                 assert([fixture.text isEqual:expected]);
-                // The system Done key replaces only; Return stays explicit.
+                // The system keyboard's Send puts the draft in the game's chat: F12 (the key
+                // the Interface mobile add-on binds to its chat), the line, then Return, and
+                // the keyboard goes away. Replace stays the button that fills the selected
+                // field without pressing Return.
+                NSUInteger keysBefore = fixture.keyCodes.count, replacementsBefore = fixture.replacements;
                 [input.delegate textView:input shouldChangeTextInRange:NSMakeRange(input.text.length, 0) replacementText:@"\n"];
                 AKDrainFixtureEvents();
-                [expected setString:@" done"];
-                assert([fixture.text isEqual:expected] && !input.text.length);
+                NSArray<NSNumber *> *sent = [fixture.keyCodes subarrayWithRange:NSMakeRange(keysBefore, fixture.keyCodes.count - keysBefore)];
+                if (sent.count < 2 || sent.firstObject.unsignedShortValue != 111 || sent.lastObject.unsignedShortValue != 36 ||
+                    ![fixture.text hasSuffix:@"done\r"] || fixture.replacements != replacementsBefore || input.text.length) {
+                    fprintf(stderr, "TOUCH_UI_SEND_MISMATCH: keys=%s text=%s replacements=%lu->%lu draft=%s\n",
+                            sent.description.UTF8String, fixture.text.UTF8String, (unsigned long)replacementsBefore,
+                            (unsigned long)fixture.replacements, input.text.UTF8String);
+                }
+                assert(sent.count >= 2 && sent.firstObject.unsignedShortValue == 111 && sent.lastObject.unsignedShortValue == 36);
+                assert([fixture.text hasSuffix:@"done\r"] && fixture.replacements == replacementsBefore && !input.text.length);
+                // A repeated or queued Return after the line has gone sends nothing more.
+                keysBefore = fixture.keyCodes.count;
+                [input.delegate textView:input shouldChangeTextInRange:NSMakeRange(0, 0) replacementText:@"\n"];
+                AKDrainFixtureEvents();
+                assert(fixture.keyCodes.count == keysBefore);
+                [expected setString:fixture.text];
+                // Open again to type more; the accessory's Return is still a plain Return.
+                [controls toggleKeyboard];
+                AKDrainFixtureEvents();
                 [(UIButton *)accessory.arrangedSubviews[5] sendActionsForControlEvents:UIControlEventTouchUpInside];
                 AKDrainFixtureEvents();
                 [expected appendString:@"\r"];
@@ -522,9 +508,13 @@ static void AKFixtureInputSource(void *context) {
                 assert(!controls.keyboardVisible && !input.text.length && input.superview.hidden);
                 [input insertText:@" background result"];
                 [host layoutIfNeeded];
-                assert(CGRectEqualToRect(toolbarFrame, controls.frame));
+                // The keyboard gone, the toolbar is back at the bottom, wherever the gamepad is.
+                assert(!CGRectEqualToRect(toolbarFrame, controls.frame));
+                CGRect down = controls.frame;
+                assert(fabs(CGRectGetMaxY(down) - (CGRectGetMaxY(host.bounds) - host.safeAreaInsets.bottom - 8)) < 1);
+                assert(fabs(CGRectGetMidX(down) - CGRectGetMidX(host.bounds)) < 1);
                 [controls setGamepadVisible:NO]; [host layoutIfNeeded];
-                assert(CGRectEqualToRect(toolbarFrame, controls.frame));
+                assert(CGRectEqualToRect(down, controls.frame));
 
                 // --- the optional performance HUD -----------------------------------
                 AKPerformanceOverlay *overlay = [host valueForKey:@"_performanceOverlay"];

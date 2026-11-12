@@ -35,6 +35,7 @@ typedef NS_ENUM(NSInteger, WKAppLanguage) {
     WKAppLanguageSystem = 0,
     WKAppLanguageEnglish,
     WKAppLanguageGerman,
+    WKAppLanguageFrench,
 };
 
 /// Posted when the app-language setting changes, on the thread that changed it. The
@@ -81,6 +82,8 @@ extern NSString *const WKAppLanguageDefaultsKey;
 /// The BCP-47 code of a language this app ships. Only en and de are matching.
 + (nullable NSString *)matchedCodeForLanguageIdentifier:(NSString *)identifier;
 + (NSString *)codeForLanguage:(WKAppLanguage)language;
+/// A language's name written in itself: "English", "Deutsch", "Français".
++ (NSString *)nativeNameForLanguage:(WKAppLanguage)language;
 /// The stored spelling of a setting, and the setting a stored spelling means. Anything
 /// unrecognised, including a missing value, is WKAppLanguageSystem - which is what an
 /// installation that predates this setting should do.
