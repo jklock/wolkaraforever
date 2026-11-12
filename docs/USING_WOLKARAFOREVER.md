@@ -160,6 +160,15 @@ With a physical mouse or trackpad, holding a mouse button while moving passes a 
 drag to the game. The touch trackpad's hold-then-slide gesture applies to the touchscreen;
 physical trackpad dragging does not require that delay.
 
+What you type goes to a draft first. **Done** on the system keyboard writes the draft into
+the selected game field and does not press Return; **Replace** does the same from the draft
+panel, and an empty draft clears the field. **↵** on the accessory bar is a plain Return.
+
+The app's own language can be English, German, French, or follow the iPad - the row named
+**App language** changes the launcher's words immediately. World of Warcraft's download
+language is a separate setting (**Game language**) and offers English, French, Spanish and
+German; changing it changes what the game downloads, so it is never done silently.
+
 Touch settings use two columns when there is enough width and remain scrollable in smaller
 windows. **Triggers on the outside** swaps LT/LB and RT/RB positions without changing their
 inputs. New or reset layouts put the triggers inside; existing saved layouts keep their

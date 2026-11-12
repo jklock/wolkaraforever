@@ -4,18 +4,20 @@ WolkaraForever has two language settings, and they are independent on purpose:
 
 | Setting | Stored as | Controls | Where it is changed |
 | --- | --- | --- | --- |
-| **App language** | `WolkaraForeverAppLanguage` (`en`, `de`, `system`) | every label, alert, menu, accessibility string and status line that WolkaraForever draws, including the in-game overlay and the on-screen keyboard | **App language** in the Game Edition card |
-| **Game language** | `WoWLocale` (`enUS`, `esES`, `deDE`) | what World of Warcraft downloads and what its `textLocale`/`audioLocale` say | **Game language** in the Game Edition card |
+| **App language** | `WolkaraForeverAppLanguage` (`en`, `de`, `fr`, `system`) | every label, alert, menu, accessibility string and status line that WolkaraForever draws, including the in-game overlay and the on-screen keyboard | **App language** in the Game Edition card |
+| **Game language** | `WoWLocale` (`enUS`, `frFR`, `esES`, `deDE`) | what World of Warcraft downloads and what its `textLocale`/`audioLocale` say | **Game language** in the Game Edition card |
 
-A player can read the launcher in German and play the English client, or the other way round.
+A player can read the launcher in French and play the English client, or the other way round.
 Neither setting changes the game's login region, and neither touches the other unless the user
-says so: the first time German is chosen as the app language, the launcher offers to put the game
-into German as well, and does nothing to the game unless that offer is accepted. That acceptance
-goes through the same validated writer and update gate as the Game language row.
+says so: the first time a language is chosen as the app language that the game also speaks
+(German or French), the launcher offers to put the game into it as well, and does nothing to the
+game unless that offer is accepted. That acceptance goes through the same validated writer and
+update gate as the Game language row.
 
 `system` is resolved once, from the iPad's preferred-language list: the first entry that is a
-language this app ships decides (German for a German preference, English for an English one), and
-a list with neither resolves to English. Nothing else in the app resolves the language for itself.
+language this app ships decides (German for a German preference, French for a French one, English
+for an English one), and a list with none of them resolves to English. Nothing else in the app
+resolves the language for itself.
 
 ## Where the code is
 
@@ -23,9 +25,9 @@ a list with neither resolves to English. Nothing else in the app resolves the la
   resolution rules, the tables, the fallback chain, plural selection, and the change
   notification. Foundation only, usable from Objective-C and Swift, and safe before any UI exists
   (the closing countdown and the launch status lines use it before a view controller does).
-- `wolkaraforever/Shell/en.lproj/Localizable.strings` and `de.lproj/…` — the strings. They are the
-  app's own resources and are compiled into the bundle by the target that already includes
-  `launcher/`.
+- `wolkaraforever/Shell/en.lproj/Localizable.strings`, `de.lproj/…` and `fr.lproj/…` — the
+  strings. They are the app's own resources and are compiled into the bundle by the target that
+  already includes `launcher/`.
 - `wolkaraforever/Touch/AKHostLocalization.h` and `.m` — the shim the compatibility libraries use.
   The on-screen keyboard and the performance overlay are compiled into the guest's libraries,
   which are a different binary from the app; they ask the app's `WKLocalization` class by name at
@@ -37,7 +39,8 @@ a list with neither resolves to English. Nothing else in the app resolves the la
   fallback, formatting, plurals, change notification).
 - `wolkaraforever/tools/test_wow_launcher_ui.sh` — the UIKit fixture, which includes the German
   screen flow: the row, the immediate switch, the absence of raw keys, the one-time offer, the
-  validated game-language write, and German at the largest text size.
+  validated game-language write, and German at the largest text size. French is held to the same
+  rules by `check_localization.py` and `test_localization.sh`.
 
 ## What is translated, and what never is
 
@@ -70,16 +73,16 @@ this setting. That is the platform's behaviour, not a gap.
 
 1. Choose a namespaced key: the screen or subsystem, then the row
    (`home.performance.backup`, `addons.sort.title`, `overlay.thermal.serious`).
-2. Add it to **both** `en.lproj/Localizable.strings` and `de.lproj/Localizable.strings`, with the
-   same conversions in the same sense — `%@`, `%lu`, `%.0f`, and a literal per cent written `%%`.
+2. Add it to **every** table — `en.lproj`, `de.lproj` and `fr.lproj` — with the same conversions
+   in the same sense — `%@`, `%lu`, `%.0f`, and a literal per cent written `%%`.
 3. Use it: `WKLocalized(@"key")` for a plain label, `WKLocalizedFormat(@"key", arg…)` when the
    table supplies the format, and `WKLocalizedCount`/`WKLocalizedCountFormat` for a count.
 4. For a count, write the forms the language needs: `.one` and `.other`, plus `.zero` where a
    language says "no add-ons" differently. A form a language does not need is simply left out; the
    service falls back to `.other`.
 5. Run `wolkaraforever/tools/check_localization.py`. It refuses a key in one table and not the
-   other, a conversion that differs between them, an empty German string, and a key the source
-   asks for that no table has.
+   others, a conversion that differs between them, an empty string, and a key the source asks for
+   that no table has.
 6. Run `wolkaraforever/tools/test_localization.sh` and the fixture that owns the screen
    (`test_wow_launcher_ui.sh`, `test_voice.sh`, `test_touch_controls_ui.sh`).
 
@@ -87,6 +90,20 @@ Anything that changes the strings a screen shows also has to survive a language 
 relaunch. The home page has one `-localize` method that both `-viewDidLoad` and the change
 notification call: set fixed words there, and let `-render` own the words that change with the
 installation. A string set in `-viewDidLoad` alone is a label that stays in the old language.
+
+## Translator instructions (French)
+
+- Address the reader as **vous**, consistently, and keep sentences short enough for a control.
+- Use French typographic punctuation: « … » for quotes with a non-breaking space inside, a space
+  before : ; ! ? and inside « », and an apostrophe ’ rather than '.
+- Keep meaningful product names as they are: WolkaraForever, World of Warcraft, CurseForge,
+  Mac-Ever, iPadOS, GitHub, Tolkara.
+- Prefer the words the game's own French client uses, so the launcher and the game agree:
+  add-on → add-on, edition → édition, backup → sauvegarde, restore → restaurer, Play → Jouer.
+- French runs longer than English; check that a label still fits at the largest Dynamic Type size
+  rather than shortening it into something vague.
+- Do not ship machine translation as final copy. A fluent French reader reviews the whole table in
+  context — on the screens, not only in the file.
 
 ## Translator instructions (German)
 
@@ -107,10 +124,11 @@ installation. A string set in `-viewDidLoad` alone is a label that stays in the 
 ## Review checklist for a key or a string
 
 - [ ] The key is namespaced and reads as the place it is used, not as the sentence it contains.
-- [ ] It exists in both tables, with identical conversions, in an identical order where the
+- [ ] It exists in every table, with identical conversions, in an identical order where the
       sentence allows it.
-- [ ] The German string is a sentence a person would say, in formal address, with German
-      punctuation, and no English word left in it that is not a product name or a technical value.
+- [ ] The German and French strings are sentences a person would say, in the address and
+      punctuation each language uses, with no English word left in them that is not a product
+      name or a technical value.
 - [ ] Anything the string quotes — a file name, a CVar, a version — is unchanged.
 - [ ] A count has the forms German needs, and a `1` reads correctly.
 - [ ] The string is not one of the never-translated categories above.
@@ -123,7 +141,7 @@ installation. A string set in `-viewDidLoad` alone is a label that stays in the 
 ```sh
 wolkaraforever/tools/check_localization.py     # the tables agree, and the source's keys exist
 wolkaraforever/tools/test_localization.sh      # the service's own behaviour
-wolkaraforever/tools/test_wow_launcher_ui.sh   # the English and German launcher flows
+wolkaraforever/tools/test_wow_launcher_ui.sh   # the English, German and French launcher flows
 wolkaraforever/tools/check_layers.sh           # the layer still builds the way it is split
 wolkaraforever/tools/check_docs.sh             # every link and image still resolves
 ```
