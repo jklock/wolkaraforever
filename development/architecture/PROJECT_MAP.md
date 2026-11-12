@@ -72,7 +72,7 @@ The full behavioral inventory and owning tests are in
 | Prepare and inspect the layer | `prepare.sh`, `check_layers.sh`, `overlay_map.sh`, `update_tolkara.sh --check` |
 | Local setup | `install_prerequisites.sh --check`, `device_variables.sh --write`, `preflight.sh`, `generate.sh` |
 | Build and device lifecycle | `install.sh`, `launch.sh`, `pilot.sh`, `running_app.sh`, `device_log.sh` |
-| Game data lifecycle | `push_game.sh`, `remove_game.sh`, `push_addon.sh`; use only when the app is safe to touch |
+| Game data lifecycle | `push_game.sh`, `remove_game.sh`; use only when the app is safe to touch |
 | Source and simulator verification | `test_emulation.sh`, `test_translation_sim.sh`, focused `test_*.sh`, `run.sh sim` |
 | Device evidence | `device_matrix.sh`, `capture_gameplay_log.sh`, `validate.sh --device` |
 | Documentation and release | `check_docs.sh`, `package_ipa.sh`, `make_wolkaraforever_icon.py` |
