@@ -27,4 +27,3 @@ shown the same failure class or stable world entry.
 - Run package and execution-mode tests plus the required simulator matrix.
 - Re-run the original physical External-JIT scenario after an evidence-backed change; record
   the source SHA and full environment before closing #67.
-

@@ -1,17 +1,19 @@
 #!/bin/bash
 # Verify the app AltStore installed, and optionally require its External-JIT runtime evidence.
 #
-# usage: wolkaraforever/tools/verify_external_jit.sh [--bundle-id identifier] [--require-runtime]
+# usage: wolkaraforever/tools/verify_external_jit.sh [--bundle-id identifier] [--require-runtime] [--classify-termination]
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 
 bundle=${TOLKARA_BUNDLE_ID:-local.tolkara.app}
 require_runtime=0
+classify_termination=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --bundle-id) shift; bundle=${1:-};;
         --require-runtime) require_runtime=1;;
+        --classify-termination) classify_termination=1;;
         -h|--help) sed -n '2,5p' "$0"; exit 0;;
         *) echo "verify_external_jit: unknown option $1" >&2; exit 2;;
     esac
@@ -47,4 +49,18 @@ if [ "$require_runtime" = 1 ]; then
         exit 1
     fi
     echo "verify_external_jit: External-JIT runtime evidence passed"
+fi
+
+if [ "$classify_termination" = 1 ]; then
+    TOLKARA_BUNDLE_ID="$bundle" wolkaraforever/tools/device_log.sh 400 . >/dev/null
+    native="$PWD/build/device-log/native-guest.log"
+    DEVICE_LOG_FILE=external-jit-diagnostics.log TOLKARA_BUNDLE_ID="$bundle" \
+        wolkaraforever/tools/device_log.sh 100 . >/dev/null
+    host="$PWD/build/device-log-files/external-jit-diagnostics.log"
+    outcome=$(python3 wolkaraforever/tools/classify_external_jit.py --native "$native" --host "$host")
+    echo "verify_external_jit: termination=$outcome"
+    case "$outcome" in
+        native-return-success|native-return-stopped) ;;
+        *) echo "verify_external_jit: collect both files with the source SHA and report this outcome before retrying" >&2; exit 1;;
+    esac
 fi
