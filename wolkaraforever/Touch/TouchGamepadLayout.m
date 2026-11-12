@@ -42,6 +42,14 @@ static CGFloat Number(id value, CGFloat fallback) {
         // v1.0.9 has, and the corner jump reserves the space the fan's tab sits in, so turning
         // it on silently would move an arrangement someone already uses.
         self.floatingSticks = Number(values[@"floatingSticks"],0) != 0;
+        // Only what the user stored: an empty list reserves nothing.
+        NSMutableArray<NSDictionary<NSString *, NSNumber *> *> *areas = [NSMutableArray new];
+        id stored = values[@"keepFree"];
+        if ([stored isKindOfClass:NSArray.class]) for (id entry in (NSArray *)stored) {
+            NSDictionary *area = [self validArea:entry];
+            if (area && areas.count < 16) [areas addObject:area];
+        }
+        _keepFree = areas;
         _positions = [NSMutableDictionary new];
         id positions = values[@"positions"];
         if ([positions isKindOfClass:NSDictionary.class]) for (NSString *key in positions) {
@@ -76,7 +84,7 @@ static CGFloat Number(id value, CGFloat fallback) {
     [_defaults setObject:@{@"opacity":@(_opacity),@"rearScale":@(_rearScale),
         @"frontScale":@(_frontScale),@"hapticsEnabled":@(_hapticsEnabled),@"swapShoulders":@(_swapShoulders),
         @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),
-        @"floatingSticks":@(_floatingSticks),@"positions":_positions} forKey:LayoutKey];
+        @"floatingSticks":@(_floatingSticks),@"keepFree":_keepFree,@"positions":_positions} forKey:LayoutKey];
     [NSNotificationCenter.defaultCenter postNotificationName:AKGamepadLayoutDidChangeNotification object:_defaults];
 }
 - (void)reset {
@@ -85,6 +93,26 @@ static CGFloat Number(id value, CGFloat fallback) {
     self.performanceOverlayEnabled = NO;
     self.sticksOnly = AKInterfaceModeIsMobile();
     self.floatingSticks = NO;
+    self.keepFree = @[];
     [_positions removeAllObjects]; [self save];
 }
+// A stored or proposed area, or nil when it is not four finite fractions of the screen. Kept
+// inside the screen rather than rejected for a rounding error, and never smaller than 1%.
+- (nullable NSDictionary<NSString *, NSNumber *> *)validArea:(id)entry {
+    if (![entry isKindOfClass:NSDictionary.class]) return nil;
+    NSDictionary *values = entry;
+    CGFloat x = Number(values[@"x"], NAN), y = Number(values[@"y"], NAN);
+    CGFloat w = Number(values[@"w"], NAN), h = Number(values[@"h"], NAN);
+    if (!isfinite(x) || !isfinite(y) || !isfinite(w) || !isfinite(h)) return nil;
+    if (w < 0.01 || h < 0.01) return nil;
+    x = Clamp(x,0,1,0); y = Clamp(y,0,1,0);
+    w = MIN(Clamp(w,0.01,1,0.01),1-x); h = MIN(Clamp(h,0.01,1,0.01),1-y);
+    return @{@"x":@(x),@"y":@(y),@"w":@(w),@"h":@(h)};
+}
+- (void)addKeepFreeAreaWithX:(CGFloat)x y:(CGFloat)y width:(CGFloat)w height:(CGFloat)h {
+    NSDictionary *area = [self validArea:@{@"x":@(x),@"y":@(y),@"w":@(w),@"h":@(h)}];
+    if (!area || _keepFree.count >= 16) return;
+    _keepFree = [_keepFree arrayByAddingObject:area];
+}
+- (void)clearKeepFreeAreas { _keepFree = @[]; }
 @end

@@ -239,6 +239,35 @@ static void TestJumpReach(UIView *host, AKPreviewGamepad *manager) {
     puts("TOUCH_GAMEPAD_JUMP_REACH_PASS: with sticks only the jump takes the ring, the gap by the stick and the band below, not beside, above or far below; it holds Space while pressed and always releases it.");
 }
 static void TestFloating(UIView *host, AKPreviewGamepad *manager);
+// The mode's one rule: explicit choices win, "auto" is the device's own hardware class, and
+// anything missing or unrecognised is Standard. Read through the same argument domain the
+// scene uses, and put back exactly what was there.
+static void TestInterfaceMode(void) {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSString *key=AKInterfaceModeDefaultsKey;
+    BOOL phone=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone;
+    id original=[defaults objectForKey:key];
+    void (^setMode)(id)=^(id value) {
+        NSMutableDictionary *modes=[[defaults volatileDomainForName:NSArgumentDomain] mutableCopy] ?: [NSMutableDictionary new];
+        if (value) modes[key]=value; else [modes removeObjectForKey:key];
+        [defaults setVolatileDomain:modes forName:NSArgumentDomain];
+    };
+    setMode(AKInterfaceModeIOS); assert(AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    setMode(AKInterfaceModeIPadOS); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    setMode(AKInterfaceModeAuto);
+    assert(AKInterfaceModeIsMobile()==phone && AKInterfaceModeIsAutomatic());
+    assert([AKInterfaceModeName() isEqual:(phone?AKInterfaceModeIOS:AKInterfaceModeIPadOS)]);
+    assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeAuto]);
+    setMode(@"AUTO"); assert(AKInterfaceModeIsMobile()==phone);
+    setMode(@"duo"); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    assert([AKInterfaceModeName() isEqual:AKInterfaceModeIPadOS]);
+    setMode(nil); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeIPadOS]);
+    setMode(AKInterfaceModeIPadOS);
+    assert([AKInterfaceModeAutomaticName() isEqual:(phone?AKInterfaceModeIOS:AKInterfaceModeIPadOS)]);
+    setMode(original);
+    puts("TOUCH_INTERFACE_MODE_PASS: ios and ipados are explicit, auto is the device's own hardware class (spelled in any case), and a missing or unrecognised value is Standard.");
+}
 static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     GCExtendedGamepad *pad=manager.created.controller.extendedGamepad;
     assert(pad && manager.visible);
@@ -500,10 +529,23 @@ static void TestFloating(UIView *host, AKPreviewGamepad *manager) {
     CGPoint corner=CGPointMake(CGRectGetMaxX(b),CGRectGetMaxY(b));
     CGPoint nearCorner=[overlay convertPoint:CGPointMake(corner.x-0.05*h,corner.y-0.05*h) toView:host];
     assert([host hitTest:nearCorner withEvent:nil]==jump);
-    CGFloat fan=0.25*h;
-    CGPoint fanGap=[overlay convertPoint:CGPointMake(corner.x-fan*0.7071,corner.y-fan*0.7071) toView:host];
-    assert([host hitTest:fanGap withEvent:nil]==host);          // between the jump and a tab
-    assert([host hitTest:at(0.5,0.97) withEvent:nil]==host);    // the add-on's chat strip
+    // Nothing is reserved by default: the far corner beyond the jump is still the camera half.
+    CGFloat far=0.25*h;
+    CGPoint beyondJump=[overlay convertPoint:CGPointMake(corner.x-far*0.7071,corner.y-far*0.7071) toView:host];
+    assert([host hitTest:beyondJump withEvent:nil]==rightStick);
+    // The bottom centre belongs to neither thumb, so it is the game's - and an add-on's.
+    assert([host hitTest:at(0.5,0.97) withEvent:nil]==host);
+    // A reserved area is the player's own data, and it wins over a thumb's half.
+    AKGamepadLayout *prefs=(id)[overlay valueForKey:@"preferences"];
+    assert(prefs && prefs.keepFree.count==0);
+    [prefs addKeepFreeAreaWithX:0.66 y:0.44 width:0.10 height:0.12];
+    assert(prefs.keepFree.count==1);
+    assert([host hitTest:at(0.70,0.50) withEvent:nil]==host);
+    // An area that is not four finite fractions of the screen is refused, not clamped in.
+    [prefs clearKeepFreeAreas];
+    [prefs addKeepFreeAreaWithX:1.5 y:-2 width:0 height:0];
+    assert(prefs.keepFree.count==0);
+    assert([host hitTest:at(0.70,0.50) withEvent:nil]==rightStick);
     // A stick held by one finger is not grabbed by another touch in its half.
     AKFixtureTouch *touch=[AKFixtureTouch new];
     touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),0);
@@ -552,7 +594,7 @@ static void TestFloating(UIView *host, AKPreviewGamepad *manager) {
     if (off.on) { off.on=NO; [off sendActionsForControlEvents:UIControlEventValueChanged]; }
     sticksOnly.on=NO; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
     [manager toggleSettings]; [host layoutIfNeeded];
-    puts("TOUCH_GAMEPAD_FLOATING_PASS: the floating arrangement exists only with the mobile interface (ipados, a malformed value and no value keep Standard), each thumb's half is its stick, the corner is the jump, the add-on's chat strip and wheel tabs are not taken, and auto-run arms, confirms, runs, stops and is released by leaving the arrangement.");
+    puts("TOUCH_GAMEPAD_FLOATING_PASS: the floating arrangement exists only with the mobile interface (ipados, a malformed value and no value keep Standard), each thumb's half is its stick, the corner is the jump, the bottom centre is left to the game, a reserved area is the player's own and wins over a half, and auto-run arms, confirms, runs, stops and is released by leaving the arrangement.");
 }
 static void TestStickMapping(void) {
     CGSize size=CGSizeMake(100,100);
@@ -594,6 +636,7 @@ static void TestLifecycle(UIView *host) {
     TestTrackingPump();
     TestStickMapping();
     TestHaptics();
+    TestInterfaceMode();
     AKFixtureGamepad *pad=[[AKFixtureGamepad alloc] initWithHostView:host];
     // The fixture asserts the controller lifecycle, not the device's foreground phase.
     // A simulator launched by simctl reports the app Inactive, which would gate every

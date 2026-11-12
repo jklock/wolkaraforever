@@ -24,6 +24,14 @@ FOUNDATION_EXPORT NSNotificationName const AKGamepadLayoutDidChangeNotification;
 // Off by default and a mobile-interface arrangement only, so Standard and every existing
 // mobile layout keep the fixed rings they have.
 @property(nonatomic) BOOL floatingSticks;
+// Areas the app leaves alone while the floating arrangement is on: normalised rectangles in
+// the overlay's own space, where a touch goes to the game - or to an add-on's own buttons -
+// instead of to a stick. Empty by default, and saved with the rest of the layout: nothing is
+// reserved for anything unless the person using it asks, which is what keeps an add-on from
+// defining this interface. Each is @{@"x",@"y",@"w",@"h"} in 0...1.
+@property(nonatomic, copy) NSArray<NSDictionary<NSString *, NSNumber *> *> *keepFree;
+- (void)addKeepFreeAreaWithX:(CGFloat)x y:(CGFloat)y width:(CGFloat)w height:(CGFloat)h;
+- (void)clearKeepFreeAreas;
 - (CGRect)frameForItem:(NSString *)item defaultFrame:(CGRect)frame inBounds:(CGRect)bounds;
 - (void)moveItem:(NSString *)item toFrame:(CGRect)frame inBounds:(CGRect)bounds;
 - (void)save;

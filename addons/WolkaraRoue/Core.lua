@@ -377,9 +377,58 @@ local function Fill(target, defaults)
     end
 end
 
+-- Une sauvegarde d'avant la 1.0.4 rangeait les sorts de chaque côté en pages :
+-- `pages[1..6]`, chacune avec ses cases, et `page`, celle qu'on voyait. La 1.0.4 n'a qu'une
+-- liste de cases par côté et quatre roues dorées à bouton. Pour ne rien perdre : la page 1
+-- devient la liste, les pages 2 à 5 deviennent les quatre roues, et l'ancienne table est
+-- gardée telle quelle dans `legacyPages`, pour qu'un retour à la 0.9.1 retrouve tout.
+local function MergePages(saved)
+    if saved.pagesMerged then return end
+    saved.pagesMerged = true
+    local legacy = {}
+    local function Buttons(page)
+        return type(page) == "table" and type(page.buttons) == "table" and page.buttons or nil
+    end
+    for _, key in ipairs({ "free", "freeLeft" }) do
+        local side = saved[key]
+        if type(side) == "table" and type(side.pages) == "table" then
+            legacy[key] = { pages = side.pages, page = side.page, count = side.count,
+                            wheels = side.wheels, scale = side.scale, spread = side.spread }
+            if not (type(side.buttons) == "table" and next(side.buttons)) then
+                side.buttons = Buttons(side.pages[1]) or {}
+            end
+            for index = 2, 5 do
+                local wheel = type(saved.wheels) == "table" and saved.wheels[index - 1] or nil
+                local source = Buttons(side.pages[index])
+                if wheel and source then
+                    if type(wheel.entries) ~= "table" then wheel.entries = {} end
+                    -- Elle contenait des sorts : elle doit rester atteignable.
+                    wheel.enabled = true
+                    -- Les cases d'une page sont indexées avec des trous (la 1 et la 3 mais
+                    -- pas la 2) : on lit les clés dans l'ordre, pas ipairs qui s'arrête au
+                    -- premier trou et perdrait les sorts d'après.
+                    local keys = {}
+                    for key in pairs(source) do
+                        if type(key) == "number" then keys[#keys + 1] = key end
+                    end
+                    table.sort(keys)
+                    local slot = 1
+                    for _, key in ipairs(keys) do
+                        local button = source[key]
+                        if type(button) == "table" and type(button.entry) == "table" then
+                            while wheel.entries[slot] do slot = slot + 1 end
+                            wheel.entries[slot] = button.entry
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if next(legacy) then saved.legacyPages = legacy end
+end
+
 local function LoadSettings()
-    local saved = type(WolkaraRoueDB) == "table" and WolkaraRoueDB or {}
-    -- La première version n'avait qu'une roue, réglée à plat : elle devient la roue 1.
+    local saved = type(WolkaraRoueDB) == "table" and WolkaraRoueDB or {}    -- La première version n'avait qu'une roue, réglée à plat : elle devient la roue 1.
     if not saved.version then
         local first = Wheel(1)
         if type(saved.entries) == "table" then first.entries = saved.entries end
@@ -391,6 +440,7 @@ local function LoadSettings()
         saved = { wheels = { first }, welcomed = welcomed }
     end
     Fill(saved, Defaults())
+    MergePages(saved)
     for i = 1, ns.MAX_WHEELS do
         local wheel = saved.wheels[i]
         wheel.slots = ns.Clamp(tonumber(wheel.slots) or 8, 4, ns.MAX_SLOTS)

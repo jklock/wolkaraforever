@@ -14,6 +14,9 @@
 #import "../App/LaunchProgressView.h"
 #import "../Controller/ControllerInspector.h"
 #import "../Input/InputRouter.h"
+// The interface-mode rule, from its one definition: the overlay puts this same source in this
+// target, so the launcher and the guest cannot disagree about what "auto" means.
+#import "InterfaceMode.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 static UIColor *Gold(void) { return [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1]; }
@@ -88,17 +91,6 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 // layout's own values, which the store then reads back unchanged.
 static NSString *const TKForeverLayoutKey = @"WolkaraForeverTouchLayoutV1";
 static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidChange";
-// The interface mode's one key and its two values, by value, for the same reason as the
-// layout key above: the Touch module owns them (Touch/InterfaceMode.h), but WoW must not
-// import it. A value that is missing, unrecognised, or hand-edited to anything else means
-// iPadOS, exactly as AKInterfaceModeIsMobile resolves it.
-static NSString *const TKForeverInterfaceModeKey = @"WolkaraForeverInterfaceModeV1";
-static NSString *const TKForeverInterfaceModeIPadOS = @"ipados";
-static NSString *const TKForeverInterfaceModeIOS = @"ios";
-static BOOL TKForeverInterfaceModeIsMobile(void) {
-    id value = [NSUserDefaults.standardUserDefaults objectForKey:TKForeverInterfaceModeKey];
-    return [value isKindOfClass:NSString.class] && [value isEqual:TKForeverInterfaceModeIOS];
-}
 
 
 // A settings row that reads as a switch, not as a command: the words stay the
@@ -871,8 +863,7 @@ static BOOL TKForeverInterfaceModeIsMobile(void) {
     // destination. It opens the Add-On Manager, which is where installing is explicit:
     // pressing this row never installs, disables, removes or updates anything by itself.
     [self configureButton:_macEverButton
-        title:TKForeverInterfaceModeIsMobile()?WKLocalized(@"home.addons.recommended.wolkaraRoue")
-                                               :WKLocalized(@"home.addons.recommended.macEver") filled:NO];
+        title:WKLocalized(@"home.addons.recommended.wolkaraRoue") filled:NO];
     _macEverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     // Navigation only: the page is opened for the user to choose and install there.
     // Starting and an ended session grey it with everything else.
@@ -915,8 +906,8 @@ static BOOL TKForeverInterfaceModeIsMobile(void) {
     // never a package, a file or an installation.
     [self configureButton:_interfaceModeButton
         title:WKLocalizedFormat(@"home.launcher.interfaceMode.row",
-            TKForeverInterfaceModeIsMobile()?WKLocalized(@"home.launcher.interfaceMode.ios")
-                                            :WKLocalized(@"home.launcher.interfaceMode.ipados")) filled:NO];
+            AKInterfaceModeIsMobile()?WKLocalized(@"home.launcher.interfaceMode.ios")
+                                     :WKLocalized(@"home.launcher.interfaceMode.ipados")) filled:NO];
     _interfaceModeButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _interfaceModeButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     // Switches, not changing commands: the label is fixed and the control shows
@@ -1660,50 +1651,51 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     picker.delegate=self;
     [self presentViewController:picker animated:YES completion:nil];
 }
-// Which interface this launcher drives. Exactly two choices, named as the two interfaces
-// are: iPadOS and iOS on Duo. The current one carries the app's own checkmark, the same
-// marker every other selector on this page uses.
+// Which interface this launcher drives: Automatic, iPadOS, or iOS on Duo. Automatic is the
+// device's own answer and is labelled with what it resolves to, so it is never a mystery. An
+// explicit choice always wins.
 - (void)chooseInterfaceMode {
     if (_busy || _starting || _running || _sessionUsed) {
         WKLog("ui", @"interface mode: declined while the page is busy");
         return;
     }
-    BOOL mobile=TKForeverInterfaceModeIsMobile();
+    NSString *current=AKInterfaceModeStoredName();
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceMode.title")
         message:WKLocalized(@"home.launcher.interfaceMode.message")
         preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSNumber *each in @[@NO,@YES]) {
-        BOOL chosen=each.boolValue;
-        NSString *title=WKLocalized(chosen?@"home.launcher.interfaceMode.ios"
-                                            :@"home.launcher.interfaceMode.ipados");
-        if (chosen==mobile) title=[@"✓ " stringByAppendingString:title];
+    NSString *automatic=WKLocalizedFormat(@"home.launcher.interfaceMode.auto.value",
+        [AKInterfaceModeAutomaticName() isEqual:AKInterfaceModeIOS]
+            ? WKLocalized(@"home.launcher.interfaceMode.ios")
+            : WKLocalized(@"home.launcher.interfaceMode.ipados"));
+    NSArray<NSArray<NSString *> *> *choices=@[@[AKInterfaceModeAuto, automatic],
+                                              @[AKInterfaceModeIPadOS, WKLocalized(@"home.launcher.interfaceMode.ipados")],
+                                              @[AKInterfaceModeIOS, WKLocalized(@"home.launcher.interfaceMode.ios")]];
+    for (NSArray<NSString *> *choice in choices) {
+        NSString *title=choice[1];
+        if ([current isEqualToString:choice[0]]) title=[@"✓ " stringByAppendingString:title];
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
             handler:^(__unused UIAlertAction *action) {
-            [self applyInterfaceMode:chosen];
+            [self applyInterfaceModeNamed:choice[0]];
         }]];
     }
     [self presentSheet:sheet anchor:_interfaceModeButton];
 }
 // One key, and nothing else. A mode is a setting the guest reads on its next use; it is not
 // an installation, a disable, a removal or an update, and this path touches no package.
-- (void)applyInterfaceMode:(BOOL)mobile {
-    [NSUserDefaults.standardUserDefaults setObject:(mobile?TKForeverInterfaceModeIOS:TKForeverInterfaceModeIPadOS)
-                                            forKey:TKForeverInterfaceModeKey];
-    WKLog("ui", @"interface mode: %@", mobile?@"ios":@"ipados");
+- (void)applyInterfaceModeNamed:(NSString *)name {
+    [NSUserDefaults.standardUserDefaults setObject:name forKey:AKInterfaceModeDefaultsKey];
+    WKLog("ui", @"interface mode: %@ (resolves to %@)", name, AKInterfaceModeName());
     [self render];
 }
 // The recommendation row. It opens the Add-On Manager, which is where a package is chosen
-// and installed explicitly; pressing the row never installs anything by itself. Which
-// recommendation it opens follows the interface mode: Mac-Ever on iPadOS, the bundled
-// WolkaraRoue package on iOS on Duo.
+// and installed explicitly; pressing the row never installs anything by itself. It offers
+// this product's own add-on, whose packaged release ships in the app, in either interface.
 - (void)openRecommendedAddons {
     NSError *error=nil;
     NSString *addons=[self addOnsDirectoryWithError:&error];
     if (!addons) { [self presentAddonsUnavailable:error]; return; }
-    TKAddonRecommendation recommendation=TKForeverInterfaceModeIsMobile()
-        ? TKAddonRecommendationWolkaraRoue : TKAddonRecommendationMacEver;
-    WKLog("ui", @"recommendation: opening the add-on manager for %@",
-          recommendation==TKAddonRecommendationWolkaraRoue?@"WolkaraRoue":@"Mac-Ever");
+    TKAddonRecommendation recommendation=TKAddonRecommendationWolkaraRoue;
+    WKLog("ui", @"recommendation: opening the add-on manager for WolkaraRoue");
     TKWoWAddonManagerViewController *manager=[[TKWoWAddonManagerViewController alloc]
         initWithAddOnsDirectory:addons edition:_product[@"name"] recommendation:recommendation];
     [self presentPage:manager];

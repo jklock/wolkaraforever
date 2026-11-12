@@ -110,7 +110,7 @@ states=(wow-home.png wow-home-large-text.png addons-popup.png voice-settings.png
         wow-home-de.png wow-addons-de.png wow-voice-de.png wow-voice-test-de.png
         wow-home-de-large-text.png wow-starting.png wow-running.png wow-startup-failed.png
         wow-downloading.png wow-launcher-ipados.png wow-launcher-duo.png
-        wow-addons-recommended-macever.png wow-addons-recommended-wolkararoue.png)
+        wow-addons-recommended-wolkararoue.png)
 # The baseline directory is named after the device that drew the pages, not after the
 # selector that asked for it: simulator_use has replaced SIMULATOR with the UDID by
 # now, and a UDID is not a directory name. Reading SIM_NAME also means a run that

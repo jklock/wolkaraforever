@@ -42,6 +42,8 @@
 "home.launcher.interfaceMode.row" = "Interface Mode: %@";
 "home.launcher.interfaceMode.title" = "Interface Mode";
 "home.launcher.interfaceMode.message" = "Choose the interface this launcher drives. Changing it never installs, disables, removes or updates an add-on.";
+"home.launcher.interfaceMode.auto" = "Automatic";
+"home.launcher.interfaceMode.auto.value" = "Automatic (%@)";
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS on Duo";
 

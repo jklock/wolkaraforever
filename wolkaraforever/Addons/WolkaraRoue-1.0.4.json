@@ -34,8 +34,8 @@
       "size": 12503
     },
     "WolkaraRoue/Core.lua": {
-      "sha256": "82bea91ed103707a3128681143f8445ff9df17075c3430db412d89ff55134de6",
-      "size": 19792
+      "sha256": "4787c107bd6edd8f5f4e2e9b745b301801ae27a5e60d9a7590d91042de196015",
+      "size": 22457
     },
     "WolkaraRoue/DuoMenu.lua": {
       "sha256": "86b29e80806240215397bb828a471c3f01607cdf71987c9c39ec6184d70a1f59",
@@ -146,6 +146,6 @@
   "interface": 16001,
   "name": "WolkaraRoue",
   "release": "1.0.4",
-  "sha256": "09be9cd80800ceb5f1cd69c3759ca2ca0a35d590e474d05ee6517214ef45d770",
+  "sha256": "99d84c1054c1c2c8da878cde7271d55e81c9a220acaa1d413b3e8c0286e468e6",
   "version": 1
 }

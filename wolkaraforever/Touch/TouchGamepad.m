@@ -213,21 +213,15 @@ static const CGFloat AKAutoRunArm = 60;
 - (void)toggleSettings;
 - (void)finishConfiguration;
 @end
-// The floating arrangement's geometry, in fractions of the overlay. The two halves are the
-// thumbs' own: a press there is a stick push, not a tap on the game. The corner beyond the
-// camera stick is the jump, and the gaps around it are the add-on's own controls, which a
-// floating stick must never take: the quick bar down the left, the chat strip at the bottom
-// centre, and the wheels' tabs between them.
+// The floating arrangement's own geometry, in fractions of the overlay. Each thumb owns a
+// half of the screen, and the corner beyond the camera stick is the jump. Nothing here knows
+// about any add-on: areas reserved for the game or for someone's installed buttons come from
+// the saved layout, so an add-on can never define this interface.
 static const CGFloat AKFloatIdleAlpha = 0.02;
-static const CGFloat AKFloatJumpRadius = 0.16, AKFloatFanRadius = 0.36;
-static const CGFloat AKFloatIslandRadius = 0.43, AKFloatIslandSize = 0.056;
-static const CGFloat AKFloatIslandAngles[] = {58, 82};
-static const CGFloat AKFloatInnerRadius = 0.20, AKFloatInnerSize = 0.05;
-static const CGFloat AKFloatInnerAngles[] = {13, 45};
+static const CGFloat AKFloatJumpRadius = 0.16;
 static const CGFloat AKFloatLeftMinX = 0.10, AKFloatLeftMaxX = 0.42;
 static const CGFloat AKFloatLeftMinY = 0.42, AKFloatLeftLowY = 0.86;
 static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRightMaxY = 0.92;
-static const CGFloat AKChatButtonHalfWidth = 0.068, AKChatButtonTop = 0.925;
 @implementation AKGamepadOverlay {
     NSDictionary<NSString *,UIView *> *_items;
     NSMutableDictionary<NSString *,NSValue *> *_dragOrigins;
@@ -433,31 +427,25 @@ static const CGFloat AKChatButtonHalfWidth = 0.068, AKChatButtonTop = 0.925;
     return NO;
 }
 // A press in a thumb's half is that stick's; the corner beyond the camera stick is the jump;
-// everywhere else - including the add-on's own controls - is not ours, so the touch goes on to
-// whatever is underneath. Nothing here forwards a touch by hand: returning nil is the app's own
-// hit-testing doing it.
+// everywhere else - including any area the player reserved - is not ours, so the touch goes on
+// to whatever is underneath. Nothing here forwards a touch by hand: returning nil is the app's
+// own hit-testing doing it.
 - (UIView *)floatingHit:(CGPoint)point event:(UIEvent *)event {
     CGSize size = self.bounds.size;
     if (size.width <= 0 || size.height <= 0) return nil;
-    CGFloat h = size.height, corner = hypot(size.width - point.x, size.height - point.y);
+    CGFloat h = size.height;
     CGFloat fx = point.x / size.width, fy = point.y / h;
-    // The add-on's own chat strip at the bottom centre: a press there is the add-on's, and
-    // nothing here takes it.
-    if (fabs(fx - 0.5) <= AKChatButtonHalfWidth && fy >= AKChatButtonTop) return nil;
-    for (size_t i = 0; i < sizeof(AKFloatInnerAngles) / sizeof(AKFloatInnerAngles[0]); i++) {
-        CGFloat angle = AKFloatInnerAngles[i] * M_PI / 180;
-        CGFloat x = size.width - AKFloatInnerRadius * h * cos(angle), y = size.height - AKFloatInnerRadius * h * sin(angle);
-        if (hypot(point.x - x, point.y - y) <= AKFloatInnerSize * h) return nil;
+    // The areas the player reserved come first and win outright: a touch there belongs to the
+    // game, or to whatever was installed in it.
+    for (NSDictionary<NSString *, NSNumber *> *area in _preferences.keepFree) {
+        CGFloat ax = area[@"x"].doubleValue, ay = area[@"y"].doubleValue;
+        CGFloat aw = area[@"w"].doubleValue, ah = area[@"h"].doubleValue;
+        if (fx >= ax && fx <= ax + aw && fy >= ay && fy <= ay + ah) return nil;
     }
+    CGFloat corner = hypot(size.width - point.x, h - point.y);
     if (corner <= AKFloatJumpRadius * h) {
         AKGamepadButton *jump = _buttons[GCInputButtonA];
         return jump.enabled ? jump : nil;
-    }
-    if (corner <= AKFloatFanRadius * h) return nil;
-    for (size_t i = 0; i < sizeof(AKFloatIslandAngles) / sizeof(AKFloatIslandAngles[0]); i++) {
-        CGFloat angle = AKFloatIslandAngles[i] * M_PI / 180;
-        CGFloat x = size.width - AKFloatIslandRadius * h * cos(angle), y = size.height - AKFloatIslandRadius * h * sin(angle);
-        if (hypot(point.x - x, point.y - y) <= AKFloatIslandSize * h) return nil;
     }
     if (fx <= AKFloatLeftMaxX && (fy >= AKFloatLeftLowY || (fx >= AKFloatLeftMinX && fy >= AKFloatLeftMinY)))
         return [self stickHeld:_leftStick event:event] ? _sink : _leftStick;

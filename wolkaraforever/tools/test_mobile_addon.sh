@@ -47,6 +47,7 @@ luajit wolkaraforever/tools/tests/test_mobile_addon_windows.lua "$addon/Windows.
 luajit wolkaraforever/tools/tests/test_mobile_addon_minimap.lua "$addon/Minimap.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_chat.lua "$addon/Chat.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_settings.lua "$addon/Core.lua"
+luajit wolkaraforever/tools/tests/test_mobile_addon_migration.lua "$addon/Core.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_api.lua "$addon/Core.lua"
 luajit wolkaraforever/tools/tests/test_mobile_addon_duo.lua "$addon"
 

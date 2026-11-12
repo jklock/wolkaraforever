@@ -4,8 +4,7 @@
 
 This page names no source revision on purpose: it describes whatever commit you are
 reading, and a pinned hash here would be stale by the next commit. Physical results are
-kept as dated records under [development/validation/](development/validation/), where
-they name the revision that actually ran.
+reported when they occur but are not retained as release artifacts.
 
 This changelog records release history. It is not a compatibility guarantee: read the current
 [installation guide](docs/INSTALLATION.md), [user guide](docs/USING_WOLKARAFOREVER.md), and
@@ -13,30 +12,20 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
-- **The Duo refinement package: the mobile add-on becomes release 1.0.4.** `addons/WolkaraRoue`
-  now ships the Duo interface: a corner fan of skills with two pages and its own tab, a
-  collapsible quick bar down the left edge, a chat tab with its peek and expanded states,
-  party and status frames, window placement clear of the thumbs, a language switch for the
-  add-on's own words, and slot editing that saves on the touch that leaves it. It is still one
-  reviewed, deterministic package: the archive and manifest are rebuilt byte for byte from the
-  sources, the app's verifier accepts only that pair and refuses the nine wrong packages a
-  fixture builds, and the release inside the archive's own `.toc` is checked as well. Nothing
-  installs it by itself - choosing `iOS on Duo` writes one preference, and Install in the
-  Add-On Manager stays the explicit step. Release 0.9.1's saved layouts are carried over, and
-  a change is written on a real touch, because the game reloads an add-on's interface only
-  from one and never from a timer. Thanks to `scarrdi94` and `pookee` (ExoGroupe), whose
-  interface this is.
-
-- **Floating sticks, a corner jump and auto-run, for the mobile interface.** With the mobile
-  interface chosen and the floating arrangement switched on, each thumb's half of the screen
-  is its stick: the ring fades almost away and comes back under the finger, the corner beyond
-  the camera stick is the jump, and pushing the movement stick forward for two seconds arms an
-  auto-run that a further push confirms, that keeps running when the finger lifts, and that
-  one touch on the stick stops. The add-on's own chat strip and wheel tabs are never taken, a
-  pinch that begins on a control is not a camera pinch, and leaving the arrangement releases
-  everything it held. Off by default and unavailable in Standard: one key,
-  `WolkaraForeverInterfaceModeV1`, decides it, and its settings words are translated into
-  English, German and French.
+- **A finished download no longer ends at "Startup unavailable".** A build made in
+  Xcode has no `TOLKARA_MODE`, and the launcher resolved its execution mode
+  without the route the build was compiled with: the log said `execution mode=none
+  source=none`, and the completed installation correctly showed a disabled
+  "Startup unavailable" button with nothing in the public home to change it.
+  Reported on an iPhone Duo running a build made in Xcode. The launcher now
+  resolves the way the platform does - an explicit `--execution-mode`, then the
+  saved choice, then the build's `TOLKARA_MODE` - and only then falls back to the
+  route the build includes: Developer service in Tolkara, External JIT in
+  TolkaraDiagnostics. A saved choice this build cannot run falls back the same
+  way - the two targets share a bundle id, so a mode saved by a TolkaraDiagnostics
+  install can meet Tolkara, where the public home has no chooser to change it -
+  while an unusable `--execution-mode` or `TOLKARA_MODE` still keeps its own
+  diagnostic rather than being replaced by the fallback.
 
 - **The Launcher Manager, and the interface it drives.** A sixth card now sits beside UI
   Manager (and after it on a phone): `wow.launcher.interfaceMode`, with exactly two choices,
@@ -232,6 +221,4 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Historical releases
 
-Earlier release claims and dated validation evidence are retained in Git history and in
-[`development/validation/`](development/validation/). They apply only to the revisions,
-devices, and game builds they name.
+Earlier release claims apply only to the revisions, devices, and game builds they name.

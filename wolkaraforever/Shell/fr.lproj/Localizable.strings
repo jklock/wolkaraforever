@@ -39,6 +39,8 @@
 "home.launcher.interfaceMode.row" = "Mode d’interface : %@";
 "home.launcher.interfaceMode.title" = "Mode d’interface";
 "home.launcher.interfaceMode.message" = "Choisissez l’interface pilotée par ce lanceur. En changer n’installe, ne désactive, ne supprime et ne met jamais à jour un addon.";
+"home.launcher.interfaceMode.auto" = "Automatique";
+"home.launcher.interfaceMode.auto.value" = "Automatique (%@)";
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS on Duo";
 

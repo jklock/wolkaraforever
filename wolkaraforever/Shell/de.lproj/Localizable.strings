@@ -42,6 +42,8 @@
 "home.launcher.interfaceMode.row" = "Oberflächenmodus: %@";
 "home.launcher.interfaceMode.title" = "Oberflächenmodus";
 "home.launcher.interfaceMode.message" = "Wähle die Oberfläche, die dieser Launcher steuert. Ein Wechsel installiert, deaktiviert, entfernt oder aktualisiert niemals ein Add-on.";
+"home.launcher.interfaceMode.auto" = "Automatisch";
+"home.launcher.interfaceMode.auto.value" = "Automatisch (%@)";
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS on Duo";
 
