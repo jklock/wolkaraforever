@@ -34,10 +34,18 @@
 "home.box.voice" = "Voix et commandes";
 "home.box.profile" = "Performances";
 "home.box.performance" = "Interface du jeu";
+"home.box.launcherManager" = "Gestionnaire du lanceur";
+
+"home.launcher.interfaceMode.row" = "Mode d’interface : %@";
+"home.launcher.interfaceMode.title" = "Mode d’interface";
+"home.launcher.interfaceMode.message" = "Choisissez l’interface pilotée par ce lanceur. En changer n’installe, ne désactive, ne supprime et ne met jamais à jour un addon.";
+"home.launcher.interfaceMode.ipados" = "iPadOS";
+"home.launcher.interfaceMode.ios" = "iOS on Duo";
 
 "home.addons.install" = "Installer des addons (CurseForge et direct)";
 "home.addons.install.needsgame" = "Installer des addons (CurseForge et direct) (installez d’abord le jeu)";
-"home.addons.macever" = "Télécharger Mac-Ever";
+"home.addons.recommended.macEver" = "Installer les addons recommandés (Mac-Ever)";
+"home.addons.recommended.wolkaraRoue" = "Installer les addons recommandés (WolkaraRoue)";
 "home.addons.directory" = "Ouvrir le dossier des addons";
 "home.addons.directory.needsgame" = "Ouvrir le dossier des addons (installez d’abord le jeu)";
 "home.voice.keys" = "Configuration des touches et boutons";
@@ -443,6 +451,14 @@
 "addons.noCategories" = "CurseForge n’a renvoyé aucune catégorie d’addons.";
 "addons.projectsShown" = "%lu projets sur %lu · la compatibilité Forever est vérifiée à l’installation";
 "addons.projectsOfShown" = "%lu projets affichés sur %lu";
+"addons.recommended.unexpected" = "CurseForge a renvoyé un autre projet. Actualisez pour réessayer.";
+"addons.bundled.name" = "WolkaraRoue (fourni)";
+"addons.bundled.detail" = "Version %@ · SHA-256 %@";
+"addons.bundled.install" = "Installer";
+"addons.bundled.update" = "Mettre à jour";
+"addons.bundled.installed" = "WolkaraRoue %@ installé depuis le paquet de cette app.";
+"addons.bundled.unavailable" = "Le paquet d’addon fourni est absent ou n’est pas celui que cette app a livré.";
+"addons.bundled.title" = "Addon fourni";
 "addons.by" = "Par %@";
 "addons.downloads" = "%@ téléchargements sur CurseForge";
 "addons.installLatest" = "Installer le dernier fichier compatible";

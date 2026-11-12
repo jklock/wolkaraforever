@@ -88,6 +88,17 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 // layout's own values, which the store then reads back unchanged.
 static NSString *const TKForeverLayoutKey = @"WolkaraForeverTouchLayoutV1";
 static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidChange";
+// The interface mode's one key and its two values, by value, for the same reason as the
+// layout key above: the Touch module owns them (Touch/InterfaceMode.h), but WoW must not
+// import it. A value that is missing, unrecognised, or hand-edited to anything else means
+// iPadOS, exactly as AKInterfaceModeIsMobile resolves it.
+static NSString *const TKForeverInterfaceModeKey = @"WolkaraForeverInterfaceModeV1";
+static NSString *const TKForeverInterfaceModeIPadOS = @"ipados";
+static NSString *const TKForeverInterfaceModeIOS = @"ios";
+static BOOL TKForeverInterfaceModeIsMobile(void) {
+    id value = [NSUserDefaults.standardUserDefaults objectForKey:TKForeverInterfaceModeKey];
+    return [value isKindOfClass:NSString.class] && [value isEqual:TKForeverInterfaceModeIOS];
+}
 
 
 // A settings row that reads as a switch, not as a command: the words stay the
@@ -190,12 +201,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIStackView *_columns;
     NSLayoutConstraint *_markWidth;
     UIStackView *_gridRow1, *_gridRow2, *_gridRow3, *_topRow;
-    UIView *_gridSpacer;
     UILabel *_stateLabel, *_detailLabel, *_versionLabel;
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_voiceTestButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
-        *_renderProfileButton, *_deviceProfileButton;
+        *_renderProfileButton, *_deviceProfileButton, *_interfaceModeButton;
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
@@ -280,12 +290,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 // The cell beside a card that has no neighbour: nothing, but the same width, so the page keeps
 // its grid instead of stretching one card across the column and reading as a footer.
-- (UIView *)emptyBox {
-    UIView *view=[UIView new];
-    view.accessibilityIdentifier=@"wow.grid.spacer";
-    view.userInteractionEnabled=NO;
-    return view;
-}
 // The layer's mark, where the wordmark used to sit. It is drawn at the top
 // row's width, so it grows and shrinks with the window, with one cap: it may
 // never take more than a fifth of the height, so the boxes below it always have
@@ -359,7 +363,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // Mac-Ever is a Forever-compatible add-on that is downloaded from CurseForge
     // by the person using Safari, then installed with the row above. No scrape,
     // no embedded download URL, and opening the page is not an installation.
-    _macEverButton=[self button:@"wow.addons.macEver" action:@selector(downloadMacEver)];
+    // The recommended add-ons for the chosen interface. The row opens the Add-On Manager,
+    // where the package is chosen and installed explicitly; it never installs silently.
+    _macEverButton=[self button:@"wow.addons.macEver" action:@selector(openRecommendedAddons)];
     _addonsDirectoryButton=[self button:@"wow.addons.directory" action:@selector(openAddonDirectory)];
     // Straight to this app's own page in Settings, which is where the Microphone and Speech Recognition
     // switches live. Available before the game is installed, because it is a setting and not a game
@@ -377,6 +383,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
+    // The interface this launcher drives. One setting, one row: it writes the single key the
+    // guest reads and never touches an installed package.
+    _interfaceModeButton=[self button:@"wow.launcher.interfaceMode" action:@selector(chooseInterfaceMode)];
 
     // Five sections, as boxes, in the order they are read. The compatibility note belongs to
     // the edition it is about, so it lives in that box rather than loose on the page. The
@@ -396,6 +405,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // order a person needs them when something has gone wrong.
     UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
         rows:@[_backupButton,_restoreButton,_resetButton,_settingsFolderButton,_gamepadRow]];
+    // The sixth card, in the cell that used to be the grid's spacer: the interface mode, and
+    // the one place the recommendation row's own card sends a person to install it. It sits
+    // beside UI Manager on a wide page and after it on a narrow one, and it changes no other
+    // card's width, inset or order.
+    UIView *launcherManagerBox=[self sectionBoxWithIdentifier:@"wow.box.launcherManager"
+        rows:@[_interfaceModeButton]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _activity.color=Gold(); _activity.hidesWhenStopped=YES;
@@ -436,11 +451,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _markWidth.active=YES;
     _gridRow1=[self boxRow:@[editionBox,addonsBox]];
     _gridRow2=[self boxRow:@[voiceBox,profileBox]];
-    // The fifth card sits on its own row beside an empty cell of the same width, so it keeps
-    // the column width it would have had next to a neighbour instead of stretching across the
-    // page and reading as a footer.
-    _gridSpacer=[self emptyBox];
-    _gridRow3=[self boxRow:@[performanceBox,_gridSpacer]];
+    // The fifth and sixth cards share the last row. The sixth used to be an empty cell whose
+    // only job was to keep the fifth card the same width as the ones above it; now it holds
+    // the Launcher Manager, so the same geometry carries a card instead of a blank.
+    _gridRow3=[self boxRow:@[performanceBox,launcherManagerBox]];
     UIStackView *grid=Stack(@[_gridRow1,_gridRow2,_gridRow3],16);
     grid.accessibilityIdentifier=@"wow.grid";
     _columns=Stack(@[top,grid],20); _columns.accessibilityIdentifier=@"wow.columns";
@@ -502,9 +516,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         row.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
         row.distribution=horizontal?UIStackViewDistributionFillEqually:UIStackViewDistributionFill;
     }
-    // The empty cell beside the fifth card exists to keep the columns equal; stacked, it would
-    // be an empty box at the foot of the page.
-    _gridSpacer.hidden=!horizontal;
     // The mark sits beside the status when there are two columns to fill. Stacked, the status
     // takes the full width and the mark goes above it, so the Play button is never squeezed.
     _topRow.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
@@ -771,6 +782,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _headings[@"wow.box.voice"].text=WKLocalized(@"home.box.voice").uppercaseString;
     _headings[@"wow.box.profile"].text=WKLocalized(@"home.box.profile").uppercaseString;
     _headings[@"wow.box.performance"].text=WKLocalized(@"home.box.performance").uppercaseString;
+    _headings[@"wow.box.launcherManager"].text=WKLocalized(@"home.box.launcherManager").uppercaseString;
     [_gamepadRow applyTitle:WKLocalized(@"home.performance.gamepad")];
     [_overlayRow applyTitle:WKLocalized(@"home.performance.overlay")];
     [_diagnosticsButton setTitle:WKLocalized(@"home.diagnostics") forState:UIControlStateNormal];
@@ -855,9 +867,14 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_addonsButton title:_installation.app?WKLocalized(@"home.addons.install"):WKLocalized(@"home.addons.install.needsgame") filled:NO];
     _addonsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _addonsButton.enabled=_installation.app && !_busy && !_starting && !_running && !_sessionUsed;
-    [self configureButton:_macEverButton title:WKLocalized(@"home.addons.macever") filled:NO];
+    // The recommendation row keeps its identifier and changes only its words and its
+    // destination. It opens the Add-On Manager, which is where installing is explicit:
+    // pressing this row never installs, disables, removes or updates anything by itself.
+    [self configureButton:_macEverButton
+        title:TKForeverInterfaceModeIsMobile()?WKLocalized(@"home.addons.recommended.wolkaraRoue")
+                                               :WKLocalized(@"home.addons.recommended.macEver") filled:NO];
     _macEverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    // Navigation only: the page is opened for the user to download the ZIP.
+    // Navigation only: the page is opened for the user to choose and install there.
     // Starting and an ended session grey it with everything else.
     _macEverButton.enabled=!_starting && !_running && !_sessionUsed;
     [self configureButton:_addonsDirectoryButton title:_installation.app?WKLocalized(@"home.addons.directory"):WKLocalized(@"home.addons.directory.needsgame") filled:NO];
@@ -893,6 +910,15 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_resetButton title:WKLocalized(@"home.performance.reset") filled:NO];
     [self configureButton:_restoreButton title:WKLocalized(@"home.performance.restore") filled:NO];
     [self configureButton:_settingsFolderButton title:WKLocalized(@"home.performance.settingsFolder") filled:NO];
+    // The Launcher Manager's one row: which interface the guest runs. It is a setting, so it
+    // follows the page's idle rule, and choosing a mode writes the one key the guest reads -
+    // never a package, a file or an installation.
+    [self configureButton:_interfaceModeButton
+        title:WKLocalizedFormat(@"home.launcher.interfaceMode.row",
+            TKForeverInterfaceModeIsMobile()?WKLocalized(@"home.launcher.interfaceMode.ios")
+                                            :WKLocalized(@"home.launcher.interfaceMode.ipados")) filled:NO];
+    _interfaceModeButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _interfaceModeButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     // Switches, not changing commands: the label is fixed and the control shows
     // the state.
     _gamepadRow.enabled=foreverReady;
@@ -1024,7 +1050,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _refreshItem.enabled=!_busy && !_sessionUsed && !_starting && !_running;
     for (UIButton *button in @[_editionButton,_preferencesButton,_addonsButton,_macEverButton,_addonsDirectoryButton,
                                 _permissionsButton,_voiceButton,_voiceTestButton,_backupButton,_resetButton,
-                                _restoreButton,_settingsFolderButton])
+                                _restoreButton,_settingsFolderButton,_interfaceModeButton])
         [self stylePlainButton:button];
     [self stylePrimaryButton];
     _diagnosticsButton.tintColor=_diagnosticsButton.enabled?Gold():RowGrey();
@@ -1634,16 +1660,53 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     picker.delegate=self;
     [self presentViewController:picker animated:YES completion:nil];
 }
-// Mac-Ever's CurseForge page, in the browser. The user downloads the ZIP there
-// and comes back to Install Addons (Curse & Direct); opening the page is not an
-// installation and is never reported as one.
-- (void)downloadMacEver {
-    NSURL *url=[NSURL URLWithString:@"https://www.curseforge.com/wow/addons/mac-ever"];
-    if (!url) return;
-    if (self.openExternalURL) { self.openExternalURL(url); return; }
-    [UIApplication.sharedApplication openURL:url options:@{} completionHandler:^(BOOL opened) {
-        WKLog("host", @"mac-ever: download page opened: %@", opened?@"yes":@"no");
-    }];
+// Which interface this launcher drives. Exactly two choices, named as the two interfaces
+// are: iPadOS and iOS on Duo. The current one carries the app's own checkmark, the same
+// marker every other selector on this page uses.
+- (void)chooseInterfaceMode {
+    if (_busy || _starting || _running || _sessionUsed) {
+        WKLog("ui", @"interface mode: declined while the page is busy");
+        return;
+    }
+    BOOL mobile=TKForeverInterfaceModeIsMobile();
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceMode.title")
+        message:WKLocalized(@"home.launcher.interfaceMode.message")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSNumber *each in @[@NO,@YES]) {
+        BOOL chosen=each.boolValue;
+        NSString *title=WKLocalized(chosen?@"home.launcher.interfaceMode.ios"
+                                            :@"home.launcher.interfaceMode.ipados");
+        if (chosen==mobile) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            [self applyInterfaceMode:chosen];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_interfaceModeButton];
+}
+// One key, and nothing else. A mode is a setting the guest reads on its next use; it is not
+// an installation, a disable, a removal or an update, and this path touches no package.
+- (void)applyInterfaceMode:(BOOL)mobile {
+    [NSUserDefaults.standardUserDefaults setObject:(mobile?TKForeverInterfaceModeIOS:TKForeverInterfaceModeIPadOS)
+                                            forKey:TKForeverInterfaceModeKey];
+    WKLog("ui", @"interface mode: %@", mobile?@"ios":@"ipados");
+    [self render];
+}
+// The recommendation row. It opens the Add-On Manager, which is where a package is chosen
+// and installed explicitly; pressing the row never installs anything by itself. Which
+// recommendation it opens follows the interface mode: Mac-Ever on iPadOS, the bundled
+// WolkaraRoue package on iOS on Duo.
+- (void)openRecommendedAddons {
+    NSError *error=nil;
+    NSString *addons=[self addOnsDirectoryWithError:&error];
+    if (!addons) { [self presentAddonsUnavailable:error]; return; }
+    TKAddonRecommendation recommendation=TKForeverInterfaceModeIsMobile()
+        ? TKAddonRecommendationWolkaraRoue : TKAddonRecommendationMacEver;
+    WKLog("ui", @"recommendation: opening the add-on manager for %@",
+          recommendation==TKAddonRecommendationWolkaraRoue?@"WolkaraRoue":@"Mac-Ever");
+    TKWoWAddonManagerViewController *manager=[[TKWoWAddonManagerViewController alloc]
+        initWithAddOnsDirectory:addons edition:_product[@"name"] recommendation:recommendation];
+    [self presentPage:manager];
 }
 - (void)presentAddonsUnavailable:(nullable NSError *)error {
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.addons.unavailable.title")

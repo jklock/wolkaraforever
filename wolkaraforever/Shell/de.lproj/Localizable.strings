@@ -37,10 +37,18 @@
 "home.box.voice" = "Diktatverwaltung (V2T)";
 "home.box.profile" = "Leistungsverwaltung";
 "home.box.performance" = "Oberflächenverwaltung";
+"home.box.launcherManager" = "Startverwaltung";
+
+"home.launcher.interfaceMode.row" = "Oberflächenmodus: %@";
+"home.launcher.interfaceMode.title" = "Oberflächenmodus";
+"home.launcher.interfaceMode.message" = "Wähle die Oberfläche, die dieser Launcher steuert. Ein Wechsel installiert, deaktiviert, entfernt oder aktualisiert niemals ein Add-on.";
+"home.launcher.interfaceMode.ipados" = "iPadOS";
+"home.launcher.interfaceMode.ios" = "iOS on Duo";
 
 "home.addons.install" = "Add-ons installieren (Curse & direkt)";
 "home.addons.install.needsgame" = "Add-ons installieren (Curse & direkt) (zuerst Spiel installieren)";
-"home.addons.macever" = "Mac-Ever laden (Leistungsoptimierung)";
+"home.addons.recommended.macEver" = "Empfohlene Add-ons installieren (Mac-Ever)";
+"home.addons.recommended.wolkaraRoue" = "Empfohlene Add-ons installieren (WolkaraRoue)";
 "home.addons.directory" = "Add-on-Ordner öffnen";
 "home.addons.directory.needsgame" = "Add-on-Ordner öffnen (zuerst Spiel installieren)";
 "home.voice.keys" = "Tasten und Buttons belegen";
@@ -442,6 +450,14 @@
 "addons.noCategories" = "CurseForge hat keine Add-on-Kategorien geliefert.";
 "addons.projectsShown" = "%lu von %lu Projekten · die Kompatibilität ist ein Hinweis, keine Sperre";
 "addons.projectsOfShown" = "%lu von %lu Projekten angezeigt";
+"addons.recommended.unexpected" = "CurseForge hat ein anderes Projekt zurückgegeben. Aktualisiere, um es erneut zu versuchen.";
+"addons.bundled.name" = "WolkaraRoue (mitgeliefert)";
+"addons.bundled.detail" = "Version %@ · SHA-256 %@";
+"addons.bundled.install" = "Installieren";
+"addons.bundled.update" = "Aktualisieren";
+"addons.bundled.installed" = "WolkaraRoue %@ aus dem Paket dieser App installiert.";
+"addons.bundled.unavailable" = "Das mitgelieferte Add-on-Paket fehlt oder ist nicht das, das diese App ausgeliefert hat.";
+"addons.bundled.title" = "Mitgeliefertes Add-on";
 "addons.by" = "Von %@";
 "addons.downloads" = "%@ Downloads auf CurseForge";
 "addons.installLatest" = "Neueste kompatible Datei installieren";

@@ -26,6 +26,7 @@ the baseline specification, screenshots, fixture assertions, review record, and 
 | --- | --- |
 | Grid threshold | two columns only when the scroll view bounds are at least 700 points wide |
 | iPhone | one column at every width |
+| Card grid | six cards in three rows: Game Settings Manager, Add-On Manager, Dictation (V2T) Manager, Performance Manager, UI Manager, Launcher Manager |
 | Overflow | horizontal overflow is forbidden |
 | Card insets | 14/16 points |
 | Row spacing | 8 points |
@@ -36,6 +37,25 @@ the baseline specification, screenshots, fixture assertions, review record, and 
 
 `DEVICE_CONTRACT.md` remains the measured geometry source. Re-measure a changed value; do not
 weaken the prose to fit an implementation.
+
+## Amendment record
+
+The v1.0.9 Launcher Manager amendment is the sole authorized launcher-contract amendment in
+the 2026-11-10 train. It changed two protected things and nothing else:
+
+- The sixth card, `wow.box.launcherManager`, now occupies the cell that was the grid's empty
+  spacer beside UI Manager. It is the same width in the two-column layout and follows UI
+  Manager in the one-column layout, so every other card's geometry is unchanged.
+- The recommendation row keeps its identifier, `wow.addons.macEver`. Its title is
+  `Install Recommended Add-ons (Mac-Ever)` on iPadOS and
+  `Install Recommended Add-ons (WolkaraRoue)` on iOS on Duo, and its action opens the Add-On
+  Manager instead of a browser page. It never installs silently.
+
+`wow.launcher.interfaceMode` offers exactly two choices, `iPadOS` and `iOS on Duo`; the
+selection is persisted to `WolkaraForeverInterfaceModeV1`, and a mode change never installs,
+disables, removes or updates a package. The states this produces are recorded in
+`LAUNCHER_UI_BASELINE.md`; the review is
+`development/reviews/ui/UI-LAUNCHER-MANAGER-2026-11-12.md`.
 
 ## Mandatory evidence
 

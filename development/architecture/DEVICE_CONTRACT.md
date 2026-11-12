@@ -41,7 +41,8 @@ changes that.
 
 | Item | iPad | iPhone |
 | --- | --- | --- |
-| Page structure | One vertical column of cards; **two cards side by side** when `bounds.width >= 700` and the text size is not an accessibility size | One vertical column of cards at every width |
+| Page structure | One vertical column of six cards; **two cards side by side** when `bounds.width >= 700` and the text size is not an accessibility size | One vertical column of six cards at every width |
+| Card order | Game Settings Manager, Add-On Manager, Dictation (V2T) Manager, Performance Manager, UI Manager, Launcher Manager | same order; Launcher Manager follows UI Manager |
 | Two-column threshold | 700 points, measured from the scroll view's own bounds — never from `horizontalSizeClass`, which stays *regular* in a narrow iPad form sheet and drew a row wider than the list on 2026-10-22 | never applies |
 | Fixed viewport | None. No fixed iPad point size is used for layout | None |
 | Horizontal overflow | Forbidden. `scroll.contentSize.width <= scroll.bounds.size.width + 1`, and every card's frame lies inside the scroll view | same |
@@ -53,6 +54,25 @@ changes that.
 The render scale and the window geometry are separate: `DeviceProfile` decides the backing
 scale, the AppKit adapter reads the live window for the guest display. Neither writes the
 game's own graphics settings.
+
+### Launcher Manager and the recommendation row
+
+The sixth card holds one setting, `wow.launcher.interfaceMode`. It offers exactly two
+choices, `iPadOS` and `iOS on Duo`; the current one is marked and the choice is persisted to
+`WolkaraForeverInterfaceModeV1`. A missing or unrecognised value means iPadOS. Choosing a mode
+writes that one key and never installs, disables, removes or updates an add-on.
+
+The Add-On Manager card's recommendation row keeps its identifier, `wow.addons.macEver`. Its
+title and destination follow the mode:
+
+| Mode | Row title | Opens |
+| --- | --- | --- |
+| iPadOS | `Install Recommended Add-ons (Mac-Ever)` | the Add-On Manager on Browse, filtered to CurseForge project 1733200, with the existing explicit Core API key and Install flow |
+| iOS on Duo | `Install Recommended Add-ons (WolkaraRoue)` | the Add-On Manager on Installed, showing the bundled WolkaraRoue package's release and SHA-256 and its own explicit Install action |
+
+Neither path installs by itself. The bundled package is located and verified against its
+manifest before it is offered, and a malformed, missing or unexpected archive is refused with
+its own message and nothing is extracted.
 
 ## 4. Dynamic Type
 

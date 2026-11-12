@@ -22,6 +22,12 @@ xcrun swiftc -O -emit-library -emit-module -module-name ZIPFoundation \
     "$package"/Sources/ZIPFoundation/*.swift -o "$build/libZIPFoundation.dylib" \
     -emit-module-path "$build/ZIPFoundation.swiftmodule"
 python3 wolkaraforever/tools/tests/make_addon_archives.py "$build/fixtures"
+# The bundled WolkaraRoue pair and the deliberately wrong packages beside it. The install
+# lifecycle below uses the same archives the verifier is tested against, so "what the app
+# installs" and "what the fixture accepts" cannot drift apart.
+rm -rf "$build/package" "$build/package-fixtures"
+python3 wolkaraforever/tools/package_addon_zip.py --output "$build/package" \
+    --fixtures "$build/package-fixtures" > /dev/null
 
 wolkaraforever/tools/prepare.sh
 cd build/platform
@@ -37,4 +43,4 @@ xcrun swiftc -warnings-as-errors -I "$build" -L "$build" -lZIPFoundation \
     -Xlinker -rpath -Xlinker "$build" launcher/WoW/AddonArchive.swift \
     tests/test_addon_archive.swift "$build/AddonStore.o" "$build/UpdateLock.o" "$build/import.o" \
     "$build/WKLocalization.o" -o "$build/test_addon_archive"
-"$build/test_addon_archive" "$build/fixtures"
+"$build/test_addon_archive" "$build/fixtures" "$build/package-fixtures"

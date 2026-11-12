@@ -29,7 +29,32 @@ wow-starting.png
 wow-running.png
 wow-startup-failed.png
 wow-downloading.png
+wow-launcher-ipados.png
+wow-launcher-duo.png
+wow-addons-recommended-macever.png
+wow-addons-recommended-wolkararoue.png
 ```
+
+The four Launcher Manager states were added by the v1.0.9 UI-contract amendment:
+
+- `wow-launcher-ipados.png` - the ready page in its default interface: the Launcher Manager
+  card reads `Interface Mode: iPadOS` and the recommendation row reads
+  `Install Recommended Add-ons (Mac-Ever)`.
+- `wow-launcher-duo.png` - the same page after choosing `iOS on Duo`: the card reads
+  `Interface Mode: iOS on Duo` and the recommendation row reads
+  `Install Recommended Add-ons (WolkaraRoue)`. No add-on was installed, disabled, removed or
+  updated by the switch.
+- `wow-addons-recommended-macever.png` - the Add-On Manager the Mac-Ever recommendation opens,
+  on Browse, filtered to CurseForge project 1733200, in the missing-key state (the explicit
+  key prompt is the existing one).
+- `wow-addons-recommended-wolkararoue.png` - the Add-On Manager the WolkaraRoue recommendation
+  opens, showing the bundled package's release and SHA-256 and its own explicit Install action.
+
+The selector's two choices are asserted as values by `test_wow_launcher_app.m` (exactly
+`iPadOS` and `iOS on Duo`, with the current one marked, and persisted to
+`WolkaraForeverInterfaceModeV1`). They are not drawn as a baseline image because an action
+sheet's translucent backdrop is not deterministic to the per-channel tolerance; the page
+states it produces are.
 
 The fixture also asserts the existing identifiers and layout contract. Missing, extra, or
 dimension-mismatched images fail `test_wow_launcher_ui.sh`.
