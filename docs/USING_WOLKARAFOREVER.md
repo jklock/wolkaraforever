@@ -156,6 +156,10 @@ on-screen keyboard includes text, symbols, and dictation entry; the gamepad has 
 size, opacity, grid, and haptic controls. Physical keyboard and controller input can also be
 mapped in the app.
 
+With a physical mouse or trackpad, holding a mouse button while moving passes a held-button
+drag to the game. The touch trackpad's hold-then-slide gesture applies to the touchscreen;
+physical trackpad dragging does not require that delay.
+
 Touch settings use two columns when there is enough width and remain scrollable in smaller
 windows. **Triggers on the outside** swaps LT/LB and RT/RB positions without changing their
 inputs. New or reset layouts put the triggers inside; existing saved layouts keep their

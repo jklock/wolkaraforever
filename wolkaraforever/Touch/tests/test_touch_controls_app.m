@@ -174,10 +174,46 @@ static void AKFixtureInputSource(void *context) {
 @property NSTimer *pump;
 @end
 @implementation AKInputFixtureScene
+- (void)checkMouseTrackingProgress {
+    id<AKTouchControlsDelegate> host=[self.guest valueForKey:@"_host"];
+    for (unsigned button=0;button<3;button++) {
+        for (unsigned traffic=0;traffic<3;traffic++) {
+            for (unsigned cycle=0;cycle<2;cycle++) {
+                [host touchButton:button pressed:YES];
+                AKDrainFixtureEvents();
+                __block BOOL trackingFired=NO, defaultFired=NO;
+                NSTimer *tracking=[NSTimer timerWithTimeInterval:0.02 repeats:NO block:^(NSTimer *timer) {
+                    (void)timer; trackingFired=YES;
+                }];
+                [NSRunLoop.mainRunLoop addTimer:tracking forMode:UITrackingRunLoopMode];
+                NSTimer *ordinary=[NSTimer scheduledTimerWithTimeInterval:0.02 repeats:NO block:^(NSTimer *timer) {
+                    (void)timer; defaultFired=YES;
+                }];
+                NSTimeInterval deadline=NSProcessInfo.processInfo.systemUptime+1;
+                while (!(trackingFired && defaultFired) && NSProcessInfo.processInfo.systemUptime<deadline) {
+                    if (traffic==1) AKFixtureInputSource(NULL);
+                    NSDate *until=traffic==2 ? [NSDate dateWithTimeIntervalSinceNow:0.03] : NSDate.distantPast;
+                    [NSApp nextEventMatchingMask:UINT64_MAX untilDate:until inMode:NSDefaultRunLoopMode dequeue:YES];
+                }
+                [tracking invalidate]; [ordinary invalidate];
+                NSLog(@"Mouse tracking: button=%u traffic=%u cycle=%u tracking=%d default=%d",
+                      button,traffic,cycle,trackingFired,defaultFired);
+                assert(trackingFired && defaultFired);
+                [host touchButton:button pressed:NO];
+                AKDrainFixtureEvents();
+            }
+        }
+    }
+    NSLog(@"TOUCH_UI_SELF_TEST_PASS: repeated held-button drags service default and tracking events before release");
+    exit(EXIT_SUCCESS);
+}
 - (void)checkTrackingUIProgress {
     UIView *host = [self.guest valueForKey:@"_host"];
     AKTouchControls *controls = [host valueForKey:@"_touchControls"];
-    AKTouchGamepad *gamepad = [host valueForKey:@"_touchGamepad"];
+    AKTouchGamepad *gamepad = [controls valueForKey:@"_gamepad"];
+    assert(gamepad);
+    assert(!gamepad.enabled);
+    AKDrainFixtureEvents();
     for (NSUInteger surface = 0; surface < 2; surface++) {
         if (surface == 0) [controls toggleKeyboard]; else [gamepad toggleSettings];
         __block BOOL trackingFired = NO, defaultFired = NO;
@@ -264,6 +300,11 @@ static void AKFixtureInputSource(void *context) {
 }
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--tracking-progress-test"]) {
+        NSMutableDictionary *arguments=[[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
+        arguments[@"TKTouchGamepadEnabled"]=@NO;
+        [NSUserDefaults.standardUserDefaults setVolatileDomain:arguments forName:NSArgumentDomain];
+    }
     [NSApplication sharedApplication];
     self.guest = [[NSWindow alloc] initWithContentRect:((UIWindowScene *)scene).screen.bounds styleMask:0 backing:2 defer:NO];
     self.guest.contentView = [[AKInputFixtureView alloc] initWithFrame:self.guest.frame];
@@ -298,6 +339,13 @@ static void AKFixtureInputSource(void *context) {
         [NSTimer scheduledTimerWithTimeInterval:2 repeats:NO block:^(NSTimer *timer) {
             (void)timer; [self.pump invalidate]; self.pump = nil;
             [self checkTrackingUIProgress];
+        }];
+        return;
+    }
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--mouse-tracking-test"]) {
+        [NSTimer scheduledTimerWithTimeInterval:2 repeats:NO block:^(NSTimer *timer) {
+            (void)timer; [self.pump invalidate]; self.pump=nil;
+            [self checkMouseTrackingProgress];
         }];
         return;
     }

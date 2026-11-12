@@ -606,28 +606,18 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
 - (void)attachMouse:(GCMouse *)mouse API_AVAILABLE(ios(14.0)) {
     __weak AKControllerInspector *weakSelf = self;
     GCMouseInput *input = mouse.mouseInput;
-    // Every handler marks the device first. The right and middle buttons used not to,
-    // so they were attributed to whatever had been pressed before them.
     NSString *name = mouse.vendorName ?: @"Mouse";
-    input.leftButton.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
-        (void)button;
-        AKCIReport(weakSelf, @"mouse", name, @"mouse",
-                   AKInputElementForMouseButton(@"left"), value, pressed, nil);
-    };
-    input.rightButton.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
-        (void)button;
-        AKCIReport(weakSelf, @"mouse", name, @"mouse",
-                   AKInputElementForMouseButton(@"right"), value, pressed, nil);
-    };
-    input.middleButton.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
-        (void)button;
-        AKCIReport(weakSelf, @"mouse", name, @"mouse",
-                   AKInputElementForMouseButton(@"middle"), value, pressed, nil);
-    };
-    input.mouseMovedHandler = ^(GCMouseInput *mouseInput, float deltaX, float deltaY) {
-        (void)mouseInput;
-        // Movement streams; the panel would never settle. Log the click only.
-        (void)deltaX; (void)deltaY;
+    // The AppKit bridge owns movement and per-button callbacks. Observe the profile
+    // separately so refreshing the inspector cannot disconnect held-button dragging.
+    input.valueDidChangeHandler = ^(GCPhysicalInputProfile *profile, GCControllerElement *element) {
+        GCMouseInput *mouseInput = (GCMouseInput *)profile;
+        NSString *buttonName = element == mouseInput.leftButton ? @"left" :
+                               element == mouseInput.rightButton ? @"right" :
+                               element == mouseInput.middleButton ? @"middle" : nil;
+        if (!buttonName) return;
+        GCControllerButtonInput *button = (GCControllerButtonInput *)element;
+        AKCIReport(weakSelf, @"mouse", name, @"mouse", AKInputElementForMouseButton(buttonName),
+                   button.value, button.isPressed, nil);
     };
 }
 

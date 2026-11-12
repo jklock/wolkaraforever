@@ -462,6 +462,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     AKGamepadOverlay *_overlay;
     AKTouchHaptics *_haptics;
     BOOL _active, _connecting, _cancelConnect, _failed, _invalidated;
+    BOOL _controllerArrived;
 }
 - (instancetype)initWithHostView:(UIView *)host {
     if ((self = [super init])) {
@@ -555,7 +556,14 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 }
 - (void)refresh {
     NSAssert(NSThread.isMainThread, @"Touch controller lifecycle belongs on the main thread");
-    if ([self hasPhysicalController] && _overlay.configuring) [_overlay finishConfiguration];
+    // A physical controller hides the on-screen gamepad, so a settings or layout
+    // surface that is open has nothing left to configure and must close. Close it
+    // when a controller actually connects: keyboard, window and application
+    // notifications reach -refresh too, and closing on those made the panel vanish
+    // while it was being used on any device that already had a controller.
+    BOOL physical = [self hasPhysicalController];
+    if (physical && !_controllerArrived && _overlay.configuring) [_overlay finishConfiguration];
+    _controllerArrived = physical;
     if (_connecting) {
         // Wait for this attempt's reply before starting another one. A late
         // successful connect must not bring controls back after suspension.
