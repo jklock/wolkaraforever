@@ -119,6 +119,16 @@ static UIControl *Button(UIView *host, NSString *name) {
     assert(control && !control.hidden); return control;
 }
 static void Drain(void) { CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.03,false); }
+// The lifecycle answers on the main queue: a connect or disconnect reply lands there, and a
+// refresh that arrives while one is in flight waits for that reply. Sampling a fixed instant
+// measured the scheduler rather than the rule, which is what made this fixture flake once.
+static BOOL WaitUntil(BOOL (^predicate)(void)) {
+    for (NSTimeInterval waited=0; waited<2.0; waited+=0.01) {
+        if (predicate()) return YES;
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.01,false);
+    }
+    return predicate();
+}
 @interface AKFixtureTouch : UITouch
 @property CGPoint point;
 @end
@@ -707,17 +717,20 @@ static void TestLifecycle(UIView *host) {
     // connection below on a property this test does not measure; the notification is
     // the activation the product itself reacts to.
     [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
-    [pad refresh]; assert(pad.connections==1 && !pad.visible);
+    [pad refresh]; assert(WaitUntil(^{ return (BOOL)(pad.connections==1); }) && !pad.visible);
     AKFixtureController *physical=[AKFixtureController new]; physical.extendedGamepad=@YES;
     pad.devices=@[(id)physical]; [pad refresh];
+    assert(WaitUntil(^{ return (BOOL)!pad.visible; }));
     [pad.lastConnection finish:nil]; assert(!pad.visible && pad.lastConnection.disconnects);
-    pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil]; assert(pad.visible);
+    pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil];
+    assert(WaitUntil(^{ return (BOOL)pad.visible; }));
     // Our own connect event must never be mistaken for physical hardware.
     pad.devices=@[pad.lastConnection.controller];
     [NSNotificationCenter.defaultCenter postNotificationName:GCControllerDidConnectNotification object:pad.lastConnection.controller];
     CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.03,false);
     assert(pad.visible && pad.connections==2);
-    pad.devices=@[]; pad.keyboardVisible=YES; assert(!pad.visible && pad.lastConnection.disconnects);
+    pad.devices=@[]; pad.keyboardVisible=YES;
+    assert(WaitUntil(^{ return (BOOL)!pad.visible; }) && pad.lastConnection.disconnects);
     pad.keyboardVisible=NO; [pad.lastConnection finish:nil]; assert(pad.visible);
     [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
     assert(!pad.visible);
