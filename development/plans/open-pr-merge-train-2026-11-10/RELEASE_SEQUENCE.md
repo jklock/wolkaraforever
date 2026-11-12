@@ -23,3 +23,7 @@ Allocation notes, in the order they were corrected:
   patches.
 
 Versions are v1.0.2 through v1.0.10 in README.md. Evidence-only docs PRs receive no tag.
+
+Landed: #40 shipped as the in-place modification of `0047-pump-native-control-tracking` in
+**v1.0.7** (`bd234b9`), with its record in `development/validation/bd234b9.md` and its
+execution notes in `PR-40.md`.
