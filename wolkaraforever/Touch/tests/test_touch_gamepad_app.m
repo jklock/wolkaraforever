@@ -136,6 +136,11 @@ static void Drain(void) { CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.03,false); 
 @interface UIView (LayoutFixture)
 - (void)drag:(UIPanGestureRecognizer *)pan;
 @end
+// The movement stick's auto-run check, which the overlay's own timer calls; the fixture drives
+// it with the clock it wants rather than waiting two real seconds.
+@interface UIView (FloatingFixture)
+- (void)pollAutoRun:(NSTimeInterval)now;
+@end
 // The host, with the one delegate method the mobile jump uses: a key pressed or released. It
 // answers like the app's host view does, which is what decides Space over the gamepad's A.
 @interface AKFixtureHostView : UIView
@@ -233,6 +238,7 @@ static void TestJumpReach(UIView *host, AKPreviewGamepad *manager) {
     keyed.recordsKeys=NO;
     puts("TOUCH_GAMEPAD_JUMP_REACH_PASS: with sticks only the jump takes the ring, the gap by the stick and the band below, not beside, above or far below; it holds Space while pressed and always releases it.");
 }
+static void TestFloating(UIView *host, AKPreviewGamepad *manager);
 static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     GCExtendedGamepad *pad=manager.created.controller.extendedGamepad;
     assert(pad && manager.visible);
@@ -426,7 +432,7 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)<CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
     TestPreferences();
     // Sticks-only is a mobile arrangement: Standard has no switch to turn it on with.
-    if (AKInterfaceModeIsMobile()) TestJumpReach(host,manager);
+    if (AKInterfaceModeIsMobile()) { TestJumpReach(host,manager); TestFloating(host,manager); }
     manager.keyboardVisible=YES; Drain();
     assert(!manager.visible && !pad.leftShoulder.pressed && !pad.buttonA.pressed);
     assert(!manager.feedback.enabled);
@@ -434,6 +440,119 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     [leftStick cancelTrackingWithEvent:nil]; [rightStick cancelTrackingWithEvent:nil];
     [manager invalidate];
     puts("TOUCH_GAMEPAD_INPUT_PASS: all nine buttons, D-pad diagonals/opposition/cancel, both sticks, held modifiers, neutral reset and trackpad passthrough.");
+}
+// The floating arrangement is the mobile interface's, and only its: the mode is the whole gate.
+// In it, each thumb's half of the screen is its stick and the corner beyond the camera stick is
+// the jump; the add-on's own chat strip and wheel tabs are not ours, so the touch goes on to
+// what is underneath - the app's own hit-testing, not a forwarded touch. Auto-run arms, lights
+// up, runs on release and stops on the next touch, and leaving the arrangement lets go of it.
+static void TestFloating(UIView *host, AKPreviewGamepad *manager) {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSString *key=AKInterfaceModeDefaultsKey;
+    // The mode is chosen the way this fixture chooses it at launch: in the argument domain,
+    // which outranks anything the app writes. Nothing else is touched, so "no value" really is
+    // no value.
+    void (^mode)(NSString *)=^(NSString *value) {
+        NSMutableDictionary *modes=[[defaults volatileDomainForName:NSArgumentDomain] mutableCopy] ?: [NSMutableDictionary new];
+        if (value) modes[key]=value; else [modes removeObjectForKey:key];
+        [defaults setVolatileDomain:modes forName:NSArgumentDomain];
+    };
+    // Standard: no floating switch, and the floating geometry is not in force.
+    for (NSString *value in @[@"ipados", @"duo"]) {
+        mode(value);
+        [manager toggleSettings];
+        assert(Find(host,@"wolkaraforever.controls.sticksOnly")==nil);
+        assert(Find(host,@"wolkaraforever.controls.floatingSticks")==nil);
+        [manager toggleSettings]; [host layoutIfNeeded];
+        assert([host hitTest:CGPointMake(CGRectGetWidth(host.bounds)*0.40,CGRectGetHeight(host.bounds)*0.50) withEvent:nil]
+               !=Find(host,@"tolkara.gamepad.leftStick"));
+    }
+    mode(nil);
+    [manager toggleSettings];
+    assert(Find(host,@"wolkaraforever.controls.floatingSticks")==nil);
+    [manager toggleSettings];
+    // Mobile: the arrangement exists, and both arrangements are switched on.
+    mode(AKInterfaceModeIOS);
+    [manager toggleSettings];
+    UISwitch *sticksOnly=(id)Find(host,@"wolkaraforever.controls.sticksOnly");
+    UISwitch *floating=(id)Find(host,@"wolkaraforever.controls.floatingSticks");
+    assert(sticksOnly && floating);
+    sticksOnly.on=YES; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
+    floating.on=YES; [floating sendActionsForControlEvents:UIControlEventValueChanged];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    UIView *leftStick=Find(host,@"tolkara.gamepad.leftStick"), *rightStick=Find(host,@"tolkara.gamepad.rightStick");
+    UIView *overlay=leftStick.superview.superview;
+    assert(leftStick && rightStick && overlay);
+    CGRect b=overlay.bounds;
+    CGPoint (^at)(CGFloat,CGFloat)=^CGPoint(CGFloat fx,CGFloat fy) {
+        return [overlay convertPoint:CGPointMake(CGRectGetMinX(b)+b.size.width*fx,CGRectGetMinY(b)+b.size.height*fy) toView:host];
+    };
+    UIView *jump=Button(host,GCInputButtonA);
+    // Each thumb's half is its stick; outside them the touch is the game's (the host itself,
+    // because the overlay declined it).
+    assert([host hitTest:at(0.25,0.70) withEvent:nil]==leftStick);
+    assert([host hitTest:at(0.70,0.50) withEvent:nil]==rightStick);
+    assert([host hitTest:at(0.25,0.30) withEvent:nil]==host);   // above the left half
+    assert([host hitTest:at(0.05,0.70) withEvent:nil]==host);   // the left margin of it
+    assert([host hitTest:at(0.55,0.60) withEvent:nil]==host);   // between the two halves
+    assert([host hitTest:at(0.85,0.10) withEvent:nil]==host);   // above the right half
+    CGFloat h=b.size.height;
+    CGPoint corner=CGPointMake(CGRectGetMaxX(b),CGRectGetMaxY(b));
+    CGPoint nearCorner=[overlay convertPoint:CGPointMake(corner.x-0.05*h,corner.y-0.05*h) toView:host];
+    assert([host hitTest:nearCorner withEvent:nil]==jump);
+    CGFloat fan=0.25*h;
+    CGPoint fanGap=[overlay convertPoint:CGPointMake(corner.x-fan*0.7071,corner.y-fan*0.7071) toView:host];
+    assert([host hitTest:fanGap withEvent:nil]==host);          // between the jump and a tab
+    assert([host hitTest:at(0.5,0.97) withEvent:nil]==host);    // the add-on's chat strip
+    // A stick held by one finger is not grabbed by another touch in its half.
+    AKFixtureTouch *touch=[AKFixtureTouch new];
+    touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),0);
+    UIControl *stick=(id)leftStick;
+    [stick beginTrackingWithTouch:touch withEvent:nil];
+    assert([host hitTest:at(0.25,0.80) withEvent:nil]!=leftStick);
+    // Auto-run: a forward hold arms it after two seconds, a drag up confirms, the release runs.
+    UIView *lock=Find(host,@"wolkaraforever.controls.autorunLock");
+    UIView *badge=Find(host,@"wolkaraforever.controls.autorun");
+    assert(lock && badge && lock.hidden && badge.hidden);
+    [stick pollAutoRun:100]; assert(lock.hidden);
+    [stick pollAutoRun:103]; assert(!lock.hidden);
+    touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),-100);
+    [stick continueTrackingWithTouch:touch withEvent:nil];
+    assert(!lock.hidden);
+    [stick endTrackingWithTouch:touch withEvent:nil];
+    assert(!badge.hidden && lock.hidden);
+    CGPoint held=[[leftStick valueForKey:@"position"] CGPointValue];
+    assert(held.y>0.9 && fabs(held.x)<0.01);
+    // The next touch on the stick stops the run, and does not turn into a click on the game.
+    touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),CGRectGetMidY(leftStick.bounds));
+    [stick beginTrackingWithTouch:touch withEvent:nil];
+    assert(badge.hidden);
+    [stick endTrackingWithTouch:touch withEvent:nil];
+    CGPoint stopped=[[leftStick valueForKey:@"position"] CGPointValue];
+    assert(fabs(stopped.x)<0.01 && fabs(stopped.y)<0.01);
+    // Leaving the arrangement lets go of everything, including a run.
+    touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),0);
+    [stick beginTrackingWithTouch:touch withEvent:nil];
+    [stick pollAutoRun:200]; [stick pollAutoRun:203];
+    touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),-100);
+    [stick continueTrackingWithTouch:touch withEvent:nil];
+    [stick endTrackingWithTouch:touch withEvent:nil];
+    assert(!badge.hidden);
+    mode(AKInterfaceModeIPadOS);
+    [manager toggleSettings]; [host layoutIfNeeded];
+    assert(badge.hidden);
+    assert(!((UISwitch *)Find(host,@"wolkaraforever.controls.floatingSticks")));
+    [manager toggleSettings];
+    mode(AKInterfaceModeIOS);
+    // Back to the arrangements the rest of the fixture expects: both off, as a fresh install has
+    // them, so the fixed rings are what the remaining checks measure.
+    [manager toggleSettings];
+    sticksOnly=(id)Find(host,@"wolkaraforever.controls.sticksOnly");
+    UISwitch *off=(id)Find(host,@"wolkaraforever.controls.floatingSticks");
+    if (off.on) { off.on=NO; [off sendActionsForControlEvents:UIControlEventValueChanged]; }
+    sticksOnly.on=NO; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    puts("TOUCH_GAMEPAD_FLOATING_PASS: the floating arrangement exists only with the mobile interface (ipados, a malformed value and no value keep Standard), each thumb's half is its stick, the corner is the jump, the add-on's chat strip and wheel tabs are not taken, and auto-run arms, confirms, runs, stops and is released by leaving the arrangement.");
 }
 static void TestStickMapping(void) {
     CGSize size=CGSizeMake(100,100);

@@ -70,12 +70,14 @@ def source_files():
 
 
 def toc_lists_every_script(files):
-    """The TOC must name every Lua file: an add-on that ships a script it does not load,
-    or loads one it does not ship, is not the add-on that was reviewed."""
+    """The TOC must name every script the add-on ships: a Lua file it does not load, or an
+    XML file it never reads, is not the add-on that was reviewed. ``Bindings.xml`` is the one
+    exception, because the game loads it by name without a TOC entry."""
     toc = (SOURCE / "WolkaraRoue.toc").read_text(encoding="utf-8")
     listed = {line.strip() for line in toc.splitlines()
               if line.strip() and not line.startswith("##")}
-    present = {name for name, _ in files if name.endswith(".lua")}
+    present = {name for name, _ in files
+               if name.endswith((".lua", ".xml")) and name != "Bindings.xml"}
     if listed != present:
         missing = sorted(present - listed)
         absent = sorted(listed - present)

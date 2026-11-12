@@ -359,6 +359,7 @@
 "touch.gamepad.leftStick" = "Controller, linker Stick";
 "touch.gamepad.rightStick" = "Controller, rechter Stick";
 "touch.gamepad.jump" = "Springen";
+"touch.autorun" = "Automatisch laufen";
 "touch.gamepad.doneEditing" = "Bearbeiten beenden";
 "touch.gamepad.dragHint" = "Elemente zum Verschieben ziehen";
 "touch.settings" = "Einstellungen der Bedienelemente";
@@ -371,6 +372,7 @@
 "touch.settings.stickSize.value" = "Größe von Sticks und Aktionstasten · %.0f %%";
 "touch.settings.outerTriggers" = "Trigger außen";
 "touch.settings.sticksOnly" = "Nur Sticks und Springen (andere Tasten ausblenden)";
+"touch.settings.floatingSticks" = "Schwebende Sticks (unter dem Daumen, Springen in der Ecke)";
 "touch.settings.haptics" = "Haptisches Feedback";
 "touch.settings.overlay" = "Leistungsanzeige";
 "touch.settings.overlay.detail" = "Leistungsanzeige (FPS & Temperatur)";

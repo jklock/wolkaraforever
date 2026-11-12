@@ -361,6 +361,7 @@
 "touch.gamepad.leftStick" = "Controller left stick";
 "touch.gamepad.rightStick" = "Controller right stick";
 "touch.gamepad.jump" = "Jump";
+"touch.autorun" = "Auto-run";
 "touch.gamepad.doneEditing" = "Done editing";
 "touch.gamepad.dragHint" = "Drag controls to move them";
 "touch.settings" = "Touch control settings";
@@ -373,6 +374,7 @@
 "touch.settings.stickSize.value" = "Sticks and face button size · %.0f%%";
 "touch.settings.outerTriggers" = "Triggers on the outside";
 "touch.settings.sticksOnly" = "Sticks and jump only (hide the other buttons)";
+"touch.settings.floatingSticks" = "Floating sticks (find the thumb, jump in the corner)";
 "touch.settings.haptics" = "Haptic feedback";
 "touch.settings.overlay" = "Performance overlay";
 "touch.settings.overlay.detail" = "Performance overlay (FPS & Thermals)";

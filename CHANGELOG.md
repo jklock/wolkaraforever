@@ -13,6 +13,31 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **The Duo refinement package: the mobile add-on becomes release 1.0.4.** `addons/WolkaraRoue`
+  now ships the Duo interface: a corner fan of skills with two pages and its own tab, a
+  collapsible quick bar down the left edge, a chat tab with its peek and expanded states,
+  party and status frames, window placement clear of the thumbs, a language switch for the
+  add-on's own words, and slot editing that saves on the touch that leaves it. It is still one
+  reviewed, deterministic package: the archive and manifest are rebuilt byte for byte from the
+  sources, the app's verifier accepts only that pair and refuses the nine wrong packages a
+  fixture builds, and the release inside the archive's own `.toc` is checked as well. Nothing
+  installs it by itself - choosing `iOS on Duo` writes one preference, and Install in the
+  Add-On Manager stays the explicit step. Release 0.9.1's saved layouts are carried over, and
+  a change is written on a real touch, because the game reloads an add-on's interface only
+  from one and never from a timer. Thanks to `scarrdi94` and `pookee` (ExoGroupe), whose
+  interface this is.
+
+- **Floating sticks, a corner jump and auto-run, for the mobile interface.** With the mobile
+  interface chosen and the floating arrangement switched on, each thumb's half of the screen
+  is its stick: the ring fades almost away and comes back under the finger, the corner beyond
+  the camera stick is the jump, and pushing the movement stick forward for two seconds arms an
+  auto-run that a further push confirms, that keeps running when the finger lifts, and that
+  one touch on the stick stops. The add-on's own chat strip and wheel tabs are never taken, a
+  pinch that begins on a control is not a camera pinch, and leaving the arrangement releases
+  everything it held. Off by default and unavailable in Standard: one key,
+  `WolkaraForeverInterfaceModeV1`, decides it, and its settings words are translated into
+  English, German and French.
+
 - **The Launcher Manager, and the interface it drives.** A sixth card now sits beside UI
   Manager (and after it on a phone): `wow.launcher.interfaceMode`, with exactly two choices,
   `iPadOS` and `iOS on Duo`, remembered across launches. Choosing a mode writes that one key

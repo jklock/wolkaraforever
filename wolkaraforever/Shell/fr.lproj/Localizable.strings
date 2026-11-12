@@ -360,6 +360,7 @@
 "touch.gamepad.leftStick" = "Stick gauche de la manette";
 "touch.gamepad.rightStick" = "Stick droit de la manette";
 "touch.gamepad.jump" = "Saut";
+"touch.autorun" = "Course automatique";
 "touch.gamepad.doneEditing" = "Terminer la modification";
 "touch.gamepad.dragHint" = "Faites glisser les commandes pour les déplacer";
 "touch.settings" = "Réglages des commandes tactiles";
@@ -372,6 +373,7 @@
 "touch.settings.stickSize.value" = "Taille des sticks et boutons de façade · %.0f%%";
 "touch.settings.outerTriggers" = "Gâchettes à l’extérieur";
 "touch.settings.sticksOnly" = "Sticks et saut seulement (masquer les autres boutons)";
+"touch.settings.floatingSticks" = "Sticks flottants (sous le pouce, saut dans le coin)";
 "touch.settings.haptics" = "Retour haptique";
 "touch.settings.overlay" = "Affichage des performances";
 "touch.settings.overlay.detail" = "Affichage des performances (FPS et température)";

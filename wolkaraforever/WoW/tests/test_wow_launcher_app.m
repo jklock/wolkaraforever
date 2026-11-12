@@ -1439,7 +1439,11 @@ static void TestPhoneDisplayDefaults(void) {
     assert(bundledPage.recommendation == TKAddonRecommendationWolkaraRoue);
     assert(bundledPage.recommendedProjectID == nil);
     PumpUntil(^{ return (BOOL)(bundledFrame.viewIfLoaded.window != nil && !bundledFrame.isBeingPresented); }, 5.0);
-    // A verified package, shaped as the shipped verifier returns it.
+    // A verified package, shaped as the shipped verifier returns it. The release here is this
+    // fixture's own stand-in, so the reviewed image pins the row's layout and not the number
+    // of the release that happens to ship; that the bundled artifact really is the release
+    // `addons/WolkaraRoue` declares is proved by test_addon_package.sh against the app's own
+    // verifier.
     bundledPage.bundledPackageProvider = ^NSDictionary *(NSError **error) {
         (void)error;
         return @{@"archive":[NSURL fileURLWithPath:@"/tmp/WolkaraRoue-0.9.1.zip"],

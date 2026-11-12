@@ -38,6 +38,10 @@ static CGFloat Number(id value, CGFloat fallback) {
         // Only a mobile-interface default: Standard keeps every button, as every release
         // through v1.0.7 has, even for a layout saved before this key existed.
         self.sticksOnly = Number(values[@"sticksOnly"],AKInterfaceModeIsMobile() ? 1 : 0) != 0;
+        // Off until the player asks for it: the fixed rings are what every release through
+        // v1.0.9 has, and the corner jump reserves the space the fan's tab sits in, so turning
+        // it on silently would move an arrangement someone already uses.
+        self.floatingSticks = Number(values[@"floatingSticks"],0) != 0;
         _positions = [NSMutableDictionary new];
         id positions = values[@"positions"];
         if ([positions isKindOfClass:NSDictionary.class]) for (NSString *key in positions) {
@@ -71,7 +75,8 @@ static CGFloat Number(id value, CGFloat fallback) {
 - (void)save {
     [_defaults setObject:@{@"opacity":@(_opacity),@"rearScale":@(_rearScale),
         @"frontScale":@(_frontScale),@"hapticsEnabled":@(_hapticsEnabled),@"swapShoulders":@(_swapShoulders),
-        @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),@"positions":_positions} forKey:LayoutKey];
+        @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),
+        @"floatingSticks":@(_floatingSticks),@"positions":_positions} forKey:LayoutKey];
     [NSNotificationCenter.defaultCenter postNotificationName:AKGamepadLayoutDidChangeNotification object:_defaults];
 }
 - (void)reset {
@@ -79,6 +84,7 @@ static CGFloat Number(id value, CGFloat fallback) {
     self.hapticsEnabled = YES; self.swapShoulders = YES;
     self.performanceOverlayEnabled = NO;
     self.sticksOnly = AKInterfaceModeIsMobile();
+    self.floatingSticks = NO;
     [_positions removeAllObjects]; [self save];
 }
 @end
