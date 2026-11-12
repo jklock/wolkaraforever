@@ -655,10 +655,18 @@ static void AKSelfTestRunForeverUI(AKSelfTestRecorder *recorder) {
                  _:@"the final restore leaves the user's UI as it was"];
 
     // --- leave the overlay on and expanded so the in-game HUD can be seen on this device
+    // What the user had is kept first, so the clean run below puts it back rather than
+    // deciding for them: a test must not cost anyone a setting.
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     id stored = [defaults objectForKey:@"WolkaraForeverTouchLayoutV1"];
     NSMutableDictionary *layout = [stored isKindOfClass:NSDictionary.class] ? [stored mutableCopy]
                                                                            : [NSMutableDictionary new];
+    [defaults setObject:(layout[@"performanceOverlayEnabled"] ?: [NSNull null])
+                 forKey:@"WolkaraForeverSelfTest.PriorOverlayEnabled"];
+    for (NSString *key in @[@"WolkaraForeverPerformanceOverlayExpanded", @"WolkaraForeverPerformanceOverlayPosition"]) {
+        [defaults setObject:([defaults objectForKey:key] ?: [NSNull null])
+                     forKey:[@"WolkaraForeverSelfTest.Prior." stringByAppendingString:key]];
+    }
     layout[@"performanceOverlayEnabled"] = @YES;
     [defaults setObject:layout forKey:@"WolkaraForeverTouchLayoutV1"];
     [defaults setBool:YES forKey:@"WolkaraForeverPerformanceOverlayExpanded"];
@@ -672,20 +680,29 @@ static void AKSelfTestRunForeverUI(AKSelfTestRecorder *recorder) {
 
 static void AKSelfTestRunForeverUIClean(AKSelfTestRecorder *recorder) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    // Put back exactly what the user had, including "nothing at all".
+    id priorOverlay = [defaults objectForKey:@"WolkaraForeverSelfTest.PriorOverlayEnabled"];
     id stored = [defaults objectForKey:@"WolkaraForeverTouchLayoutV1"];
     if ([stored isKindOfClass:NSDictionary.class]) {
         NSMutableDictionary *layout = [stored mutableCopy];
-        layout[@"performanceOverlayEnabled"] = @NO;
+        if ([priorOverlay isKindOfClass:NSNumber.class]) layout[@"performanceOverlayEnabled"] = priorOverlay;
+        else [layout removeObjectForKey:@"performanceOverlayEnabled"];
         [defaults setObject:layout forKey:@"WolkaraForeverTouchLayoutV1"];
     }
-    [defaults removeObjectForKey:@"WolkaraForeverPerformanceOverlayExpanded"];
-    [defaults removeObjectForKey:@"WolkaraForeverPerformanceOverlayPosition"];
+    [defaults removeObjectForKey:@"WolkaraForeverSelfTest.PriorOverlayEnabled"];
+    for (NSString *key in @[@"WolkaraForeverPerformanceOverlayExpanded", @"WolkaraForeverPerformanceOverlayPosition"]) {
+        NSString *scratch = [@"WolkaraForeverSelfTest.Prior." stringByAppendingString:key];
+        id prior = [defaults objectForKey:scratch];
+        if (prior && ![prior isKindOfClass:NSNull.class]) [defaults setObject:prior forKey:key];
+        else [defaults removeObjectForKey:key];
+        [defaults removeObjectForKey:scratch];
+    }
     NSDictionary *saved = [defaults objectForKey:@"WolkaraForeverTouchLayoutV1"];
-    [recorder check:![saved[@"performanceOverlayEnabled"] boolValue]
-                 _:@"the overlay preference is off again"];
-    [recorder check:([defaults objectForKey:@"WolkaraForeverPerformanceOverlayPosition"] == nil)
-                 _:@"the HUD position is cleared, so it starts at its default corner"];
-    recorder.detail = @"overlay preference returned to its default off state";
+    BOOL restored = priorOverlay && ![priorOverlay isKindOfClass:NSNull.class]
+        ? [saved[@"performanceOverlayEnabled"] boolValue] == [priorOverlay boolValue]
+        : saved[@"performanceOverlayEnabled"] == nil;
+    [recorder check:restored _:@"the overlay preference is what the user had before the test"];
+    recorder.detail = @"the overlay preference and the HUD position are the user's own again";
 }
 
 static void AKSelfTestLogVerdict(AKSelfTestRecorder *recorder, NSString *name) {    if (recorder.firstFailure) {

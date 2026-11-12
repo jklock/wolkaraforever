@@ -119,6 +119,16 @@ static UIControl *Button(UIView *host, NSString *name) {
     assert(control && !control.hidden); return control;
 }
 static void Drain(void) { CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.03,false); }
+// The lifecycle answers on the main queue: a connect or disconnect reply lands there, and a
+// refresh that arrives while one is in flight waits for that reply. Sampling a fixed instant
+// measured the scheduler rather than the rule, which is what made this fixture flake once.
+static BOOL WaitUntil(BOOL (^predicate)(void)) {
+    for (NSTimeInterval waited=0; waited<2.0; waited+=0.01) {
+        if (predicate()) return YES;
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.01,false);
+    }
+    return predicate();
+}
 @interface AKFixtureTouch : UITouch
 @property CGPoint point;
 @end
@@ -135,6 +145,11 @@ static void Drain(void) { CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.03,false); 
 @end
 @interface UIView (LayoutFixture)
 - (void)drag:(UIPanGestureRecognizer *)pan;
+@end
+// The movement stick's auto-run check, which the overlay's own timer calls; the fixture drives
+// it with the clock it wants rather than waiting two real seconds.
+@interface UIView (FloatingFixture)
+- (void)pollAutoRun:(NSTimeInterval)now;
 @end
 // The host, with the one delegate method the mobile jump uses: a key pressed or released. It
 // answers like the app's host view does, which is what decides Space over the gamepad's A.
@@ -186,6 +201,65 @@ static void TestPreferences(void) {
     assert(CGRectContainsRect(small,[layout frameForItem:@"menu" defaultFrame:frame inBounds:small]));
     [layout reset]; assert(layout.opacity==.8 && layout.frontScale==1 && layout.hapticsEnabled && !layout.performanceOverlayEnabled && layout.swapShoulders);
     assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:frame inBounds:bounds],frame));
+    // Templates and saved arrangements: the layout is data the user can keep and come back to.
+    [layout reset];
+    assert([AKGamepadLayout templateNames].count==3);
+    [layout applyTemplateNamed:@"plain"];
+    assert(!layout.sticksOnly && !layout.floatingSticks && layout.keepFree.count==0);
+    [layout applyTemplateNamed:@"duo"];
+    assert(layout.sticksOnly && layout.floatingSticks && layout.keepFree.count==0);
+    [layout applyTemplateNamed:@"duo-addon"];
+    assert(layout.floatingSticks && layout.keepFree.count==2);
+    assert([layout saveAsProfileNamed:@"test-setup"]);
+    assert([[layout savedProfileNames] containsObject:@"test-setup"]);
+    [layout applyTemplateNamed:@"plain"];
+    assert(!layout.floatingSticks);
+    assert([layout applyProfileNamed:@"test-setup"] && layout.floatingSticks && layout.keepFree.count==2);
+    assert([layout deleteProfileNamed:@"test-setup"]);
+    assert(![[layout savedProfileNames] containsObject:@"test-setup"]);
+    assert(![layout applyProfileNamed:@"test-setup"]);
+    assert(![layout saveAsProfileNamed:@""]);
+    // An arrangement from a hand-edited file cannot smuggle in an out-of-range value.
+    [layout applyArrangement:@{@"opacity":@99, @"keepFree":@[@{@"x":@(NAN),@"y":@0,@"w":@0.1,@"h":@0.1},
+                                                            @{@"x":@0.5,@"y":@0.5,@"w":@0.2,@"h":@0.2}]}];
+    assert(layout.opacity==1 && layout.keepFree.count==1);
+    // Everything the user sets survives a relaunch and an app update: it is all in the saved
+    // dictionary, and a newer version's unknown key does not erase it.
+    layout.opacity=.55; layout.rearScale=1.4; layout.frontScale=.7; layout.hapticsEnabled=NO;
+    layout.swapShoulders=NO; layout.performanceOverlayEnabled=YES; layout.sticksOnly=NO;
+    layout.floatingSticks=YES; [layout clearKeepFreeAreas];
+    [layout addKeepFreeAreaWithX:0.1 y:0.2 width:0.3 height:0.4];
+    [layout moveItem:@"menu" toFrame:CGRectMake(10,20,44,44) inBounds:bounds];
+    [layout save];
+    AKGamepadLayout *relaunched=[[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(fabs(relaunched.opacity-.55)<.001 && fabs(relaunched.rearScale-1.4)<.001 &&
+           fabs(relaunched.frontScale-.7)<.001 && !relaunched.hapticsEnabled && !relaunched.swapShoulders &&
+           relaunched.performanceOverlayEnabled && !relaunched.sticksOnly && relaunched.floatingSticks);
+    assert(relaunched.keepFree.count==1 && fabs(relaunched.keepFree[0][@"w"].doubleValue-0.3)<.001);
+    assert(CGRectEqualToRect([relaunched frameForItem:@"menu" defaultFrame:frame inBounds:bounds],
+                             [layout frameForItem:@"menu" defaultFrame:frame inBounds:bounds]));
+    // A version that adds a key writes it beside ours; ours still loads.
+    NSMutableDictionary *stored=[NSMutableDictionary dictionaryWithDictionary:[defaults dictionaryForKey:@"WolkaraForeverTouchLayoutV1"]];
+    stored[@"aKeyFromALaterVersion"]=@{@"anything":@YES};
+    [defaults setObject:stored forKey:@"WolkaraForeverTouchLayoutV1"];
+    AKGamepadLayout *updated=[[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(fabs(updated.opacity-.55)<.001 && updated.floatingSticks && updated.keepFree.count==1);
+    // Which element each control sends is data too, it is unique per control, and it survives.
+    [updated clearElementMapping];
+    assert([[updated elementForSlot:GCInputButtonA] isEqual:GCInputButtonA]);
+    assert([updated setElement:GCInputLeftShoulder forSlot:GCInputButtonA]);
+    assert([[updated elementForSlot:GCInputButtonA] isEqual:GCInputLeftShoulder]);
+    // One element cannot be two controls: the second is refused, not silently won.
+    assert(![updated setElement:GCInputLeftShoulder forSlot:GCInputButtonB]);
+    assert([[updated elementForSlot:GCInputButtonB] isEqual:GCInputButtonB]);
+    // Nonsense is refused.
+    assert(![updated setElement:@"Nonsense" forSlot:GCInputButtonA]);
+    assert(![updated setElement:GCInputButtonX forSlot:@"Nonsense"]);
+    [updated save];
+    AKGamepadLayout *mapped=[[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert([[mapped elementForSlot:GCInputButtonA] isEqual:GCInputLeftShoulder]);
+    [mapped clearElementMapping];
+    assert([[mapped elementForSlot:GCInputButtonA] isEqual:GCInputButtonA]);
     [defaults removePersistentDomainForName:suite];
 }
 // With sticks only, the jump is the one button under the camera stick, and its reach is the
@@ -232,6 +306,41 @@ static void TestJumpReach(UIView *host, AKPreviewGamepad *manager) {
     manager.keyboardVisible=NO; Drain();
     keyed.recordsKeys=NO;
     puts("TOUCH_GAMEPAD_JUMP_REACH_PASS: with sticks only the jump takes the ring, the gap by the stick and the band below, not beside, above or far below; it holds Space while pressed and always releases it.");
+}
+static void TestFloating(UIView *host, AKPreviewGamepad *manager);
+// The mode's one rule: explicit choices win, "auto" is the device's own hardware class, and
+// anything missing or unrecognised is Standard. Read through the same argument domain the
+// scene uses, and put back exactly what was there.
+static void TestInterfaceMode(void) {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSString *key=AKInterfaceModeDefaultsKey;
+    BOOL phone=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone;
+    id original=[defaults objectForKey:key];
+    void (^setMode)(id)=^(id value) {
+        NSMutableDictionary *modes=[[defaults volatileDomainForName:NSArgumentDomain] mutableCopy] ?: [NSMutableDictionary new];
+        if (value) modes[key]=value; else [modes removeObjectForKey:key];
+        [defaults setVolatileDomain:modes forName:NSArgumentDomain];
+    };
+    setMode(AKInterfaceModeIOS); assert(AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    setMode(AKInterfaceModeIOSDuo);
+    assert(AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    assert([AKInterfaceModeName() isEqual:AKInterfaceModeIOSDuo]);
+    assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeIOSDuo]);
+    setMode(AKInterfaceModeIPadOS); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    setMode(AKInterfaceModeAuto);
+    assert(AKInterfaceModeIsMobile()==phone && AKInterfaceModeIsAutomatic());
+    assert([AKInterfaceModeName() isEqual:AKInterfaceModeAutomaticName()]);
+    assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeAuto]);
+    setMode(@"AUTO"); assert(AKInterfaceModeIsMobile()==phone);
+    setMode(@"duo"); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    assert([AKInterfaceModeName() isEqual:AKInterfaceModeIPadOS]);
+    setMode(nil); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeIPadOS]);
+    setMode(AKInterfaceModeIPadOS);
+    NSString *automatic=AKInterfaceModeAutomaticName();
+    assert(([automatic isEqual:AKInterfaceModeIOS] || [automatic isEqual:AKInterfaceModeIOSDuo])==phone);
+    setMode(original);
+    puts("TOUCH_INTERFACE_MODE_PASS: ios and ipados are explicit, auto is the device's own hardware class (spelled in any case), and a missing or unrecognised value is Standard.");
 }
 static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     GCExtendedGamepad *pad=manager.created.controller.extendedGamepad;
@@ -426,7 +535,7 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)<CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
     TestPreferences();
     // Sticks-only is a mobile arrangement: Standard has no switch to turn it on with.
-    if (AKInterfaceModeIsMobile()) TestJumpReach(host,manager);
+    if (AKInterfaceModeIsMobile()) { TestJumpReach(host,manager); TestFloating(host,manager); }
     manager.keyboardVisible=YES; Drain();
     assert(!manager.visible && !pad.leftShoulder.pressed && !pad.buttonA.pressed);
     assert(!manager.feedback.enabled);
@@ -434,6 +543,132 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     [leftStick cancelTrackingWithEvent:nil]; [rightStick cancelTrackingWithEvent:nil];
     [manager invalidate];
     puts("TOUCH_GAMEPAD_INPUT_PASS: all nine buttons, D-pad diagonals/opposition/cancel, both sticks, held modifiers, neutral reset and trackpad passthrough.");
+}
+// The floating arrangement is the mobile interface's, and only its: the mode is the whole gate.
+// In it, each thumb's half of the screen is its stick and the corner beyond the camera stick is
+// the jump; the add-on's own chat strip and wheel tabs are not ours, so the touch goes on to
+// what is underneath - the app's own hit-testing, not a forwarded touch. Auto-run arms, lights
+// up, runs on release and stops on the next touch, and leaving the arrangement lets go of it.
+static void TestFloating(UIView *host, AKPreviewGamepad *manager) {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSString *key=AKInterfaceModeDefaultsKey;
+    // The mode is chosen the way this fixture chooses it at launch: in the argument domain,
+    // which outranks anything the app writes. Nothing else is touched, so "no value" really is
+    // no value.
+    void (^mode)(NSString *)=^(NSString *value) {
+        NSMutableDictionary *modes=[[defaults volatileDomainForName:NSArgumentDomain] mutableCopy] ?: [NSMutableDictionary new];
+        if (value) modes[key]=value; else [modes removeObjectForKey:key];
+        [defaults setVolatileDomain:modes forName:NSArgumentDomain];
+    };
+    // Standard: no floating switch, and the floating geometry is not in force.
+    for (NSString *value in @[@"ipados", @"duo"]) {
+        mode(value);
+        [manager toggleSettings];
+        assert(Find(host,@"wolkaraforever.controls.sticksOnly")==nil);
+        assert(Find(host,@"wolkaraforever.controls.floatingSticks")==nil);
+        [manager toggleSettings]; [host layoutIfNeeded];
+        assert([host hitTest:CGPointMake(CGRectGetWidth(host.bounds)*0.40,CGRectGetHeight(host.bounds)*0.50) withEvent:nil]
+               !=Find(host,@"tolkara.gamepad.leftStick"));
+    }
+    mode(nil);
+    [manager toggleSettings];
+    assert(Find(host,@"wolkaraforever.controls.floatingSticks")==nil);
+    [manager toggleSettings];
+    // Mobile: the arrangement exists, and both arrangements are switched on.
+    mode(AKInterfaceModeIOS);
+    [manager toggleSettings];
+    UISwitch *sticksOnly=(id)Find(host,@"wolkaraforever.controls.sticksOnly");
+    UISwitch *floating=(id)Find(host,@"wolkaraforever.controls.floatingSticks");
+    assert(sticksOnly && floating);
+    sticksOnly.on=YES; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
+    floating.on=YES; [floating sendActionsForControlEvents:UIControlEventValueChanged];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    UIView *leftStick=Find(host,@"tolkara.gamepad.leftStick"), *rightStick=Find(host,@"tolkara.gamepad.rightStick");
+    UIView *overlay=leftStick.superview.superview;
+    assert(leftStick && rightStick && overlay);
+    CGRect b=overlay.bounds;
+    CGPoint (^at)(CGFloat,CGFloat)=^CGPoint(CGFloat fx,CGFloat fy) {
+        return [overlay convertPoint:CGPointMake(CGRectGetMinX(b)+b.size.width*fx,CGRectGetMinY(b)+b.size.height*fy) toView:host];
+    };
+    UIView *jump=Button(host,GCInputButtonA);
+    // Each thumb's half is its stick; outside them the touch is the game's (the host itself,
+    // because the overlay declined it).
+    assert([host hitTest:at(0.25,0.70) withEvent:nil]==leftStick);
+    assert([host hitTest:at(0.70,0.50) withEvent:nil]==rightStick);
+    assert([host hitTest:at(0.25,0.30) withEvent:nil]==host);   // above the left half
+    assert([host hitTest:at(0.05,0.70) withEvent:nil]==host);   // the left margin of it
+    assert([host hitTest:at(0.55,0.60) withEvent:nil]==host);   // between the two halves
+    assert([host hitTest:at(0.85,0.10) withEvent:nil]==host);   // above the right half
+    CGFloat h=b.size.height;
+    CGPoint corner=CGPointMake(CGRectGetMaxX(b),CGRectGetMaxY(b));
+    CGPoint nearCorner=[overlay convertPoint:CGPointMake(corner.x-0.05*h,corner.y-0.05*h) toView:host];
+    assert([host hitTest:nearCorner withEvent:nil]==jump);
+    // Nothing is reserved by default: the far corner beyond the jump is still the camera half.
+    CGFloat far=0.25*h;
+    CGPoint beyondJump=[overlay convertPoint:CGPointMake(corner.x-far*0.7071,corner.y-far*0.7071) toView:host];
+    assert([host hitTest:beyondJump withEvent:nil]==rightStick);
+    // The bottom centre belongs to neither thumb, so it is the game's - and an add-on's.
+    assert([host hitTest:at(0.5,0.97) withEvent:nil]==host);
+    // A reserved area is the player's own data, and it wins over a thumb's half.
+    AKGamepadLayout *prefs=(id)[overlay valueForKey:@"preferences"];
+    assert(prefs && prefs.keepFree.count==0);
+    [prefs addKeepFreeAreaWithX:0.66 y:0.44 width:0.10 height:0.12];
+    assert(prefs.keepFree.count==1);
+    assert([host hitTest:at(0.70,0.50) withEvent:nil]==host);
+    // An area that is not four finite fractions of the screen is refused, not clamped in.
+    [prefs clearKeepFreeAreas];
+    [prefs addKeepFreeAreaWithX:1.5 y:-2 width:0 height:0];
+    assert(prefs.keepFree.count==0);
+    assert([host hitTest:at(0.70,0.50) withEvent:nil]==rightStick);
+    // A stick held by one finger is not grabbed by another touch in its half.
+    AKFixtureTouch *touch=[AKFixtureTouch new];
+    touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),0);
+    UIControl *stick=(id)leftStick;
+    [stick beginTrackingWithTouch:touch withEvent:nil];
+    assert([host hitTest:at(0.25,0.80) withEvent:nil]!=leftStick);
+    // Auto-run: a forward hold arms it after two seconds, a drag up confirms, the release runs.
+    UIView *lock=Find(host,@"wolkaraforever.controls.autorunLock");
+    UIView *badge=Find(host,@"wolkaraforever.controls.autorun");
+    assert(lock && badge && lock.hidden && badge.hidden);
+    [stick pollAutoRun:100]; assert(lock.hidden);
+    [stick pollAutoRun:103]; assert(!lock.hidden);
+    touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),-100);
+    [stick continueTrackingWithTouch:touch withEvent:nil];
+    assert(!lock.hidden);
+    [stick endTrackingWithTouch:touch withEvent:nil];
+    assert(!badge.hidden && lock.hidden);
+    CGPoint held=[[leftStick valueForKey:@"position"] CGPointValue];
+    assert(held.y>0.9 && fabs(held.x)<0.01);
+    // The next touch on the stick stops the run, and does not turn into a click on the game.
+    touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),CGRectGetMidY(leftStick.bounds));
+    [stick beginTrackingWithTouch:touch withEvent:nil];
+    assert(badge.hidden);
+    [stick endTrackingWithTouch:touch withEvent:nil];
+    CGPoint stopped=[[leftStick valueForKey:@"position"] CGPointValue];
+    assert(fabs(stopped.x)<0.01 && fabs(stopped.y)<0.01);
+    // Leaving the arrangement lets go of everything, including a run.
+    touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),0);
+    [stick beginTrackingWithTouch:touch withEvent:nil];
+    [stick pollAutoRun:200]; [stick pollAutoRun:203];
+    touch.point=CGPointMake(CGRectGetMidX(leftStick.bounds),-100);
+    [stick continueTrackingWithTouch:touch withEvent:nil];
+    [stick endTrackingWithTouch:touch withEvent:nil];
+    assert(!badge.hidden);
+    mode(AKInterfaceModeIPadOS);
+    [manager toggleSettings]; [host layoutIfNeeded];
+    assert(badge.hidden);
+    assert(!((UISwitch *)Find(host,@"wolkaraforever.controls.floatingSticks")));
+    [manager toggleSettings];
+    mode(AKInterfaceModeIOS);
+    // Back to the arrangements the rest of the fixture expects: both off, as a fresh install has
+    // them, so the fixed rings are what the remaining checks measure.
+    [manager toggleSettings];
+    sticksOnly=(id)Find(host,@"wolkaraforever.controls.sticksOnly");
+    UISwitch *off=(id)Find(host,@"wolkaraforever.controls.floatingSticks");
+    if (off.on) { off.on=NO; [off sendActionsForControlEvents:UIControlEventValueChanged]; }
+    sticksOnly.on=NO; [sticksOnly sendActionsForControlEvents:UIControlEventValueChanged];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    puts("TOUCH_GAMEPAD_FLOATING_PASS: the floating arrangement exists only with the mobile interface (ipados, a malformed value and no value keep Standard), each thumb's half is its stick, the corner is the jump, the bottom centre is left to the game, a reserved area is the player's own and wins over a half, and auto-run arms, confirms, runs, stops and is released by leaving the arrangement.");
 }
 static void TestStickMapping(void) {
     CGSize size=CGSizeMake(100,100);
@@ -475,23 +710,27 @@ static void TestLifecycle(UIView *host) {
     TestTrackingPump();
     TestStickMapping();
     TestHaptics();
+    TestInterfaceMode();
     AKFixtureGamepad *pad=[[AKFixtureGamepad alloc] initWithHostView:host];
     // The fixture asserts the controller lifecycle, not the device's foreground phase.
     // A simulator launched by simctl reports the app Inactive, which would gate every
     // connection below on a property this test does not measure; the notification is
     // the activation the product itself reacts to.
     [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
-    [pad refresh]; assert(pad.connections==1 && !pad.visible);
+    [pad refresh]; assert(WaitUntil(^{ return (BOOL)(pad.connections==1); }) && !pad.visible);
     AKFixtureController *physical=[AKFixtureController new]; physical.extendedGamepad=@YES;
     pad.devices=@[(id)physical]; [pad refresh];
+    assert(WaitUntil(^{ return (BOOL)!pad.visible; }));
     [pad.lastConnection finish:nil]; assert(!pad.visible && pad.lastConnection.disconnects);
-    pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil]; assert(pad.visible);
+    pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil];
+    assert(WaitUntil(^{ return (BOOL)pad.visible; }));
     // Our own connect event must never be mistaken for physical hardware.
     pad.devices=@[pad.lastConnection.controller];
     [NSNotificationCenter.defaultCenter postNotificationName:GCControllerDidConnectNotification object:pad.lastConnection.controller];
     CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.03,false);
     assert(pad.visible && pad.connections==2);
-    pad.devices=@[]; pad.keyboardVisible=YES; assert(!pad.visible && pad.lastConnection.disconnects);
+    pad.devices=@[]; pad.keyboardVisible=YES;
+    assert(WaitUntil(^{ return (BOOL)!pad.visible; }) && pad.lastConnection.disconnects);
     pad.keyboardVisible=NO; [pad.lastConnection finish:nil]; assert(pad.visible);
     [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
     assert(!pad.visible);

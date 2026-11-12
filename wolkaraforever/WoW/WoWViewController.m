@@ -14,6 +14,13 @@
 #import "../App/LaunchProgressView.h"
 #import "../Controller/ControllerInspector.h"
 #import "../Input/InputRouter.h"
+// The interface-mode rule, from its one definition: the overlay puts this same source in this
+// target, so the launcher and the guest cannot disagree about what "auto" means.
+#import "InterfaceMode.h"
+// The arrangement the on-screen controls read, as data: the same functions the adapter uses, so
+// a choice made here is what the next guest starts with.
+#import "LayoutStore.h"
+#import <GameController/GameController.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 static UIColor *Gold(void) { return [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1]; }
@@ -88,17 +95,6 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 // layout's own values, which the store then reads back unchanged.
 static NSString *const TKForeverLayoutKey = @"WolkaraForeverTouchLayoutV1";
 static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidChange";
-// The interface mode's one key and its two values, by value, for the same reason as the
-// layout key above: the Touch module owns them (Touch/InterfaceMode.h), but WoW must not
-// import it. A value that is missing, unrecognised, or hand-edited to anything else means
-// iPadOS, exactly as AKInterfaceModeIsMobile resolves it.
-static NSString *const TKForeverInterfaceModeKey = @"WolkaraForeverInterfaceModeV1";
-static NSString *const TKForeverInterfaceModeIPadOS = @"ipados";
-static NSString *const TKForeverInterfaceModeIOS = @"ios";
-static BOOL TKForeverInterfaceModeIsMobile(void) {
-    id value = [NSUserDefaults.standardUserDefaults objectForKey:TKForeverInterfaceModeKey];
-    return [value isKindOfClass:NSString.class] && [value isEqual:TKForeverInterfaceModeIOS];
-}
 
 
 // A settings row that reads as a switch, not as a command: the words stay the
@@ -167,6 +163,74 @@ static BOOL TKForeverInterfaceModeIsMobile(void) {
 - (BOOL)inFront;
 @end
 
+// Drawing an area the on-screen controls must leave alone. The rectangle is read in the same
+// normalised space the layout stores, so what is drawn is exactly what the overlay honours.
+@interface TKAreaPickerViewController : UIViewController
+@property(nonatomic, copy) void (^onArea)(CGRect area);
+@end
+@implementation TKAreaPickerViewController {
+    UIView *_selection;
+    CGPoint _start;
+    CGRect _drawn;
+    BOOL _hasArea;
+}
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor=[UIColor colorWithWhite:0 alpha:0.55];
+    UILabel *hint=[UILabel new];
+    hint.text=WKLocalized(@"home.launcher.interfaceSetup.reserve.hint");
+    hint.numberOfLines=0; hint.textAlignment=NSTextAlignmentCenter;
+    hint.textColor=UIColor.whiteColor;
+    hint.font=[UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
+    hint.translatesAutoresizingMaskIntoConstraints=NO;
+    [self.view addSubview:hint];
+    _selection=[UIView new];
+    _selection.userInteractionEnabled=NO;
+    _selection.backgroundColor=[UIColor colorWithWhite:1 alpha:0.12];
+    _selection.layer.borderColor=UIColor.systemYellowColor.CGColor;
+    _selection.layer.borderWidth=2; _selection.layer.cornerRadius=8;
+    [self.view addSubview:_selection];
+    [self.view addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(draw:)]];
+    UIButton *cancel=[UIButton buttonWithType:UIButtonTypeSystem];
+    [cancel setTitle:WKLocalized(@"common.cancel") forState:UIControlStateNormal];
+    [cancel addTarget:self action:@selector(dismissSelf) forControlEvents:UIControlEventTouchUpInside];
+    UIButton *save=[UIButton buttonWithType:UIButtonTypeSystem];
+    [save setTitle:WKLocalized(@"common.ok") forState:UIControlStateNormal];
+    save.titleLabel.font=[UIFont boldSystemFontOfSize:17];
+    [save addTarget:self action:@selector(confirm) forControlEvents:UIControlEventTouchUpInside];
+    for (UIButton *button in @[cancel,save]) {
+        button.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:button];
+    }
+    [NSLayoutConstraint activateConstraints:@[
+        [hint.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:24],
+        [hint.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:24],
+        [hint.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-24],
+        [save.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-20],
+        [save.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [cancel.bottomAnchor constraintEqualToAnchor:save.topAnchor constant:-8],
+        [cancel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor]]];
+}
+- (void)draw:(UIPanGestureRecognizer *)pan {
+    CGPoint point=[pan locationInView:self.view];
+    if (pan.state==UIGestureRecognizerStateBegan) { _start=point; _hasArea=YES; }
+    if (!_hasArea) return;
+    _drawn=CGRectMake(MIN(_start.x,point.x),MIN(_start.y,point.y),
+                      fabs(point.x-_start.x),fabs(point.y-_start.y));
+    _selection.frame=_drawn;
+}
+- (void)confirm {
+    CGSize size=self.view.bounds.size;
+    if (!_hasArea || size.width<=0 || size.height<=0) { [self dismissSelf]; return; }
+    CGRect area=CGRectMake(_drawn.origin.x/size.width,_drawn.origin.y/size.height,
+                           _drawn.size.width/size.width,_drawn.size.height/size.height);
+    // Too small to mean anything: closing rather than reserving a sliver.
+    if (area.size.width<0.02 || area.size.height<0.02) { [self dismissSelf]; return; }
+    void (^onArea)(CGRect)=self.onArea;
+    [self dismissViewControllerAnimated:YES completion:^{ if (onArea) onArea(area); }];
+}
+- (void)dismissSelf { [self dismissViewControllerAnimated:YES completion:nil]; }
+@end
+
 @implementation TKWoWViewController {
     TKAppLibrary *_library;
     TKWoWClient *_client;
@@ -210,6 +274,7 @@ static BOOL TKForeverInterfaceModeIsMobile(void) {
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
     TKWoWSwitchRow *_gamepadRow, *_overlayRow;
+    UIButton *_interfaceSetupButton;
     NSString *_backupsDirectory;
     UIView *_markView;
     NSLayoutConstraint *_markCap;
@@ -386,6 +451,9 @@ static BOOL TKForeverInterfaceModeIsMobile(void) {
     // The interface this launcher drives. One setting, one row: it writes the single key the
     // guest reads and never touches an installed package.
     _interfaceModeButton=[self button:@"wow.launcher.interfaceMode" action:@selector(chooseInterfaceMode)];
+    // The arrangement the on-screen controls use: a built-in starting point, an arrangement the
+    // user saved, or saving the one in use. All of it is data the layout owns.
+    _interfaceSetupButton=[self button:@"wow.launcher.interfaceSetup" action:@selector(chooseInterfaceSetup)];
 
     // Five sections, as boxes, in the order they are read. The compatibility note belongs to
     // the edition it is about, so it lives in that box rather than loose on the page. The
@@ -410,7 +478,7 @@ static BOOL TKForeverInterfaceModeIsMobile(void) {
     // beside UI Manager on a wide page and after it on a narrow one, and it changes no other
     // card's width, inset or order.
     UIView *launcherManagerBox=[self sectionBoxWithIdentifier:@"wow.box.launcherManager"
-        rows:@[_interfaceModeButton]];
+        rows:@[_interfaceModeButton, _interfaceSetupButton]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _activity.color=Gold(); _activity.hidesWhenStopped=YES;
@@ -871,8 +939,7 @@ static BOOL TKForeverInterfaceModeIsMobile(void) {
     // destination. It opens the Add-On Manager, which is where installing is explicit:
     // pressing this row never installs, disables, removes or updates anything by itself.
     [self configureButton:_macEverButton
-        title:TKForeverInterfaceModeIsMobile()?WKLocalized(@"home.addons.recommended.wolkaraRoue")
-                                               :WKLocalized(@"home.addons.recommended.macEver") filled:NO];
+        title:WKLocalized(@"home.addons.recommended.wolkaraRoue") filled:NO];
     _macEverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     // Navigation only: the page is opened for the user to choose and install there.
     // Starting and an ended session grey it with everything else.
@@ -915,10 +982,13 @@ static BOOL TKForeverInterfaceModeIsMobile(void) {
     // never a package, a file or an installation.
     [self configureButton:_interfaceModeButton
         title:WKLocalizedFormat(@"home.launcher.interfaceMode.row",
-            TKForeverInterfaceModeIsMobile()?WKLocalized(@"home.launcher.interfaceMode.ios")
-                                            :WKLocalized(@"home.launcher.interfaceMode.ipados")) filled:NO];
+            InterfaceModeLabel(AKInterfaceModeName())) filled:NO];
     _interfaceModeButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _interfaceModeButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
+    [self configureButton:_interfaceSetupButton
+        title:WKLocalized(@"home.launcher.interfaceSetup.row") filled:NO];
+    _interfaceSetupButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _interfaceSetupButton.enabled=_interfaceModeButton.enabled;
     // Switches, not changing commands: the label is fixed and the control shows
     // the state.
     _gamepadRow.enabled=foreverReady;
@@ -1660,50 +1730,177 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     picker.delegate=self;
     [self presentViewController:picker animated:YES completion:nil];
 }
-// Which interface this launcher drives. Exactly two choices, named as the two interfaces
-// are: iPadOS and iOS on Duo. The current one carries the app's own checkmark, the same
-// marker every other selector on this page uses.
+static NSString *InterfaceModeLabel(NSString *name) {    if ([name isEqual:AKInterfaceModeIPadOS]) return WKLocalized(@"home.launcher.interfaceMode.ipados");
+    if ([name isEqual:AKInterfaceModeIOSDuo]) return WKLocalized(@"home.launcher.interfaceMode.iosduo");
+    return WKLocalized(@"home.launcher.interfaceMode.ios");
+}
+// Which interface this launcher drives: Automatic, iPadOS, iOS, or iOS on Duo. Automatic is the
+// device's own answer and is labelled with what it resolves to. An explicit choice always wins.
 - (void)chooseInterfaceMode {
     if (_busy || _starting || _running || _sessionUsed) {
         WKLog("ui", @"interface mode: declined while the page is busy");
         return;
     }
-    BOOL mobile=TKForeverInterfaceModeIsMobile();
+    NSString *current=AKInterfaceModeStoredName();
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceMode.title")
         message:WKLocalized(@"home.launcher.interfaceMode.message")
         preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSNumber *each in @[@NO,@YES]) {
-        BOOL chosen=each.boolValue;
-        NSString *title=WKLocalized(chosen?@"home.launcher.interfaceMode.ios"
-                                            :@"home.launcher.interfaceMode.ipados");
-        if (chosen==mobile) title=[@"✓ " stringByAppendingString:title];
+    NSString *automatic=WKLocalizedFormat(@"home.launcher.interfaceMode.auto.value",
+        InterfaceModeLabel(AKInterfaceModeAutomaticName()));
+    NSArray<NSArray<NSString *> *> *choices=@[@[AKInterfaceModeAuto, automatic],
+                                              @[AKInterfaceModeIPadOS, InterfaceModeLabel(AKInterfaceModeIPadOS)],
+                                              @[AKInterfaceModeIOS, InterfaceModeLabel(AKInterfaceModeIOS)],
+                                              @[AKInterfaceModeIOSDuo, InterfaceModeLabel(AKInterfaceModeIOSDuo)]];
+    for (NSArray<NSString *> *choice in choices) {
+        NSString *title=choice[1];
+        if ([current isEqualToString:choice[0]]) title=[@"✓ " stringByAppendingString:title];
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
             handler:^(__unused UIAlertAction *action) {
-            [self applyInterfaceMode:chosen];
+            [self applyInterfaceModeNamed:choice[0]];
         }]];
     }
     [self presentSheet:sheet anchor:_interfaceModeButton];
 }
 // One key, and nothing else. A mode is a setting the guest reads on its next use; it is not
 // an installation, a disable, a removal or an update, and this path touches no package.
-- (void)applyInterfaceMode:(BOOL)mobile {
-    [NSUserDefaults.standardUserDefaults setObject:(mobile?TKForeverInterfaceModeIOS:TKForeverInterfaceModeIPadOS)
-                                            forKey:TKForeverInterfaceModeKey];
-    WKLog("ui", @"interface mode: %@", mobile?@"ios":@"ipados");
+- (void)applyInterfaceModeNamed:(NSString *)name {
+    [NSUserDefaults.standardUserDefaults setObject:name forKey:AKInterfaceModeDefaultsKey];
+    WKLog("ui", @"interface mode: %@ (resolves to %@)", name, AKInterfaceModeName());
     [self render];
 }
+// How a gamepad element reads in a list. Short, because these are the labels on the controls.
+static NSString *ElementLabel(NSString *element) {
+    static NSDictionary *labels;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        labels = @{GCInputButtonA:@"A", GCInputButtonB:@"B", GCInputButtonX:@"X", GCInputButtonY:@"Y",
+                   GCInputLeftShoulder:@"LB", GCInputLeftTrigger:@"LT", GCInputRightTrigger:@"RT",
+                   GCInputRightShoulder:@"RB", GCInputButtonMenu:@"Menu",
+                   GCInputLeftThumbstick:@"Left stick", GCInputRightThumbstick:@"Right stick",
+                   @"dpad.up":@"D-pad ↑", @"dpad.right":@"D-pad →", @"dpad.down":@"D-pad ↓",
+                   @"dpad.left":@"D-pad ←"};
+    });
+    return labels[element] ?: element;
+}
+// The arrangement row. It writes only the dictionary the on-screen controls read, through the
+// same functions the adapter uses, so a choice here is what the next guest starts with; it
+// touches no game file and no package.
+- (void)chooseInterfaceSetup {
+    if (_busy || _starting || _running || _sessionUsed) {
+        WKLog("ui", @"interface setup: declined while the page is busy");
+        return;
+    }
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.title")
+        message:WKLocalized(@"home.launcher.interfaceSetup.message")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSString *template in AKLayoutTemplateNames()) {
+        NSString *title=WKLocalized([@"home.launcher.interfaceSetup.template." stringByAppendingString:template]);
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            AKLayoutApplyTemplate(defaults, template);
+            WKLog("ui", @"interface setup: template %@", template);
+            [self render];
+        }]];
+    }
+    for (NSString *name in AKLayoutSavedNames(defaults)) {
+        [sheet addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            if (AKLayoutApplyProfile(defaults, name)) WKLog("ui", @"interface setup: layout %@", name);
+            [self render];
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.save")
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [self saveInterfaceSetup]; }]];
+    // The controls themselves, each named with the element it sends, so changing one is a
+    // single step from here rather than a menu inside a menu.
+    for (NSString *slot in AKLayoutSlots()) {
+        NSString *title=[NSString stringWithFormat:@"%@ → %@", ElementLabel(slot),
+                         ElementLabel(AKLayoutElementForSlot(defaults, slot))];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) { [self chooseElementForSlot:slot]; }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.reserve")
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [self reserveInterfaceArea]; }]];
+    if (AKLayoutSavedNames(defaults).count) {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
+            style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            [self deleteInterfaceSetup];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_interfaceSetupButton];
+}
+- (void)chooseElementForSlot:(NSString *)slot {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSString *current=AKLayoutElementForSlot(defaults, slot);
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:ElementLabel(slot)
+        message:WKLocalized(@"home.launcher.interfaceSetup.buttons.choose")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSString *element in AKLayoutElements()) {
+        NSString *title=ElementLabel(element);
+        if ([element isEqualToString:current]) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            if (!AKLayoutSetElement(defaults, element, slot))
+                WKLog("ui", @"interface setup: %@ cannot send %@ (another control already does)", slot, element);
+            [self render];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_interfaceSetupButton];
+}
+- (void)reserveInterfaceArea {
+    TKAreaPickerViewController *picker=[TKAreaPickerViewController new];
+    picker.modalPresentationStyle=UIModalPresentationOverFullScreen;
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    __weak TKWoWViewController *weakSelf=self;
+    picker.onArea=^(CGRect area) {
+        if (!AKLayoutAddKeepFreeArea(defaults, area.origin.x, area.origin.y,
+                                     area.size.width, area.size.height))
+            WKLog("ui", @"interface setup: never mind - that area was refused");
+        [weakSelf render];
+    };
+    [self presentViewController:picker animated:YES completion:nil];
+}
+- (void)saveInterfaceSetup {
+    UIAlertController *prompt=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.saveTitle")
+        message:nil preferredStyle:UIAlertControllerStyleAlert];
+    [prompt addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder=WKLocalized(@"home.launcher.interfaceSetup.savePlaceholder");
+    }];
+    [prompt addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [prompt addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault
+        handler:^(__unused UIAlertAction *action) {
+        NSString *name=[prompt.textFields.firstObject.text
+            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (AKLayoutSaveProfile(NSUserDefaults.standardUserDefaults, name))
+            WKLog("ui", @"interface setup: saved %@", name);
+        [self render];
+    }]];
+    [self presentViewController:prompt animated:YES completion:nil];
+}
+- (void)deleteInterfaceSetup {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
+        message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSString *name in AKLayoutSavedNames(defaults)) {
+        [sheet addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDestructive
+            handler:^(__unused UIAlertAction *action) {
+            AKLayoutDeleteProfile(defaults, name);
+            WKLog("ui", @"interface setup: deleted %@", name);
+            [self render];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_interfaceSetupButton];
+}
 // The recommendation row. It opens the Add-On Manager, which is where a package is chosen
-// and installed explicitly; pressing the row never installs anything by itself. Which
-// recommendation it opens follows the interface mode: Mac-Ever on iPadOS, the bundled
-// WolkaraRoue package on iOS on Duo.
+// and installed explicitly; pressing the row never installs anything by itself. It offers
+// this product's own add-on, whose packaged release ships in the app, in either interface.
 - (void)openRecommendedAddons {
     NSError *error=nil;
     NSString *addons=[self addOnsDirectoryWithError:&error];
     if (!addons) { [self presentAddonsUnavailable:error]; return; }
-    TKAddonRecommendation recommendation=TKForeverInterfaceModeIsMobile()
-        ? TKAddonRecommendationWolkaraRoue : TKAddonRecommendationMacEver;
-    WKLog("ui", @"recommendation: opening the add-on manager for %@",
-          recommendation==TKAddonRecommendationWolkaraRoue?@"WolkaraRoue":@"Mac-Ever");
+    TKAddonRecommendation recommendation=TKAddonRecommendationWolkaraRoue;
+    WKLog("ui", @"recommendation: opening the add-on manager for WolkaraRoue");
     TKWoWAddonManagerViewController *manager=[[TKWoWAddonManagerViewController alloc]
         initWithAddOnsDirectory:addons edition:_product[@"name"] recommendation:recommendation];
     [self presentPage:manager];

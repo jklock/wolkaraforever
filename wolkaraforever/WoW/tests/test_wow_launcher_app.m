@@ -1280,8 +1280,10 @@ static void TestPhoneDisplayDefaults(void) {
         @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.backup",
                                   @"wow.performance.restore", @"wow.performance.reset",
                                   @"wow.performance.settingsFolder", @"wow.performance.gamepad"],
-        // The sixth card: the interface this launcher drives. One setting, one row.
-        @"wow.box.launcherManager": @[@"wow.heading.launcherManager", @"wow.launcher.interfaceMode"],
+        // The sixth card: the interface this launcher drives, and the arrangement its controls
+        // use. Two settings, two rows.
+        @"wow.box.launcherManager": @[@"wow.heading.launcherManager", @"wow.launcher.interfaceMode",
+                                      @"wow.launcher.interfaceSetup"],
     };
     for (UIView *box in boxes) {
         UIStackView *stack = box.subviews.firstObject;
@@ -1327,10 +1329,11 @@ static void TestPhoneDisplayDefaults(void) {
     assert(Find(self.controller.view, @"wow.performance.restoreDefaults") == nil);
     assert(Find(self.controller.view, @"wow.compatibility") == nil);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.directory") configuration].title isEqual:@"Open Add-on Directory"]);
-    // The recommendation row keeps its identifier and names the add-ons for this interface.
-    // iPadOS is the default, so the row names Mac-Ever.
+    // The recommendation row keeps its identifier and names this product's own add-on, in
+    // either interface: one package, one place to install it.
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
-        isEqual:@"Install Recommended Add-ons (Mac-Ever)"]);
+        isEqual:@"Install Recommended Add-ons (WolkaraRoue)"]);
+    // No mode has been chosen, so it is iPadOS - the value every installation has had.
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Interface Mode: iPadOS"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.permissions") configuration].title isEqual:@"Toggle Permissions (Mic & Speech)"]);
@@ -1367,7 +1370,8 @@ static void TestPhoneDisplayDefaults(void) {
     [self.controller render];
     [self.window layoutIfNeeded];
     assert([[self status] isEqual:@"Ready to play"]);
-    // iPadOS is the default, so the page it opens is filtered to Mac-Ever (CurseForge 1733200).
+    // The recommendation opens this product's own package page whatever the interface is; the
+    // bundled-package flow itself, with its release and hash, is asserted in full below.
     [[self row:@"wow.addons.macEver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController != nil); }, 5.0);
     UINavigationController *recommended = (id)self.controller.presentedViewController;
@@ -1377,11 +1381,8 @@ static void TestPhoneDisplayDefaults(void) {
     PumpUntil(^{ return (BOOL)(recommended.viewIfLoaded.window != nil && !recommended.isBeingPresented); }, 5.0);
     TKWoWAddonManagerViewController *recommendedPage = (id)recommended.topViewController;
     assert([recommendedPage isKindOfClass:TKWoWAddonManagerViewController.class]);
-    assert(recommendedPage.recommendation == TKAddonRecommendationMacEver);
-    assert([recommendedPage.recommendedProjectID isEqual:@1733200]);
-    Pump(0.5);
-    RemoveAnimations(self.window.layer);
-    [self capture:@"wow-addons-recommended-macever.png"];
+    assert(recommendedPage.recommendation == TKAddonRecommendationWolkaraRoue);
+    assert(recommendedPage.recommendedProjectID == nil);
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
     assert(self.controller.presentedViewController == nil);
@@ -1395,10 +1396,10 @@ static void TestPhoneDisplayDefaults(void) {
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Interface Mode: iPadOS"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
-        isEqual:@"Install Recommended Add-ons (Mac-Ever)"]);
+        isEqual:@"Install Recommended Add-ons (WolkaraRoue)"]);
     // The page in its default state: the Launcher Manager row says iPadOS and the
-    // recommendation row names Mac-Ever. The selector's own choices are asserted below;
-    // the baseline is the page, not a translucent sheet.
+    // recommendation row names our own add-on. The selector's own choices are asserted
+    // below; the baseline is the page, not a translucent sheet.
     Pump(0.5);
     RemoveAnimations(self.window.layer);
     [self capture:@"wow-launcher-ipados.png"];
@@ -1407,14 +1408,17 @@ static void TestPhoneDisplayDefaults(void) {
     UIAlertController *modeSheet = (id)self.controller.presentedViewController;
     assert([modeSheet.title isEqual:@"Interface Mode"]);
     assert(CancelActions(modeSheet) == 1);
-    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[@"✓ iPadOS", @"iOS on Duo", @"Cancel"])]);
+    // Automatic names what this device would resolve to, even while iPadOS is what is in force.
+    NSString *automatic = [NSString stringWithFormat:@"Automatic (%@)",
+        UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone ? @"iOS on Duo" : @"iPadOS"];
+    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"✓ iPadOS", @"iOS", @"iOS on Duo", @"Cancel"])]);
     UIAlertAction *duo = nil;
     for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iOS on Duo"]) duo = action;
     assert(duo != nil);
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     RunAction(duo);
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
-    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ios"]);
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"iosduo"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Interface Mode: iOS on Duo"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
@@ -1478,11 +1482,11 @@ static void TestPhoneDisplayDefaults(void) {
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
     assert(self.controller.presentedViewController == nil);
 
-    // Back to iPadOS through the same sheet: the recommendation is Mac-Ever again.
+    // Back to iPadOS through the same sheet: the recommendation stays our own add-on.
     [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
     modeSheet = (id)self.controller.presentedViewController;
-    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[@"iPadOS", @"✓ iOS on Duo", @"Cancel"])]);
+    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"iPadOS", @"iOS", @"✓ iOS on Duo", @"Cancel"])]);
     UIAlertAction *ipados = nil;
     for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iPadOS"]) ipados = action;
     assert(ipados != nil);
@@ -1491,7 +1495,7 @@ static void TestPhoneDisplayDefaults(void) {
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
     assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ipados"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
-        isEqual:@"Install Recommended Add-ons (Mac-Ever)"]);
+        isEqual:@"Install Recommended Add-ons (WolkaraRoue)"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Interface Mode: iPadOS"]);
 
@@ -1952,7 +1956,7 @@ static int backupsBeforePerformance;
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.backup") configuration].title
         isEqual:@"WoW-Oberflächenkonfiguration sichern"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
-        isEqual:@"Empfohlene Add-ons installieren (Mac-Ever)"]);
+        isEqual:@"Empfohlene Add-ons installieren (WolkaraRoue)"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Oberflächenmodus: iPadOS"]);
     // A product name stays itself in both languages.
@@ -2370,7 +2374,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     for (UIBarButtonItem *item in @[gear, refresh])
         assert(item.target != nil && item.action != NULL);
 
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and the recommendation row; the Launcher Manager card (exactly iPadOS and iOS on Duo, persisted, and no package moved by a switch) and the bundled-package page it opens; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and the recommendation row; the Launcher Manager card (Automatic, iPadOS and iOS on Duo, each resolved from the stored choice, persisted, and no package moved by a switch) and the bundled-package page it opens; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.

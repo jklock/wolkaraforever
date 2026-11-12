@@ -39,8 +39,26 @@
 "home.launcher.interfaceMode.row" = "Mode d’interface : %@";
 "home.launcher.interfaceMode.title" = "Mode d’interface";
 "home.launcher.interfaceMode.message" = "Choisissez l’interface pilotée par ce lanceur. En changer n’installe, ne désactive, ne supprime et ne met jamais à jour un addon.";
+"home.launcher.interfaceMode.auto" = "Automatique";
+"home.launcher.interfaceMode.auto.value" = "Automatique (%@)";
 "home.launcher.interfaceMode.ipados" = "iPadOS";
-"home.launcher.interfaceMode.ios" = "iOS on Duo";
+"home.launcher.interfaceMode.ios" = "iOS";
+"home.launcher.interfaceMode.iosduo" = "iOS sur Duo";
+"home.launcher.interfaceSetup.row" = "Disposition des commandes…";
+"home.launcher.interfaceSetup.title" = "Disposition des commandes";
+"home.launcher.interfaceSetup.message" = "Où sont les commandes, leur taille, les zones laissées au jeu et la touche de manette que chacune envoie. Enregistré avec les réglages de l’app, donc toujours là la fois suivante.";
+"home.launcher.interfaceSetup.template.plain" = "Simple (sticks fixes)";
+"home.launcher.interfaceSetup.template.duo" = "Duo (sticks flottants, saut dans le coin)";
+"home.launcher.interfaceSetup.template.duo-addon" = "Duo avec la place pour un add-on";
+"home.launcher.interfaceSetup.save" = "Enregistrer cette disposition…";
+"home.launcher.interfaceSetup.saveTitle" = "Enregistrer la disposition";
+"home.launcher.interfaceSetup.savePlaceholder" = "Nom";
+"home.launcher.interfaceSetup.delete" = "Supprimer une disposition enregistrée…";
+"home.launcher.interfaceSetup.buttons" = "Touches…";
+"home.launcher.interfaceSetup.buttons.message" = "Quelle touche de manette chaque commande envoie. Les affectations de manette du jeu décident ensuite de ce que fait cette touche.";
+"home.launcher.interfaceSetup.buttons.choose" = "Choisissez la touche envoyée par cette commande";
+"home.launcher.interfaceSetup.reserve" = "Réserver une zone…";
+"home.launcher.interfaceSetup.reserve.hint" = "Faites glisser sur la partie de l’écran que les commandes doivent laisser libre - là où un add-on place ses propres boutons - puis touchez OK.";
 
 "home.addons.install" = "Installer des addons (CurseForge et direct)";
 "home.addons.install.needsgame" = "Installer des addons (CurseForge et direct) (installez d’abord le jeu)";
@@ -360,6 +378,7 @@
 "touch.gamepad.leftStick" = "Stick gauche de la manette";
 "touch.gamepad.rightStick" = "Stick droit de la manette";
 "touch.gamepad.jump" = "Saut";
+"touch.autorun" = "Course automatique";
 "touch.gamepad.doneEditing" = "Terminer la modification";
 "touch.gamepad.dragHint" = "Faites glisser les commandes pour les déplacer";
 "touch.settings" = "Réglages des commandes tactiles";
@@ -372,6 +391,7 @@
 "touch.settings.stickSize.value" = "Taille des sticks et boutons de façade · %.0f%%";
 "touch.settings.outerTriggers" = "Gâchettes à l’extérieur";
 "touch.settings.sticksOnly" = "Sticks et saut seulement (masquer les autres boutons)";
+"touch.settings.floatingSticks" = "Sticks flottants (sous le pouce, saut dans le coin)";
 "touch.settings.haptics" = "Retour haptique";
 "touch.settings.overlay" = "Affichage des performances";
 "touch.settings.overlay.detail" = "Affichage des performances (FPS et température)";

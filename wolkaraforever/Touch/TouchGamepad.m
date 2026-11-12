@@ -27,6 +27,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 
 @interface AKGamepadButton : UIButton
 @property(nonatomic, copy) NSString *element;
+@property(nonatomic, copy) NSString *slot;
 @property(nonatomic, readonly) BOOL pressed;
 @property(nonatomic) NSInteger sector;
 - (void)releaseInput;
@@ -87,9 +88,49 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 @interface AKGamepadStick : UIControl
 @property(nonatomic, copy) NSString *element;
 @property(nonatomic, readonly) CGPoint position;
+// The floating arrangement: the ring comes back under the thumb that presses its half of the
+// screen instead of staying where the layout put it.
+@property(nonatomic) BOOL floating;
+@property(nonatomic) CGFloat idleAlpha, activeAlpha;
+@property(nonatomic, readonly) BOOL held;
+// The movement stick also arms an auto-run: push it forward and hold, a lock appears; keep
+// pushing and it lights up; lift the finger then and the character runs until the stick is
+// touched again. Every stage is cancelled by letting go early, by touching the stick and by
+// -reset, so a lost touch cannot leave a run on.
+@property(nonatomic) BOOL autoRunAllowed;
+@property(nonatomic, copy) void (^autoRunStage)(NSInteger stage);
+- (void)pollAutoRun:(NSTimeInterval)now;
 - (void)reset;
 @end
-@implementation AKGamepadStick { UIView *_knob; }
+static const NSTimeInterval AKAutoRunHold = 2;
+static const CGFloat AKAutoRunArm = 60;
+@implementation AKGamepadStick {
+    UIView *_knob;
+    NSTimeInterval _forwardSince;
+    NSInteger _autoStage;
+    BOOL _autoRunning, _stoppedRun;
+}
+- (void)setAutoStage:(NSInteger)stage {
+    if (_autoStage == stage) return;
+    _autoStage = stage;
+    if (self.autoRunStage) self.autoRunStage(stage);
+}
+- (BOOL)pushedForward { return _position.y >= 0.85 && fabs(_position.x) <= 0.4; }
+- (void)pollAutoRun:(NSTimeInterval)now {
+    if (!_autoRunAllowed || !_held || _autoStage != 0) return;
+    if (![self pushedForward]) { _forwardSince = 0; return; }
+    if (_forwardSince == 0) _forwardSince = now;
+    else if (now - _forwardSince >= AKAutoRunHold) [self setAutoStage:1];
+}
+- (void)trackAutoRun:(UITouch *)touch {
+    if (!_autoRunAllowed) return;
+    if (_autoStage == 0) { [self pollAutoRun:touch.timestamp]; return; }
+    if (_autoStage == 1 || _autoStage == 2) {
+        CGFloat scale = self.superview.transform.d > 0 ? self.superview.transform.d : 1;
+        BOOL above = [touch locationInView:self].y < -AKAutoRunArm / scale;
+        [self setAutoStage:above ? 2 : 1];
+    }
+}
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
         self.exclusiveTouch = NO;
@@ -117,14 +158,47 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     _position = position; [self setNeedsLayout]; [self sendActionsForControlEvents:UIControlEventValueChanged];
 }
 - (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    (void)event; [self updatePosition:AKTouchGamepadStickPosition([touch locationInView:self],self.bounds.size)]; return YES;
+    (void)event;
+    UIView *ring = self.superview;
+    _held = YES;
+    _forwardSince = 0;
+    _stoppedRun = _autoRunning;
+    if (_autoRunning) { _autoRunning = NO; [self setAutoStage:0]; }
+    if (_floating && ring.superview) {
+        ring.center = [touch locationInView:ring.superview];
+        ring.alpha = _activeAlpha > 0 ? _activeAlpha : 1;
+    }
+    [self updatePosition:AKTouchGamepadStickPosition([touch locationInView:self],self.bounds.size)]; return YES;
 }
 - (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    (void)event; [self updatePosition:AKTouchGamepadStickPosition([touch locationInView:self],self.bounds.size)]; return YES;
+    (void)event;
+    [self updatePosition:AKTouchGamepadStickPosition([touch locationInView:self],self.bounds.size)];
+    [self trackAutoRun:touch];
+    return YES;
 }
-- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event { (void)touch; (void)event; [self reset]; }
-- (void)cancelTrackingWithEvent:(UIEvent *)event { (void)event; [self reset]; }
-- (void)reset { [self updatePosition:CGPointZero]; }
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    (void)touch; (void)event;
+    _held = NO;
+    if (_autoStage == 2 && _autoRunAllowed) {
+        // Confirmed: the run stays on with the stick held forward, and the ring goes away.
+        _autoRunning = YES;
+        [self setAutoStage:3];
+        [self updatePosition:CGPointMake(0, 1)];
+        [self fadeOut];
+        return;
+    }
+    [self reset]; [self fadeOut];
+    if (_stoppedRun) { _stoppedRun = NO; return; }
+}
+- (void)cancelTrackingWithEvent:(UIEvent *)event { (void)event; _held = NO; [self reset]; [self fadeOut]; }
+- (void)fadeOut { if (_floating) self.superview.alpha = _idleAlpha > 0 ? _idleAlpha : 0.02; }
+- (void)reset {
+    // Every reset is a release: the overlay resets on settings, on the keyboard and when the
+    // controls hide, and a stick that kept _held would refuse the next finger.
+    _held = NO; _autoRunning = NO; _forwardSince = 0; _stoppedRun = NO;
+    [self setAutoStage:0];
+    [self updatePosition:CGPointZero];
+}
 @end
 
 @interface AKGamepadOverlay : UIView <UIGestureRecognizerDelegate>
@@ -140,17 +214,34 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 - (void)toggleSettings;
 - (void)finishConfiguration;
 @end
+// The floating arrangement's own geometry, in fractions of the overlay. Each thumb owns a
+// half of the screen, and the corner beyond the camera stick is the jump. Nothing here knows
+// about any add-on: areas reserved for the game or for someone's installed buttons come from
+// the saved layout, so an add-on can never define this interface.
+static const CGFloat AKFloatIdleAlpha = 0.02;
+static const CGFloat AKFloatJumpRadius = 0.16;
+static const CGFloat AKFloatLeftMinX = 0.10, AKFloatLeftMaxX = 0.42;
+static const CGFloat AKFloatLeftMinY = 0.42, AKFloatLeftLowY = 0.86;
+static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRightMaxY = 0.92;
 @implementation AKGamepadOverlay {
     NSDictionary<NSString *,UIView *> *_items;
+    NSDictionary<NSString *,AKGamepadButton *> *_slots;
+    AKGamepadButton *_jumpButton;
     NSMutableDictionary<NSString *,NSValue *> *_dragOrigins;
     UIView *_settings;
     UIButton *_editDone;
     UILabel *_hint;
     UISwitch *_editSwitch, *_hapticsSwitch, *_overlaySwitch, *_swapShouldersSwitch, *_sticksOnlySwitch;
+    UISwitch *_floatingSwitch;
     UIStackView *_settingsColumns;
     NSArray<UISlider *> *_sliders;
     NSArray<UILabel *> *_values;
     CAShapeLayer *_editGrid, *_editAxes;
+    // A touch that belongs to a stick already held, and must not become a click on the game.
+    UIView *_sink;
+    UIView *_autoLock;
+    UILabel *_autoBadge;
+    __weak UIGestureRecognizer *_hostPinch;
 }
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
@@ -172,26 +263,34 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
             GCInputButtonMenu,@"dpad.up",@"dpad.right",@"dpad.down",@"dpad.left"];
         NSArray *titles = @[@"A",@"B",@"X",@"Y",@"LB",@"LT",@"RT",@"RB",@"+",@"↑",@"→",@"↓",@"←"];
         NSMutableDictionary *buttons = [NSMutableDictionary new];
+        NSMutableDictionary *slots = [NSMutableDictionary new];
         UIView *left = [UIView new], *right = [UIView new];
         left.multipleTouchEnabled = right.multipleTouchEnabled = YES;
         [self addSubview:left]; [self addSubview:right];
         for (NSUInteger i=0; i<elements.count; i++) {
-            AKGamepadButton *button = [AKGamepadButton new]; button.element = elements[i];
+            // The slot is where the control sits and what it is called; the element is what it
+            // sends to the game, which the player may have changed in the layout.
+            AKGamepadButton *button = [AKGamepadButton new];
+            button.slot = elements[i];
+            button.element = [_preferences elementForSlot:elements[i]];
             [button setTitle:titles[i] forState:UIControlStateNormal];
             button.accessibilityLabel = AKHostLocalizedFormat(@"touch.gamepad.button", elements[i]);
             button.accessibilityIdentifier = [@"tolkara.gamepad." stringByAppendingString:elements[i]];
-            buttons[elements[i]] = button;
+            buttons[button.element] = button;
+            slots[button.slot] = button;
             [(i<4 ? right : i>=9 ? left : self) addSubview:button];
         }
         _buttons = buttons;
+        _slots = slots;
+        _jumpButton = slots[GCInputButtonA];
         _leftStick = [AKGamepadStick new]; _rightStick = [AKGamepadStick new];
         _leftStick.element = GCInputLeftThumbstick; _rightStick.element = GCInputRightThumbstick;
         _leftStick.accessibilityLabel = AKHostLocalized(@"touch.gamepad.leftStick");
         _rightStick.accessibilityLabel = AKHostLocalized(@"touch.gamepad.rightStick");
         _leftStick.accessibilityIdentifier = @"tolkara.gamepad.leftStick"; _rightStick.accessibilityIdentifier = @"tolkara.gamepad.rightStick";
         [left addSubview:_leftStick]; [right addSubview:_rightStick];
-        _items = @{@"left":left,@"right":right,@"LB":buttons[GCInputLeftShoulder],@"LT":buttons[GCInputLeftTrigger],
-            @"RB":buttons[GCInputRightShoulder],@"RT":buttons[GCInputRightTrigger],@"menu":buttons[GCInputButtonMenu]};
+        _items = @{@"left":left,@"right":right,@"LB":slots[GCInputLeftShoulder],@"LT":slots[GCInputLeftTrigger],
+            @"RB":slots[GCInputRightShoulder],@"RT":slots[GCInputRightTrigger],@"menu":slots[GCInputButtonMenu]};
         for (NSString *name in _items) {
             UIView *item = _items[name]; item.accessibilityIdentifier = [@"wolkaraforever.layout." stringByAppendingString:name];
             // Retain button identifiers used by input tests and accessibility.
@@ -210,6 +309,37 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
         _hint.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
         _hint.textColor = UIColor.whiteColor; _hint.textAlignment = NSTextAlignmentCenter;
         _hint.userInteractionEnabled = NO; [self addSubview:_hint];
+        _sink = [UIView new];
+        [self addSubview:_sink];
+        _autoLock = [UIView new]; _autoLock.userInteractionEnabled = NO; _autoLock.hidden = YES;
+        _autoLock.accessibilityIdentifier = @"wolkaraforever.controls.autorunLock";
+        _autoLock.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.7];
+        _autoLock.layer.cornerRadius = 24; _autoLock.layer.borderWidth = 1;
+        _autoLock.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.35].CGColor;
+        UIImageView *lockImage = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"lock.fill"]];
+        lockImage.tintColor = UIColor.whiteColor; lockImage.frame = CGRectMake(12, 12, 24, 24);
+        lockImage.contentMode = UIViewContentModeScaleAspectFit;
+        [_autoLock addSubview:lockImage];
+        [self addSubview:_autoLock];
+        _autoBadge = [UILabel new]; _autoBadge.userInteractionEnabled = NO; _autoBadge.hidden = YES;
+        _autoBadge.accessibilityIdentifier = @"wolkaraforever.controls.autorun";
+        _autoBadge.text = AKHostLocalized(@"touch.autorun"); _autoBadge.textAlignment = NSTextAlignmentCenter;
+        _autoBadge.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+        _autoBadge.textColor = UIColor.whiteColor;
+        _autoBadge.backgroundColor = [UIColor colorWithRed:0.1 green:0.45 blue:0.55 alpha:0.8];
+        _autoBadge.layer.cornerRadius = 12; _autoBadge.clipsToBounds = YES;
+        [self addSubview:_autoBadge];
+        __weak AKGamepadOverlay *weakOverlay = self;
+        _leftStick.autoRunStage = ^(NSInteger stage) { [weakOverlay showAutoRun:stage]; };
+        // Common modes, because the guest drives the main run loop in modes of its own while it
+        // runs; a default-mode timer would wait for the game to return to the default mode.
+        __weak AKGamepadOverlay *weakSelf = self;
+        NSTimer *idle = [NSTimer timerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer) {
+            AKGamepadOverlay *overlay = weakSelf;
+            if (!overlay) { [timer invalidate]; return; }
+            [overlay hideIdleRings];
+        }];
+        [NSRunLoop.mainRunLoop addTimer:idle forMode:NSRunLoopCommonModes];
         [self updateAppearance];
     }
     return self;
@@ -230,7 +360,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     BOOL sticksOnly = _preferences.sticksOnly && !self.configuring && AKInterfaceModeIsMobile();
     NSArray<UIView *> *placed = _items.allValues;
     for (AKGamepadButton *button in _buttons.allValues) {
-        BOOL jump = [button.element isEqualToString:GCInputButtonA];
+        BOOL jump = [button.slot isEqualToString:GCInputButtonA];
         if (sticksOnly) button.hidden = !jump;
         else if (![placed containsObject:button]) button.hidden = NO;
         if (jump) [button setTitle:sticksOnly ? AKHostLocalized(@"touch.gamepad.jump") : @"A" forState:UIControlStateNormal];
@@ -241,9 +371,55 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     _leftStick.enabled = _rightStick.enabled = !self.configuring;
     _editDone.hidden = _hint.hidden = !_editing;
     _editGrid.hidden = _editAxes.hidden = !_editing;
+    BOOL floating = [self floatingActive];
+    // Leaving the floating arrangement - the switch, the settings, a mode change - lets go of
+    // every stick, so nothing stays held and no auto-run keeps going.
+    if (!floating && (_leftStick.floating || _rightStick.floating)) [self reset];
+    _leftStick.floating = _rightStick.floating = floating;
+    _leftStick.autoRunAllowed = floating;
+    _leftStick.activeAlpha = _rightStick.activeAlpha = _preferences.opacity;
+    _leftStick.idleAlpha = _rightStick.idleAlpha = AKFloatIdleAlpha;
+    if (floating && !_leftStick.held) _items[@"left"].alpha = AKFloatIdleAlpha;
+    if (floating && !_rightStick.held) _items[@"right"].alpha = AKFloatIdleAlpha;
+    if (!floating) { _autoLock.hidden = YES; _autoBadge.hidden = YES; }
     [self setNeedsLayout];
 }
+// Whether the floating arrangement is the one on screen. It is a mobile-interface arrangement,
+// so AKInterfaceModeIsMobile() is the only thing that decides it: a hand-edited or saved
+// preference cannot turn it on in Standard.
+- (BOOL)floatingActive {
+    return AKInterfaceModeIsMobile() && _preferences.floatingSticks && _preferences.sticksOnly &&
+        _controlsVisible && !self.configuring;
+}
+- (void)showAutoRun:(NSInteger)stage {
+    UIView *ring = _items[@"left"];
+    CGFloat stickSize = 104 * ring.transform.d;
+    _autoLock.frame = CGRectMake(ring.center.x - 24, ring.center.y - stickSize / 2 - AKAutoRunArm - 24, 48, 48);
+    _autoLock.hidden = !(stage == 1 || stage == 2);
+    _autoLock.backgroundColor = stage == 2 ? [UIColor colorWithRed:0.85 green:0.65 blue:0.15 alpha:0.9]
+                                           : [UIColor colorWithWhite:0.1 alpha:0.7];
+    _autoLock.transform = stage == 2 ? CGAffineTransformMakeScale(1.15, 1.15) : CGAffineTransformIdentity;
+    CGSize size = self.bounds.size;
+    _autoBadge.frame = CGRectMake(size.width * 0.12, size.height * 0.80, 96, 26);
+    _autoBadge.hidden = stage != 3;
+    if (stage == 3) AKGamepadLog(@"touch gamepad: auto-run on");
+}
+// A stick that believes it is held with no finger on it would steer for ever: let it go, and
+// say so once, so a lost touch is visible in a device log rather than felt as a drift.
+- (void)hideIdleRings {
+    [_leftStick pollAutoRun:NSProcessInfo.processInfo.systemUptime];
+    if (![self floatingActive]) return;
+    NSArray *pairs = @[@[_leftStick, @"left"], @[_rightStick, @"right"]];
+    for (NSArray *pair in pairs) {
+        AKGamepadStick *stick = pair[0]; UIView *ring = _items[pair[1]];
+        if (!stick.held && ring.alpha > AKFloatIdleAlpha + 0.01) {
+            AKGamepadLog(@"touch gamepad: %@ ring visible (alpha %.2f) with no finger on it; hidden", pair[1], ring.alpha);
+            ring.alpha = AKFloatIdleAlpha;
+        }
+    }
+}
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if ([self floatingActive]) return [self floatingHit:point event:event];
     UIView *hit = [super hitTest:point withEvent:event];
     if (self.configuring) return hit; // Editing/settings must never click the game.
     if (hit == self || hit == _items[@"left"] || hit == _items[@"right"]) {
@@ -251,6 +427,42 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
         return jump;
     }
     return hit;
+}
+- (BOOL)stickHeld:(AKGamepadStick *)stick event:(UIEvent *)event {
+    if (!stick.held) return NO;
+    if (!event) return YES;
+    for (UITouch *touch in event.allTouches)
+        if (touch.view == stick && touch.phase != UITouchPhaseEnded && touch.phase != UITouchPhaseCancelled) return YES;
+    AKGamepadLog(@"touch gamepad: %@ stick was held with no finger on it; released", stick == _leftStick ? @"left" : @"right");
+    [stick cancelTrackingWithEvent:nil];
+    return NO;
+}
+// A press in a thumb's half is that stick's; the corner beyond the camera stick is the jump;
+// everywhere else - including any area the player reserved - is not ours, so the touch goes on
+// to whatever is underneath. Nothing here forwards a touch by hand: returning nil is the app's
+// own hit-testing doing it.
+- (UIView *)floatingHit:(CGPoint)point event:(UIEvent *)event {
+    CGSize size = self.bounds.size;
+    if (size.width <= 0 || size.height <= 0) return nil;
+    CGFloat h = size.height;
+    CGFloat fx = point.x / size.width, fy = point.y / h;
+    // The areas the player reserved come first and win outright: a touch there belongs to the
+    // game, or to whatever was installed in it.
+    for (NSDictionary<NSString *, NSNumber *> *area in _preferences.keepFree) {
+        CGFloat ax = area[@"x"].doubleValue, ay = area[@"y"].doubleValue;
+        CGFloat aw = area[@"w"].doubleValue, ah = area[@"h"].doubleValue;
+        if (fx >= ax && fx <= ax + aw && fy >= ay && fy <= ay + ah) return nil;
+    }
+    CGFloat corner = hypot(size.width - point.x, h - point.y);
+    if (corner <= AKFloatJumpRadius * h) {
+        AKGamepadButton *jump = _jumpButton;
+        return jump.enabled ? jump : nil;
+    }
+    if (fx <= AKFloatLeftMaxX && (fy >= AKFloatLeftLowY || (fx >= AKFloatLeftMinX && fy >= AKFloatLeftMinY)))
+        return [self stickHeld:_leftStick event:event] ? _sink : _leftStick;
+    if (fx >= AKFloatRightMinX && fy >= AKFloatRightMinY && fy <= AKFloatRightMaxY)
+        return [self stickHeld:_rightStick event:event] ? _sink : _rightStick;
+    return nil;
 }
 // With sticks only, the jump is the one button under the camera stick, and a thumb that is
 // steering does not aim: it lands in the gap next to the stick or just under the drawn ring,
@@ -261,7 +473,7 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachAngle = M_PI / 3;
 - (AKGamepadButton *)jumpAround:(CGPoint)point event:(UIEvent *)event {
     if (!AKInterfaceModeIsMobile() || !_preferences.sticksOnly || self.configuring) return nil;
-    AKGamepadButton *jump = _buttons[GCInputButtonA];
+    AKGamepadButton *jump = _jumpButton;
     UIView *ring = _items[@"right"];
     if (!jump || jump.hidden || !jump.enabled || !ring || ring.hidden) return nil;
     CGPoint local = [self convertPoint:point toView:ring];
@@ -295,13 +507,16 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     CGFloat w = 56*_preferences.rearScale, h = 44*_preferences.rearScale;
     CGFloat left = CGRectGetMinX(safe)+6, right = CGRectGetMaxX(safe)-6;
     CGFloat bottom = CGRectGetMaxY(safe)-6, top = CGRectGetMinY(safe)+8;
-    [self place:@"left" frame:CGRectMake(left,bottom-side,side,side) baseSize:CGSizeMake(216,216) safe:safe];
-    [self place:@"right" frame:CGRectMake(right-side,bottom-side,side,side) baseSize:CGSizeMake(216,216) safe:safe];
+    BOOL floating = [self floatingActive];
+    if (!(floating && _leftStick.held))
+        [self place:@"left" frame:CGRectMake(left,bottom-side,side,side) baseSize:CGSizeMake(216,216) safe:safe];
+    if (!(floating && _rightStick.held))
+        [self place:@"right" frame:CGRectMake(right-side,bottom-side,side,side) baseSize:CGSizeMake(216,216) safe:safe];
     _leftStick.frame = _rightStick.frame = CGRectMake(56,56,104,104);
     NSArray *leftNames = @[@"dpad.up",@"dpad.right",@"dpad.down",@"dpad.left"];
     NSArray *rightNames = @[GCInputButtonY,GCInputButtonB,GCInputButtonA,GCInputButtonX];
     for (NSUInteger i=0; i<4; i++) {
-        AKGamepadButton *a = _buttons[leftNames[i]], *b = _buttons[rightNames[i]];
+        AKGamepadButton *a = _slots[leftNames[i]], *b = _slots[rightNames[i]];
         if (a.sector != (NSInteger)i) a.sector = i;
         if (b.sector != (NSInteger)i) b.sector = i;
         a.frame = b.frame = CGRectMake(0,0,216,216);
@@ -355,7 +570,24 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [CATransaction commit];
 }
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer {
-    (void)gestureRecognizer; return _editing;
+    if (gestureRecognizer == _hostPinch) return YES;
+    return _editing;
+}
+// The camera pinch is the host's, and a pinch that begins on one of our controls is not a
+// gesture over the game: the sticks and the jump keep their fingers.
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    if (gestureRecognizer == _hostPinch) return ![touch.view isDescendantOfView:self];
+    return YES;
+}
+- (void)didMoveToSuperview {
+    [super didMoveToSuperview];
+    if (!AKInterfaceModeIsMobile()) return;
+    for (UIGestureRecognizer *gesture in self.superview.gestureRecognizers) {
+        if ([gesture isKindOfClass:UIPinchGestureRecognizer.class] && !gesture.delegate) {
+            gesture.delegate = self; _hostPinch = gesture;
+            AKGamepadLog(@"touch gamepad: the camera pinch ignores fingers on the controls");
+        }
+    }
 }
 - (void)drag:(UIPanGestureRecognizer *)pan {
     NSString *name = [_items allKeysForObject:pan.view].firstObject;
@@ -423,6 +655,14 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
         UIStackView *sticksRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.sticksOnly")],_sticksOnlySwitch]];
         sticksRow.axis = UILayoutConstraintAxisHorizontal; sticksRow.alignment = UIStackViewAlignmentCenter;
         [options addArrangedSubview:sticksRow];
+        // The floating arrangement belongs to the same interface, so its switch is here too.
+        _floatingSwitch = [UISwitch new]; _floatingSwitch.on = _preferences.floatingSticks;
+        _floatingSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.floatingSticks");
+        _floatingSwitch.accessibilityIdentifier = @"wolkaraforever.controls.floatingSticks";
+        [_floatingSwitch addTarget:self action:@selector(floatingChanged:) forControlEvents:UIControlEventValueChanged];
+        UIStackView *floatingRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.floatingSticks")],_floatingSwitch]];
+        floatingRow.axis = UILayoutConstraintAxisHorizontal; floatingRow.alignment = UIStackViewAlignmentCenter;
+        [options addArrangedSubview:floatingRow];
     }
     _swapShouldersSwitch = [UISwitch new]; _swapShouldersSwitch.on = !_preferences.swapShoulders;
     _swapShouldersSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.outerTriggers");
@@ -494,6 +734,10 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [self reset]; _preferences.sticksOnly = sender.on; [_preferences save];
     [self updateAppearance];
 }
+- (void)floatingChanged:(UISwitch *)sender {
+    [self reset]; _preferences.floatingSticks = sender.on; [_preferences save];
+    [self updateAppearance];
+}
 - (void)hapticsChanged:(UISwitch *)sender {
     _preferences.hapticsEnabled = sender.on; [_preferences save];
     if (self.configurationChanged) self.configurationChanged();
@@ -505,7 +749,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
 - (void)beginEditing:(UISwitch *)sender {
     if (!sender.on) return;
     [self reset]; _editing = YES; [_settings removeFromSuperview]; _settings = nil;
-    _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _settingsColumns = nil;
+    _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _floatingSwitch = nil; _settingsColumns = nil;
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
 }
 - (void)resetLayout {
@@ -513,12 +757,12 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     _sliders[0].value = 1-_preferences.opacity; _sliders[1].value = _preferences.rearScale; _sliders[2].value = _preferences.frontScale;
     _hapticsSwitch.on = _preferences.hapticsEnabled; _swapShouldersSwitch.on = !_preferences.swapShoulders;
     _overlaySwitch.on = _preferences.performanceOverlayEnabled;
-    _sticksOnlySwitch.on = _preferences.sticksOnly;
+    _sticksOnlySwitch.on = _preferences.sticksOnly; _floatingSwitch.on = _preferences.floatingSticks;
     [self updateValues]; [self updateAppearance];
 }
 - (void)finishConfiguration {
     [self reset]; [_preferences save]; _editing = NO; [_dragOrigins removeAllObjects];
-    [_settings removeFromSuperview]; _settings = nil; _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _settingsColumns = nil;
+    [_settings removeFromSuperview]; _settings = nil; _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _floatingSwitch = nil; _settingsColumns = nil;
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
 }
 - (void)reset {
@@ -610,7 +854,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
 // as the finger is (a held Space swims or flies up), and a release always goes out, even if
 // the controls were hidden meanwhile. A host without the key method keeps the gamepad's A.
 - (BOOL)jumpsWithSpace:(AKGamepadButton *)button {
-    return [button.element isEqualToString:GCInputButtonA] && _overlay.preferences.sticksOnly &&
+    return [button.slot isEqualToString:GCInputButtonA] && _overlay.preferences.sticksOnly &&
         [_host respondsToSelector:@selector(touchKey:characters:pressed:)];
 }
 - (void)holdSpace:(BOOL)down {

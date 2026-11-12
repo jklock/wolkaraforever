@@ -42,8 +42,26 @@
 "home.launcher.interfaceMode.row" = "Oberflächenmodus: %@";
 "home.launcher.interfaceMode.title" = "Oberflächenmodus";
 "home.launcher.interfaceMode.message" = "Wähle die Oberfläche, die dieser Launcher steuert. Ein Wechsel installiert, deaktiviert, entfernt oder aktualisiert niemals ein Add-on.";
+"home.launcher.interfaceMode.auto" = "Automatisch";
+"home.launcher.interfaceMode.auto.value" = "Automatisch (%@)";
 "home.launcher.interfaceMode.ipados" = "iPadOS";
-"home.launcher.interfaceMode.ios" = "iOS on Duo";
+"home.launcher.interfaceMode.ios" = "iOS";
+"home.launcher.interfaceMode.iosduo" = "iOS auf dem Duo";
+"home.launcher.interfaceSetup.row" = "Steuerungslayout…";
+"home.launcher.interfaceSetup.title" = "Steuerungslayout";
+"home.launcher.interfaceSetup.message" = "Wo die Bedienelemente liegen, wie groß sie sind, welche Flächen sie dem Spiel lassen und welche Gamepad-Taste jedes sendet. Mit den Einstellungen dieser App gespeichert, also beim nächsten Mal noch da.";
+"home.launcher.interfaceSetup.template.plain" = "Einfach (feste Sticks)";
+"home.launcher.interfaceSetup.template.duo" = "Duo (schwebende Sticks, Sprung in der Ecke)";
+"home.launcher.interfaceSetup.template.duo-addon" = "Duo mit Platz für ein Add-on";
+"home.launcher.interfaceSetup.save" = "Dieses Layout sichern…";
+"home.launcher.interfaceSetup.saveTitle" = "Layout sichern";
+"home.launcher.interfaceSetup.savePlaceholder" = "Bezeichnung";
+"home.launcher.interfaceSetup.delete" = "Gesichertes Layout löschen…";
+"home.launcher.interfaceSetup.buttons" = "Tasten…";
+"home.launcher.interfaceSetup.buttons.message" = "Welche Gamepad-Taste jedes Bedienelement sendet. Welche Aktion diese Taste auslöst, bestimmen die Controller-Belegungen des Spiels.";
+"home.launcher.interfaceSetup.buttons.choose" = "Wählen Sie die Taste, die dieses Bedienelement sendet";
+"home.launcher.interfaceSetup.reserve" = "Bereich freihalten…";
+"home.launcher.interfaceSetup.reserve.hint" = "Ziehen Sie über den Teil des Bildschirms, den die Bedienelemente freilassen sollen - dort, wo ein Add-on seine eigenen Tasten hat - und tippen Sie auf OK.";
 
 "home.addons.install" = "Add-ons installieren (Curse & direkt)";
 "home.addons.install.needsgame" = "Add-ons installieren (Curse & direkt) (zuerst Spiel installieren)";
@@ -359,6 +377,7 @@
 "touch.gamepad.leftStick" = "Controller, linker Stick";
 "touch.gamepad.rightStick" = "Controller, rechter Stick";
 "touch.gamepad.jump" = "Springen";
+"touch.autorun" = "Automatisch laufen";
 "touch.gamepad.doneEditing" = "Bearbeiten beenden";
 "touch.gamepad.dragHint" = "Elemente zum Verschieben ziehen";
 "touch.settings" = "Einstellungen der Bedienelemente";
@@ -371,6 +390,7 @@
 "touch.settings.stickSize.value" = "Größe von Sticks und Aktionstasten · %.0f %%";
 "touch.settings.outerTriggers" = "Trigger außen";
 "touch.settings.sticksOnly" = "Nur Sticks und Springen (andere Tasten ausblenden)";
+"touch.settings.floatingSticks" = "Schwebende Sticks (unter dem Daumen, Springen in der Ecke)";
 "touch.settings.haptics" = "Haptisches Feedback";
 "touch.settings.overlay" = "Leistungsanzeige";
 "touch.settings.overlay.detail" = "Leistungsanzeige (FPS & Temperatur)";

@@ -59,6 +59,13 @@ intent() {
             *) dst=translation/AppKit/${f#wolkaraforever/Touch/};;
         esac
         echo "$f $dst $(intent "$dst")"
+        # The interface-mode rule is asked by the launcher too, and the launcher does not
+        # link the adapter. One source, both binaries: "auto" cannot mean two things.
+        case "$f" in
+            wolkaraforever/Touch/InterfaceMode.*|wolkaraforever/Touch/LayoutStore.*)
+                dst=launcher/WoW/${f#wolkaraforever/Touch/}
+                echo "$f $dst $(intent "$dst")";;
+        esac
     done
     echo "#"
     echo "# AppKit: the content-view sizing test for patch 0054, which has to make"

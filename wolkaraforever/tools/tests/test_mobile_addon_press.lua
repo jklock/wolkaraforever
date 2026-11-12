@@ -1,9 +1,10 @@
 -- The Interface mobile add-on's touch on a spell (addons/WolkaraRoue/Actions.lua), run outside
 -- the game: the clicks the app gives the game reach a spell button's PreClick and PostClick,
 -- which decide - before the game's secure click acts - whether the touch casts.
---   - A touch casts; a long press, which the app gives as a right click after 0.45 s, turns
---     Customise on instead and casts nothing, out of combat (asked for on the iPhone, 2026-11-09);
---     in combat it casts like a touch.
+--   - A touch casts. This interface's Customise is a mode of its own (the Customize button, the
+--     Duo Edit button and EditMode.lua), so a press on a spell never turns it on: a right click
+--     casts like a touch, out of combat and in it.
+--   - While a slot is being edited, a touch casts nothing and opens the picker for that slot.
 --   - Something held on the cursor (an object taken from a bag) and a touch on a spell to cast
 --     it: the spell is cast and stays. The held thing goes only into an empty slot, or into any
 --     slot while customising, or when dragged there on purpose.
@@ -54,15 +55,13 @@ function ns.CursorEntry() return cursor and { kind = "item", id = 6948 } end
 function ns.PickupEntry(entry) picked[#picked + 1] = entry end
 function ns.MarkChanged() changed = changed + 1 end
 function ns.Print() end
-ns.Picker = { Open = function() opened = opened + 1 end }
+ns.Picker = { Open = function() opened = opened + 1; return true end, Close = function() end }
 C_XMLUtil = { GetTemplateInfo = function() return {} end }
 assert(loadfile(path))("WolkaraRoue", ns)
 
 local entry = { kind = "spell", id = 75 }
 local button = ns.CreateActionButton("WolkaraMobileFree1", nil, 64,
     function() return entry end, function(value) entry = value; assigned[#assigned + 1] = value end)
-local longPresses = 0
-button.OnLongPress = function() longPresses = longPresses + 1; ns.editing = true end
 ns.ApplyButton(button)
 assert(button.attributes.type == "spell" and button.attributes.spell == "Sort 75")
 
@@ -79,23 +78,28 @@ end
 
 -- A touch casts.
 Click("LeftButton")
-assert(cast == 1 and opened == 0 and longPresses == 0)
--- A long press, out of combat: Customise, nothing cast, the slot set for Customise.
+assert(cast == 1 and opened == 0)
+-- A right click casts like a touch: Customise is its own mode here, never a press on a spell.
 Click("RightButton")
-assert(cast == 1, "the long press cast the spell")
-assert(longPresses == 1 and ns.editing and button.attributes.type == nil and opened == 0)
-ns.editing = false
-ns.ApplyButton(button)
--- In combat a long press casts like a touch, and Customise stays off.
+assert(cast == 2 and not ns.editing)
+-- In combat the same.
 combat = true
 Click("RightButton")
-assert(cast == 2 and longPresses == 1 and not ns.editing)
+assert(cast == 3 and not ns.editing)
 combat = false
+
+-- While a slot is being edited, a touch never casts; it opens the picker for that slot.
+ns.slotEditing = true
+ns.ApplyButton(button)
+Click("LeftButton")
+assert(cast == 3 and opened == 1, "a touch while editing a slot cast the spell")
+ns.slotEditing = false
+ns.ApplyButton(button)
 
 -- An object held on the cursor, and a touch on the spell to cast it: cast, the spell stays.
 cursor = "item"
 Click("LeftButton")
-assert(cast == 3 and #assigned == 0 and entry.id == 75, "the held object replaced the spell")
+assert(cast == 4 and #assigned == 0 and entry.id == 75, "the held object replaced the spell")
 -- Dragged onto it on purpose, it takes the slot, and the spell goes to the cursor.
 button.scripts.OnReceiveDrag(button)
 assert(entry.kind == "item" and entry.id == 6948 and picked[1].id == 75 and changed == 1)
@@ -115,7 +119,7 @@ assert(entry.kind == "item" and changed == 3)
 -- And a touch with nothing held opens the picker there.
 cursor = nil
 Click("LeftButton")
-assert(opened == 1)
+assert(opened == 2)
 ns.editing = false
 
-print("mobile add-on touch: a touch casts, a long press turns Customise on without casting (casts in combat), an object on the cursor never replaces a spell touched to cast, fills an empty slot, any slot while customising or when dragged there: PASS")
+print("mobile add-on touch: a touch casts, a right click casts like it (Customise is its own mode), a slot being edited never casts and opens the picker, an object on the cursor never replaces a spell touched to cast, fills an empty slot, any slot while customising or when dragged there: PASS")

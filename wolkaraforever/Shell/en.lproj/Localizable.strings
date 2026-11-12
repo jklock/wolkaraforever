@@ -42,8 +42,26 @@
 "home.launcher.interfaceMode.row" = "Interface Mode: %@";
 "home.launcher.interfaceMode.title" = "Interface Mode";
 "home.launcher.interfaceMode.message" = "Choose the interface this launcher drives. Changing it never installs, disables, removes or updates an add-on.";
+"home.launcher.interfaceMode.auto" = "Automatic";
+"home.launcher.interfaceMode.auto.value" = "Automatic (%@)";
 "home.launcher.interfaceMode.ipados" = "iPadOS";
-"home.launcher.interfaceMode.ios" = "iOS on Duo";
+"home.launcher.interfaceMode.ios" = "iOS";
+"home.launcher.interfaceMode.iosduo" = "iOS on Duo";
+"home.launcher.interfaceSetup.row" = "Controller Layout…";
+"home.launcher.interfaceSetup.title" = "Controller Layout";
+"home.launcher.interfaceSetup.message" = "Where the controls sit, how big they are, which parts of the screen they leave to the game, and the gamepad button each sends. Saved with this app's settings, so it is still there next time.";
+"home.launcher.interfaceSetup.template.plain" = "Plain (fixed sticks)";
+"home.launcher.interfaceSetup.template.duo" = "Duo (floating sticks, corner jump)";
+"home.launcher.interfaceSetup.template.duo-addon" = "Duo with room for an add-on";
+"home.launcher.interfaceSetup.save" = "Save This Layout…";
+"home.launcher.interfaceSetup.saveTitle" = "Save Layout";
+"home.launcher.interfaceSetup.savePlaceholder" = "Name";
+"home.launcher.interfaceSetup.delete" = "Delete a Saved Layout…";
+"home.launcher.interfaceSetup.buttons" = "Buttons…";
+"home.launcher.interfaceSetup.buttons.message" = "Which gamepad button each on-screen control sends. The game's own controller bindings then decide what that button does.";
+"home.launcher.interfaceSetup.buttons.choose" = "Choose the button this control sends";
+"home.launcher.interfaceSetup.reserve" = "Reserve an Area…";
+"home.launcher.interfaceSetup.reserve.hint" = "Drag over the part of the screen the controls must leave alone - where an add-on puts its own buttons - then tap OK.";
 
 "home.addons.install" = "Install Addons (Curse & Direct)";
 "home.addons.install.needsgame" = "Install Addons (Curse & Direct) (install game first)";
@@ -361,6 +379,7 @@
 "touch.gamepad.leftStick" = "Controller left stick";
 "touch.gamepad.rightStick" = "Controller right stick";
 "touch.gamepad.jump" = "Jump";
+"touch.autorun" = "Auto-run";
 "touch.gamepad.doneEditing" = "Done editing";
 "touch.gamepad.dragHint" = "Drag controls to move them";
 "touch.settings" = "Touch control settings";
@@ -373,6 +392,7 @@
 "touch.settings.stickSize.value" = "Sticks and face button size · %.0f%%";
 "touch.settings.outerTriggers" = "Triggers on the outside";
 "touch.settings.sticksOnly" = "Sticks and jump only (hide the other buttons)";
+"touch.settings.floatingSticks" = "Floating sticks (find the thumb, jump in the corner)";
 "touch.settings.haptics" = "Haptic feedback";
 "touch.settings.overlay" = "Performance overlay";
 "touch.settings.overlay.detail" = "Performance overlay (FPS & Thermals)";
