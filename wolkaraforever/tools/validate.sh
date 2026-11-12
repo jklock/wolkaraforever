@@ -7,10 +7,9 @@
 # while the evidence names a commit. Evidence that names a commit it did not test is
 # worse than no evidence.
 #
-# So this runs the suites, and writes one file per commit under development/validation/,
-# containing the commit, whether the tree was clean, the host and Xcode, each command
-# with its exit status, and the tail of what it printed. It refuses to run on a dirty
-# worktree unless told to, and says so in the file when it is.
+# So this runs the suites and writes a local point-in-time report under ignored
+# logs/validation/. It refuses to run on a dirty worktree unless told to, and says so
+# in the report when it is.
 #
 #   wolkaraforever/tools/validate.sh [--allow-dirty] [--full] [--device] [--ui-review <record>] [--out <path>]
 #
@@ -42,18 +41,16 @@ done
 sha=$(git rev-parse HEAD)
 short=$(git rev-parse --short HEAD)
 branch=$(git rev-parse --abbrev-ref HEAD)
-# The validation record itself is not part of what is being validated, and this run is
-# about to write one. Without this the file this script produces would make the tree
-# dirty *during* the run, and the build it then ran would say so.
-dirty=$(git status --porcelain -- . ':!development/validation')
+# The local report is not part of what is being validated.
+dirty=$(git status --porcelain)
 # A dirty run is named for when it happened, not only for the commit: it is evidence
 # about the working tree as much as about the commit, and the two must not be confused
 # when someone reads the directory listing.
 if [ -z "$out" ]; then
     if [ -n "$dirty" ]; then
-        out="development/validation/$short-dirty-$(date -u '+%Y%m%dT%H%M%SZ').md"
+        out="logs/validation/$short-dirty-$(date -u '+%Y%m%dT%H%M%SZ').md"
     else
-        out="development/validation/$short.md"
+        out="logs/validation/$short.md"
     fi
 fi
 

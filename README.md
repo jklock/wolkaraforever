@@ -47,7 +47,7 @@ The upstream history, MIT licence, and third-party notices are retained. See
 | **Input** | Use a toolbar, touch trackpad, in-game keyboard/draft entry, configurable on-screen gamepad, physical keyboard/controller input, and controller inspection. |
 | **Voice** | Map a keyboard key or controller control to on-device dictation with Hold or Toggle behavior, Test Voice, permission routing, expected words, and focused-field insertion. |
 | **Performance** | Show frame rate/frame time, GPU information, thermal state, memory, battery, and Low Power Mode. Background-aware pacing caps the Metal loop at 5 fps while inactive/backgrounded and restores normal pacing on foregrounding; iPadOS still controls background execution. |
-| **Diagnostics** | Keep a redacted app log and expose Technical details, device-safe pilot commands, self-tests, and exact-SHA validation records. |
+| **Diagnostics** | Keep a redacted app log and expose Technical details, device-safe pilot commands and self-tests. |
 
 Read [Using WolkaraForever](docs/USING_WOLKARAFOREVER.md) for the operational guide and
 [What WolkaraForever adds](development/technical/FEATURES.md) for the owning code and tests.
@@ -134,12 +134,12 @@ wolkaraforever/tools/test_emulation.sh        # platform and layer regression su
 wolkaraforever/tools/test_translation_sim.sh  # UIKit-backed adapter tests
 wolkaraforever/tools/test_wow_launcher.sh     # downloader, updater, verification
 wolkaraforever/tools/test_forever_ui.sh       # backup, restore, CVars, gamepad, locale
-wolkaraforever/tools/validate.sh --full       # clean-tree, exact-SHA validation record
+wolkaraforever/tools/validate.sh --full       # clean-tree validation report (local only)
 ```
 
 Physical results are meaningful only when they name the source revision, device, iPadOS, client
-build, and execution mode. [Compatibility](COMPATIBILITY.md) states that boundary and points to
-dated validation records; it is not a universal compatibility promise.
+build, and execution mode. [Compatibility](COMPATIBILITY.md) states that boundary; it is not a
+universal compatibility promise.
 
 ## Safety policy
 

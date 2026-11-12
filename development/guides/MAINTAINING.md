@@ -75,7 +75,7 @@ input.
 | `wolkaraforever/patches/` | Our changes to engine files. | No. |
 | `wolkaraforever/overlay.map` | Which of our files goes where. | No; regenerate with `overlay_map.sh`. |
 | `wolkaraforever/` modules | Our own code (`WoW/`, `Touch/`, `Voice/`, `Controller/`, `Shell/`, `Bridge/`). | No. |
-| `build/`, `logs/` | Ignored build output. | Yes, any time. |
+| `build/`, `logs/` | Ignored build and validation output. | Yes, any time; use `clear_validation_reports.sh` after a validation decision. |
 | Device Documents | Game files, add-ons, settings, logs. | **Never by uninstalling.** |
 
 ## The three things you can update

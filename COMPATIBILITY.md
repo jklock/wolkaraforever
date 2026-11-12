@@ -55,10 +55,8 @@ proves the product ran on one phone, not that a render target was benchmarked. N
 model, iOS version, execution mode or game build has been exercised on hardware, and **no iPhone
 result is inferred from the iPad or the other way round**.
 
-The dated record for that run is
-[development/validation/96133d9.md](development/validation/96133d9.md). It distinguishes
-the commands with captured success exits from the observed self-test results in the matrix;
-the matrix runner's final terminal exit was not retained by the host capture.
+The run distinguished command exits from observed self-test results in the matrix; the matrix
+runner's final terminal exit was not retained by the host capture.
 
 ### Not run in the `96133d9` validation
 
@@ -113,6 +111,4 @@ result. The hardware entry for held-button dragging stays absent until it is mea
   iPad and game build you intend to use.
 - Keep a UI backup before changing game settings or add-ons.
 
-Historical engineering and device evidence is preserved under
-[development/validation/](development/validation/), where it remains explicitly dated rather
-than being presented as current compatibility.
+Historical engineering and device observations are not current compatibility promises.

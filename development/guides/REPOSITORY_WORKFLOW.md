@@ -45,8 +45,9 @@ repository; this page is the authoritative configuration record.
 
 1. Branch from current `main`, naming it `feature/...`, `fix/...`, `docs/...`, or `chore/...`.
 2. Keep one behavior or concern per branch. Use a separate worktree for unrelated work.
-3. Do not commit generated `build/` or `logs/` output, game data, credentials, signing
-   material, provisioning profiles, pairing records, device identifiers, or captures.
+3. Do not commit generated `build/` or `logs/` output, validation reports, simulator/device
+   logs, captures, support bundles, game data, credentials, signing material, provisioning
+   profiles, pairing records, or device identifiers.
 4. Write small, imperative commits that can be reviewed independently. Do not mix upstream
    ingestion, product behavior, documentation-only work, and formatting cleanup.
 5. Before review and again before merge, merge current `origin/main` into the original PR branch:
@@ -88,13 +89,12 @@ A simulator result counts only if it ran on one of the two matrix simulators —
 (5th generation)**. Those three are the whole test matrix; the tools refuse anything else. Name
 the device in the report.
 
-## Exact-SHA evidence and releases
+## Pre-release validation and releases
 
 Run `wolkaraforever/tools/validate.sh --full --device --ui-review <record>` on a clean candidate
-after code is committed. It writes
-a scrubbed record under `development/validation/` and refuses to represent an uncommitted
-working tree as a commit. Never hand-edit generated validation records. A later device result
-does not validate an earlier SHA.
+after code is committed. It writes a scrubbed local report under ignored `logs/validation/` and
+refuses to represent an uncommitted working tree as a commit. Validation is a pre-release check,
+not a committed release artifact.
 
 For a release, squash merge only after the integrated branch review is approved and every
 conversation is resolved:
@@ -109,11 +109,23 @@ git tag -a v<version> -m "release: <summary>"
 git push origin v<version>
 ```
 
-The tag points to the exact tested squash-merge SHA. Commit the generated validation record
-after tagging; it must name that SHA. No later release branch starts until exact-main validation
-passes. Build, package, test, and publish from that SHA only.
+The tag points to the tested squash-merge SHA. Build, package, test, and publish from that SHA
+only.
 Inspect the failing CI job before changing another lane or retagging. The External JIT IPA
 workflow is manual and is never an automatic side effect of tagging.
+
+## Generated-output lifecycle
+
+Generated output is a decision aid, not project history. Build products, validation reports,
+simulator/device logs, captures, temporary support bundles and test data remain ignored under
+`build/` or `logs/`; never commit, upload, cite, or link them from a pull request, release,
+changelog, or repository document. A PR reports only the command, source SHA where useful, and
+pass/fail outcome.
+
+Run `wolkaraforever/tools/clear_validation_reports.sh` after the validation result has been read
+and again before opening a PR or publishing a release. It removes only local
+`logs/validation/` reports. Reviewed fixtures, golden baselines and deliberately versioned source
+assets are not generated output and follow their owning review process.
 
 ## Upstream updates
 

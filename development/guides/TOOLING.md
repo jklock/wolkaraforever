@@ -86,7 +86,7 @@ refusing is the feature.
 
 | Script | What it does |
 | --- | --- |
-| `validate.sh [--allow-dirty] [--full] [--device] [--out <path>]` | Runs the suites and writes one record per commit under `development/validation/`: the commit, whether the tree was clean, host and Xcode, each command with its exit status, and the tail of its output. Refuses a dirty tree unless `--allow-dirty`. `--full` adds the slow platform suites; `--device` also installs and pilots on the connected iPad. Device identifiers are scrubbed from what it writes. |
+| `validate.sh [--allow-dirty] [--full] [--device] [--out <path>]` | Runs the suites and writes a local report under ignored `logs/validation/`: the commit, whether the tree was clean, host and Xcode, each command with its exit status, and the tail of its output. Refuses a dirty tree unless `--allow-dirty`. `--full` adds the slow platform suites; `--device` also installs and pilots on the connected iPad. Device identifiers are scrubbed from what it writes. |
 
 ## Tests
 

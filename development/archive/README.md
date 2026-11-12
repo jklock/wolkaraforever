@@ -10,9 +10,8 @@ directories.
 | [plans/](plans/) | Completed implementation plans, retained with their original scope and evidence links. |
 | [technical/](technical/) | Superseded diagnostics, investigations, and implementation proposals. |
 | [architecture/](architecture/) | Superseded layer-baseline records retained for provenance. |
-| [validation/](validation/) | Completed, dated validation evidence retained outside the live validation output directory. |
+| [validation/](validation/) | Historical validation material retained for repository lineage. |
 
-Validation records intentionally remain in
-[`../validation/`](../validation/): `validate.sh` writes one immutable record
-per revision there. Archive a record only after its result is superseded by
-later work or no longer represents the current implementation.
+Current validation reports are ignored local output under `logs/validation/` and are removed
+after the relevant pre-release decision. Historical files in this archive are not current
+instructions or release artifacts.
