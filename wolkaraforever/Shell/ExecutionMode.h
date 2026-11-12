@@ -67,6 +67,6 @@ NSString *TKSignedImagePath(NSArray<NSString *> *arguments, NSString *home, NSSt
 // logs never carry an absolute path.
 NSString *TKHomeDisplayPath(NSString *path, NSString *home);
 
-// WolkaraForever chooses the route included in the build for an ordinary app launch.
-// Explicit tool/development arguments retain the original resolver semantics.
+// WolkaraForever uses the standard precedence (argument, saved choice, build preselection),
+// then falls back to the route included in the build when an Xcode build has no preselection.
 TKExecutionMode TKWolkaraForeverExecutionMode(NSArray<NSString *> *arguments, NSUserDefaults *defaults, NSString *preselected, NSString **source);

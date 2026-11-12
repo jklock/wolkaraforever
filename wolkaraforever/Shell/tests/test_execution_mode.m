@@ -60,12 +60,19 @@ int main(void) {
         assert(TKExecutionModeLoad(defaults)==TKExecutionModeNone);
         NSString *wowSource=nil;
         TKExecutionMode wowMode=TKWolkaraForeverExecutionMode(@[@"WolkaraForever"],defaults,@"local-signing",&wowSource);
-        assert([wowSource isEqual:@"wolkaraforever-build"]);
+        assert(wowMode==TKExecutionModeLocalSigning && [wowSource isEqual:TKExecutionModeSourcePreselected]);
+        [defaults removeObjectForKey:TKExecutionModeDefaultsKey];
+        wowMode=TKWolkaraForeverExecutionMode(@[@"WolkaraForever"],defaults,nil,&wowSource);
 #if TOLKARA_INTEGRATED_AUTH
         assert(wowMode==TKExecutionModeDeveloperService);
 #else
         assert(wowMode==TKExecutionModeExternalJIT);
 #endif
+        assert([wowSource isEqual:@"wolkaraforever-build"]);
+        assert(TKWolkaraForeverExecutionMode(@[@"WolkaraForever"],defaults,nil,NULL)==wowMode);
+        TKExecutionModeSave(defaults,TKExecutionModeLocalSigning);
+        wowMode=TKWolkaraForeverExecutionMode(@[@"WolkaraForever"],defaults,nil,&wowSource);
+        assert(wowMode==TKExecutionModeLocalSigning && [wowSource isEqual:TKExecutionModeSourceSaved]);
         assert(TKWolkaraForeverExecutionMode(@[@"WolkaraForever",@"--execution-mode=local-signing"],defaults,nil,&wowSource)==TKExecutionModeLocalSigning);
         TKExecutionModeSave(defaults,TKExecutionModeLocalSigning);
         assert([[defaults stringForKey:@"TolkaraExecutionMode"] isEqualToString:@"local-signing"]);

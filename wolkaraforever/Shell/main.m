@@ -523,7 +523,7 @@ static NSString *AKAudioStateDescription(void) {
     NSString *source=nil;
     NSString *saveProblem=nil;
     if(TKExecutionModeApplySaveArgument(arguments,NSUserDefaults.standardUserDefaults,&saveProblem))
-        self.executionMode=TKExecutionModeResolve(arguments,NSUserDefaults.standardUserDefaults,
+        self.executionMode=TKWolkaraForeverExecutionMode(arguments,NSUserDefaults.standardUserDefaults,
             [NSBundle.mainBundle objectForInfoDictionaryKey:TKExecutionModePreselectionKey],&source);
     else { self.executionMode=TKExecutionModeNone;source=saveProblem; }
     self.executionModeSource=source;
