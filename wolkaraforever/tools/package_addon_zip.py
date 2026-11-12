@@ -202,9 +202,17 @@ def write_fixtures(fixtures, release, interface, files, archive_name, manifest_n
 
     # A file's bytes changed and the manifest's archive hash was recomputed to match, but
     # the file's own recorded hash was left alone: the archive is the "right" ZIP of the
-    # wrong add-on, and only the per-file hashes catch it.
+    # wrong add-on, and only the per-file hashes catch it. The change keeps the file's
+    # length, so the size check cannot stand in for the hash check.
     stale = fresh(fixtures, "stale-file-hash")
-    changed = [(name, data + b"\n-- changed after review\n" if name == files[0][0] else data)
+
+    def flipped(payload):
+        data = bytearray(payload)
+        if data:
+            data[len(data) // 2] ^= 0xFF
+        return bytes(data)
+
+    changed = [(name, flipped(data) if name == files[0][0] else data)
                for name, data in files]
     build_zip(stale / archive_name, changed)
     stale_manifest = json.loads((good / manifest_name).read_text(encoding="utf-8"))

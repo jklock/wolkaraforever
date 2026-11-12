@@ -76,7 +76,8 @@ final class TKAddonPackage: NSObject {
             entries[path] = (size, digest)
         }
         guard !entries.isEmpty else {
-            return fail("The add-on manifest lists no files.", output)
+            _ = fail("The add-on manifest lists no files.", output)
+            return nil
         }
         return Manifest(name: name, release: release, archive: archive, sha256: sha256, files: entries)
     }
@@ -107,9 +108,9 @@ final class TKAddonPackage: NSObject {
         guard hash(of: archiveURL) == manifest.sha256 else {
             return fail("The add-on archive is not the one this app shipped.", output)
         }
-        guard let archive = try? Archive(url: archiveURL, accessMode: .read) else {
-            return fail("The add-on archive is not a readable ZIP.", output)
-        }
+        let archive: Archive
+        do { archive = try Archive(url: archiveURL, accessMode: .read) }
+        catch { return fail("The add-on archive is not a readable ZIP.", output) }
 
         var seen = Set<String>()
         var measured = 0
