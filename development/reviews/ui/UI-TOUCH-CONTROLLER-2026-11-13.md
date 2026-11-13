@@ -65,6 +65,21 @@ image or identifier is added or changed; the sheet is the same sheet with more c
   French strings are in the same tables as the existing touch strings, and the German UI run
   asserts nothing English is drawn on the settings panel.
 
+## What did *not* change, and how that was checked
+
+The direct-camera work is the one place this feature touches an existing gesture, so it was
+reviewed against the code it wraps rather than from memory:
+
+- `TouchTrackpad.c` keeps its own rule — `AKTrackpadCancel` releases a held button once and then
+  suppresses the rest of the gesture until every finger lifts. A *cancelled touch* therefore
+  keeps that suppression; only the exits the app causes (background, resign, a panel, a
+  rotation, a controller, teardown) clear the gesture completely. The fixture asserts the two
+  rules separately.
+- `TouchControls` keeps `backgroundInput:` → `logInputSuspended` → `dismissKeyboard`, and the
+  `input suspended (draftFirstResponder=…)` line it has always written.
+- The launcher is unchanged: `check_ui_policy.sh --review UI-TOUCH-CONTROLLER-2026-11-13.md`
+  passes on both simulators against the committed baselines.
+
 ## Tests
 
 `test_touch_gamepad_ui.sh` (iPhone Duo and iPad Pro 13-inch (M5)) drives the layout migration,

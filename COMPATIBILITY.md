@@ -116,7 +116,9 @@ touch-controls fixture --self-test        both                  PASS
 translation simulation suite              both                  PASS
 ```
 
-What is proved there: an old layout dictionary migrates to Full with every value it carried; a
+What is proved there: a cancelled touch keeps the platform's suppress-until-lift rule while
+every exit the app causes releases once and leaves nothing behind; an old layout dictionary
+migrates to Full with every value it carried; a
 dictionary a later build wrote is never rewritten; an unknown mode is Full; Simple's positions
 are its own and turning it off deletes nothing; a stick button is one press and one release,
 never on a drag; every ability-zone press has exactly one release, even when two zones share a
