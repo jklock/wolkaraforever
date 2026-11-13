@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- **A dropped connection no longer stalls the game download.** The retry wait read a clock that only tests ever created, so in the app it spun forever while holding the download lock, blocking the other transfers and Cancel until iPadOS's watchdog ended the app. The client now makes its own clock, and two tests run the retry and a cancel during the wait without a test clock.
 - Documentation now separates standalone user guidance from the agent-only operational catalog.
 - **My Add-ons no longer sits on "Updating…".** "Never asked" is its own state, **Not checked yet**, with a **Check** action that runs the check; *Checking…* appears only while a request is genuinely in flight, and a sweep with no key clears its own in-flight marks and says why. Opening **My Add-ons**, and **Refresh**, still ask the provider about every linked package.
 - **Update All settles.** The batch used to advance before each archive write committed and re-asked the packages it had just reported, so every row returned to **Not checked yet**. It now finishes on the archive transaction, keeps the settled answer, and ends with every row up to date.

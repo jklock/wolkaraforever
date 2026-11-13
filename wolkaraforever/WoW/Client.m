@@ -135,7 +135,7 @@ static const NSUInteger TKWoWWindowTransfers=4;
     NSString *_archiveConfig;
 }
 - (instancetype)init {
-    if ((self=[super init])) _lock=[NSCondition new];
+    if ((self=[super init])) { _lock=[NSCondition new]; _retryScheduler=[TKWoWRetryScheduler new]; }
     return self;
 }
 // A cleared clock would turn a delay into a spin, so the default is restored here.
@@ -228,11 +228,12 @@ static BOOL RetryableNetworkError(NSError *error) {
         // an unrelated range can start, then wait on the monotonic clock. Only
         // cancellation or a terminal sibling failure ends the wait early.
         if (window) [self releaseWindowBytes:window];
-        NSTimeInterval deadline=[_retryScheduler monotonicNow]+delay;
+        TKWoWRetryScheduler *scheduler=self.retryScheduler;
+        NSTimeInterval deadline=[scheduler monotonicNow]+delay;
         BOOL stopped=NO;
         [_lock lock];
         while (!_cancelled && !_downloadFailure)
-            if ([_retryScheduler waitUntil:deadline lock:_lock]) break;
+            if ([scheduler waitUntil:deadline lock:_lock]) break;
         stopped=_cancelled || _downloadFailure!=nil;
         if (stopped) failure=_downloadFailure?:TKWoWError(@"Download cancelled.");
         [_lock unlock];
