@@ -643,6 +643,55 @@ static void TestMetadataContract(void) {
     assert(StartedRequests==baseline+1 && InjectedConnectionLosses==losses+1);
     assert(([clock.delays isEqual:@[@1]] && !ActiveRequests));
 }
+// Production never assigns a retry scheduler: the client must bring its own real clock. A client
+// that only worked when a test handed it a fake one spun forever on the first dropped connection,
+// holding the lock while it did (the iPad watchdog killed the app). These run on a background
+// thread under a watchdog, so a regression fails here by timeout instead of hanging the suite.
+static BOOL FinishesWithin(NSTimeInterval seconds,void (^work)(void)) {
+    dispatch_semaphore_t done=dispatch_semaphore_create(0);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{ work();dispatch_semaphore_signal(done); });
+    return !dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,(int64_t)(seconds*NSEC_PER_SEC)));
+}
+static void TestDefaultRetrySchedulerRetries(void) {
+    TKSessionClient *client=[TKSessionClient new];   // retryScheduler deliberately NOT set
+    NSData *body=Wrap(Text(@"synthetic object behind one dropped connection"));
+    NSURL *url=[NSURL URLWithString:@"https://fixture.invalid/object"];
+    ResetProtocol(@{@"object":@{@"data":body,@"connectionLosses":@1}});
+    __block NSData *data=nil;__block NSError *error=nil;
+    BOOL finished=FinishesWithin(15,^{ data=[client fetch:url limit:body.length error:&error]; });
+    if(!finished) {
+        puts("FAIL TestDefaultRetrySchedulerRetries: retry wait did not return within 15 s (default scheduler not used)");
+        fflush(stdout);_exit(1);
+    }
+    assert([data isEqual:body] && !error && StartedRequests==2 && InjectedConnectionLosses==1 && !ActiveRequests);
+}
+// Cancelling from another thread while a real-clock retry wait is pending returns promptly: the
+// wait must not hold the lock that cancel needs.
+static void TestCancelDuringDefaultRetryWait(void) {
+    TKSessionClient *client=[TKSessionClient new];   // retryScheduler deliberately NOT set
+    NSData *body=Wrap(Text(@"synthetic object that keeps dropping"));
+    NSURL *url=[NSURL URLWithString:@"https://fixture.invalid/object"];
+    ResetProtocol(@{@"object":@{@"data":body,@"connectionLosses":@100}});
+    StartedReached=dispatch_semaphore_create(0);StartedTarget=1;
+    dispatch_semaphore_t fetched=dispatch_semaphore_create(0);
+    __block NSData *data=nil;__block NSError *error=nil;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+        data=[client fetch:url limit:body.length error:&error];dispatch_semaphore_signal(fetched);
+    });
+    assert(!dispatch_semaphore_wait(StartedReached,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC)));
+    [NSThread sleepForTimeInterval:0.4];   // the first drop is delivered; the 1 s retry wait is pending
+    if(!FinishesWithin(5,^{ [client cancel]; })) {
+        puts("FAIL TestCancelDuringDefaultRetryWait: cancel did not return within 5 s (retry wait holds the lock)");
+        fflush(stdout);_exit(1);
+    }
+    if(dispatch_semaphore_wait(fetched,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC))) {
+        puts("FAIL TestCancelDuringDefaultRetryWait: the waiting fetch did not stop within 5 s of cancel");
+        fflush(stdout);_exit(1);
+    }
+    assert(!data && [error.localizedDescription containsString:@"cancel"]);
+    [NSThread sleepForTimeInterval:0.2];
+    assert(!ActiveRequests);
+}
 int main(void) {
     @autoreleasepool {
         TKFixtureClient *client=[TKFixtureClient new]; client.responses=[NSMutableDictionary new];
@@ -703,6 +752,8 @@ int main(void) {
     TestSiblingFailureWakesWait();
     TestDelayFreesTransferSlot();
     TestMetadataContract();
-    puts("WoW client tests PASS: bounded concurrent transfers, serial consumption, range validation, cancellation, verified staging, cache repair, patch invalidation, malformed metadata and failed transport; retries are 1/2/4/8 s on a virtual clock, discard partial bytes, free their transfer slot, wake on cancellation or a terminal sibling, fail every other class at once, and leave metadata unchanged.");
+    TestDefaultRetrySchedulerRetries();
+    TestCancelDuringDefaultRetryWait();
+    puts("WoW client tests PASS: bounded concurrent transfers, serial consumption, range validation, cancellation, verified staging, cache repair, patch invalidation, malformed metadata and failed transport; retries are 1/2/4/8 s on a virtual clock (and a client with no scheduler set retries on the real one and still cancels promptly), discard partial bytes, free their transfer slot, wake on cancellation or a terminal sibling, fail every other class at once, and leave metadata unchanged.");
     return 0;
 }
