@@ -10,6 +10,16 @@ difference. This accommodates measured renderer rounding only; a larger differen
 or extra state, dimension mismatch, identifier mismatch, or layout-contract failure is a test
 failure. Layout drift is a failure, not a subjective review comment.
 
+## The mark
+
+The home page's identity mark is the `WolkaraForeverLogo` artwork from
+`wolkaraforever/Shell/Assets.xcassets`, drawn by `-[WoWViewController markView]`; a build without
+that asset falls back to a gold serif `WOLKAREFOREVER` wordmark. The fixture compiles
+`launcher/Assets.xcassets` with `actool` before it is installed, exactly as the app target does,
+so every baseline shows the artwork and the fixture asserts `wow.logo`. Until 2026-11-12 it
+did not: the fixture carried no catalog, every baseline recorded the fallback, and a build that
+had lost the artwork passed the matrix unchanged.
+
 ## Required states
 
 Each device directory contains these images:
@@ -31,7 +41,6 @@ wow-startup-failed.png
 wow-downloading.png
 wow-launcher-ipados.png
 wow-launcher-duo.png
-wow-addons-recommended-macever.png
 wow-addons-recommended-wolkararoue.png
 ```
 
@@ -44,11 +53,14 @@ The four Launcher Manager states were added by the v1.0.9 UI-contract amendment:
   `Interface Mode: iOS on Duo` and the recommendation row reads
   `Install Recommended Add-ons (WolkaraRoue)`. No add-on was installed, disabled, removed or
   updated by the switch.
-- `wow-addons-recommended-macever.png` - the Add-On Manager the Mac-Ever recommendation opens,
-  on Browse, filtered to CurseForge project 1733200, in the missing-key state (the explicit
-  key prompt is the existing one).
 - `wow-addons-recommended-wolkararoue.png` - the Add-On Manager the WolkaraRoue recommendation
   opens, showing the bundled package's release and SHA-256 and its own explicit Install action.
+
+There is one recommendation baseline, not one per recommendation name: the row's label follows
+the interface in force (see the two Launcher Manager states above) and both names open the same
+Add-On Manager page, which is the page the baseline records. This file listed a
+`wow-addons-recommended-macever.png` until 2026-11-12, which no device directory has ever
+contained; the recorder's own state list is the authority and is corrected here.
 
 The selector's two choices are asserted as values by `test_wow_launcher_app.m` (exactly
 `iPadOS` and `iOS on Duo`, with the current one marked, and persisted to

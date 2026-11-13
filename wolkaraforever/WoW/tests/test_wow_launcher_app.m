@@ -586,9 +586,11 @@ static void TestPhoneDisplayDefaults(void) {
     [languages dismissViewControllerAnimated:NO completion:nil];
     [self.controller setValue:@"enUS" forKey:@"_locale"];
     [self.controller render];
-    // The mark is the artwork when the asset catalog reaches the build, and the
-    // wordmark when it does not. Either is a pass; neither is not.
-    assert(Find(self.controller.view,@"wow.logo") || Find(self.controller.view,@"wow.title"));
+    // The mark is the artwork. The fixture compiles launcher/Assets.xcassets (see
+    // wolkaraforever/tools/test_wow_launcher_ui.sh), so a build that shipped without it now
+    // fails here instead of quietly drawing the wordmark fallback - which is what every
+    // baseline recorded until 2026-11-12, and why a lost logo was indistinguishable from one.
+    assert(Find(self.controller.view,@"wow.logo"));
     // The manager must construct its table header before a device user can
     // reach any add-on action; this caught a live iPad constraint crash.
     TKWoWAddonManagerViewController *manager=[[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:NSTemporaryDirectory() edition:@"Forever"];
@@ -1230,8 +1232,7 @@ static void TestPhoneDisplayDefaults(void) {
     assert(columns != nil && columns.axis == UILayoutConstraintAxisVertical);
     assert(columns.arrangedSubviews.count == 2);
     UIStackView *top = columns.arrangedSubviews[0];
-    NSString *mark = Find(self.controller.view, @"wow.logo") ? @"wow.logo" : @"wow.title";
-    assert([top.arrangedSubviews.firstObject.accessibilityIdentifier isEqual:mark]);
+    assert([top.arrangedSubviews.firstObject.accessibilityIdentifier isEqual:@"wow.logo"]);
     UIStackView *grid = columns.arrangedSubviews[1];
     assert([grid.accessibilityIdentifier isEqual:@"wow.grid"] && grid.arrangedSubviews.count == 3);
     // The fifth and sixth cards share the last row. The cell beside UI Manager used to be a
@@ -1973,7 +1974,6 @@ static int backupsBeforePerformance;
     assert([self.controller.navigationItem.rightBarButtonItem.accessibilityLabel isEqual:@"Einstellungen"]);
     // Nothing on the page is a raw key, and nothing is left in the other language's words.
     [self assertNoRawKeysInView:self.controller.view];
-    [self capture:@"wow-home-de.png"];
 
     // --- the one-time offer, localized, with the two answers it promises
     UIAlertController *offer = (id)self.controller.presentedViewController;
@@ -1984,6 +1984,16 @@ static int backupsBeforePerformance;
     assert([titles containsObject:@"Spielsprache unverändert lassen"]);
     [self dismissPresented];
     assert([[NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverGameLanguageOfferShown"] boolValue]);
+
+    // The page's own picture is taken once the offer has gone, not while it is arriving: the
+    // alert animates in over the page, and a screenshot taken mid-fade differs from the recorded
+    // one by a strip of its edges - measured on the iPhone Duo on 2026-11-12, where the same
+    // build compared clean and dirty on alternate runs for no reason but the clock.
+    [self performSelector:@selector(captureGermanHome) withObject:nil afterDelay:0.5];
+}
+
+- (void)captureGermanHome {
+    [self capture:@"wow-home-de.png"];
 
     // --- every other page WolkaraForever shows *before a game runs*, in German
     [self performSelector:@selector(openGermanAbout) withObject:nil afterDelay:0.3];

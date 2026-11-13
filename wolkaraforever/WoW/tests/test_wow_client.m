@@ -399,7 +399,15 @@ static void TestConcurrentDownloads(void) {
         ResetProtocol(faulty);__block NSUInteger consumed=0;error=nil;
         assert(![client downloadEntries:records plan:plan indices:indices consume:^BOOL(NSData *data,NSString *key,NSError **problem){
             (void)data;(void)key;(void)problem;consumed++;return YES;
-        } error:&error]);assert(error && !consumed && !ActiveRequests);
+        } error:&error]);
+        // The same boundary the invalid-range case above drains, for the same reason: the
+        // transport reports the terminal error before its cancelled siblings run their
+        // stop-loading cleanup, so a request can still be counted as in flight for a moment.
+        // Measured on 2026-11-12 - eight parallel runs on a loaded machine, one abort in forty,
+        // with error=1, consumed=0 and active=1 or 2; the consumer side was never wrong. The
+        // assertion itself is unchanged, including "nothing was consumed".
+        assert(!dispatch_group_wait(ProtocolDeliveries,dispatch_time(DISPATCH_TIME_NOW,5*NSEC_PER_SEC)));
+        assert(error && !consumed && !ActiveRequests);
     }
     ResetProtocol(responses);__block NSUInteger consumed=0;error=nil;
     assert(![client downloadEntries:records plan:plan indices:indices consume:^BOOL(NSData *data,NSString *key,NSError **problem){
