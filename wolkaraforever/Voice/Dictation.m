@@ -468,6 +468,9 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
     NSMutableString *_transcript;
     BOOL _delivered;
     BOOL _abandoned;
+    // The capture belongs to the Chat Composer: partials are offered to its draft and the
+    // result is never typed into the game.
+    BOOL _composerCapture;
     NSUInteger _session;
     // The language this generation was started in, nil for System. Kept so a settings change
     // can tell an actual language change from the notification every other setting posts.
@@ -580,6 +583,24 @@ static __weak UIView *AKGameTextTarget = nil;
 }
 
 #pragma mark - The one entry point
+
+- (void)beginComposerCapture {
+    // The Composer asks for the same capture the mapped button does; what differs is where the
+    // words go. Nothing about the audio session or the recogniser changes.
+    if (self.listening) {
+        WKLog("voice", @"dictation: a Composer capture was asked for while one is already running; ignored");
+        return;
+    }
+    _composerCapture = YES;
+    WKLog("voice", @"dictation: capture for the Chat Composer");
+    [self begin];
+}
+
+- (void)cancelComposerCapture {
+    if (!_composerCapture) return;
+    WKLog("voice", @"dictation: the Chat Composer asked for its capture to stop");
+    [self cancel];
+}
 
 - (void)toggle {
     if (self.listening) [self end];
@@ -719,7 +740,10 @@ static __weak UIView *AKGameTextTarget = nil;
     _abandoned = YES;
     _delivered = YES;   // nothing may be delivered for this session
     _session++;
+    BOOL composer = _composerCapture;
+    _composerCapture = NO;
     [self setState:AKDictationStateIdle];
+    if (composer) [self composeEvent:@"failure" text:nil reason:@"no result in time"];
     void (^problem)(NSString *) = self.problemHandler;
     if (problem) problem(@"The recogniser did not finish in time, so nothing was typed.");
 }
@@ -740,7 +764,10 @@ static __weak UIView *AKGameTextTarget = nil;
     [self.speech cancel];
     [self giveTheSessionBack];
     [_transcript setString:@""];
+    BOOL composer = _composerCapture;
+    _composerCapture = NO;
     [self setState:AKDictationStateIdle];
+    if (composer) [self composeEvent:@"stopped" text:nil reason:@"cancelled"];
 }
 
 #pragma mark - What the recogniser says
@@ -755,6 +782,13 @@ static __weak UIView *AKGameTextTarget = nil;
         AKKDLog(@"failure reason=recognizer generation=%lu", (unsigned long)session);
         // The SDK's own description can quote what it heard, so only the fact is recorded.
         [self fail:@"Recognition stopped before it finished, so nothing was typed." reason:@"recognizer"];
+        return;
+    }
+    // A partial result is a progress signal and nothing else. For the Composer it is also the
+    // visible draft - which is the one place provisional text may live - and it still cannot be
+    // sent, because the Composer disables Send until the result is final.
+    if (!isFinal && _composerCapture) {
+        if (transcript.length) [self composeEvent:@"draft" text:transcript reason:nil];
         return;
     }
     // A final result is the only thing that ends a session early. Anything else is a
@@ -779,7 +813,15 @@ static __weak UIView *AKGameTextTarget = nil;
     AKKDLog(@"recognizer.session.end generation=%lu outcome=final", (unsigned long)_session);
     [self giveTheSessionBack];
     [self.speech cancel];
+    BOOL composer = _composerCapture;
+    _composerCapture = NO;
     [self setState:AKDictationStateIdle];
+    if (composer) {
+        // The Composer owns the words from here. Nothing is typed into the game, and nothing is
+        // sent: Send is a separate, explicit action.
+        [self composeEvent:@"final" text:transcript reason:nil];
+        return;
+    }
     [self deliver];
 }
 
@@ -811,9 +853,23 @@ static __weak UIView *AKGameTextTarget = nil;
     [self.speech cancel];
     _abandoned = YES;
     _session++;
+    BOOL composer = _composerCapture;
+    _composerCapture = NO;
     [self setState:AKDictationStateIdle];
+    if (composer) [self composeEvent:@"failure" text:nil reason:message];
     void (^problem)(NSString *) = self.problemHandler;
     if (problem) problem(message);
+}
+
+// One place the Composer's client is told what happened, so every path that can end a session
+// ends it the same way. Lengths only: a dictated line is the speaker's and the log is not.
+- (void)composeEvent:(NSString *)event text:(nullable NSString *)text reason:(nullable NSString *)reason {
+    void (^handler)(NSString *, NSString *, NSString *) = _composerHandler;
+    if (!handler) return;
+    WKLog("voice", @"dictation -> the Composer: %@ (%lu character(s))%@", event,
+          (unsigned long)(text ?: @"").length,
+          reason.length ? [NSString stringWithFormat:@" reason=%@", reason] : @"");
+    handler(event, text ?: @"", reason ?: @"");
 }
 
 #pragma mark - The words

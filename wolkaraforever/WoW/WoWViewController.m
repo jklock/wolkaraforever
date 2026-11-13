@@ -1822,6 +1822,53 @@ static NSString *ElementLabel(NSString *element) {
     }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.reserve")
         style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [self reserveInterfaceArea]; }]];
+    // Touch Controller 2. The arrangement, the stick buttons and the ability zones live in the
+    // same dictionary the controls read, so a choice here is what the next guest draws - and
+    // Simple can be turned off again without losing anything the player placed in either
+    // arrangement. These are additions to this sheet; no row of it moved.
+    NSString *mode = AKLayoutMode(defaults);
+    BOOL simple = [mode isEqualToString:AKLayoutModeSimple];
+    NSString *simpleTitle = simple ? [@"✓ " stringByAppendingString:WKLocalized(@"home.launcher.interfaceSetup.simple")]
+                                  : WKLocalized(@"home.launcher.interfaceSetup.simple");
+    [sheet addAction:[UIAlertAction actionWithTitle:simpleTitle style:UIAlertActionStyleDefault
+        handler:^(__unused UIAlertAction *action) {
+        if (AKLayoutSetMode(defaults, simple ? AKLayoutModeFull : AKLayoutModeSimple))
+            WKLog("ui", @"interface setup: %@ layout", simple ? @"full" : @"simple");
+        [self render];
+    }]];
+    BOOL stickButtons = AKLayoutStickButtons(defaults);
+    NSString *stickTitle = stickButtons ? [@"✓ " stringByAppendingString:WKLocalized(@"home.launcher.interfaceSetup.stickButtons")]
+                                       : WKLocalized(@"home.launcher.interfaceSetup.stickButtons");
+    [sheet addAction:[UIAlertAction actionWithTitle:stickTitle style:UIAlertActionStyleDefault
+        handler:^(__unused UIAlertAction *action) {
+        AKLayoutSetStickButtons(defaults, !stickButtons);
+        WKLog("ui", @"interface setup: stick buttons %@", stickButtons ? @"off" : @"on");
+        [self render];
+    }]];
+    NSArray<NSDictionary<NSString *, id> *> *zones = AKLayoutAbilityZones(defaults);
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.addZone")
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        // An element nothing else is on, so a new zone does something the moment it is placed.
+        NSString *element = nil;
+        for (NSString *candidate in AKLayoutZoneElements()) {
+            BOOL used = NO;
+            for (NSDictionary *zone in AKLayoutAbilityZones(defaults))
+                if ([zone[@"element"] isEqual:candidate]) used = YES;
+            if (!used) { element = candidate; break; }
+        }
+        NSUInteger count = AKLayoutAbilityZones(defaults).count;
+        if (!element || !AKLayoutAddAbilityZone(defaults, element, 0.44 + 0.06 * count, 0.47))
+            WKLog("ui", @"interface setup: no ability zone added");
+        [self render];
+    }]];
+    if (zones.count) {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.clearZones")
+            style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            AKLayoutClearAbilityZones(defaults);
+            WKLog("ui", @"interface setup: ability zones cleared");
+            [self render];
+        }]];
+    }
     if (AKLayoutSavedNames(defaults).count) {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
             style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {

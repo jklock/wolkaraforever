@@ -3,6 +3,8 @@
 #import "AKHostLocalization.h"
 #import "InterfaceMode.h"
 #import "TouchTrackpad.h"
+#import "TouchCamera.h"
+#import "TouchControllerLog.h"
 #import "TouchGamepadLayout.h"
 #import "TouchGamepad.h"
 #import "TouchHaptics.h"
@@ -72,6 +74,23 @@ NSNotificationName const AKTouchDictationToggleNotification = @"AKTouchDictation
 // The keys the launcher's and the platform's switches read. The trackpad string
 // is the one the platform already stored, so an existing choice carries over.
 NSString *const AKTouchControlsDefaultsKey = @"AKTouchControls";
+
+// The Composer's crossings. See TouchControls.h for why they are notifications.
+NSNotificationName const AKChatComposerOpenNotification = @"AKChatComposerOpen";
+NSString *const AKChatComposerSourceKey = @"source";
+NSString *const AKChatComposerPhaseKey = @"phase";
+NSNotificationName const AKChatComposerVoiceRequestNotification = @"AKChatComposerVoiceRequest";
+NSString *const AKChatComposerActionKey = @"action";
+NSString *const AKChatComposerGenerationKey = @"generation";
+NSNotificationName const AKChatComposerVoiceEventNotification = @"AKChatComposerVoiceEvent";
+NSString *const AKChatComposerEventKey = @"event";
+NSString *const AKChatComposerTextKey = @"text";
+NSString *const AKChatComposerReasonKey = @"reason";
+NSNotificationName const AKChatComposerOpenResultNotification = @"AKChatComposerOpenResult";
+NSString *const AKChatComposerOutcomeKey = @"outcome";
+// The guest's Return, used by the Composer's chat target; Escape is posted in
+// ChatComposer.m, which owns the closing decision.
+static unsigned short const AKKeyReturnCode = 36;
 static NSString *const AKTouchTrackpadDefaultsKey = @"TKTouchTrackpadEnabled";
 // Whether the top toolbar is folded into its handle. Folded unless the user left it open.
 static NSString *const AKTouchToolbarCollapsedDefaultsKey = @"WolkaraForeverToolbarCollapsed";
@@ -81,6 +100,11 @@ static const NSTimeInterval AKTouchToolbarAutoCollapse = 6;
 // this small is the shortcut bar alone, which is what iPadOS shows for a
 // hardware keyboard. Its microphone key is part of the keys that are hidden.
 static CGFloat const AKKeyboardKeysHeight = 150;
+// The draft card's height in each mode. Classic is the height every release through v1.0.10 has
+// had; the Composer adds one 44-point action row beneath the draft and keeps every control where
+// it was.
+static CGFloat const AKComposerCardHeightClassic = 82;
+static CGFloat const AKComposerCardHeightComposer = 130;
 // The composer's placeholder when nothing has been dictated or typed: it says what the field
 // does, so an empty box is not mistaken for the game's own text.
 //
@@ -90,6 +114,26 @@ static CGFloat const AKKeyboardKeysHeight = 150;
 static NSString *AKComposerDefaultLabel(BOOL mobile) {
     return AKHostLocalized(mobile ? @"touch.draft.placeholder.mobile" : @"touch.draft.placeholder");
 }
+// The draft card follows the player's text size. It sits over a game, so the card keeps the
+// proportions it has always drawn and grows its rows instead of reflowing the game underneath.
+//
+// The fonts come from `preferredFontForTextStyle:`, which at the default category returns exactly
+// the sizes the card has always used - Caption 1 is 12, Headline is 17, Subheadline is 15 - and
+// which UIKit keeps current while `adjustsFontForContentSizeCategory` is on. The heights are read
+// back from those fonts, so a title is never given less room than it needs.
+static UIFont *AKComposerFont(UIFontTextStyle style, BOOL bold) {
+    UIFont *base = [UIFont preferredFontForTextStyle:style];
+    if (!bold) return base;
+    UIFontDescriptor *descriptor = base.fontDescriptor;
+    descriptor = [descriptor fontDescriptorWithSymbolicTraits:
+                  descriptor.symbolicTraits | UIFontDescriptorTraitBold];
+    return descriptor ? ([UIFont fontWithDescriptor:descriptor size:0] ?: base) : base;
+}
+// The label's row, the action row and a destination chip: their historic minimums, or the height
+// of the text they hold at the player's size, whichever is larger.
+static CGFloat AKComposerLabelBox(UIFont *font) { return MAX(16, ceil(font.lineHeight)); }
+static CGFloat AKComposerActionBox(UIFont *font) { return MAX(44, ceil(font.lineHeight) + 16); }
+static CGFloat AKComposerChipBox(UIFont *font) { return MAX(32, ceil(font.lineHeight) + 8); }
 // GameController's own class, asked by name: this adapter's headers carry a
 // GCKeyboard of their own for the guest.
 static BOOL hardwareKeyboardAttached(void) {
@@ -110,6 +154,18 @@ static BOOL hardwareKeyboardAttached(void) {
 // dismissed: the draft editor uses it to decide whether to take focus back when
 // a system panel (dictation) has finished with it.
 - (BOOL)keyboardRequested;
+@end
+
+// The Composer's card, which this file draws because it is the file that owns the draft editor,
+// the keyboard geometry and the guest's key path.
+@interface AKTouchControls (ChatComposer)
+- (void)beginChatComposer;
+- (void)applyComposerState;
+- (BOOL)composerActive;
+- (BOOL)composerInReviewMode;
+- (void)draftEditorChanged:(NSString *)text;
+- (void)composerTakesDraft:(NSString *)text;
+- (void)showComposerSettings;
 @end
 
 // What the layer's keyboard asks its owner to do. Words go to the game the same
@@ -179,6 +235,7 @@ static BOOL hardwareKeyboardAttached(void) {
 - (void)textViewDidChange:(UITextView *)view {
     (void)view;
     _didSubmitDraft = NO;
+    [self.inputOwner draftEditorChanged:self.text];
     [self.inputOwner updateDraftButtons];
 }
 - (void)textViewDidChangeSelection:(UITextView *)view { (void)view; [self.inputOwner updateDraftButtons]; }
@@ -217,6 +274,14 @@ static BOOL hardwareKeyboardAttached(void) {
     // Once a line has gone, a repeated or queued Return has nothing to send: a bare Return
     // would open the game's chat box again. A first Return with nothing typed still is one.
     if (!text.length && _didSubmitDraft) return NO;
+    // Review mode: Return is an explicit Send, and it goes through the Composer's transaction -
+    // one insertion, one Return, one Escape - rather than straight into the guest.
+    if ([self.inputOwner composerInReviewMode]) {
+        if (!text.length) return NO;
+        _didSubmitDraft = YES;
+        [self.inputOwner composerTakesDraft:text];
+        return YES;
+    }
     [self discardDraft];
     _didSubmitDraft = YES;
     [self.inputOwner sendChatText:text];
@@ -544,10 +609,27 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     NSUInteger _keyboardRequest;
     CGFloat _systemKeyboardHeight;
     UIView *_accessory, *_composer;
+    // The Composer's card: the classic controls (Clear, Replace) and the Composer row (Cancel,
+    // destination chips, speak, settings, Send). One set is visible at a time, and the classic one
+    // is what every release through v1.0.10 has shown.
+    UIView *_composerRow;
+    NSLayoutConstraint *_classicEditorTrailing, *_classicEditorBottom;
+    NSLayoutConstraint *_composerEditorTrailing, *_composerEditorBottom;
+    UIButton *_composerCancelButton, *_composerSendButton, *_composerListenButton, *_composerSettingsButton;
+    UIScrollView *_composerChips;
+    NSLayoutConstraint *_composerHeight;
+    // The label's and the action row's own heights, and the values they currently carry: the card
+    // is these plus its fixed parts, so a larger text size grows the card and never the editor.
+    NSLayoutConstraint *_composerLabelHeight, *_composerRowHeight;
+    CGFloat _composerLabelRowHeight, _composerActionRowHeight;
+    BOOL _applyingComposerDraft;
     AKTouchKeyboardView *_layerKeyboard;
     NSTimer *_holdTimer;
     AKKeyboardTextView *_keyboardInput;
-    AKTrackpad _pad;
+    // The direct touch camera, with this app's lifecycle around it: one gesture at a time, one
+    // way out of it, and a centroid jump treated as a new gesture rather than a drag.
+    AKTouchCameraGesture _camera;
+    CGSize _cameraSurface;
     AKTouchHaptics *_haptics;
     AKTouchGamepad *_gamepad;
     BOOL _tookOwnPlace;
@@ -694,7 +776,10 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(backgroundInput:) name:UIApplicationDidEnterBackgroundNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowResigned:) name:UIWindowDidResignKeyNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controlAppearanceChanged:)
-            name:AKGamepadLayoutDidChangeNotification object:NSUserDefaults.standardUserDefaults];    // Whether the system keyboard (and so its dictation button) exists at all on
+            name:AKGamepadLayoutDidChangeNotification object:NSUserDefaults.standardUserDefaults];
+        // The card follows the player's text size, including a change made while the game runs.
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(contentSizeCategoryChanged:)
+            name:UIContentSizeCategoryDidChangeNotification object:nil];    // Whether the system keyboard (and so its dictation button) exists at all on
     // this device, and whether UIKit is talking to our draft editor when it does.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(systemKeyboardShown:) name:UIKeyboardDidShowNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(systemKeyboardHidden:) name:UIKeyboardDidHideNotification object:nil];
@@ -703,6 +788,8 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(secureEventInputChanged:)
         name:@"AKSecureEventInputDidChangeNotification" object:nil];
         [self controlAppearanceChanged:nil];
+        [self applyComposerTextSize];
+        [self beginChatComposer];
     }
     return self;
 }
@@ -711,6 +798,9 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     (void)notification;
     AKGamepadLayout *layout = [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
     _haptics.enabled = layout.hapticsEnabled;
+    // The arrangement, the stick buttons and the zones are in the same dictionary, so the
+    // gamepad has to read it again whenever it changes - including when the launcher wrote it.
+    [_gamepad reloadLayout];
     NSMutableArray *buttons = [@[_trackpadButton, _keyboardButton, _gamepadButton, _settingsButton, _leaveButton]
         mutableCopy];
     // The handle exists only in the mobile interface; an array literal would refuse a nil.
@@ -817,6 +907,13 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 
 - (void)layoutSubviews {
     [super layoutSubviews];
+    // A rotation or a resize changes the space the remembered centroid was measured in, so the
+    // gesture is closed rather than dragged by a delta that belongs to a different screen.
+    CGSize surface = self.superview.bounds.size;
+    if (!CGSizeEqualToSize(surface, _cameraSurface)) {
+        if (AKTouchCameraIsActive(&_camera)) [self cancelCameraGesture:@"resize"];
+        _cameraSurface = surface;
+    }
     if (self.superview) [self placeToolbarInHost:self.superview];
     _trackpadButton.frame = CGRectMake(0, 0, 44, 44);
     _keyboardButton.frame = _toolbarCollapsed ? CGRectMake(0, 0, 44, 34) : CGRectMake(52, 0, 44, 44);
@@ -828,7 +925,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     _toolbarHandle.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
 }
 - (void)setTrackpadEnabled:(BOOL)enabled {
-    [self cancelTouches];
+    [self cancelCameraGesture:@"settings"];
     _trackpadEnabled = enabled;
     _trackpadButton.tintColor = enabled ? UIColor.systemCyanColor : UIColor.whiteColor;
     _trackpadButton.accessibilityLabel = enabled ? AKHostLocalized(@"touch.trackpad.disable") : AKHostLocalized(@"touch.trackpad.enable");
@@ -842,7 +939,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 - (BOOL)gamepadEnabled { return _gamepadEnabled; }
 - (BOOL)configuring { return _gamepad.configuring; }
 - (void)showControlSettings {
-    [self cancelTouches]; [self dismissKeyboard];
+    [self cancelCameraGesture:@"settings"]; [self dismissKeyboard];
     // The gamepad owns the settings sheet, so we open it here rather than asking a
     // host that may have no such thing.
     [_gamepad toggleSettings];
@@ -858,7 +955,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 // The confirmation says the rest plainly because there is no way around it: one guest per
 // process, so WolkaraForever cannot put its launcher back afterwards - opening WolkaraForever again does.
 - (void)leaveGame {
-    [self cancelTouches]; [self dismissKeyboard];
+    [self cancelCameraGesture:@"leave"]; [self dismissKeyboard];
     // One question, and no request to the guest.
     //
     // Asking the guest's own application object to terminate was tried first and is not kept.
@@ -946,6 +1043,9 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
     _composer.hidden = !self.keyboardVisible;
     if (self.superview) [self placeToolbarInHost:self.superview];
     [self updateDraftButtons];
+    // The card and the row follow the keyboard: with review mode on, the keyboard coming up is
+    // what puts the Composer row (and its microphone) on screen.
+    [self applyComposerState];
     [_keyboardButton setImage:[UIImage systemImageNamed:self.keyboardVisible ? @"keyboard.chevron.compact.down" : @"keyboard"] forState:UIControlStateNormal];
     _keyboardButton.accessibilityLabel = self.keyboardVisible ? AKHostLocalized(@"touch.keyboard.hide") : AKHostLocalized(@"touch.keyboard.show");
     _gamepad.keyboardVisible = self.keyboardVisible;
@@ -953,7 +1053,7 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
         [self.delegate touchKeyboardVisibilityChanged:self.keyboardVisible];
 }
 - (void)toggleKeyboard {
-    [self cancelTouches];
+    [self cancelCameraGesture:@"keyboard"];
     if (self.keyboardVisible) [self dismissKeyboard];
     else [self becomeFirstResponder];
 }
@@ -991,8 +1091,16 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
 - (void)keyboardViewBackspace { [self.delegate touchSpecialKey:51 characters:@"\x7f"]; }
 - (void)keyboardViewReturn { [self.delegate touchSpecialKey:36 characters:@"\r"]; }
 // The microphone key. Dictation belongs to the voice module, which this one cannot include;
-// the shell links both and is what answers, exactly as it does for Leave game.
+// the shell links both and is what answers, exactly as it does for Leave game. In review mode
+// the same key is the Composer's entry: one card, one owner of the draft, and an explicit Send.
 - (void)keyboardViewToggleDictation {
+    if (self.composerInReviewMode) {
+        AKLog(@"the layer's keyboard asked for dictation; the Composer takes it");
+        [self openChatComposerFromSource:AKChatComposerSourceKeyboard];
+        if (AKChatComposer.shared.draftEditable) [AKChatComposer.shared resumeCapture];
+        [self applyComposerState];
+        return;
+    }
     AKLog(@"the layer's keyboard asked for dictation");
     [NSNotificationCenter.defaultCenter postNotificationName:AKTouchDictationToggleNotification object:self];
 }
@@ -1178,12 +1286,492 @@ static const unsigned short AKKeyF12 = 111;
                                                    userInfo:@{AKTouchSpeechLanguageStoredKey: stored ?: @"system"}];
 }
 - (void)updateDraftButtons {
+    BOOL active = [self composerActive];
     BOOL ready = [_keyboardInput canModifyDraft];
-    _insertDraftButton.enabled = [_keyboardInput canReplaceField];
-    _clearDraftButton.enabled = ready && _keyboardInput.hasText;
+    _insertDraftButton.enabled = !active && [_keyboardInput canReplaceField];
+    _clearDraftButton.enabled = !active && ready && _keyboardInput.hasText;
     for (UIButton *button in ((UIStackView *)_accessory).arrangedSubviews) {
         button.enabled = button.tag == 6 || (ready && !_keyboardInput.hasText);
     }
+}
+
+#pragma mark - The Chat Composer's card
+
+// Whether a session is on screen. The two terminal states are not: Cancelled has closed the
+// card, and Failed needs the card to stay up with the reason on it - that is the error state the
+// review record names. With the keyboard up and review mode on, the card is the Composer even
+// before a session starts, which is what gives the toolbar its microphone.
+- (BOOL)composerActive {
+    if (!self.composerInReviewMode) return NO;
+    if (self.keyboardVisible) return YES;
+    switch (AKChatComposer.shared.state) {
+        case AKChatComposerStateOpening:
+        case AKChatComposerStateListening:
+        case AKChatComposerStateEditing:
+        case AKChatComposerStateReady:
+        case AKChatComposerStateSending:
+        case AKChatComposerStateFailed:
+            return YES;
+        default:
+            return NO;
+    }
+}
+
+// Review then Send, with the Composer available: the product's answer for a new installation.
+// Classic direct - what an existing player has - keeps every entry path doing exactly what it
+// did before this feature existed.
+- (BOOL)composerInReviewMode {
+    return AKChatComposerIsAvailable() && AKChatDeliveryModeInForce() == AKChatDeliveryModeReview;
+}
+
+- (void)beginChatComposer {
+    AKChatComposer *composer = AKChatComposer.shared;
+    composer.target = self;
+    __weak AKTouchControls *weakSelf = self;
+    // The microphone is the app's (Shell/main.m links AKDictation), so the request leaves here as
+    // the same kind of notification the keyboard's microphone key already sends. The answer comes
+    // back through chatComposerVoiceEvent: with the generation this request carried.
+    composer.captureRequest = ^(BOOL start, NSUInteger generation) {
+        AKTouchControls *controls = weakSelf;
+        if (!controls) return;
+        [NSNotificationCenter.defaultCenter
+            postNotificationName:AKChatComposerVoiceRequestNotification
+                          object:controls
+                        userInfo:@{AKChatComposerActionKey: start ? @"begin" : @"cancel",
+                                   AKChatComposerGenerationKey: @(generation)}];
+    };
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    [center addObserver:self selector:@selector(chatComposerDidChange:)
+                   name:AKChatComposerDidChangeNotification object:composer];
+    // A mapped button's press, posted by the shell, which is the only place that links both the
+    // mapping and this library.
+    [center addObserver:self selector:@selector(chatComposerOpenRequested:)
+                   name:AKChatComposerOpenNotification object:nil];
+    [center addObserver:self selector:@selector(chatComposerVoiceEvent:)
+                   name:AKChatComposerVoiceEventNotification object:nil];
+    // A controller that goes away mid-capture must not leave a microphone open or a draft that
+    // sends itself.
+    [center addObserver:self selector:@selector(chatComposerControllerGone:)
+                   name:@"GCControllerDidDisconnectNotification" object:nil];
+    [self applyComposerState];
+}
+
+- (void)chatComposerDidChange:(NSNotification *)note {
+    (void)note;
+    [self applyComposerState];
+}
+
+- (void)chatComposerOpenRequested:(NSNotification *)note {
+    NSNumber *source = note.userInfo[AKChatComposerSourceKey];
+    NSString *phase = note.userInfo[AKChatComposerPhaseKey];
+    if ([phase isEqual:@"ended"]) {
+        // A held button was released: the capture ends and the words stay in the draft. A
+        // release never sends, whatever the recogniser has produced so far.
+        if (AKChatComposer.shared.capturing) [AKChatComposer.shared pauseForEditing];
+        [self applyComposerState];
+        return;
+    }
+    [self openChatComposerFromSource:[source isKindOfClass:NSNumber.class]
+        ? (AKChatComposerSource)source.integerValue : AKChatComposerSourceController];
+}
+
+- (void)chatComposerVoiceEvent:(NSNotification *)note {
+    NSDictionary *info = note.userInfo;
+    NSString *event = info[AKChatComposerEventKey];
+    NSUInteger generation = [info[AKChatComposerGenerationKey] unsignedIntegerValue];
+    NSString *text = [info[AKChatComposerTextKey] isKindOfClass:NSString.class] ? info[AKChatComposerTextKey] : @"";
+    NSString *reason = [info[AKChatComposerReasonKey] isKindOfClass:NSString.class] ? info[AKChatComposerReasonKey] : @"";
+    AKChatComposer *composer = AKChatComposer.shared;
+    // The Composer decides what a stale generation means; nothing here reads the text.
+    if ([event isEqual:@"draft"]) [composer speechDraft:text provisional:YES generation:generation];
+    else if ([event isEqual:@"final"]) [composer speechFinished:text generation:generation];
+    else if ([event isEqual:@"failure"]) [composer speechFailed:reason generation:generation];
+    else if ([event isEqual:@"stopped"]) [composer speechStoppedWithReason:reason generation:generation];
+    else AKLog(@"chat-composer: an event this build does not know (%@) was ignored", event);
+    [self applyComposerState];
+}
+
+- (void)chatComposerControllerGone:(NSNotification *)note {
+    (void)note;
+    if (AKChatComposer.shared.capturing) AKLog(@"chat-composer: a controller went away during capture");
+    [AKChatComposer.shared controllerDidDisconnect];
+    [self applyComposerState];
+}
+
+- (void)reportComposerOpenOutcome:(NSString *)outcome source:(AKChatComposerSource)source {
+    // Synchronous, so the shell's observer runs before the press handler returns. The outcome and
+    // the source only: never the draft, never the words.
+    [NSNotificationCenter.defaultCenter
+        postNotificationName:AKChatComposerOpenResultNotification
+                      object:self
+                    userInfo:@{AKChatComposerOutcomeKey: outcome,
+                               AKChatComposerSourceKey: @(source)}];
+}
+
+- (void)openChatComposerFromSource:(AKChatComposerSource)source {
+    if (!self.composerInReviewMode) {
+        AKLog(@"chat-composer: open asked for from source %ld, but the delivery mode is classic direct",
+              (long)source);
+        [self reportComposerOpenOutcome:@"classic-direct" source:source];
+        return;
+    }
+    [self cancelTouches];
+    AKChatComposer *composer = AKChatComposer.shared;
+    BOOL opened = [composer openWithSource:source];
+    // The card and the draft editor come up either way: a refused open has a reason to show, and
+    // the player's next action is Cancel. The keyboard is what makes the draft typeable.
+    if (!self.keyboardVisible) [self becomeFirstResponder];
+    [self applyComposerState];
+    if (opened) AKLog(@"chat-composer: card up for source %ld", (long)source);
+    [self reportComposerOpenOutcome:(opened ? @"opened" : @"refused") source:source];
+}
+
+// The card's height in the two modes, grown by whatever the player's text size added to the label
+// and the action row. At the default category it is exactly 82 and 130 - the heights every release
+// through v1.0.10 has used - and the editor stays 48 points either way.
+- (CGFloat)cardHeightForComposer:(BOOL)active {
+    CGFloat grown = (_composerLabelRowHeight - 16) +
+        (active ? _composerActionRowHeight - 44 : 0);
+    return (active ? AKComposerCardHeightComposer : AKComposerCardHeightClassic) + grown;
+}
+
+// The player's text size changed, or the card was just built: re-read it. The fonts come from
+// UIFontMetrics, which at the default category gives back the sizes the card has always had.
+- (void)applyComposerTextSize {
+    if (!_composer) return;
+    _composerLabel.font = AKComposerFont(UIFontTextStyleCaption1, NO);
+    UIFont *action = AKComposerFont(UIFontTextStyleHeadline, YES);
+    _composerSendButton.titleLabel.font = action;
+    _composerCancelButton.titleLabel.font = action;
+    UIFont *chip = AKComposerFont(UIFontTextStyleSubheadline, NO);
+    UIStackView *chips = (UIStackView *)_composerChips.subviews.firstObject;
+    if ([chips isKindOfClass:UIStackView.class]) {
+        for (UIView *view in chips.arrangedSubviews) {
+            if (![view isKindOfClass:UIButton.class]) continue;
+            ((UIButton *)view).titleLabel.font = chip;
+            for (NSLayoutConstraint *constraint in view.constraints) {
+                if (constraint.firstAttribute == NSLayoutAttributeHeight && !constraint.secondItem) {
+                    constraint.constant = AKComposerChipBox(chip);
+                }
+            }
+        }
+    }
+    _composerLabelRowHeight = AKComposerLabelBox(_composerLabel.font);
+    _composerActionRowHeight = AKComposerActionBox(action);
+    _composerLabelHeight.constant = _composerLabelRowHeight;
+    _composerRowHeight.constant = _composerActionRowHeight;
+    BOOL active = [self composerActive];
+    _composerHeight.constant = [self cardHeightForComposer:active];
+    AKLog(@"toolbar: draft card text size %s (label=%.0f row=%.0f)",
+          UIApplication.sharedApplication.preferredContentSizeCategory.UTF8String,
+          _composerLabelRowHeight, _composerActionRowHeight);
+}
+
+- (void)contentSizeCategoryChanged:(NSNotification *)notification {
+    (void)notification;
+    [self applyComposerTextSize];
+    [self setNeedsLayout];
+    if (self.superview) [self placeToolbarInHost:self.superview];
+}
+
+// One place draws the card from the Composer's state: the label, the draft, which row is up, the
+// card's height and what can be pressed.
+- (void)applyComposerState {
+    AKChatComposer *composer = AKChatComposer.shared;
+    if (!AKChatComposerIsAvailable() && composer.state != AKChatComposerStateIdle &&
+        composer.state != AKChatComposerStateCancelled) {
+        // The flag was turned off while a session was open: rollback, once.
+        AKLog(@"chat-composer: the Composer was switched off with a session open; rolling back");
+        [composer composerWasTurnedOff];
+    }
+    BOOL active = [self composerActive];
+    _composer.hidden = !(self.keyboardVisible || active || composer.state == AKChatComposerStateFailed);
+    _composerRow.hidden = !active;
+    _insertDraftButton.hidden = active;
+    _clearDraftButton.hidden = active;
+    _speechLanguageButton.hidden = active;
+
+    if (active) {
+        if (_classicEditorTrailing.active) {
+            _classicEditorTrailing.active = NO;
+            _classicEditorBottom.active = NO;
+            _composerEditorTrailing.active = YES;
+            _composerEditorBottom.active = YES;
+        }        _composerHeight.constant = [self cardHeightForComposer:YES];
+    } else if (!_classicEditorTrailing.active) {
+        _composerEditorTrailing.active = NO;
+        _composerEditorBottom.active = NO;
+        _classicEditorTrailing.active = YES;
+        _classicEditorBottom.active = YES;
+        _composerHeight.constant = [self cardHeightForComposer:NO];
+    }
+
+    NSString *stateText = nil;
+    switch (composer.state) {
+        case AKChatComposerStateOpening: stateText = AKHostLocalized(@"chat.composer.state.opening"); break;
+        case AKChatComposerStateListening: stateText = AKHostLocalized(@"chat.composer.state.listening"); break;
+        case AKChatComposerStateEditing: stateText = AKHostLocalized(@"chat.composer.state.editing"); break;
+        case AKChatComposerStateReady: stateText = AKHostLocalized(@"chat.composer.state.ready"); break;
+        case AKChatComposerStateSending: stateText = AKHostLocalized(@"chat.composer.state.sending"); break;
+        case AKChatComposerStateCancelled: stateText = AKHostLocalized(@"chat.composer.state.cancelled"); break;
+        case AKChatComposerStateFailed:
+            // Both problem keys are named literally, so the table check can see they are used.
+            stateText = AKHostLocalized([composer.problem isEqual:@"nothingHeard"]
+                ? @"chat.composer.problem.nothingHeard" : @"chat.composer.problem.notSent");
+            break;
+        default:
+            // Idle: the review card before a session starts. Its placeholder says what this card
+            // does, because "Replaces the field" describes the classic one and would be a lie.
+            stateText = self.composerInReviewMode ? AKHostLocalized(@"chat.composer.placeholder")
+                                                 : AKComposerDefaultLabel(_mobileInterface);
+            break;
+    }
+    BOOL failed = composer.state == AKChatComposerStateFailed;
+    _composerLabel.text = stateText;
+    _composerLabel.textColor = failed ? UIColor.systemOrangeColor : UIColor.lightGrayColor;
+    _composerLabel.isAccessibilityElement = YES;
+    _composerLabel.accessibilityLabel = stateText;
+    _composerLabel.accessibilityIdentifier = @"wolkaraforever.composer.state";
+
+    if (active || (self.composerInReviewMode && composer.state == AKChatComposerStateFailed)) {
+        NSString *draft = composer.draft;
+        if (![(_keyboardInput.text ?: @"") isEqualToString:draft]) {
+            // Only when the Composer changed it - a transcript, a send that cleared it. Typing
+            // already agrees with the draft, so the caret is never yanked while someone types.
+            _applyingComposerDraft = YES;
+            _keyboardInput.text = draft;
+            _applyingComposerDraft = NO;
+        }
+        AKLog(@"chat-composer: state=%ld draft=%lu characters sendable=%d",
+              (long)composer.state, (unsigned long)draft.length, (int)composer.canSend);
+    }
+
+    _composerSendButton.enabled = active && composer.canSend;
+    _composerCancelButton.enabled = active;
+    _composerListenButton.enabled = active && composer.state != AKChatComposerStateSending;
+    [_composerListenButton setImage:[UIImage systemImageNamed:(composer.capturing ? @"mic.fill" : @"mic")]
+                           forState:UIControlStateNormal];
+    _composerListenButton.accessibilityLabel = AKHostLocalized(composer.capturing
+        ? @"chat.composer.action.stop" : @"chat.composer.action.listen");
+    // VoiceOver: the card says its condition as a value and reads in one fixed order,
+    // exposing only the controls this mode shows - the classic card keeps Clear and
+    // Replace, and the Composer card puts its own row after the draft.
+    _composer.accessibilityValue = stateText;
+    _composer.accessibilityViewIsModal = YES;
+    _composer.accessibilityElements = active
+        ? @[_composerLabel, _keyboardInput, _composerChips, _composerCancelButton,
+            _composerListenButton, _composerSettingsButton, _composerSendButton]
+        : @[_composerLabel, _keyboardInput, _clearDraftButton, _insertDraftButton];
+    [self rebuildDestinationChips];
+    [self updateDraftButtons];
+    if (self.superview) [self placeToolbarInHost:self.superview];
+}
+
+- (void)rebuildDestinationChips {
+    NSArray<AKChatDestination *> *destinations = AKChatDestinationStore.shared.enabled;
+    NSString *key = [[destinations valueForKey:@"identifier"] componentsJoinedByString:@","];
+    UIStackView *chips = (UIStackView *)_composerChips.subviews.firstObject;
+    if (![chips isKindOfClass:UIStackView.class]) return;
+    if ([key isEqual:_composerChips.accessibilityValue ?: @""] && chips.arrangedSubviews.count == destinations.count)
+        return;
+    for (UIView *view in chips.arrangedSubviews) { [chips removeArrangedSubview:view]; [view removeFromSuperview]; }
+    for (AKChatDestination *destination in destinations) {
+        UIButton *chip = [UIButton buttonWithType:UIButtonTypeSystem];
+        [chip setTitle:destination.title forState:UIControlStateNormal];
+        chip.titleLabel.font = AKComposerFont(UIFontTextStyleSubheadline, NO);
+        chip.titleLabel.adjustsFontForContentSizeCategory = YES;
+        chip.layer.cornerRadius = 8;
+        chip.backgroundColor = [UIColor colorWithWhite:0.26 alpha:1];
+        chip.accessibilityIdentifier = [NSString stringWithFormat:@AKChatComposerDestinationIdentifierFormat,
+                                        destination.identifier];
+        chip.accessibilityHint = AKHostLocalized(@"chat.composer.destination.hint");
+        [chip addTarget:self action:@selector(composerDestinationTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [chips addArrangedSubview:chip];
+        [chip.heightAnchor constraintEqualToConstant:AKComposerChipBox(chip.titleLabel.font)].active = YES;
+        [chip.widthAnchor constraintGreaterThanOrEqualToConstant:52].active = YES;
+    }
+    _composerChips.accessibilityValue = destinations.count ? key : @"";
+}
+
+#pragma mark The card's own actions
+
+// The draft editor speaks: the Composer's draft follows the visible text, and editing is what
+// pauses capture. Guarded against the one loop that would matter - the Composer writing the
+// draft back into the editor, which arrives here looking like a person typing.
+- (void)draftEditorChanged:(NSString *)text {
+    if (_applyingComposerDraft) return;
+    if (!self.composerInReviewMode) return;
+    [AKChatComposer.shared userChangedDraft:text];
+}
+
+// Return pressed in the draft editor while review mode is on: the same explicit Send, through
+// the same transaction, so nothing reaches the guest twice.
+- (void)composerTakesDraft:(NSString *)text {
+    AKChatComposer *composer = AKChatComposer.shared;
+    [composer userChangedDraft:text];
+    [composer sendWithDestination:nil];
+    [self applyComposerState];
+}
+
+- (void)composerCancel {
+    [AKChatComposer.shared cancel];
+    [self applyComposerState];
+    [self dismissKeyboard];
+}
+
+- (void)composerSend { [AKChatComposer.shared sendWithDestination:nil]; }
+
+- (void)composerDestinationTapped:(UIButton *)button {
+    for (AKChatDestination *destination in AKChatDestinationStore.shared.enabled) {
+        NSString *identifier = [NSString stringWithFormat:@AKChatComposerDestinationIdentifierFormat,
+                                destination.identifier];
+        if (![button.accessibilityIdentifier isEqual:identifier]) continue;
+        AKLog(@"chat-composer: a destination chip was pressed (%@)", destination.identifier);
+        [AKChatComposer.shared sendWithDestination:destination];
+        return;
+    }
+}
+
+- (void)composerListen {
+    AKChatComposer *composer = AKChatComposer.shared;
+    if (composer.state == AKChatComposerStateIdle) {
+        // The toolbar's microphone, before any session: an Open like the layer
+        // keyboard's key and the mapped button, so the game's chat is opened once and
+        // listening starts. Capture with no open chat would record words with nowhere
+        // to put them.
+        AKLog(@"chat-composer: the card's microphone opens a session");
+        [self openChatComposerFromSource:AKChatComposerSourceToolbar];
+        return;
+    }
+    if (composer.capturing) [composer pauseForEditing];
+    else [composer resumeCapture];
+    [self applyComposerState];
+}
+
+#pragma mark The guest, as the Composer sees it
+
+- (BOOL)chatTargetIsLive { return self.window != nil && self.delegate != nil; }
+
+- (BOOL)chatOpen {
+    if (![self chatTargetIsLive]) return NO;
+    if (_protectedField) {
+        // Secure event input is on: the game has a password field, where a chat key has no
+        // business. Measured behaviour of the classic path, kept.
+        AKLog(@"chat-composer: the guest's keyboard is in a protected field; chat was not opened");
+        return NO;
+    }
+    [self.delegate touchSpecialKey:AKKeyReturnCode characters:@"\r"];
+    return YES;
+}
+
+- (BOOL)chatInsertText:(NSString *)text {
+    if (![self chatTargetIsLive] || !text.length) return NO;
+    [self.delegate touchInsertText:text];
+    return YES;
+}
+
+- (BOOL)chatPostKey:(unsigned short)code characters:(NSString *)characters {
+    if (![self chatTargetIsLive]) return NO;
+    [self.delegate touchSpecialKey:code characters:characters];
+    return YES;
+}
+
+#pragma mark The Composer's settings
+
+// Everything the Composer lets a player decide, in one sheet: the delivery mode (which is also
+// how classic dictation comes back) and up to four destinations. It lives here rather than on
+// the launcher's Voice page so that no approved launcher baseline changes in a feature release.
+- (void)showComposerSettings {
+    UIViewController *root = self.window.rootViewController;
+    if (!root || root.presentedViewController) return;
+    AKChatDestinationStore *store = AKChatDestinationStore.shared;
+    BOOL review = AKChatDeliveryModeInForce() == AKChatDeliveryModeReview;
+    NSString *mode = AKHostLocalized(review ? @"chat.composer.settings.mode.review"
+                                            : @"chat.composer.settings.mode.classic");
+    UIAlertController *sheet = [UIAlertController
+        alertControllerWithTitle:AKHostLocalized(@"chat.composer.settings.title")
+                         message:AKHostLocalizedFormat(@"chat.composer.settings.message", mode)
+                  preferredStyle:UIAlertControllerStyleAlert];
+    __weak AKTouchControls *weakSelf = self;
+    [sheet addAction:[UIAlertAction actionWithTitle:AKHostLocalized(review
+            ? @"chat.composer.settings.useClassic" : @"chat.composer.settings.useReview")
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        (void)action;
+        AKTouchControls *controls = weakSelf;
+        if (!controls) return;
+        if (review) {
+            // Classic direct is what a player had before the Composer; going back to it ends any
+            // session that is open and sends nothing.
+            [AKChatComposer.shared cancel];
+            AKChatDeliveryModeSet(AKChatDeliveryModeClassicDirect);
+        } else {
+            AKChatDeliveryModeSet(AKChatDeliveryModeReview);
+        }
+        [controls applyComposerState];
+    }]];
+    if (store.all.count < [AKChatDestinationStore maximumCount]) {
+        [sheet addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"chat.composer.settings.add")
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            (void)action;
+            [weakSelf askForDestination];
+        }]];
+    }
+    for (AKChatDestination *destination in store.all) {
+        [sheet addAction:[UIAlertAction actionWithTitle:AKHostLocalizedFormat(@"chat.composer.settings.remove",
+                                                                              destination.title)
+            style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            (void)action;
+            NSMutableArray<AKChatDestination *> *kept = [NSMutableArray array];
+            for (AKChatDestination *existing in store.all)
+                if (![existing.identifier isEqual:destination.identifier]) [kept addObject:existing];
+            [store replaceAll:kept];
+            [weakSelf applyComposerState];
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"chat.composer.settings.done")
+                                              style:UIAlertActionStyleCancel handler:nil]];
+    [root presentViewController:sheet animated:YES completion:nil];
+}
+
+- (void)askForDestination {
+    UIViewController *root = self.window.rootViewController;
+    if (!root || root.presentedViewController) return;
+    UIAlertController *ask = [UIAlertController
+        alertControllerWithTitle:AKHostLocalized(@"chat.composer.settings.add")
+                         message:AKHostLocalized(@"chat.composer.settings.add.message")
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [ask addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder = AKHostLocalized(@"chat.composer.destination.title");
+        field.accessibilityIdentifier = @"wolkaraforever.composer.destination.title";
+    }];
+    [ask addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder = AKHostLocalized(@"chat.composer.destination.command");
+        field.accessibilityIdentifier = @"wolkaraforever.composer.destination.command";
+        field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        field.autocorrectionType = UITextAutocorrectionTypeNo;
+    }];
+    __weak AKTouchControls *weakSelf = self;
+    [ask addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"chat.composer.settings.done")
+                                            style:UIAlertActionStyleCancel handler:nil]];
+    [ask addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"chat.composer.settings.save")
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        (void)action;
+        UITextField *title = ask.textFields.firstObject;
+        UITextField *command = ask.textFields.lastObject;
+        AKChatDestinationStore *store = AKChatDestinationStore.shared;
+        NSString *identifier = [NSString stringWithFormat:@"custom%lu",
+                                (unsigned long)store.all.count + 1];
+        AKChatDestination *destination = [AKChatDestination destinationWithIdentifier:identifier
+                                                                               title:title.text ?: @""
+                                                                             command:command.text ?: @""
+                                                                             enabled:YES];
+        NSMutableArray<AKChatDestination *> *next = [store.all mutableCopy] ?: [NSMutableArray array];
+        [next addObject:destination];
+        // Disabled on the way in unless the player says otherwise: a record is enabled by being
+        // used, never by existing.
+        if ([store replaceAll:next]) [weakSelf applyComposerState];
+    }]];
+    [root presentViewController:ask animated:YES completion:nil];
 }
 - (void)buildComposer {
     _composer = [[UIView alloc] initWithFrame:CGRectZero];
@@ -1198,6 +1786,7 @@ static const unsigned short AKKeyF12 = 111;
     label.textColor = UIColor.lightGrayColor;
     label.adjustsFontSizeToFitWidth = YES;
     label.minimumScaleFactor = 0.75;
+    label.accessibilityIdentifier = @"wolkaraforever.composer.state";
     UIButton *insert = _insertDraftButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [insert setTitle:AKHostLocalized(@"touch.draft.replace") forState:UIControlStateNormal];
     insert.titleLabel.font = [UIFont boldSystemFontOfSize:17];
@@ -1209,6 +1798,75 @@ static const unsigned short AKKeyF12 = 111;
     clear.accessibilityLabel = AKHostLocalized(@"touch.draft.clear");
     clear.accessibilityIdentifier = @"wolkaraforever.keyboard.clear";
     [clear addTarget:self action:@selector(clearDraft) forControlEvents:UIControlEventTouchUpInside];
+    // The Composer's row: Cancel, the configured destination chips, speak, settings, Send. The
+    // chips scroll sideways rather than being dropped, so four destinations on a phone in
+    // landscape stay reachable and Send never moves. It sits below the draft, which is what makes
+    // the card one row taller while the Composer is open.
+    UIView *row = _composerRow = [UIView new];
+    row.hidden = YES;
+    _composerCancelButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [_composerCancelButton setTitle:AKHostLocalized(@"chat.composer.action.cancel") forState:UIControlStateNormal];
+    _composerCancelButton.titleLabel.font = AKComposerFont(UIFontTextStyleHeadline, YES);
+    _composerCancelButton.titleLabel.adjustsFontForContentSizeCategory = YES;
+    _composerCancelButton.accessibilityIdentifier = @"wolkaraforever.composer.cancel";
+    _composerCancelButton.accessibilityHint = AKHostLocalized(@"chat.composer.action.cancel.hint");
+    [_composerCancelButton addTarget:self action:@selector(composerCancel) forControlEvents:UIControlEventTouchUpInside];
+    _composerListenButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [_composerListenButton setImage:[UIImage systemImageNamed:@"mic"] forState:UIControlStateNormal];
+    _composerListenButton.accessibilityLabel = AKHostLocalized(@"chat.composer.action.listen");
+    _composerListenButton.accessibilityIdentifier = @"wolkaraforever.composer.listen";
+    [_composerListenButton addTarget:self action:@selector(composerListen) forControlEvents:UIControlEventTouchUpInside];
+    _composerSettingsButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [_composerSettingsButton setImage:[UIImage systemImageNamed:@"gearshape"] forState:UIControlStateNormal];
+    _composerSettingsButton.accessibilityLabel = AKHostLocalized(@"chat.composer.action.settings");
+    _composerSettingsButton.accessibilityIdentifier = @"wolkaraforever.composer.settings";
+    [_composerSettingsButton addTarget:self action:@selector(showComposerSettings) forControlEvents:UIControlEventTouchUpInside];
+    _composerSendButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [_composerSendButton setTitle:AKHostLocalized(@"chat.composer.action.send") forState:UIControlStateNormal];
+    _composerSendButton.titleLabel.font = AKComposerFont(UIFontTextStyleHeadline, YES);
+    _composerSendButton.titleLabel.adjustsFontForContentSizeCategory = YES;
+    _composerSendButton.accessibilityIdentifier = @"wolkaraforever.composer.send";
+    [_composerSendButton addTarget:self action:@selector(composerSend) forControlEvents:UIControlEventTouchUpInside];
+    _composerChips = [UIScrollView new];
+    _composerChips.showsHorizontalScrollIndicator = NO;
+    _composerChips.accessibilityIdentifier = @"wolkaraforever.composer.destinations";
+    UIStackView *chips = [UIStackView new];
+    chips.axis = UILayoutConstraintAxisHorizontal;
+    chips.spacing = 6;
+    chips.translatesAutoresizingMaskIntoConstraints = NO;
+    [_composerChips addSubview:chips];
+    [NSLayoutConstraint activateConstraints:@[
+        [chips.leadingAnchor constraintEqualToAnchor:_composerChips.contentLayoutGuide.leadingAnchor],
+        [chips.trailingAnchor constraintEqualToAnchor:_composerChips.contentLayoutGuide.trailingAnchor],
+        [chips.topAnchor constraintEqualToAnchor:_composerChips.contentLayoutGuide.topAnchor],
+        [chips.bottomAnchor constraintEqualToAnchor:_composerChips.contentLayoutGuide.bottomAnchor],
+        [chips.heightAnchor constraintEqualToAnchor:_composerChips.frameLayoutGuide.heightAnchor],
+    ]];
+    for (UIView *view in @[_composerCancelButton, _composerChips, _composerListenButton,
+                           _composerSettingsButton, _composerSendButton]) {
+        view.translatesAutoresizingMaskIntoConstraints = NO;
+        [row addSubview:view];
+    }
+    [NSLayoutConstraint activateConstraints:@[
+        [_composerCancelButton.leadingAnchor constraintEqualToAnchor:row.leadingAnchor],
+        [_composerCancelButton.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+        // A minimum, so a larger text size makes the button taller instead of clipping its title.
+        [_composerCancelButton.heightAnchor constraintGreaterThanOrEqualToConstant:44],
+        [_composerChips.leadingAnchor constraintEqualToAnchor:_composerCancelButton.trailingAnchor constant:6],
+        [_composerChips.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+        [_composerChips.heightAnchor constraintEqualToAnchor:row.heightAnchor],
+        [_composerListenButton.leadingAnchor constraintEqualToAnchor:_composerChips.trailingAnchor constant:6],
+        [_composerListenButton.widthAnchor constraintEqualToConstant:44],
+        [_composerListenButton.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+        [_composerSettingsButton.leadingAnchor constraintEqualToAnchor:_composerListenButton.trailingAnchor],
+        [_composerSettingsButton.widthAnchor constraintEqualToConstant:44],
+        [_composerSettingsButton.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+        [_composerSendButton.leadingAnchor constraintEqualToAnchor:_composerSettingsButton.trailingAnchor],
+        [_composerSendButton.widthAnchor constraintGreaterThanOrEqualToConstant:64],
+        [_composerSendButton.trailingAnchor constraintEqualToAnchor:row.trailingAnchor],
+        [_composerSendButton.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+    ]];
+
     // The recogniser's language, beside the draft it will type into. It is recognition
     // configuration rather than input: choosing a language posts one bounded value to the shell
     // and sends nothing to the guest. It is here rather than on the launcher's settings page
@@ -1220,15 +1878,29 @@ static const unsigned short AKKeyF12 = 111;
     language.accessibilityHint = AKHostLocalized(@"voice.language.hint");
     language.titleLabel.font = [UIFont systemFontOfSize:13];
     language.showsMenuAsPrimaryAction = YES;
-    for (UIView *view in @[label, _keyboardInput, language, insert, clear]) {
+    for (UIView *view in @[label, _keyboardInput, language, clear, insert, row]) {
         view.translatesAutoresizingMaskIntoConstraints = NO;
         [_composer addSubview:view];
     }
+    // The classic geometry, unchanged from every release through v1.0.10: the draft beside the
+    // clear button and Replace, in a card 82 points tall.
+    _classicEditorTrailing = [_keyboardInput.trailingAnchor constraintEqualToAnchor:language.leadingAnchor];
+    _classicEditorBottom = [_keyboardInput.bottomAnchor constraintEqualToAnchor:_composer.bottomAnchor constant:-8];
+    // The Composer's: the draft on its own line, the action row beneath it, and the card one
+    // 44-point row taller.
+    _composerEditorTrailing = [_keyboardInput.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-8];
+    _composerEditorBottom = [_keyboardInput.bottomAnchor constraintEqualToAnchor:row.topAnchor constant:-4];
+    for (NSLayoutConstraint *constraint in @[_composerEditorTrailing, _composerEditorBottom]) constraint.active = NO;
+    _composerHeight = [_composer.heightAnchor constraintEqualToConstant:AKComposerCardHeightClassic];
+    _composerLabelHeight = [label.heightAnchor constraintEqualToConstant:AKComposerLabelBox(label.font)];
+    _composerRowHeight = [row.heightAnchor constraintEqualToConstant:AKComposerActionBox(_composerSendButton.titleLabel.font)];
+    _composerLabelRowHeight = _composerLabelHeight.constant;
+    _composerActionRowHeight = _composerRowHeight.constant;
     [NSLayoutConstraint activateConstraints:@[
         [label.leadingAnchor constraintEqualToAnchor:_composer.leadingAnchor constant:12],
         [label.topAnchor constraintEqualToAnchor:_composer.topAnchor constant:6],
         [label.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-12],
-        [label.heightAnchor constraintEqualToConstant:16],
+        _composerLabelHeight,
         [_keyboardInput.leadingAnchor constraintEqualToAnchor:_composer.leadingAnchor constant:8],
         [_keyboardInput.topAnchor constraintEqualToAnchor:label.bottomAnchor constant:4],
         [_keyboardInput.bottomAnchor constraintEqualToAnchor:_composer.bottomAnchor constant:-8],
@@ -1240,11 +1912,18 @@ static const unsigned short AKKeyF12 = 111;
         [clear.widthAnchor constraintEqualToConstant:44],
         [clear.heightAnchor constraintEqualToConstant:44],
         [clear.centerYAnchor constraintEqualToAnchor:_keyboardInput.centerYAnchor],
-        [clear.trailingAnchor constraintEqualToAnchor:insert.leadingAnchor],
-        [insert.widthAnchor constraintEqualToConstant:84],
+        [insert.leadingAnchor constraintEqualToAnchor:clear.trailingAnchor],
+        // Wide enough for "Replace" at the size it has always been drawn; the localised title
+        // decides anything longer, so it is a minimum rather than a fixed width.
+        [insert.widthAnchor constraintGreaterThanOrEqualToConstant:84],
         [insert.heightAnchor constraintEqualToConstant:44],
         [insert.centerYAnchor constraintEqualToAnchor:_keyboardInput.centerYAnchor],
         [insert.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-8],
+        [row.leadingAnchor constraintEqualToAnchor:_composer.leadingAnchor constant:8],
+        [row.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-8],
+        [row.bottomAnchor constraintEqualToAnchor:_composer.bottomAnchor constant:-8],
+        _composerRowHeight,
+        _classicEditorTrailing, _classicEditorBottom, _composerHeight,
     ]];
     [self refreshSpeechLanguageButton];
 }
@@ -1262,7 +1941,6 @@ static const unsigned short AKKeyF12 = 111;
         [_composer.bottomAnchor constraintEqualToAnchor:host.keyboardLayoutGuide.topAnchor constant:-4],
         [_composer.centerXAnchor constraintEqualToAnchor:host.safeAreaLayoutGuide.centerXAnchor],
         width, [_composer.widthAnchor constraintLessThanOrEqualToConstant:800],
-        [_composer.heightAnchor constraintEqualToConstant:82],
     ]];
 
     // Placement happens in layoutSubviews, by frame, from the host's own bounds - see
@@ -1275,7 +1953,7 @@ static const unsigned short AKKeyF12 = 111;
         _gamepad.visibilityChanged = ^(BOOL visible) {
             AKTouchControls *controls = weakSelf;
             if (!controls) return;
-            [controls cancelTouches];
+            [controls cancelCameraGesture:@"controller"];
             [controls setGamepadVisible:visible];
         };
         _gamepad.enabled = _gamepadEnabled;
@@ -1286,6 +1964,9 @@ static const unsigned short AKKeyF12 = 111;
 
 - (void)processTouches:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     if (!self.trackpadEnabled) return;
+    // Exactly the flow this file has always had: a cancelled touch cancels the gesture and the
+    // update below still runs, with the platform suppressing the remainder of it. Returning
+    // early would be a different rule wearing the same name.
     for (UITouch *touch in touches) if (touch.phase == UITouchPhaseCancelled) [self cancelTouches];
     unsigned count = 0;
     CGPoint center = CGPointZero;
@@ -1296,38 +1977,57 @@ static const unsigned short AKKeyF12 = 111;
         center.x += point.x; center.y += point.y; count++;
     }
     if (count) { center.x /= count; center.y /= count; }
-    AKTrackpadUpdate(&_pad, count, center.x, center.y, event.timestamp, AKEmitTouch, (__bridge void *)self);
+    AKTouchCameraUpdate(&_camera, count, center.x, center.y, event.timestamp,
+                        self.superview.bounds.size, AKEmitTouch, (__bridge void *)self);
     [_holdTimer invalidate]; _holdTimer = nil;
-    if (_pad.fingers && !_pad.blocked && !_pad.lifting && !_pad.dragging && _pad.travelled <= 8) {
+    if (_camera.pad.fingers && !_camera.pad.blocked && !_camera.pad.lifting && !_camera.pad.dragging &&
+        _camera.pad.travelled <= 8) {
         __weak AKTouchControls *weakSelf = self;
-        _holdTimer = [NSTimer timerWithTimeInterval:MAX(0.01, _pad.started + 0.46 - NSProcessInfo.processInfo.systemUptime)
+        unsigned generation = _camera.generation;
+        _holdTimer = [NSTimer timerWithTimeInterval:MAX(0.01, _camera.pad.started + 0.46 - NSProcessInfo.processInfo.systemUptime)
                                           repeats:NO block:^(NSTimer *timer) {
             (void)timer;
             AKTouchControls *controls = weakSelf;
-            if (controls) AKTrackpadHold(&controls->_pad, NSProcessInfo.processInfo.systemUptime, AKEmitTouch, (__bridge void *)controls);
+            // The gesture this timer was started for may already have been taken away (the
+            // background, a rotation, our own panel). A late fire must not press into a
+            // gesture that no longer exists, and must never outlive it.
+            if (controls && controls->_camera.generation == generation)
+                AKTouchCameraHold(&controls->_camera, NSProcessInfo.processInfo.systemUptime, AKEmitTouch, (__bridge void *)controls);
         }];
         [NSRunLoop.mainRunLoop addTimer:_holdTimer forMode:NSRunLoopCommonModes];
     }
 }
-- (void)cancelTouches {
+// The one way out of a camera gesture. `reason` is what the log will say it was.
+- (void)cancelCameraGesture:(NSString *)reason {
     [_holdTimer invalidate]; _holdTimer = nil;
-    AKTrackpadCancel(&_pad, AKEmitTouch, (__bridge void *)self);
-    if (!_pad.fingers) _pad = (AKTrackpad){0};
+    AKTouchCameraReset(&_camera, reason, AKEmitTouch, (__bridge void *)self);
 }
-- (void)suspendInput:(NSNotification *)notification {
-    (void)notification;
-    [self cancelTouches];
-    _pad = (AKTrackpad){0};
+- (void)cancelTouches {
+    [self cancelCameraGesture:@"cancelled"];
+}
+// The line this app has always written when input is taken away. Kept in one place so the
+// background path and the resign path cannot drift apart again.
+- (void)logInputSuspended {
     // Dictation and system permission panels temporarily take focus. Closing
     // the first responder here cancels dictation before its UI can appear.
     AKLog(@"input suspended (draftFirstResponder=%d)", _keyboardInput.isFirstResponder);
+}
+- (void)suspendInput:(NSNotification *)notification {
+    (void)notification;
+    // Losing focus takes the camera gesture away: the touch that was steering is no longer
+    // ours, and leaving it half-open is how the camera used to answer nothing afterwards.
+    [self cancelCameraGesture:@"resign"];
+    [self logInputSuspended];
 }
 - (void)systemKeyboardShown:(NSNotification *)notification {
     NSValue *frame = notification.userInfo[UIKeyboardFrameEndUserInfoKey];
     _systemKeyboardHeight = [frame CGRectValue].size.height;
     _systemKeyboardSeen = YES;
-    // With the keys on screen the microphone is one tap away again.
-    if (_systemKeyboardHeight >= AKKeyboardKeysHeight) _composerLabel.text = AKComposerDefaultLabel(_mobileInterface);
+    // With the keys on screen the microphone is one tap away again. The card is redrawn from the
+    // Composer's state rather than reset to its placeholder, because in review mode the line
+    // above the draft is the state - "Ready to send", or why a send did not happen - and a
+    // keyboard arriving is not a reason to lose it.
+    if (_systemKeyboardHeight >= AKKeyboardKeysHeight) [self applyComposerState];
     AKLog(@"system keyboard shown draftFirstResponder=%d markedText=%d height=%.0f", _keyboardInput.isFirstResponder, _keyboardInput.markedTextRange != nil, _systemKeyboardHeight);
 }
 - (void)systemKeyboardHidden:(NSNotification *)notification {
@@ -1344,7 +2044,12 @@ static const unsigned short AKKeyF12 = 111;
     if (!self.keyboardVisible) [self becomeFirstResponder];
 }
 - (void)backgroundInput:(NSNotification *)notification {
+    [self cancelCameraGesture:@"background"];
     [self suspendInput:notification];
+    // A session that was open when the app went away is cleaned up: capture stops, chat is closed
+    // at most once, and the draft is kept for the return. It is never sent.
+    [AKChatComposer.shared appDidBackground];
+    [self applyComposerState];
     [self dismissKeyboard];
 }
 - (void)windowResigned:(NSNotification *)notification {
@@ -1357,6 +2062,8 @@ static const unsigned short AKKeyF12 = 111;
 - (void)dealloc {
     [_composer removeFromSuperview];
     [_holdTimer invalidate];
+    // Nothing to tell at teardown (the delegate may be gone), and nothing left behind either.
+    AKTouchCameraReset(&_camera, @"teardown", NULL, NULL);
     [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 @end

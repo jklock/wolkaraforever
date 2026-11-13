@@ -128,6 +128,27 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
 /// A screen that wants the words instead of the game: the test screen. While one is
 /// set, the game is never typed into.
 @property (nonatomic, copy, nullable) void (^transcriptHandler)(NSString *text);
+
+#pragma mark - The Chat Composer's client
+
+// The Composer owns the draft, so a capture it starts must not type into the game even when a
+// game text target is registered. While a composer handler is set, the audio and recognition
+// halves are unchanged - on-device only, final result authoritative - but what they produce is
+// offered to the handler instead of being typed:
+//
+//   "draft"   a partial result, for the visible draft only. Never delivered to the game.
+//   "final"   the session's result. The Composer decides whether it is ever sent.
+//   "failure" capture failed (no permission, no on-device recogniser, a timeout, a recogniser
+//             error). `reason` says which, for the log.
+//   "stopped" capture ended without a result (a cancel, the app going away).
+//
+// The gameplay guarantee this feature must not weaken: partial recognition is never text, and a
+// session ends with exactly one of "final", "failure" or "stopped".
+@property (nonatomic, copy, nullable) void (^composerHandler)(NSString *event, NSString *text, NSString *reason);
+/// Start or abandon a Composer capture. Both are no-ops when another capture is in flight, as
+/// the classic entry points are.
+- (void)beginComposerCapture;
+- (void)cancelComposerCapture;
 @property (nonatomic, copy, nullable) void (^listeningChanged)(BOOL listening);
 /// For a screen that wants to show what is happening; used by the test screen.
 @property (nonatomic, copy, nullable) void (^stateChanged)(AKDictationState state);

@@ -37,7 +37,11 @@ static NSArray<NSString *> *TKWolkaraForeverConfigKeys(void) {
              // the defaults database, so it did not survive an export and import - which is what
              // the review outcome's Phase 3 is about: a setting the user can change belongs in the
              // file, in the schema, and in the tests that prove it round-trips.
-             @"AKVoiceTakeButtonFromGame"];
+             @"AKVoiceTakeButtonFromGame",
+             // The Chat Composer: its flag, the delivery mode a message takes, and the player's
+             // own destinations. A destination list is a choice that costs time to retype, so it
+             // belongs in the file like the dictionary and the mapping do.
+             @"AKChatComposerEnabled", @"AKChatDeliveryMode", @"AKChatDestinationsV1"];
 }
 
 // One mapping per controller, so the key carries an identity we cannot know in advance.
@@ -115,6 +119,13 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
             @"AKVoiceTrailingSpace": @{@"kind": @"bool"},
             @"AKVoiceCustomWords": @{@"kind": @"words"},
             @"AKVoiceTakeButtonFromGame": @{@"kind": @"bool"},
+            @"AKChatComposerEnabled": @{@"kind": @"bool"},
+            // The two modes the Composer knows. An installation that predates the Composer is
+            // migrated to classicDirect by the Composer itself; this is the stored spelling.
+            @"AKChatDeliveryMode": @{@"kind": @"enum", @"values": @[@"classicDirect", @"review"]},
+            // Up to four player-written destinations. Dropped one at a time, never as a list:
+            // one hand-edited record is not a reason to lose the other three.
+            @"AKChatDestinationsV1": @{@"kind": @"destinations"},
             // The on-screen controller: where the controls sit, how big they are, which areas
             // they leave alone, which button each sends, and the layouts a person saved. A
             // dictionary, bounded and checked, so nothing here can smuggle in a value the
@@ -214,6 +225,42 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
         if (!encoded) { *problem = @"not a property list"; return nil; }
         if (encoded.length > TKWolkaraForeverConfigArrangementBytesLimit) { *problem = @"too large"; return nil; }
         return value;
+    }
+    if ([kind isEqualToString:@"destinations"]) {
+        // The same four limits the Composer enforces at its own boundary (ChatComposer.m): at most
+        // four records, a 24-character title, a 64-character command that starts with one slash,
+        // unique identifiers and unique commands. Repeated here because the file is on the
+        // user-visible side of the app and a record from it must never be able to carry a line
+        // break into the send transaction.
+        if (![value isKindOfClass:NSArray.class]) { *problem = @"not a list of destinations"; return nil; }
+        NSMutableArray<NSDictionary *> *records = [NSMutableArray array];
+        NSMutableSet *identifiers = [NSMutableSet set], *commands = [NSMutableSet set];
+        NSUInteger refused = 0;
+        for (id entry in (NSArray *)value) {
+            if (![entry isKindOfClass:NSDictionary.class]) { refused++; continue; }
+            NSDictionary *record = entry;
+            id identifier = record[@"id"], title = record[@"title"], command = record[@"command"];
+            if (![identifier isKindOfClass:NSString.class] || ![title isKindOfClass:NSString.class] ||
+                ![command isKindOfClass:NSString.class]) { refused++; continue; }
+            NSString *name = [(NSString *)identifier stringByTrimmingCharactersInSet:
+                              NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            NSString *label = [(NSString *)title stringByTrimmingCharactersInSet:
+                               NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            NSString *line = [(NSString *)command stringByTrimmingCharactersInSet:
+                              NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            BOOL usable = name.length && name.length <= 24 && label.length && label.length <= 24 &&
+                line.length >= 2 && line.length <= 64 && [line hasPrefix:@"/"] &&
+                [line rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location == NSNotFound &&
+                ![identifiers containsObject:name] && ![commands containsObject:line];
+            if (records.count >= 4 || !usable) { refused++; continue; }
+            [identifiers addObject:name];
+            [commands addObject:line];
+            id enabled = record[@"enabled"];
+            [records addObject:@{@"id": name, @"title": label, @"command": line,
+                                 @"enabled": @([TKWolkaraForeverConfig isBoolean:enabled] ? [enabled boolValue] : NO)}];
+        }
+        if (refused) WKLog("config", @"%lu destination(s) were refused and the rest kept", (unsigned long)refused);
+        return records;
     }
     *problem = @"the rule for this key is not one we know";
     return nil;

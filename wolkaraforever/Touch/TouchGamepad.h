@@ -15,6 +15,9 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size);
 @property(nonatomic, copy, nullable) void (^visibilityChanged)(BOOL visible);
 - (void)refresh;
 - (void)toggleSettings;
+// Re-read the saved layout: the launcher and the settings panel both write it, and the
+// arrangement, the zones and the elements have to be what the dictionary now says.
+- (void)reloadLayout;
 - (void)invalidate;
 @end
 NS_ASSUME_NONNULL_END

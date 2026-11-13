@@ -1136,6 +1136,98 @@ static void TestDictation(void) {
     dictation.problemHandler = nil;
 }
 
+// The Chat Composer's client: the same audio and recognition halves, with the result offered to
+// the Composer's draft instead of typed into the game. What this suite can prove that the
+// Composer's own fixture cannot: a real AKDictation, with auto-submit switched on, still types
+// nothing when the Composer owns the session.
+static void TestComposerCapture(void) {
+    AKDictation *dictation = AKDictation.shared;
+    FakeSpeech *speech = [FakeSpeech new];
+    FakeAudio *audio = [FakeAudio new];
+    dictation.speech = speech;
+    dictation.audio = audio;
+    dictation.finalizeTimeout = 0.2;
+    AKVoiceSettings *settings = AKVoiceSettings.shared;
+    settings.enabled = YES;
+    // The classic path would type the transcript and then press Return. The Composer's must not
+    // do either, so this is deliberately left on for the whole test.
+    settings.autoSubmit = YES;
+    settings.trailingSpace = YES;
+
+    __block NSMutableArray<NSString *> *events = [NSMutableArray array];
+    __block NSMutableArray<NSString *> *texts = [NSMutableArray array];
+    __block NSMutableArray<NSString *> *reasons = [NSMutableArray array];
+    dictation.composerHandler = ^(NSString *event, NSString *text, NSString *reason) {
+        [events addObject:event];
+        [texts addObject:text ?: @""];
+        [reasons addObject:reason ?: @""];
+    };
+    // No transcript handler and no game text target: nothing in this test can be typed.
+    dictation.transcriptHandler = nil;
+    [AKDictation setGameTextTarget:nil];
+
+    [dictation beginComposerCapture];
+    CHECK((dictation.state == AKDictationStateListening), @"the Composer's capture opens the microphone");
+    [speech say:@"hello" final:NO];
+    CHECK((events.count == 1 && [events.firstObject isEqual:@"draft"]),
+          @"a partial is offered as a draft, got %@", events);
+    CHECK(([texts.firstObject isEqual:@"hello"]), @"with its own text, got %@", texts);
+    [dictation end];
+    CHECK((dictation.state == AKDictationStateFinalizing), @"the audio is ended and the last words awaited");
+    [speech say:@"hello there" final:YES];
+    CHECK(([events.lastObject isEqual:@"final"] && [texts.lastObject isEqual:@"hello there"]),
+          @"the final result is the session's one final, got %@/%@", events, texts);
+    CHECK((dictation.state == AKDictationStateIdle && !audio.recording), @"and the session is over with the audio handed back");
+    CHECK((audio.restores > 0), @"the session was given back, not kept");
+
+    // Exactly once, even if the recogniser says so again.
+    [speech say:@"hello there again" final:YES];
+    CHECK((events.count == 2), @"a second final is not offered, got %@", events);
+
+    // A cancel ends the session with "stopped" and no text.
+    [events removeAllObjects];
+    [dictation beginComposerCapture];
+    [speech say:@"half a sentence" final:NO];
+    [dictation cancelComposerCapture];
+    CHECK(([events.lastObject isEqual:@"stopped"]), @"a stop is reported as a stop, got %@", events);
+    CHECK((![events.lastObject isEqual:@"final"]), @"and never as a result");
+    CHECK((dictation.state == AKDictationStateIdle), @"the capture is over");
+
+    // A refused permission is a failure event with a reason, and no text.
+    [events removeAllObjects];
+    [texts removeAllObjects];
+    speech.authorized = NO;
+    [dictation beginComposerCapture];
+    CHECK(([events.lastObject isEqual:@"failure"]), @"a refused permission is a failure, got %@", events);
+    CHECK(([texts.lastObject isEqual:@""] && [reasons.lastObject length] > 0),
+          @"with no text and a reason the log can name");
+    speech.authorized = YES;
+
+    // A partial followed by a recogniser error is a failure, never a delivery of the partial.
+    [events removeAllObjects];
+    [texts removeAllObjects];
+    [dictation beginComposerCapture];
+    [speech failAfterPartial:@"half a sent"];
+    [dictation end];
+    CHECK(([events.lastObject isEqual:@"failure"] && ![events containsObject:@"final"]),
+          @"a partial is never delivered as a result, got %@", events);
+
+    // The classic route still delivers to the transcript handler when no Composer is involved.
+    dictation.composerHandler = nil;
+    __block NSMutableArray<NSString *> *classic = [NSMutableArray array];
+    dictation.transcriptHandler = ^(NSString *text) { [classic addObject:text]; };
+    [dictation begin];
+    [dictation end];
+    [speech say:@"classic words" final:YES];
+    CHECK((classic.count == 1 && [classic.firstObject isEqual:@"classic words"]),
+          @"classic dictation still delivers to a screen that asked for the words, got %@", classic);
+
+    dictation.transcriptHandler = nil;
+    settings.autoSubmit = NO;
+    settings.trailingSpace = NO;
+    [AKDictation setGameTextTarget:nil];
+}
+
 static void TestTypingIntoTheGame(void) {
     AKDictation *dictation = AKDictation.shared;
     FakeSpeech *speech = [FakeSpeech new];
@@ -2014,6 +2106,7 @@ static void TestConfigWriteFailure(void) {
     TestAFailedPutBackIsReported();
     TestScreenshotIsolation();
     TestDictation();
+    TestComposerCapture();
     TestTypingIntoTheGame();
     TestSpeechLanguage();
     TestKeyboardDictationRecord();

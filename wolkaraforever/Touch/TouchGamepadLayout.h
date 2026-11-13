@@ -3,9 +3,52 @@
 // Posted after saving; the object is the defaults store that changed.
 FOUNDATION_EXPORT NSNotificationName const AKGamepadLayoutDidChangeNotification;
 
+/// A bounded name for a gamepad element, for the log and for a stable name in a fixture: the
+/// framework calls the A button "Button A", which is a phrase with a space in it, and the log
+/// carries words. "buttonA", "leftShoulder", "leftThumbstick", "dpad.up"; anything this
+/// build does not place is "element".
+FOUNDATION_EXPORT NSString *AKGamepadElementToken(NSString *element);
+
+/// The element a stick's click is. A stick's direction and its click are two different
+/// elements on a controller: "Left Thumbstick" is the direction, "Left Thumbstick
+/// Button" is the button a person calls L3. Anything else is returned unchanged.
+FOUNDATION_EXPORT NSString *AKGamepadStickButtonElement(NSString *element);
+
+/// The two arrangements the controls can draw.
+///
+/// Full is every control this app has ever drawn, and it is what every existing installation
+/// migrates to. Simple is opt-in: both sticks, the four face buttons, the two shoulders at the
+/// far top corners with their own saved positions, and the menu button. The triggers and the
+/// D-pad are not drawn in it.
+typedef NS_ENUM(NSInteger, AKGamepadLayoutMode) {
+    AKGamepadLayoutModeFull = 0,
+    AKGamepadLayoutModeSimple = 1,
+};
+
 // Preferences contain only UI appearance/feedback; never controller or game state.
-@interface AKGamepadLayout : NSObject
-- (instancetype)initWithDefaults:(NSUserDefaults *)defaults;
+@interface AKGamepadLayout : NSObject- (instancetype)initWithDefaults:(NSUserDefaults *)defaults;
+/// The schema the stored dictionary declared: 0 when it had none (the shape every release
+/// through v1.0.10 wrote), 1 or 2 otherwise.
+@property(nonatomic, readonly) NSInteger storedVersion;
+/// The stored dictionary belongs to a later build. This one reads it as defaults and refuses
+/// to write over it, so an older build cannot destroy a newer layout.
+@property(nonatomic, readonly) BOOL newerThanThisBuild;
+@property(nonatomic) AKGamepadLayoutMode mode;
+/// "full" or "simple": what the stored dictionary carries.
+@property(nonatomic, readonly) NSString *modeName;
+/// Store a mode by name. NO for anything this build does not ship, which leaves the layout
+/// exactly as it was; Simple cannot be turned on by a hand-edited file.
+- (BOOL)setModeName:(NSString *)name;
+/// A double tap on a stick presses that stick's own button. Off unless the user asks for it.
+@property(nonatomic) BOOL stickButtonsEnabled;
+/// Extra on-screen surfaces, each sending one gamepad element while it is touched. Empty by
+/// default; each is @{@"element", @"x", @"y"} with the centre as fractions of the screen.
+@property(nonatomic, copy, readonly) NSArray<NSDictionary<NSString *, id> *> *abilityZones;
+- (BOOL)addAbilityZoneForElement:(NSString *)element atX:(CGFloat)x y:(CGFloat)y;
+- (BOOL)setAbilityZoneElement:(NSString *)element atIndex:(NSUInteger)index;
+- (BOOL)moveAbilityZoneAtIndex:(NSUInteger)index toX:(CGFloat)x y:(CGFloat)y;
+- (void)removeAbilityZoneAtIndex:(NSUInteger)index;
+- (void)clearAbilityZones;
 @property(nonatomic) CGFloat opacity;
 @property(nonatomic) CGFloat rearScale;
 @property(nonatomic) CGFloat frontScale;
