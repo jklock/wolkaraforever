@@ -159,6 +159,16 @@ static void TestDestinations(void) {
         [defaults objectForKey:AKChatDestinationsDefaultsKey]];
     CHECK(afterGarbage.count == 0, @"a value that is not a list yields no destinations");
 
+    // A record carrying keys this build does not know is still a usable record: a downgrade, or
+    // a file written by a newer version, must not cost the player their destinations.
+    NSArray<AKChatDestination *> *forward = [AKChatDestinationStore sanitizedDestinations:@[
+        @{@"id": @"say", @"title": @"Say", @"command": @"/say", @"enabled": @YES,
+          @"future": @"ignored", @"hotkey": @1},
+    ]];
+    CHECK(forward.count == 1 && [forward.firstObject.command isEqual:@"/say"],
+          @"unknown keys in a record are ignored, not fatal, got %lu",
+          (unsigned long)forward.count);
+
     [defaults removeObjectForKey:AKChatDestinationsDefaultsKey];
     [store replaceAll:@[]];
 }

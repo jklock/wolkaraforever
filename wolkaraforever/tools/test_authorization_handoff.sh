@@ -45,3 +45,16 @@ python3 tools/test_debug_over_tunnel.py
 # verified one prepares and detaches, a wrong challenge is refused, a lost detach
 # reply leaves the arena uncertain, and an expired request is declined.
 python3 tools/test_debug_over_tunnel.py --service
+# The enrolment reference: the decision table, with the store and the record
+# loader injected. A reinstall deletes the marker this app keeps in its own
+# container and keeps the trust pin in the Keychain; recovering the one from the
+# other must never replace a marker, overwrite a pin or restore trust that does
+# not verify. The real-Keychain half of the same file is
+# tools/test_enrollment_reference_sim.sh, which needs a simulator.
+mkdir -p build/emulation
+xcrun swiftc -module-cache-path build/swift-module-cache -warnings-as-errors -g -sanitize=address \
+    authorization/Pairing/PairingWire.swift authorization/Pairing/PairingIdentity.swift \
+    authorization/Storage/PairingEnrollment.swift authorization/Storage/PairingKeychain.swift \
+    authorization/Storage/EnrollmentReference.swift tests/test_enrollment_reference.swift \
+    -o build/emulation/test_enrollment_reference
+build/emulation/test_enrollment_reference

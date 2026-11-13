@@ -95,6 +95,11 @@ intent() {
             wolkaraforever/Bridge/tests/*) dst=tests/${f#wolkaraforever/Bridge/tests/};;
             wolkaraforever/Bridge/BackgroundPacing.m) dst=translation/Metal/BackgroundPacing.m;;
             wolkaraforever/Bridge/DisplayRate.m) dst=translation/Metal/DisplayRate.m;;
+            # The enrolment reference belongs with the pairing storage it reads
+            # and writes: the app, its tunnel extension and the storage probe all
+            # compile authorization/Storage, and the reference is nothing more
+            # than a second item in that same protected store.
+            wolkaraforever/Bridge/EnrollmentReference.swift) dst=authorization/Storage/EnrollmentReference.swift;;
             wolkaraforever/Bridge/LocalServiceRetry.*|wolkaraforever/Bridge/AuthorizationBlockedState.*) dst=authorization/App/${f#wolkaraforever/Bridge/};;
             *) echo "# not overlaid yet (source of a pending patch): $f"; continue;;
         esac

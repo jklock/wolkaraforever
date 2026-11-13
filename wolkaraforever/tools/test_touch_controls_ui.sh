@@ -44,6 +44,13 @@ cat > "$APP/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - "$APP" > /dev/null
+# Install over a container that carries nothing. `simctl install` keeps the app's data, and this
+# fixture writes NSUserDefaults (the delivery mode, the Composer's flag); a run that aborted
+# mid-case leaves those behind and the next run starts from the previous case's world. Measured:
+# with a stale container the self-test fails in the 64-edit draft loop (a draft that is not the
+# one it typed), and on a clean one the same build passes on both interfaces, on both simulators,
+# and a pristine main checkout with the same stale container fails in the same place.
+xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.touch-controls 2> /dev/null || true
 xcrun simctl install "$SIM_ID" "$APP"
 if [[ " $* " == *" --stay "* ]]; then
     # Visual inspection is explicit so the documented test command cannot hang.
@@ -64,6 +71,14 @@ else
         CLOG="build/touch-controls-fixture/composer${MODE:+-mobile}.log"
         xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls --composer-test $MODE 2>&1 | tee "$CLOG"
         grep -q 'TOUCH_UI_SELF_TEST_PASS: the Composer card' "$CLOG"
+        # The same card at an accessibility text size: it has to grow rather than clip, and the
+        # editor has to keep its height. UIKit reads the category from this launch argument, so
+        # this is the player's own setting, not a stub.
+        ALOG="build/touch-controls-fixture/composer${MODE:+-mobile}-dynamic-type.log"
+        xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls \
+            --composer-test $MODE -UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL 2>&1 | tee "$ALOG"
+        grep -q 'TOUCH_UI_SELF_TEST_PASS: the Composer card' "$ALOG"
+        grep -q 'chat composer: Dynamic Type UICTContentSizeCategoryAccessibility' "$ALOG"
     done
 fi
 
@@ -99,6 +114,9 @@ cat > "$COMPOSER/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - "$COMPOSER" > /dev/null
+# Same reason as the card's fixture above: the state machine's own defaults have to start empty,
+# or the migration case reads a mode a previous run chose.
+xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.chat-composer 2> /dev/null || true
 xcrun simctl install "$SIM_ID" "$COMPOSER"
 COMPOSER_LOG="build/touch-controls-fixture/chat-composer.log"
 xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.chat-composer 2>&1 | tee "$COMPOSER_LOG"
@@ -107,6 +125,8 @@ grep -q 'CHAT_COMPOSER PASS:' "$COMPOSER_LOG"
 # outcome and every entry source has to be visible in the log, and the stale-callback rule has
 # to be visible as a refusal rather than as silence.
 for EVENT in \
+    'chat-composer: open source=0' \
+    'chat-composer: open source=1' \
     'chat-composer: open source=2' \
     'chat-composer: state 2 -> 4' \
     'chat-composer: Send outcome=sent destination=direct' \

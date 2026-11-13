@@ -42,7 +42,7 @@ terminal states. `failed` keeps the card up, because that is the error the playe
 
 | Event | Result |
 | --- | --- |
-| Open (toolbar, keyboard microphone, mapped button) | one Return to open the game's chat, then capture starts |
+| Open (the card's microphone, the layer keyboard's microphone key, a mapped button) | one Return to open the game's chat, then capture starts; the entry is logged as `toolbar`, `keyboard` or `controller` |
 | Repeated Open while open | ignored: one Composer, one Return |
 | Partial result | draft only; **Send** disabled while provisional |
 | Final result | replaces the recognised segment, state `ready` |
@@ -109,3 +109,29 @@ terminal outcome is in the log, and that no draft from the fixture appears in it
   route still delivering when no Composer is involved.
 
 Both run on iPhone Duo and iPad Pro 13-inch (M5); the runner refuses any other device.
+
+`wolkaraforever/tools/capture_composer_states.sh` takes the three screenshots the review record
+names - idle, ready and error - from the same fixture, on either matrix device. The captures are
+local evidence under `build/` and are never committed.
+
+Both fixtures are installed over an empty container: `simctl install` keeps an app's data, and
+these fixtures write `NSUserDefaults`, so a run that aborted left the delivery mode behind and the
+next run started in the previous case's world. Measured both ways - a stale container fails the
+self-test's 64-edit draft loop, a clean one passes, and a pristine `main` checkout with the stale
+container fails in the same place.
+
+## Text size
+
+The card follows the player's text size. Its fonts come from `preferredFontForTextStyle:`, and
+its label row, action row and destination chips are sized from those fonts, so at the default
+category every measurement is the one every release through v1.0.10 has drawn and a larger one
+grows the card rather than clipping it. Measured on both matrix simulators, on both interfaces:
+
+| Category | Card | Action row | Draft editor |
+| --- | --- | --- | --- |
+| default (`UICTContentSizeCategoryL`) | 130 pt | 44 pt | 48 pt |
+| `UICTContentSizeCategoryAccessibilityXXXL` | 202 pt | 80 pt | 48 pt |
+
+The suite runs the card a second time with
+`-UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL` and asserts the
+row, the editor's height, the label's own line box and that **Send** stays inside the card.

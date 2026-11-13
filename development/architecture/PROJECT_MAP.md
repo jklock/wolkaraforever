@@ -32,7 +32,7 @@ cross-module reach-in. Never edit `platform/` directly.
 | `Touch/` | On-device game interaction | In-game toolbar, trackpad, keyboard/draft path, on-screen gamepad, layout editor, haptics, performance overlay, and `InterfaceMode` - the one reader of `WolkaraForeverInterfaceModeV1` that keeps the mobile arrangement dormant. |
 | `Addons/` and `addons/WolkaraRoue` | The Interface mobile add-on | The reviewed Lua, its twelve suites, and the versioned ZIP plus manifest the app ships and verifies. |
 | `Input/`, `Controller/`, `Voice/` | User-triggered input | Physical-controller inspection/routing, learned button/key triggers, Hold/Toggle dictation, speech lifecycle, Test Voice, permission flow, focused-field insertion. |
-| `Bridge/` | Product hooks into the platform | Background frame pacing, local-service retry, and product-owned integration hooks. |
+| `Bridge/` | Product hooks into the platform | Background frame pacing, the enrolment reference that survives a reinstall, local-service retry, and product-owned integration hooks. |
 | `CoreAudio/` | Audio adapter support | Product test coverage for the host playback lease. |
 | `patches/` | Narrow upstream changes | Input/voice hooks, audio session ownership, performance timing/HUD/backing-scale work, prepare pipeline, release profile, and safety gates. |
 

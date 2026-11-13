@@ -1,0 +1,110 @@
+# WolkaraForever layer patch 0062 - storage probe: exercise the enrolment reference
+#
+# Why: the enrolment reference (Bridge/EnrollmentReference.swift, overlaid at
+# authorization/Storage/) is the only thing that lets a reinstalled app find the
+# trust pin its container no longer points at. It talks to the real Keychain and
+# to real UserDefaults, so a fake backend proves the decision and not the store.
+# The simulator-only storage probe already owns "our own code, our own protected
+# group" evidence; these modes give it the reference's cases - derived, lost
+# marker, recovered, stale, mismatching, malformed and an unusable marker - each
+# in its own process, because that is what a reinstall is observed from.
+#
+# Test support only: no product target compiles this file, the modes are inert
+# unless passed on the command line, and they touch only the probe's own
+# synthetic record, its reference and the marker under the same identifier.
+#
+# Applies to: tools/StorageProbe/App.swift
+# Upstream: none (probe-only).
+#
+diff --git a/tools/StorageProbe/App.swift b/tools/StorageProbe/App.swift
+index 60b9847..67b12f0 100644
+--- a/tools/StorageProbe/App.swift
++++ b/tools/StorageProbe/App.swift
+@@ -48,6 +48,87 @@ import Security
+                 return "PASS: app without the shared entitlement was denied (-34018)\n"
+             }
+         }
++        // The enrolment reference: a second item in the same protected store,
++        // derived from a verified record and used to put the launcher's marker
++        // back when the app container is replaced and the record is not. Each
++        // mode is its own process on purpose - a reinstall is observed from
++        // outside, by running another one afterwards.
++        let references = try EnrollmentReferenceStore()
++        let defaults = UserDefaults.standard
++        if CommandLine.arguments.contains("--storage-enrollment-write") {
++            try store.forget(deviceIdentifier:record.deviceIdentifier)
++            try references.clear()
++            defaults.removeObject(forKey:"TKEnrolledDeviceIdentifier")
++            try store.insertTrusted(record)
++            defaults.set(record.deviceIdentifier,forKey:"TKEnrolledDeviceIdentifier")
++            guard WKEnrollmentReference.prepare() == "event=reference outcome=recorded reason=record-verified" else { return "FAIL: reference was not derived\n" }
++            guard try references.read() != nil else { return "FAIL: no reference after a verified record\n" }
++            return "PASS: reference derived from the verified record, pin untouched\n"
++        }
++        if CommandLine.arguments.contains("--storage-enrollment-lost-marker") {
++            defaults.removeObject(forKey:"TKEnrolledDeviceIdentifier")
++            guard defaults.string(forKey:"TKEnrolledDeviceIdentifier") == nil else { return "FAIL: marker not removed\n" }
++            return "PASS: marker removed; record and reference left in place\n"
++        }
++        if CommandLine.arguments.contains("--storage-enrollment-recover") {
++            // The state a reinstall leaves: the marker this app's container held
++            // is gone, and the record it pointed at is not. Before the reference
++            // existed this was the state in which the launcher refused with
++            // "not enrolled" and nothing in the layer could put the marker back.
++            guard defaults.string(forKey:"TKEnrolledDeviceIdentifier") == nil,
++                  try store.load(deviceIdentifier:record.deviceIdentifier)?.fingerprint == record.fingerprint
++            else { return "FAIL: this is not the reinstall state (marker absent, record present)\n" }
++            guard WKEnrollmentReference.prepare() == "event=reference outcome=recovered reason=record-verified" else { return "FAIL: marker was not recovered\n" }
++            guard defaults.string(forKey:"TKEnrolledDeviceIdentifier") == record.deviceIdentifier else { return "FAIL: recovered marker is not the record's identifier\n" }
++            guard try store.load(deviceIdentifier:record.deviceIdentifier)?.fingerprint == record.fingerprint else { return "FAIL: recovery disturbed the trust pin\n" }
++            return "PASS: marker absent and record present before recovery; recovered from it; pin unchanged\n"
++        }
++        if CommandLine.arguments.contains("--storage-enrollment-marker") {
++            guard defaults.string(forKey:"TKEnrolledDeviceIdentifier") == record.deviceIdentifier else { return "FAIL: the recovered marker did not survive to the next launch\n" }
++            return "PASS: the recovered marker is read back by a later process\n"
++        }
++        if CommandLine.arguments.contains("--storage-enrollment-stale") {
++            try store.forget(deviceIdentifier:record.deviceIdentifier)
++            defaults.removeObject(forKey:"TKEnrolledDeviceIdentifier")
++            guard WKEnrollmentReference.prepare() == "event=reference outcome=refused reason=stale-reference" else { return "FAIL: a reference with no record was not refused\n" }
++            guard defaults.string(forKey:"TKEnrolledDeviceIdentifier") == nil, try references.read() == nil else { return "FAIL: a stale reference was left behind\n" }
++            return "PASS: stale reference refused and removed, no marker restored\n"
++        }
++        if CommandLine.arguments.contains("--storage-enrollment-mismatch") {
++            try store.forget(deviceIdentifier:record.deviceIdentifier)
++            try store.insertTrusted(record)
++            let other = try fixture(changed:true)
++            try references.write(try EnrollmentReferenceRecord(deviceIdentifier:record.deviceIdentifier,
++                fingerprint:other.fingerprint).serialize())
++            defaults.removeObject(forKey:"TKEnrolledDeviceIdentifier")
++            guard WKEnrollmentReference.prepare() == "event=reference outcome=refused reason=fingerprint-mismatch" else { return "FAIL: a mismatching reference was not refused\n" }
++            guard defaults.string(forKey:"TKEnrolledDeviceIdentifier") == nil else { return "FAIL: a mismatching reference restored a marker\n" }
++            guard try store.load(deviceIdentifier:record.deviceIdentifier)?.fingerprint == record.fingerprint else { return "FAIL: a mismatching reference overwrote the trust pin\n" }
++            return "PASS: mismatching reference refused; pin and marker unchanged\n"
++        }
++        if CommandLine.arguments.contains("--storage-enrollment-malformed") {
++            let observed = Data("a reference that is not one".utf8)
++            try references.write(observed)
++            defaults.removeObject(forKey:"TKEnrolledDeviceIdentifier")
++            guard WKEnrollmentReference.prepare() == "event=reference outcome=refused reason=malformed-reference" else { return "FAIL: a malformed reference was not refused\n" }
++            guard defaults.string(forKey:"TKEnrolledDeviceIdentifier") == nil, try references.read() == nil else { return "FAIL: a malformed reference was left behind\n" }
++            return "PASS: malformed reference refused and removed, no marker restored\n"
++        }
++        if CommandLine.arguments.contains("--storage-enrollment-invalid-marker") {
++            let existing = String(repeating:"x",count:1025)
++            defaults.set(existing,forKey:"TKEnrolledDeviceIdentifier")
++            guard WKEnrollmentReference.prepare() == "event=reference outcome=refused reason=invalid-marker" else { return "FAIL: an unusable marker was accepted\n" }
++            guard defaults.string(forKey:"TKEnrolledDeviceIdentifier") == existing else { return "FAIL: the existing marker was replaced\n" }
++            return "PASS: unusable marker refused and left untouched\n"
++        }
++        if CommandLine.arguments.contains("--storage-enrollment-clean") {
++            try store.forget(deviceIdentifier:record.deviceIdentifier)
++            try references.clear()
++            defaults.removeObject(forKey:"TKEnrolledDeviceIdentifier")
++            guard try store.load(deviceIdentifier:record.deviceIdentifier) == nil, try references.read() == nil,
++                  defaults.string(forKey:"TKEnrolledDeviceIdentifier") == nil else { return "FAIL: fixture left behind\n" }
++            return "PASS: fixture record, reference and marker removed\n"
++        }
+         return "FAIL: no probe mode\n"
+     }
+ }
