@@ -228,6 +228,7 @@ run_step "External-JIT diagnostics and termination classification" wolkaraforeve
 run_step "pilot.sh fails closed and keeps its own session" wolkaraforever/tools/tests/test_pilot.sh || failures=$((failures+1))
 run_step "launcher pages (simulator fixture)" wolkaraforever/tools/test_wow_launcher_ui.sh || failures=$((failures+1))
 run_step "input, voice and config rules (simulator fixture)" wolkaraforever/tools/test_voice.sh || failures=$((failures+1))
+run_step "bounded controller command path (simulator fixture)" wolkaraforever/tools/test_controller_input.sh || failures=$((failures+1))
 # The app language is a product setting, not a build detail: it has its own suite,
 # and nothing was running it. A missing or one-sided table is caught by the layer
 # gate, but resolution, fallback and formatting were only ever run by hand.

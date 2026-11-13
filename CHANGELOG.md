@@ -12,6 +12,32 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **A mapped controller button no longer waits behind the diagnostics.** The
+  inspector used to hand every interested controller event to the main queue as
+  its own block, and that block wrote the log line, redrew the panel and only
+  then fired the trigger - so everything the diagnostics did was in front of a
+  press, and the diagnostics are the plentiful part (one five-minute run on a
+  device produced 25,316 controller lines). Mapped button edges now go through a
+  bounded command path: a sixteen-deep FIFO with sequence numbers, one
+  main-queue drain per batch, and the diagnostics behind it instead of in front.
+  Axes, d-pad positions, touch-pad samples and held repeats are refused rather
+  than queued, overflow is counted and must be zero, and turning
+  `AKControllerIngressEnabled` off restores the previous path exactly. A new
+  `controller-input` log channel records admission, drain timing, drops, claim
+  restores and whether the Composer opened - bounded at 400 lines, and never
+  carrying the draft, the words or a controller identity. See
+  [controller input](development/technical/CONTROLLER_INPUT.md).
+
+- **Keeping one controller button out of the game is not offered, because it
+  cannot be done here.** iPadOS hands a pad's buttons to every observer in the
+  process, and the guest is an observer this app does not own; nothing an app can
+  do to a button removes it from another reader, and the one adapter that could
+  intercept hides every pad rather than one button. The per-controller claim
+  record the completion specification asks for is implemented, defaults to
+  claimed-for-nothing, and every restore path is exercised - but the switch is
+  withheld, and the Voice page keeps the sentence that already says why. The
+  measurement is in the same document.
+
 - **A finished download no longer ends at "Startup unavailable".** A build made in
   Xcode has no `TOLKARA_MODE`, and the launcher resolved its execution mode
   without the route the build was compiled with: the log said `execution mode=none

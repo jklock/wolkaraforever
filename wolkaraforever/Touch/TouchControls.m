@@ -56,6 +56,8 @@ NSNotificationName const AKChatComposerVoiceEventNotification = @"AKChatComposer
 NSString *const AKChatComposerEventKey = @"event";
 NSString *const AKChatComposerTextKey = @"text";
 NSString *const AKChatComposerReasonKey = @"reason";
+NSNotificationName const AKChatComposerOpenResultNotification = @"AKChatComposerOpenResult";
+NSString *const AKChatComposerOutcomeKey = @"outcome";
 // The guest's Return, used by the Composer's chat target; Escape is posted in
 // ChatComposer.m, which owns the closing decision.
 static unsigned short const AKKeyReturnCode = 36;
@@ -1237,10 +1239,21 @@ static const unsigned short AKKeyF12 = 111;
     [self applyComposerState];
 }
 
+- (void)reportComposerOpenOutcome:(NSString *)outcome source:(AKChatComposerSource)source {
+    // Synchronous, so the shell's observer runs before the press handler returns. The outcome and
+    // the source only: never the draft, never the words.
+    [NSNotificationCenter.defaultCenter
+        postNotificationName:AKChatComposerOpenResultNotification
+                      object:self
+                    userInfo:@{AKChatComposerOutcomeKey: outcome,
+                               AKChatComposerSourceKey: @(source)}];
+}
+
 - (void)openChatComposerFromSource:(AKChatComposerSource)source {
     if (!self.composerInReviewMode) {
         AKLog(@"chat-composer: open asked for from source %ld, but the delivery mode is classic direct",
               (long)source);
+        [self reportComposerOpenOutcome:@"classic-direct" source:source];
         return;
     }
     [self cancelTouches];
@@ -1251,6 +1264,7 @@ static const unsigned short AKKeyF12 = 111;
     if (!self.keyboardVisible) [self becomeFirstResponder];
     [self applyComposerState];
     if (opened) AKLog(@"chat-composer: card up for source %ld", (long)source);
+    [self reportComposerOpenOutcome:(opened ? @"opened" : @"refused") source:source];
 }
 
 // One place draws the card from the Composer's state: the label, the draft, which row is up, the
