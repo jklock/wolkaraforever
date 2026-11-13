@@ -156,6 +156,13 @@ wolkaraforever/Touch/TouchHaptics.m translation/AppKit/TouchHaptics.m add
 wolkaraforever/Touch/tests/test_touch_controls_app.m tests/test_touch_controls_app.m replace
 wolkaraforever/Touch/tests/test_touch_gamepad_app.m tests/test_touch_gamepad_app.m add
 #
+# Chat: the Composer, which is compiled into the same compatibility library as the
+# controls it draws from - the draft editor, the card and the guest's key path all
+# live there, and the app loads that library by name.
+wolkaraforever/Chat/ChatComposer.h translation/AppKit/ChatComposer.h add
+wolkaraforever/Chat/ChatComposer.m translation/AppKit/ChatComposer.m add
+wolkaraforever/Chat/tests/test_chat_composer_app.m tests/test_chat_composer_app.m add
+#
 # AppKit: the content-view sizing test for patch 0054, which has to make
 # its own window and host because a bare test process has neither.
 wolkaraforever/AppKit/tests/test_appkit_content_view.m tests/test_appkit_content_view.m add

@@ -56,6 +56,26 @@
 static NSString *const AKOwnedKeysNotification = @"AKTouchOwnedKeyUsagesDidChange";
 static NSString *const AKOwnedKeysUserInfoKey = @"usages";
 
+// The Chat Composer's two crossings, by name for the same reason. They are
+// AKChatComposerOpenNotification, AKChatComposerVoiceRequestNotification and
+// AKChatComposerVoiceEventNotification in wolkaraforever/Touch/TouchControls.h, together with
+// their userInfo keys.
+static NSString *const AKChatComposerOpenNotification = @"AKChatComposerOpen";
+static NSString *const AKChatComposerVoiceRequestNotification = @"AKChatComposerVoiceRequest";
+static NSString *const AKChatComposerVoiceEventNotification = @"AKChatComposerVoiceEvent";
+static NSString *const AKChatComposerSourceKey = @"source";
+static NSString *const AKChatComposerActionKey = @"action";
+static NSString *const AKChatComposerGenerationKey = @"generation";
+static NSString *const AKChatComposerEventKey = @"event";
+static NSString *const AKChatComposerTextKey = @"text";
+static NSString *const AKChatComposerReasonKey = @"reason";
+static NSString *const AKChatComposerPhaseKey = @"phase";
+// The two settings the routing decision reads. AKChatDeliveryModeInForce/AKChatComposerIsAvailable
+// in wolkaraforever/Chat/ChatComposer.h own the same keys; the Composer is in the compatibility
+// library, so this file names them the way it names the notifications above.
+static NSString *const AKChatDeliveryModeDefaultsKey = @"AKChatDeliveryMode";
+static NSString *const AKChatComposerEnabledDefaultsKey = @"AKChatComposerEnabled";
+
 @interface AKHostSceneDelegate : UIResponder <UIWindowSceneDelegate, TKLibraryViewControllerDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @property(nonatomic, strong) UILabel *status;
@@ -73,6 +93,9 @@ static NSString *const AKOwnedKeysUserInfoKey = @"usages";
 @property(nonatomic) BOOL cloudFullStartup;
 @property(nonatomic, strong) TKApp *cloudApp;
 @property(nonatomic, copy) NSString *cloudContainer;
+// The Composer's generation for the capture in flight: the answer to a request carries it back,
+// and the Composer drops anything older than the session it is showing.
+@property(nonatomic) NSUInteger chatComposerGeneration;
 // iPadOS allows one guest startup per process; some checks also end it.
 @property(nonatomic) BOOL sessionUsed;
 // A plain launch (library shown, no development arguments): a game that
@@ -288,6 +311,15 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
 // be showing at all.
 - (void)toggleDictationFromTouchKeyboard:(NSNotification *)note {
     (void)note;
+    // Review mode: the same key is the Composer's entry. One owner of the draft, an explicit
+    // Send, and no text typed into the guest by a recogniser.
+    if ([self chatComposerTakesEntry]) {
+        WKLog("voice", @"the keyboard's microphone key: the Chat Composer opens");
+        [NSNotificationCenter.defaultCenter postNotificationName:AKChatComposerOpenNotification
+                                                        object:nil
+                                                      userInfo:@{AKChatComposerSourceKey: @1}];  // keyboard
+        return;
+    }
     AKDictation *dictation = AKDictation.shared;
     // The controls register the game's text view when the guest starts and it is the only
     // place a transcript can go. No target means no game to type into, so nothing is opened:
@@ -298,6 +330,48 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
     }
     WKLog("voice", @"the keyboard's microphone key: dictation %@", dictation.listening ? @"stops" : @"starts");
     [dictation toggle];
+}
+
+// Whether the Composer is the route a microphone press and a mapped button take. The same two
+// settings the Composer itself reads (see ChatComposer.h): the feature has its own flag, and an
+// installation that predates the Composer keeps classic direct until someone chooses otherwise.
+- (BOOL)chatComposerTakesEntry {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSNumber *enabled = [defaults objectForKey:AKChatComposerEnabledDefaultsKey];
+    if ([enabled isKindOfClass:NSNumber.class] && !enabled.boolValue) return NO;
+    return [[defaults stringForKey:AKChatDeliveryModeDefaultsKey] isEqual:@"review"];
+}
+
+// The Composer asked for its capture to start or stop. The voice module is what knows how; the
+// answer goes back by notification, with the generation the request carried, because the
+// Composer drops anything older than the session it is showing.
+- (void)chatComposerVoiceRequested:(NSNotification *)note {
+    NSString *action = note.userInfo[AKChatComposerActionKey];
+    NSNumber *generation = note.userInfo[AKChatComposerGenerationKey];
+    AKDictation *dictation = AKDictation.shared;
+    self.chatComposerGeneration = generation.unsignedIntegerValue;
+    if (!dictation.composerHandler) {
+        __weak AKHostSceneDelegate *weakSelf = self;
+        dictation.composerHandler = ^(NSString *event, NSString *text, NSString *reason) {
+            AKHostSceneDelegate *scene = weakSelf;
+            if (!scene) return;
+            // Never the words: the event, the generation it belongs to and (for a failure) the
+            // diagnostic reason travel; the draft does not go into a log.
+            [NSNotificationCenter.defaultCenter postNotificationName:AKChatComposerVoiceEventNotification
+                                                            object:nil
+                                                          userInfo:@{AKChatComposerEventKey: event,
+                                                                     AKChatComposerTextKey: text ?: @"",
+                                                                     AKChatComposerReasonKey: reason ?: @"",
+                                                                     AKChatComposerGenerationKey: @(scene.chatComposerGeneration)}];
+        };
+    }
+    if ([action isEqual:@"begin"]) {
+        WKLog("voice", @"the Chat Composer asked for capture (generation %@)", generation);
+        [dictation beginComposerCapture];
+    } else {
+        WKLog("voice", @"the Chat Composer asked for its capture to stop (generation %@)", generation);
+        [dictation cancelComposerCapture];
+    }
 }
 
 // What the adapter needs to know, and the only thing it can be told: which keys are the
@@ -475,16 +549,41 @@ static NSString *AKAudioStateDescription(void) {
     AKInputRouter.shared.onTrigger = ^(AKTrigger *trigger, AKInputEvent *event) {
         (void)event;
         WKLog("voice", @"input trigger pressed: %@", [trigger summary]);
+        if ([self chatComposerTakesEntry]) {
+            // Review mode: the same press opens the Composer, which owns the draft and the send.
+            [NSNotificationCenter.defaultCenter postNotificationName:AKChatComposerOpenNotification
+                                                            object:nil
+                                                          userInfo:@{AKChatComposerSourceKey: @2,  // controller
+                                                                     AKChatComposerPhaseKey: @"began"}];
+            return;
+        }
         [AKDictation.shared toggle];
     };
     AKInputRouter.shared.onTriggerBegan = ^(AKTrigger *trigger, AKInputEvent *event) {
         (void)event;
         WKLog("voice", @"input trigger began: %@", [trigger summary]);
+        if ([self chatComposerTakesEntry]) {
+            // Hold or toggle, the press means one Composer and one microphone start; the routing
+            // rule itself is unchanged, which is what keeps the timing boundary the same.
+            [NSNotificationCenter.defaultCenter postNotificationName:AKChatComposerOpenNotification
+                                                            object:nil
+                                                          userInfo:@{AKChatComposerSourceKey: @2,
+                                                                     AKChatComposerPhaseKey: @"began"}];
+            return;
+        }
         [AKDictation.shared begin];
     };
     AKInputRouter.shared.onTriggerEnded = ^(AKTrigger *trigger, AKInputEvent *event) {
         (void)event;
         WKLog("voice", @"input trigger ended: %@", [trigger summary]);
+        if ([self chatComposerTakesEntry]) {
+            // The release ends the capture and leaves the words in the draft: it never sends.
+            [NSNotificationCenter.defaultCenter postNotificationName:AKChatComposerOpenNotification
+                                                            object:nil
+                                                          userInfo:@{AKChatComposerSourceKey: @2,
+                                                                     AKChatComposerPhaseKey: @"ended"}];
+            return;
+        }
         [AKDictation.shared end];
     };    // Something the user needs to know about the microphone: a refused permission, a
     // device that cannot recognise speech on its own, a session that would not start.
@@ -509,6 +608,10 @@ static NSString *AKAudioStateDescription(void) {
     // The keyboard module cannot include the voice module, and this is where they meet.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(toggleDictationFromTouchKeyboard:)
                                                name:@"AKTouchDictationToggleNotification" object:nil];
+    // The Chat Composer's capture, in both directions. The Composer is compiled into the
+    // compatibility library, so it asks and is answered by name; the voice module is here.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatComposerVoiceRequested:)
+                                               name:AKChatComposerVoiceRequestNotification object:nil];
     // Tell the adapter which keys are the user's, so it can swallow them before the guest
     // sees them. Every change to the settings re-publishes: a mapping, the switch on the page
     // and switching voice off all change the answer. Published rather than asked because the
