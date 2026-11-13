@@ -44,6 +44,13 @@ cat > "$APP/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - "$APP" > /dev/null
+# Install over a container that carries nothing. `simctl install` keeps the app's data, and this
+# fixture writes NSUserDefaults (the delivery mode, the Composer's flag); a run that aborted
+# mid-case leaves those behind and the next run starts from the previous case's world. Measured:
+# with a stale container the self-test fails in the 64-edit draft loop (a draft that is not the
+# one it typed), and on a clean one the same build passes on both interfaces, on both simulators,
+# and a pristine main checkout with the same stale container fails in the same place.
+xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.touch-controls 2> /dev/null || true
 xcrun simctl install "$SIM_ID" "$APP"
 if [[ " $* " == *" --stay "* ]]; then
     # Visual inspection is explicit so the documented test command cannot hang.
@@ -59,5 +66,93 @@ else
         # simctl may report success even when the app aborts an assertion.
         xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls "$@" $MODE 2>&1 | tee "$LOG"
         grep -q 'TOUCH_UI_SELF_TEST_PASS:' "$LOG"
+        # The Composer's card and a real guest, in the same interface: the assertions the state
+        # machine's own fixture cannot make because it has no window.
+        CLOG="build/touch-controls-fixture/composer${MODE:+-mobile}.log"
+        xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls --composer-test $MODE 2>&1 | tee "$CLOG"
+        grep -q 'TOUCH_UI_SELF_TEST_PASS: the Composer card' "$CLOG"
+        # The same card at an accessibility text size: it has to grow rather than clip, and the
+        # editor has to keep its height. UIKit reads the category from this launch argument, so
+        # this is the player's own setting, not a stub.
+        ALOG="build/touch-controls-fixture/composer${MODE:+-mobile}-dynamic-type.log"
+        xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls \
+            --composer-test $MODE -UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL 2>&1 | tee "$ALOG"
+        grep -q 'TOUCH_UI_SELF_TEST_PASS: the Composer card' "$ALOG"
+        grep -q 'chat composer: Dynamic Type UICTContentSizeCategoryAccessibility' "$ALOG"
     done
 fi
+
+# The Composer's own state machine, in a process with no guest, no microphone and no window.
+# It is a separate app because it has its own main, and it runs on every invocation: the rules
+# it covers (generations, exactly-once send, terminal outcomes) are what the card depends on.
+COMPOSER=build/touch-controls-fixture/ChatComposerTests.app
+mkdir -p "$COMPOSER"
+for LANGUAGE in en de fr; do
+    mkdir -p "$COMPOSER/$LANGUAGE.lproj"
+    cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$COMPOSER/$LANGUAGE.lproj/"
+done
+xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
+    -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations \
+    -Itranslation/AppKit -Itranslation/AKSupport translation/AKSupport/AKSupport.m \
+    translation/AppKit/ChatComposer.m tests/test_chat_composer_app.m \
+    -framework Foundation -framework UIKit -framework CoreGraphics -o "$COMPOSER/ChatComposerTests"
+cat > "$COMPOSER/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>org.tolkara.tests.chat-composer</string>
+<key>CFBundleExecutable</key><string>ChatComposerTests</string>
+<key>CFBundleName</key><string>WolkaraForever composer tests</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>1.0</string>
+<key>MinimumOSVersion</key><string>17.0</string>
+<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+<key>UILaunchScreen</key><dict/>
+<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+<key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/><key>UISceneConfigurations</key><dict/></dict>
+</dict></plist>
+PLIST
+codesign --force --sign - "$COMPOSER" > /dev/null
+# Same reason as the card's fixture above: the state machine's own defaults have to start empty,
+# or the migration case reads a mode a previous run chose.
+xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.chat-composer 2> /dev/null || true
+xcrun simctl install "$SIM_ID" "$COMPOSER"
+COMPOSER_LOG="build/touch-controls-fixture/chat-composer.log"
+xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.chat-composer 2>&1 | tee "$COMPOSER_LOG"
+grep -q 'CHAT_COMPOSER PASS:' "$COMPOSER_LOG"
+# Structured events, asserted from outside the process that printed them: every terminal
+# outcome and every entry source has to be visible in the log, and the stale-callback rule has
+# to be visible as a refusal rather than as silence.
+for EVENT in \
+    'chat-composer: open source=0' \
+    'chat-composer: open source=1' \
+    'chat-composer: open source=2' \
+    'chat-composer: state 2 -> 4' \
+    'chat-composer: Send outcome=sent destination=direct' \
+    'chat-composer: Send outcome=sent destination=party' \
+    'chat-composer: Send outcome=failed stage=insert' \
+    'chat-composer: Send outcome=failed stage=return' \
+    'chat-composer: stale capture callback' \
+    'chat-composer: cancel generation=' \
+    'chat-composer: background generation=' \
+    'chat-composer: disconnect generation=' \
+    'chat-composer: rollback complete' \
+    'chat-composer: delivery mode review (migrated: a new installation)' \
+    'chat-composer: delivery mode classicDirect (migrated: an existing installation)' \
+    'chat-composer: 1 destination(s) stored, 1 enabled'
+do
+    if ! grep -qF "$EVENT" "$COMPOSER_LOG"; then
+        echo "the composer log is missing: $EVENT"
+        grep 'chat-composer' "$COMPOSER_LOG" | head -40
+        exit 1
+    fi
+done
+# Nothing the player wrote may be in the log. These are the fixture's own drafts.
+for SECRET in 'hello there' 'keep me' 'unsent words' 'spoken words' 'half a sentence' '/p hi'; do
+    if grep -qF "$SECRET" "$COMPOSER_LOG"; then
+        echo "the composer log contains draft text: $SECRET"
+        exit 1
+    fi
+done
+echo "chat composer: state machine, generations, send transaction and destinations PASS"

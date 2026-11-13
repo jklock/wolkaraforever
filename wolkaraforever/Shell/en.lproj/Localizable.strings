@@ -624,3 +624,34 @@
 "shell.repairRequired.status" = "World of Warcraft reported damaged game files.";
 "shell.repairRequired.message" = "World of Warcraft could not start because its installed data is damaged. Repair verifies the game files, downloads only replacements, and keeps your settings and add-ons.\n\nReported error: %@";
 "shell.repairRequired.action" = "Repair game files";
+
+/* ---- Chat Composer ---- */
+"chat.composer.state.opening" = "Opening chat…";
+"chat.composer.state.listening" = "Listening…";
+"chat.composer.state.editing" = "Editing";
+"chat.composer.state.ready" = "Ready to send";
+"chat.composer.state.sending" = "Sending…";
+"chat.composer.state.cancelled" = "Cancelled";
+"chat.composer.action.send" = "Send";
+"chat.composer.action.cancel" = "Cancel";
+"chat.composer.action.cancel.hint" = "Closes the Composer without sending anything.";
+"chat.composer.action.listen" = "Dictate into the Composer";
+"chat.composer.action.stop" = "Stop dictating";
+"chat.composer.action.settings" = "Chat Composer settings";
+"chat.composer.problem.notSent" = "Message was not sent.";
+"chat.composer.problem.nothingHeard" = "Nothing was heard.";
+"chat.composer.destination.hint" = "Sends this message to the destination this chip names.";
+"chat.composer.placeholder" = "Compose a message · Send types it into the chat and closes it";
+"chat.composer.settings.title" = "Chat Composer";
+"chat.composer.settings.message" = "Delivery: %@. Destinations add a command to the line you send; they are yours, not the game’s.";
+"chat.composer.settings.mode.review" = "Review then Send";
+"chat.composer.settings.mode.classic" = "Classic direct";
+"chat.composer.settings.useClassic" = "Use Classic direct";
+"chat.composer.settings.useReview" = "Use Review then Send";
+"chat.composer.settings.add" = "Add destination…";
+"chat.composer.settings.add.message" = "A name for the chip and the command it sends, for example /say.";
+"chat.composer.settings.remove" = "Remove %@";
+"chat.composer.settings.save" = "Save";
+"chat.composer.settings.done" = "Done";
+"chat.composer.destination.title" = "Name";
+"chat.composer.destination.command" = "Command, for example /say";
