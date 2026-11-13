@@ -1941,6 +1941,10 @@ static int backupsBeforePerformance;
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Gamepad UI enabled"]);
     [self dismissPresented];
+    // Dismissing is asynchronous. Without this the next step can be handed the sheet it has just
+    // asked to close, and then assert the wrong title - which is a fault in the check, not in the
+    // switch. Measured on a loaded iPad Pro 13-inch (M5), 2026-11-13.
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
     NSString *config = [self configText];
     BOOL enabled = NO;
     assert([self gamepadAssignments:config enabled:&enabled] == 1 && enabled);
@@ -1956,6 +1960,7 @@ static int backupsBeforePerformance;
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Gamepad UI disabled"]);
     [self dismissPresented];
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
     BOOL enabled = YES;
     assert([self gamepadAssignments:[self configText] enabled:&enabled] == 1 && !enabled);
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text] isEqual:@"Gamepad UI"]);
