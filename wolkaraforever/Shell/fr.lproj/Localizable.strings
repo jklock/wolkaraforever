@@ -58,6 +58,10 @@
 "home.launcher.interfaceSetup.buttons.message" = "Quelle touche de manette chaque commande envoie. Les affectations de manette du jeu décident ensuite de ce que fait cette touche.";
 "home.launcher.interfaceSetup.buttons.choose" = "Choisissez la touche envoyée par cette commande";
 "home.launcher.interfaceSetup.reserve" = "Réserver une zone…";
+"home.launcher.interfaceSetup.simple" = "Disposition simple (deux sticks, boutons de façade, gâchettes hautes)";
+"home.launcher.interfaceSetup.stickButtons" = "Boutons des sticks (double appui L3/R3)";
+"home.launcher.interfaceSetup.addZone" = "Ajouter une zone de capacité";
+"home.launcher.interfaceSetup.clearZones" = "Retirer les zones de capacité";
 "home.launcher.interfaceSetup.reserve.hint" = "Faites glisser sur la partie de l’écran que les commandes doivent laisser libre - là où un add-on place ses propres boutons - puis touchez OK.";
 
 "home.addons.install" = "Installer des addons (CurseForge et direct)";
@@ -390,6 +394,7 @@
 "touch.settings.stickSize" = "Taille des sticks et boutons de façade";
 "touch.settings.stickSize.value" = "Taille des sticks et boutons de façade · %.0f%%";
 "touch.settings.outerTriggers" = "Gâchettes à l’extérieur";
+"touch.settings.outerTriggers.simple" = "La disposition simple n’a pas de gâchettes à déplacer.";
 "touch.settings.sticksOnly" = "Sticks et saut seulement (masquer les autres boutons)";
 "touch.settings.floatingSticks" = "Sticks flottants (sous le pouce, saut dans le coin)";
 "touch.settings.haptics" = "Retour haptique";
@@ -397,6 +402,21 @@
 "touch.settings.overlay.detail" = "Affichage des performances (FPS et température)";
 "touch.settings.edit" = "Modifier la disposition";
 "touch.settings.edit.detail" = "Déplacez chaque gâchette haute, le bouton + ou un stick avec son anneau. Les changements sont enregistrés sur l’appareil.";
+"touch.settings.simpleLayout" = "Disposition simple";
+"touch.settings.simpleLayout.hint" = "Les deux sticks, les quatre boutons de façade, les deux gâchettes hautes et le menu. Les gâchettes basses et la croix directionnelle sont masquées ; en désactivant, elles reviennent à leur place.";
+"touch.settings.simpleLayout.detail" = "Les deux sticks, A/B/X/Y, LB/RB et le menu. Complète affiche toutes les commandes et reste ce qu’une disposition existante conserve.";
+"touch.settings.stickButtons" = "Boutons des sticks (L3/R3)";
+"touch.settings.stickButtons.hint" = "Deux appuis rapides sur un stick enfoncent une fois son propre bouton. Le déplacement du stick ne change pas.";
+"touch.settings.stickButtons.unsupported" = "Cette manette n’a pas de bouton de stick, donc ceci reste désactivé.";
+"touch.settings.abilityZones" = "Zones de capacité";
+"touch.settings.abilityZones.add" = "Ajouter";
+"touch.settings.abilityZones.clear" = "Retirer";
+"touch.settings.abilityZones.count" = "%lu en place";
+"touch.settings.abilityZones.detail" = "Une zone est un bouton supplémentaire que vous placez ; tant que vous la touchez, elle envoie un bouton de la manette. Déplacez-la dans l’éditeur de disposition, touchez-la pour choisir le bouton.";
+"touch.zone.button" = "Zone de capacité : %@";
+"touch.zone.hint" = "Enfonce le bouton de manette affiché tant que vous la touchez. Dans l’éditeur de disposition, touchez-la pour en choisir un autre.";
+"touch.zone.editing" = "En cours de modification";
+"touch.zone.choose" = "Bouton envoyé par cette zone";
 "touch.settings.reset" = "Rétablir les réglages par défaut";
 "touch.leave" = "Quitter le jeu";
 "touch.leave.hint" = "Ferme WolkaraForever et le jeu ; tout ce que le jeu n’a pas enregistré est perdu. Rouvrez WolkaraForever pour le relancer.";

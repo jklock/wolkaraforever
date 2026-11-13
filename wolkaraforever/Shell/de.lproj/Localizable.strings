@@ -61,6 +61,10 @@
 "home.launcher.interfaceSetup.buttons.message" = "Welche Gamepad-Taste jedes Bedienelement sendet. Welche Aktion diese Taste auslöst, bestimmen die Controller-Belegungen des Spiels.";
 "home.launcher.interfaceSetup.buttons.choose" = "Wählen Sie die Taste, die dieses Bedienelement sendet";
 "home.launcher.interfaceSetup.reserve" = "Bereich freihalten…";
+"home.launcher.interfaceSetup.simple" = "Einfaches Layout (beide Sticks, Aktionstasten, Schultertasten)";
+"home.launcher.interfaceSetup.stickButtons" = "Stick-Tasten (zweimal tippen für L3/R3)";
+"home.launcher.interfaceSetup.addZone" = "Fähigkeitszone hinzufügen";
+"home.launcher.interfaceSetup.clearZones" = "Fähigkeitszonen entfernen";
 "home.launcher.interfaceSetup.reserve.hint" = "Ziehen Sie über den Teil des Bildschirms, den die Bedienelemente freilassen sollen - dort, wo ein Add-on seine eigenen Tasten hat - und tippen Sie auf OK.";
 
 "home.addons.install" = "Add-ons installieren (Curse & direkt)";
@@ -389,6 +393,7 @@
 "touch.settings.stickSize" = "Größe von Sticks und Aktionstasten";
 "touch.settings.stickSize.value" = "Größe von Sticks und Aktionstasten · %.0f %%";
 "touch.settings.outerTriggers" = "Trigger außen";
+"touch.settings.outerTriggers.simple" = "Das einfache Layout hat keine Trigger zum Verschieben.";
 "touch.settings.sticksOnly" = "Nur Sticks und Springen (andere Tasten ausblenden)";
 "touch.settings.floatingSticks" = "Schwebende Sticks (unter dem Daumen, Springen in der Ecke)";
 "touch.settings.haptics" = "Haptisches Feedback";
@@ -396,6 +401,21 @@
 "touch.settings.overlay.detail" = "Leistungsanzeige (FPS & Temperatur)";
 "touch.settings.edit" = "Layout bearbeiten";
 "touch.settings.edit.detail" = "Verschieben Sie jede Schultertaste, + oder einen Stick samt Ring. Änderungen werden auf diesem Gerät gespeichert.";
+"touch.settings.simpleLayout" = "Einfaches Layout";
+"touch.settings.simpleLayout.hint" = "Beide Sticks, die vier Aktionstasten, beide Schultertasten und das Menü. Trigger und Steuerkreuz sind ausgeblendet; ausgeschaltet stehen sie wieder an ihrem Platz.";
+"touch.settings.simpleLayout.detail" = "Beide Sticks, A/B/X/Y, LB/RB und das Menü. Voll zeigt alle Bedienelemente – das behält ein vorhandenes Layout.";
+"touch.settings.stickButtons" = "Stick-Tasten (L3/R3)";
+"touch.settings.stickButtons.hint" = "Zweimal kurz auf einen Stick tippen drückt seine eigene Taste einmal. Das Bewegen des Sticks bleibt unverändert.";
+"touch.settings.stickButtons.unsupported" = "Dieser Controller hat keine Stick-Taste, deshalb bleibt das aus.";
+"touch.settings.abilityZones" = "Fähigkeitszonen";
+"touch.settings.abilityZones.add" = "Hinzufügen";
+"touch.settings.abilityZones.clear" = "Entfernen";
+"touch.settings.abilityZones.count" = "%lu vorhanden";
+"touch.settings.abilityZones.detail" = "Eine Zone ist eine zusätzliche Taste, die Sie platzieren; solange Sie sie berühren, sendet sie eine Controller-Taste. Verschieben im Layout-Editor, dort antippen zum Auswählen der Taste.";
+"touch.zone.button" = "Fähigkeitszone: %@";
+"touch.zone.hint" = "Drückt die angezeigte Controller-Taste, solange Sie sie berühren. Im Layout-Editor tippen, um eine andere Taste zu wählen.";
+"touch.zone.editing" = "Wird bearbeitet";
+"touch.zone.choose" = "Taste dieser Zone";
 "touch.settings.reset" = "Auf Standard zurücksetzen";
 "touch.leave" = "Spiel verlassen";
 "touch.leave.hint" = "Schließt WolkaraForever und damit das Spiel; was das Spiel nicht gespeichert hat, geht verloren. Öffnen Sie WolkaraForever erneut, um es wieder zu starten.";

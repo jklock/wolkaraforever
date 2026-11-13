@@ -145,6 +145,10 @@ wolkaraforever/Touch/LayoutStore.h translation/AppKit/LayoutStore.h add
 wolkaraforever/Touch/LayoutStore.h launcher/WoW/LayoutStore.h add
 wolkaraforever/Touch/LayoutStore.m translation/AppKit/LayoutStore.m add
 wolkaraforever/Touch/LayoutStore.m launcher/WoW/LayoutStore.m add
+wolkaraforever/Touch/TouchCamera.h translation/AppKit/TouchCamera.h add
+wolkaraforever/Touch/TouchCamera.m translation/AppKit/TouchCamera.m add
+wolkaraforever/Touch/TouchControllerLog.h translation/AppKit/TouchControllerLog.h add
+wolkaraforever/Touch/TouchControllerLog.m translation/AppKit/TouchControllerLog.m add
 wolkaraforever/Touch/TouchControls.h translation/AppKit/TouchControls.h replace
 wolkaraforever/Touch/TouchControls.m translation/AppKit/TouchControls.m replace
 wolkaraforever/Touch/TouchGamepad.h translation/AppKit/TouchGamepad.h add

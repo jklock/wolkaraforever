@@ -207,6 +207,35 @@ inputs. New or reset layouts put the triggers inside; existing saved layouts kee
 positions until you choose otherwise. Connecting a physical controller closes the touch
 settings or layout editor and releases touch inputs.
 
+### Two arrangements, stick buttons and ability zones
+
+The on-screen gamepad has two arrangements, chosen in **Touch controls** or in the launcher's
+**Controller Layout…** sheet:
+
+- **Full** is every control the app has always drawn, and it is what every existing
+  installation keeps after an update.
+- **Simple** draws both sticks, A/B/X/Y, LB and RB at the far top corners, and the menu. The
+  triggers and the D-pad are not drawn. Its shoulders keep their own saved positions, so
+  dragging one in Simple never moves the one in Full; turning Simple off puts every control
+  back exactly where it was, and deletes nothing.
+
+**Stick buttons (L3/R3)** is off unless you turn it on. A double tap on a stick then presses
+that stick's own button once, for a moment; one tap does nothing, and moving the stick is
+unchanged - a drag is never a tap. It is released when its moment passes, and always when the
+controls hide, the keyboard opens, or the settings are opened. Apple's virtual controller does
+not carry a stick button at all (measured: its extended profile has the face buttons, the
+shoulders, the triggers, the menu, the D-pad and the sticks' directions, and nothing else), so
+on this build the row says the controller has no stick button and stays off.
+
+**Ability zones** are extra buttons you place: up to six, each sending one controller button
+while your finger is on it. In the layout editor you drag a zone to move it and tap it to
+choose which button it sends. Two zones may send the same button; the game sees that button
+held until the last finger leaves it. A zone sends nothing but that press and its release - no
+sequences, no repeats, and nothing the game did not receive from your touch.
+
+Every one of these is virtual-controller input: nothing here issues a game command, runs a
+macro, or inspects the game.
+
 Open **Key / Button Configuration** for voice input:
 
 1. Enable **Use a button to talk** and choose **Map a button**.
