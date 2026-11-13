@@ -621,3 +621,34 @@
 "shell.repairRequired.status" = "World of Warcraft meldete beschädigte Spieldateien.";
 "shell.repairRequired.message" = "World of Warcraft konnte nicht starten, weil installierte Daten beschädigt sind. Die Reparatur prüft die Spieldateien, lädt nur Ersatzdateien und behält Ihre Einstellungen und Add-ons.\n\nGemeldeter Fehler: %@";
 "shell.repairRequired.action" = "Spieldateien reparieren";
+
+/* ---- Chat Composer ---- */
+"chat.composer.state.opening" = "Chat wird geöffnet…";
+"chat.composer.state.listening" = "Hört zu…";
+"chat.composer.state.editing" = "Bearbeiten";
+"chat.composer.state.ready" = "Bereit zum Senden";
+"chat.composer.state.sending" = "Wird gesendet…";
+"chat.composer.state.cancelled" = "Abgebrochen";
+"chat.composer.action.send" = "Senden";
+"chat.composer.action.cancel" = "Abbrechen";
+"chat.composer.action.cancel.hint" = "Schließt den Composer, ohne etwas zu senden.";
+"chat.composer.action.listen" = "In den Composer diktieren";
+"chat.composer.action.stop" = "Diktat beenden";
+"chat.composer.action.settings" = "Einstellungen des Chat-Composers";
+"chat.composer.problem.notSent" = "Nachricht wurde nicht gesendet.";
+"chat.composer.problem.nothingHeard" = "Es wurde nichts verstanden.";
+"chat.composer.destination.hint" = "Sendet diese Nachricht an das Ziel, das dieser Chip nennt.";
+"chat.composer.placeholder" = "Nachricht verfassen · Senden tippt sie in den Chat und schließt ihn";
+"chat.composer.settings.title" = "Chat-Composer";
+"chat.composer.settings.message" = "Übertragung: %@. Ziele stellen einen Befehl vor die gesendete Zeile; sie gehören dir, nicht dem Spiel.";
+"chat.composer.settings.mode.review" = "Prüfen, dann senden";
+"chat.composer.settings.mode.classic" = "Klassisch direkt";
+"chat.composer.settings.useClassic" = "Klassisch direkt verwenden";
+"chat.composer.settings.useReview" = "Prüfen, dann senden verwenden";
+"chat.composer.settings.add" = "Ziel hinzufügen…";
+"chat.composer.settings.add.message" = "Ein Name für den Chip und der Befehl, den er sendet, zum Beispiel /say.";
+"chat.composer.settings.remove" = "%@ entfernen";
+"chat.composer.settings.save" = "Sichern";
+"chat.composer.settings.done" = "Fertig";
+"chat.composer.destination.title" = "Bezeichnung";
+"chat.composer.destination.command" = "Befehl, zum Beispiel /say";
