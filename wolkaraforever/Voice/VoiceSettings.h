@@ -89,6 +89,45 @@ typedef NS_ENUM(NSInteger, AKVoiceMode) {
 // so it is told which keys to swallow before the guest sees them.
 - (NSSet<NSNumber *> *)ownedKeyUsages;
 
+#pragma mark - Keeping one controller button out of the game
+
+// Whether this build can hold back *one selected controller button* before the game sees it.
+//
+// NO, and the answer is measured rather than assumed. iPadOS hands a physical pad's buttons to
+// every observer in the process, and the guest is an observer this app does not own: it links the
+// real GameController framework and reads `GCController.controllers` itself. An app can give a
+// button back to the system (`preferredSystemGestureState`), install a `pressedChangedHandler` -
+// one per element, so installing ours replaces the guest's rather than sparing it - or read a
+// value. None of those removes a press from another reader. The one build that could, the
+// `translation/GameController` adapter, hides every pad from every application, so it cannot claim
+// one button and preserve the rest.
+//
+// The settings therefore keep the note that already says so, and do not offer a switch that could
+// do nothing. `setControllerClaimSeamAvailableForTesting:` exists so the restore paths below are
+// exercised now rather than written blind for the day this answer changes.
+@property (class, nonatomic, readonly) BOOL controllerClaimIsAvailable;
++ (void)setControllerClaimSeamAvailableForTesting:(BOOL)available;
+
+// The persistence that does not depend on the answer above: one canonical controller button per
+// controller identity, default false, never invented. Read by this build, written only by a build
+// that can actually claim - so a preference made elsewhere is kept rather than dropped.
+- (BOOL)isElement:(NSString *)element claimedForDevice:(nullable NSString *)device;
+
+// Ask to hold one element of one controller back. NO - and nothing stored - when there is no seam
+// to honour it, or when the element is not a controller button: a stored "yes" that nothing
+// applies is worse than no record, because the page would then describe a state the app is not in.
+- (BOOL)claimElement:(NSString *)element device:(nullable NSString *)device;
+- (void)releaseClaimForElement:(NSString *)element device:(nullable NSString *)device;
+
+// What is held back right now, by element id. Empty in this build.
+@property (nonatomic, readonly, copy) NSSet<NSString *> *claimedElements;
+
+// Disable, disconnect, background, route failure, app exit: everything held back becomes the
+// game's again at once, and each one says so in `controller-input`. The saved preference stays,
+// so switching the feature back on restores the same choice. `reason` is one of
+// `disable`, `disconnect`, `background`, `route-failure`, `exit`.
+- (void)releaseClaimsWithReason:(NSString *)reason;
+
 
 // Fired when anything above changes, so the launcher can redraw and the input router
 // can re-decide which system gestures are ours to hold.

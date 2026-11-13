@@ -201,6 +201,8 @@ wolkaraforever/Voice/VoiceViewController.m launcher/Voice/VoiceViewController.m 
 wolkaraforever/Voice/tests/test_voice_app.m tests/test_voice_app.m add
 #
 # Input: any button, on any controller, in one stream (see docs/INPUT_TRIGGERS.md)
+wolkaraforever/Input/ControllerCommandIngress.h launcher/Input/ControllerCommandIngress.h add
+wolkaraforever/Input/ControllerCommandIngress.m launcher/Input/ControllerCommandIngress.m add
 wolkaraforever/Input/InputElement.h launcher/Input/InputElement.h add
 wolkaraforever/Input/InputElement.m launcher/Input/InputElement.m add
 wolkaraforever/Input/InputInterest.h launcher/Input/InputInterest.h add
@@ -209,6 +211,7 @@ wolkaraforever/Input/InputRouter.h launcher/Input/InputRouter.h add
 wolkaraforever/Input/InputRouter.m launcher/Input/InputRouter.m add
 wolkaraforever/Input/Trigger.h launcher/Input/Trigger.h add
 wolkaraforever/Input/Trigger.m launcher/Input/Trigger.m add
+wolkaraforever/Input/tests/test_controller_input_app.m tests/test_controller_input_app.m add
 #
 # CoreAudio: the audio adapter's test, which has to supply the host that asks
 # for the game's playback lease. Patch 0005 stopped the adapter taking the

@@ -52,6 +52,14 @@ extern NSNotificationName const AKChatComposerVoiceEventNotification;   // "AKCh
 extern NSString *const AKChatComposerEventKey;                          // "event"
 extern NSString *const AKChatComposerTextKey;                           // "text"
 extern NSString *const AKChatComposerReasonKey;                         // "reason"
+// Adapter -> app: what actually happened when the Composer was asked to open. `AKChatComposer-
+// OutcomeKey` is "opened", "refused" or "classic-direct", and the source is the one that asked.
+// Posted synchronously from the handler, which is what lets the shell report the interval from
+// the pad's callback to the Composer's own state being updated - the boundary the performance
+// contract names - instead of guessing at it from outside.
+extern NSNotificationName const AKChatComposerOpenResultNotification;   // "AKChatComposerOpenResult"
+extern NSString *const AKChatComposerOutcomeKey;                        // "outcome"
+
 // The identifier a destination chip carries, so a fixture (or a VoiceOver user) can name it.
 #define AKChatComposerDestinationIdentifierFormat "wolkaraforever.composer.destination.%@"
 

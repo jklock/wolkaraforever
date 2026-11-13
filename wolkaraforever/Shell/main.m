@@ -16,6 +16,7 @@
 #import "LibraryViewController.h"
 #import "../Controller/ControllerInspector.h"
 #import "../Controller/ControllerWindow.h"
+#import "../Input/ControllerCommandIngress.h"
 #import "../Input/InputRouter.h"
 #import "../Voice/Dictation.h"
 #import "../Voice/VoiceSettings.h"
@@ -70,6 +71,12 @@ static NSString *const AKChatComposerEventKey = @"event";
 static NSString *const AKChatComposerTextKey = @"text";
 static NSString *const AKChatComposerReasonKey = @"reason";
 static NSString *const AKChatComposerPhaseKey = @"phase";
+// Adapter -> app: what happened when the Composer was asked to open. It is
+// AKChatComposerOpenResultNotification and AKChatComposerOutcomeKey in
+// wolkaraforever/Touch/TouchControls.h, and the outcome is the adapter's word: "opened",
+// "refused" or "classic-direct".
+static NSString *const AKChatComposerOpenResultNotification = @"AKChatComposerOpenResult";
+static NSString *const AKChatComposerOutcomeKey = @"outcome";
 // The two settings the routing decision reads. AKChatDeliveryModeInForce/AKChatComposerIsAvailable
 // in wolkaraforever/Chat/ChatComposer.h own the same keys; the Composer is in the compatibility
 // library, so this file names them the way it names the notifications above.
@@ -374,6 +381,16 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
     }
 }
 
+// What happened when a mapped button asked for the Composer. The ingress owns this event, so the
+// filter (a mapped button only) and the millisecond boundary live beside the command path they
+// measure rather than here - which is also what lets the fixture assert them.
+- (void)chatComposerOpenFinished:(NSNotification *)note {
+    NSNumber *source = note.userInfo[AKChatComposerSourceKey];
+    NSString *outcome = note.userInfo[AKChatComposerOutcomeKey];
+    if (![outcome isKindOfClass:NSString.class]) outcome = @"unknown";
+    [AKControllerCommandIngress traceComposerOpenOutcome:outcome source:source.integerValue];
+}
+
 // What the adapter needs to know, and the only thing it can be told: which keys are the
 // user's, so the guest does not see them. Sent on every change to the settings - a mapping,
 // the switch, or voice going off - because each of those changes the answer.
@@ -612,6 +629,11 @@ static NSString *AKAudioStateDescription(void) {
     // compatibility library, so it asks and is answered by name; the voice module is here.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatComposerVoiceRequested:)
                                                name:AKChatComposerVoiceRequestNotification object:nil];
+    // The answer to a Composer open, which arrives before the press handler returns. Only a
+    // mapped button's outcome is this feature's to report; the toolbar and the keyboard are the
+    // adapter's own entry points and already say so in its log.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatComposerOpenFinished:)
+                                               name:AKChatComposerOpenResultNotification object:nil];
     // Tell the adapter which keys are the user's, so it can swallow them before the guest
     // sees them. Every change to the settings re-publishes: a mapping, the switch on the page
     // and switching voice off all change the answer. Published rather than asked because the
@@ -1867,6 +1889,14 @@ static void WKLanguageLogSink(NSString *tag, NSString *message) {
     UISceneConfiguration *c = [[UISceneConfiguration alloc] initWithName:@"Default" sessionRole:s.role];
     c.delegateClass = AKHostSceneDelegate.class;
     return c;
+}
+// A terminating app is still able to give a button back, and must: a claim that outlives the
+// process would be an input the player could not recover without relaunching, which is the one
+// state the gate forbids. `exit` is its own reason so the log distinguishes it from the background
+// case, which usually precedes it.
+- (void)applicationWillTerminate:(UIApplication *)application {
+    (void)application;
+    [AKVoiceSettings.shared releaseClaimsWithReason:@"exit"];
 }
 @end
 
