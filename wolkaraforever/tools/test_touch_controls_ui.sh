@@ -107,6 +107,8 @@ grep -q 'CHAT_COMPOSER PASS:' "$COMPOSER_LOG"
 # outcome and every entry source has to be visible in the log, and the stale-callback rule has
 # to be visible as a refusal rather than as silence.
 for EVENT in \
+    'chat-composer: open source=0' \
+    'chat-composer: open source=1' \
     'chat-composer: open source=2' \
     'chat-composer: state 2 -> 4' \
     'chat-composer: Send outcome=sent destination=direct' \

@@ -42,7 +42,7 @@ terminal states. `failed` keeps the card up, because that is the error the playe
 
 | Event | Result |
 | --- | --- |
-| Open (toolbar, keyboard microphone, mapped button) | one Return to open the game's chat, then capture starts |
+| Open (the card's microphone, the layer keyboard's microphone key, a mapped button) | one Return to open the game's chat, then capture starts; the entry is logged as `toolbar`, `keyboard` or `controller` |
 | Repeated Open while open | ignored: one Composer, one Return |
 | Partial result | draft only; **Send** disabled while provisional |
 | Final result | replaces the recognised segment, state `ready` |
