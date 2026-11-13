@@ -233,9 +233,11 @@ Do not guess from a screenshot alone. Include all of the following:
    signing data, pairing material, device identifiers, and unrelated personal paths before
    posting. Do not edit timestamps, error lines, or the surrounding context.
 
-Do not delete the app as a first repair step: it removes downloaded game data and enrollment
-state. If a download or startup fails, reopen the app, preserve its data, and use the
-Technical details message to identify the next step.
+Do not delete the app as a first repair step: it removes downloaded game data. The
+enrollment itself survives - the trust record is kept in the device's keychain, and the
+app recovers its reference to it at the next launch - so a reinstall normally does not
+mean enrolling again. If a download or startup fails, reopen the app, preserve its data,
+and use the Technical details message to identify the next step.
 
 For the boundary between feature availability and device-tested compatibility, see
 [Compatibility](../COMPATIBILITY.md).

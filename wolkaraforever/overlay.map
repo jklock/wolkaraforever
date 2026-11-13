@@ -164,9 +164,11 @@ wolkaraforever/Bridge/AuthorizationBlockedState.h authorization/App/Authorizatio
 wolkaraforever/Bridge/AuthorizationBlockedState.m authorization/App/AuthorizationBlockedState.m add
 wolkaraforever/Bridge/BackgroundPacing.m translation/Metal/BackgroundPacing.m add
 wolkaraforever/Bridge/DisplayRate.m translation/Metal/DisplayRate.m add
+wolkaraforever/Bridge/EnrollmentReference.swift authorization/Storage/EnrollmentReference.swift add
 wolkaraforever/Bridge/LocalServiceRetry.h authorization/App/LocalServiceRetry.h add
 wolkaraforever/Bridge/LocalServiceRetry.m authorization/App/LocalServiceRetry.m add
 wolkaraforever/Bridge/tests/test_authorization_blocked_state.m tests/test_authorization_blocked_state.m add
+wolkaraforever/Bridge/tests/test_enrollment_reference.swift tests/test_enrollment_reference.swift add
 wolkaraforever/Bridge/tests/test_local_service_retry.m tests/test_local_service_retry.m add
 wolkaraforever/Bridge/tests/test_packet_service_blocked.swift tests/test_packet_service_blocked.swift add
 wolkaraforever/Bridge/tests/test_packet_service_retry.swift tests/test_packet_service_retry.swift add
