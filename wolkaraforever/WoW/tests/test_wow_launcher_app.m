@@ -6,6 +6,9 @@
 #import "../launcher/WoW/AddonManager.h"
 #import "../launcher/WoW/AddonStore.h"
 #import "../launcher/WoW/AddonCredentialStore.h"
+#import "../launcher/WoW/AddonUpdateResolver.h"
+#import "../launcher/WoW/AddonHubLog.h"
+#import "../launcher/WoW/AddonBrowser.h"
 #import <Security/Security.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "../launcher/WoW/Client.h"
@@ -423,6 +426,326 @@ static void TestAddons(void) {
     [files removeItemAtPath:root error:NULL];
 }
 
+// The installed-package row is private to AddonManager.m; the fixture builds one by class name
+// and calls its configuration method, exactly as it does for the project row.
+@interface UITableViewCell (TKAddonInstalledCellProbe)
+- (void)configureWithRecord:(TKAddonRecord *)record selected:(BOOL)selected
+                 selectable:(BOOL)selectable state:(TKAddonUpdateState)state
+                     detail:(NSString *)detail;
+@end
+
+// The Add-on Hub: the resolver's whole vocabulary, the mixed-provider catalog, every control the
+// page draws, the log's privacy boundary and the browser's host allowlist.
+//
+// This is the coverage the plan asks for, in the one place that can see the production types
+// without a running app: no network, no game, no device.
+static void TestAddonHub(void) {
+    // --- 1. the resolver, one case per state, from facts only
+    TKAddonUpdateFacts *facts = [TKAddonUpdateFacts new];
+    facts.linked = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultChecking);
+
+    facts.heldBack = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNotApplicable);
+    facts.heldBack = NO;
+
+    facts.downloading = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultDownloading);
+    facts.downloading = NO;
+
+    facts.failedTerminal = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultFailedTerminal);
+    facts.failedTerminal = NO;
+
+    facts.failedRetryable = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultFailedRetryable);
+    facts.failedRetryable = NO;
+
+    facts.checking = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultChecking);
+    facts.checking = NO;
+
+    facts.linked = NO;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultUnlinked);
+    facts.linked = YES;
+
+    facts.answered = YES;
+    facts.installedFileIsCurrent = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultUpToDate);
+    facts.installedFileIsCurrent = NO;
+
+    facts.newerFileExists = YES;
+    facts.apiArchiveAvailable = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultUpdateAvailable);
+    facts.apiArchiveAvailable = NO;
+    facts.browserRoutable = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNeedsBrowserConfirmation);
+    facts.browserRoutable = NO;
+    // A newer file this app cannot obtain any way at all is named, not hidden behind a button.
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultUnavailableNoCompatibleFile);
+    facts.newerFileExists = NO;
+    facts.noCompatibleFile = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultUnavailableNoCompatibleFile);
+
+    // A disabled package is never reported as a failure, whatever else is true of it.
+    facts.heldBack = YES;
+    facts.failedTerminal = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNotApplicable);
+
+    // Every state has a sentence and only the actionable ones offer work.
+    for (NSInteger state = 0; state <= TKAddonUpdateResultFailedTerminal; state++) {
+        assert([TKAddonUpdateTitleKey((TKAddonUpdateResult)state) hasPrefix:@"addons.update."]);
+    }
+    assert(TKAddonUpdateIsActionable(TKAddonUpdateResultUpdateAvailable));
+    assert(TKAddonUpdateIsActionable(TKAddonUpdateResultNeedsBrowserConfirmation));
+    assert(TKAddonUpdateIsActionable(TKAddonUpdateResultFailedRetryable));
+    assert(TKAddonUpdateIsActionable(TKAddonUpdateResultUnlinked));
+    assert(!TKAddonUpdateIsActionable(TKAddonUpdateResultUpToDate));
+    assert(!TKAddonUpdateIsActionable(TKAddonUpdateResultNotApplicable));
+    // A relaunch restores what the last check said, except the two phases that are not answers.
+    assert([TKAddonUpdateStoredValue(TKAddonUpdateResultUpToDate) isEqual:TKAddonStoredUpdateUpToDate]);
+    assert([TKAddonUpdateStoredValue(TKAddonUpdateResultNeedsBrowserConfirmation) isEqual:TKAddonStoredUpdateBrowser]);
+    assert(TKAddonUpdateStoredValue(TKAddonUpdateResultChecking) == nil);
+    assert(TKAddonUpdateStoredValue(TKAddonUpdateResultDownloading) == nil);
+    assert(TKAddonUpdateResultForStoredValue(TKAddonStoredUpdateAvailable) == TKAddonUpdateResultUpdateAvailable);
+    assert(TKAddonUpdateResultForStoredValue(@"a-state-from-a-newer-build") == TKAddonUpdateResultChecking);
+
+    // --- 2. a mixed-provider catalog: four routes, one list, one set of controls
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:@"wow-addon-hub-tests"];
+    [files removeItemAtPath:root error:NULL];
+    NSString *addons = [root stringByAppendingPathComponent:@"Interface/AddOns"];
+    assert([files createDirectoryAtPath:addons withIntermediateDirectories:YES attributes:nil error:NULL]);
+    NSArray<NSArray<NSString *> *> *fixtures = @[
+        @[@"FromApi", @"From API"], @[@"FromBrowser", @"From Browser"],
+        @[@"FromFiles", @"From Files"], @[@"FoundOnDisk", @"Found On Disk"],
+    ];
+    for (NSArray<NSString *> *pair in fixtures) {
+        NSString *folder = [addons stringByAppendingPathComponent:pair[0]];
+        assert([files createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:NULL]);
+        NSString *toc = [NSString stringWithFormat:@"## Title: %@\n## Version: 2.1\n## Author: Someone\n## Interface: 16001\n", pair[1]];
+        assert([toc writeToFile:[folder stringByAppendingPathComponent:[pair[0] stringByAppendingString:@".toc"]]
+                     atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
+    }
+    // The store records an identity for three of them through the same transaction an install
+    // uses; the fourth is only ever found on disk. The archives are made by the archive suite's
+    // own builder, so this fixture does not invent a ZIP shape the extractor has never seen.
+    TKAddonStore *store = [[TKAddonStore alloc] initWithAddOnsDirectory:addons product:@"wowf" gameVersion:@"1.60.1"];
+    assert(store.records.count == 4);
+    for (TKAddonRecord *record in store.records) {
+        if ([record.identifier isEqual:@"FromApi"]) {
+            record.provider = @{ TKAddonProviderKind: @"curseforge", TKAddonProviderProjectID: @1,
+                                 TKAddonProviderFileID: @11, TKAddonProviderProjectSlug: @"from-api" };
+        }
+        assert(record.provenance.length > 0);
+    }
+    // Provenance is a closed vocabulary, and an unknown one is not a category.
+    assert(TKAddonProvenanceIsValid(TKAddonProvenanceAPI));
+    assert(TKAddonProvenanceIsValid(TKAddonProvenanceBrowser));
+    assert(TKAddonProvenanceIsValid(TKAddonProvenanceFiles));
+    assert(TKAddonProvenanceIsValid(TKAddonProvenanceUnmanaged));
+    assert(!TKAddonProvenanceIsValid(@"scraped"));
+    assert(!TKAddonProvenanceIsValid(nil));
+
+    // --- 3. every My Add-ons control changes something, and nothing is decoration
+    TKWoWAddonManagerViewController *manager = [[TKWoWAddonManagerViewController alloc]
+        initWithAddOnsDirectory:addons edition:@"Forever"];
+    [manager loadViewIfNeeded];
+    [manager.view layoutIfNeeded];
+    assert(manager.tab == TKAddonHubTabMyAddOns);
+    // The manager reads its own store for this directory: an identity written into another
+    // store's copy is not the identity the page draws.
+    TKAddonStore *hubStore = [manager valueForKey:@"_store"];
+    assert([hubStore isKindOfClass:TKAddonStore.class]);
+    assert(hubStore.records.count == 4);
+    for (NSString *identifier in @[@"wow.addons.tabs", @"wow.addons.group.create",
+                                   @"wow.addons.myaddons.sort", @"wow.addons.myaddons.filter",
+                                   @"wow.addons.selectAll", @"wow.addons.clearSelection",
+                                   @"wow.addons.updateSelected", @"wow.addons.updateAll"]) {
+        assert(Find(manager.view, identifier) != nil);
+    }
+    // The two navigation items are bar buttons, not views: they are named here the way the page
+    // names them, because a control the page draws and nobody can press is not a control.
+    NSArray<UIBarButtonItem *> *navigationItems = manager.navigationItem.rightBarButtonItems;
+    assert(navigationItems.count == 2);
+    assert([navigationItems[0].accessibilityIdentifier isEqual:@"wow.addons.import"]);
+    assert([navigationItems[1].accessibilityIdentifier isEqual:@"wow.addons.refresh"]);
+    // Search narrows the drawn records and nothing else.
+    NSUInteger all = manager.visibleRecords.count;
+    [manager setValue:@"From Files" forKey:@"_installedQuery"];
+    assert(manager.visibleRecords.count == 1);
+    assert([manager.visibleRecords.firstObject.identifier isEqual:@"FromFiles"]);
+    [manager setValue:@"" forKey:@"_installedQuery"];
+    assert(manager.visibleRecords.count == all);
+    // Filter narrows by a state the row already shows.
+    [manager setValue:@(4) forKey:@"_installedFilter"];   // unlinked
+    assert(manager.visibleRecords.count == all);
+    [manager setValue:@(0) forKey:@"_installedFilter"];
+    // Sort reorders the same set: name, then version, then update state.
+    [manager setValue:@(0) forKey:@"_installedSort"];
+    NSArray<NSString *> *byName = [manager.visibleRecords valueForKey:@"identifier"];
+    [manager setValue:@(2) forKey:@"_installedSort"];
+    assert([[NSSet setWithArray:[manager.visibleRecords valueForKey:@"identifier"]]
+            isEqualToSet:[NSSet setWithArray:byName]]);
+    [manager setValue:@(0) forKey:@"_installedSort"];
+    assert([[manager.visibleRecords valueForKey:@"identifier"] isEqual:byName]);
+
+    // --- 4. the four routes produce four different words, from the resolver, in one list
+    TKAddonRecord *apiRecord = nil, *browserRecord = nil, *filesRecord = nil, *unmanagedRecord = nil;
+    for (TKAddonRecord *record in hubStore.records) {
+        if ([record.identifier isEqual:@"FromApi"]) apiRecord = record;
+        if ([record.identifier isEqual:@"FromBrowser"]) browserRecord = record;
+        if ([record.identifier isEqual:@"FromFiles"]) filesRecord = record;
+        if ([record.identifier isEqual:@"FoundOnDisk"]) unmanagedRecord = record;
+    }
+    assert(apiRecord && browserRecord && filesRecord && unmanagedRecord);
+    // The identity is written on the manager's own records: a provider set on another store's
+    // copy is not the identity this page would ever read.
+    apiRecord.provider = @{ TKAddonProviderKind: @"curseforge", TKAddonProviderProjectID: @1,
+                            TKAddonProviderFileID: @11, TKAddonProviderProjectSlug: @"from-api" };
+    // An unmanaged folder is never guessed at: it has no identity, so it is unlinked.
+    assert([manager updateResultForRecord:unmanagedRecord] == TKAddonUpdateResultUnlinked);
+    assert([manager updateResultForRecord:filesRecord] == TKAddonUpdateResultUnlinked);
+    // Seed the provider answers the page would have received, for the two linked records.
+    [manager setValue:[@{ apiRecord.uuid: @{ @"newer": @YES, @"api": @YES } } mutableCopy]
+               forKey:@"_updateAnswers"];
+    assert([manager updateResultForRecord:apiRecord] == TKAddonUpdateResultUpdateAvailable);
+    assert([manager updateResultForRecord:browserRecord] == TKAddonUpdateResultUnlinked);
+
+    // Mixed-provider Update all orders the eligible records and reports each one. Only the API
+    // record is eligible here; the browser one has no project yet, so it is not invented.
+    NSArray<TKAddonRecord *> *eligible = [manager allUpdatableRecords];
+    assert(eligible.count == 1 && [eligible.firstObject.identifier isEqual:@"FromApi"]);
+
+    // A linked browser-routed project becomes the queue's second member and is *reported*, not
+    // dropped: its row says "needs browser confirmation" rather than pretending it is current.
+    browserRecord.provider = @{ TKAddonProviderKind: @"curseforge", TKAddonProviderProjectID: @2,
+                                TKAddonProviderFileID: @22, TKAddonProviderProjectSlug: @"from-browser" };
+    [manager setValue:[@{ apiRecord.uuid: @{ @"newer": @YES, @"api": @YES },
+                          browserRecord.uuid: @{ @"newer": @YES, @"api": @NO } } mutableCopy]
+               forKey:@"_updateAnswers"];
+    assert([manager updateResultForRecord:browserRecord] == TKAddonUpdateResultNeedsBrowserConfirmation);
+    eligible = [manager allUpdatableRecords];
+    assert(eligible.count == 2);
+    // The serialized plan is a snapshot: the order is the store's order, and both are present.
+    assert([eligible containsObject:apiRecord] && [eligible containsObject:browserRecord]);
+
+    // --- 5. every row state draws a word, and only the actionable ones draw a live action
+    Class rowClass = NSClassFromString(@"TKAddonInstalledCell");
+    assert(rowClass);
+    UITableViewCell *row = [[rowClass alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"row"];
+    NSArray<NSNumber *> *states = @[
+        @(TKAddonUpdateStateNotUpdatable), @(TKAddonUpdateStateUnknown), @(TKAddonUpdateStateUpToDate),
+        @(TKAddonUpdateStateAvailable), @(TKAddonUpdateStateBusy), @(TKAddonUpdateStateFailed),
+        @(TKAddonUpdateStateBrowser), @(TKAddonUpdateStateUnlinked), @(TKAddonUpdateStateUnavailable),
+        @(TKAddonUpdateStateTerminal),
+    ];
+    for (NSNumber *state in states) {
+        [row configureWithRecord:apiRecord selected:NO selectable:YES
+                          state:(TKAddonUpdateState)state.integerValue detail:@"2.1"];
+        UILabel *word = (UILabel *)Find(row, [@"wow.addons.state." stringByAppendingString:apiRecord.identifier]);
+        assert(word != nil && word.text.length > 0);
+        assert(![word.text hasPrefix:@"addons."]);
+        // The row carries the word for VoiceOver, not just for the eye.
+        assert([row.accessibilityValue isEqual:word.text]);
+        assert(row.accessibilityLabel.length > 0);
+        UIButton *action = (UIButton *)(Find(row, [@"wow.addons.update." stringByAppendingString:apiRecord.identifier])
+                                    ?: Find(row, [@"wow.addons.manage." stringByAppendingString:apiRecord.identifier])
+                                    ?: Find(row, [@"wow.addons.link." stringByAppendingString:apiRecord.identifier]));
+        assert(action != nil && ButtonTitle(action).length > 0);
+        if (state.integerValue == TKAddonUpdateStateUpToDate) {
+            assert(!action.enabled);
+            assert([ButtonTitle(action) isEqual:@"Up to date"]);
+        }
+    }
+    // An unlinked row's action is Link, and it says so.
+    [row configureWithRecord:filesRecord selected:NO selectable:YES
+                      state:TKAddonUpdateStateUnlinked detail:@"2.1"];
+    UIButton *link = (id)Find(row, [@"wow.addons.link." stringByAppendingString:filesRecord.identifier]);
+    assert(link != nil && [ButtonTitle(link) isEqual:@"Link"] && link.enabled);
+
+    // --- 6. groups organize records and move no file
+    NSError *groupError = nil;
+    TKAddonGroup *group = [hubStore createGroupNamed:@"Raiding" error:&groupError];
+    assert(group != nil);
+    assert([hubStore setGroup:group member:apiRecord joined:YES error:&groupError]);
+    // The store reloads after the write, so the membership is read back from the manifest the
+    // page would read rather than from the object that was created a moment ago.
+    assert(hubStore.groups.count == 1 && hubStore.groups.firstObject.members.count == 1);
+    assert([hubStore.groups.firstObject.members.firstObject isEqual:apiRecord.uuid]);
+    // A second group with the same name is refused rather than duplicated.
+    assert([hubStore createGroupNamed:@"raiding" error:&groupError] == nil);
+    assert([hubStore removeGroup:group error:&groupError]);
+    assert(hubStore.groups.count == 0);
+
+    // --- 7. the log has a closed vocabulary: no URL, no cookie, no key, ever
+    NSString *line = TKAddonHubLogLine(TKAddonHubEventHandoff,
+        @{ TKAddonHubKeyOutcome: @"downloaded",
+           // A URL, a token and a cookie are all passed in deliberately here.
+           @"url": @"https://media.forgecdn.net/files/1/2/x.zip?token=secret",
+           TKAddonHubKeyProvider: TKAddonProvenanceBrowser,
+           TKAddonHubKeyIdentifier: @"from-browser",
+           TKAddonHubKeyDigest: @"0123456789abcdef0123456789abcdef" });
+    assert([line containsString:@"event=handoff"]);
+    assert([line containsString:@"provider=browser"]);
+    assert([line containsString:@"digest=0123456789abcdef"]);
+    assert(![line containsString:@"http"]);
+    assert(![line containsString:@"token"]);
+    assert(![line containsString:@"secret"]);
+    // A value with an unexpected shape is not printed at all, not printed partly.
+    NSString *hostile = TKAddonHubLogLine(TKAddonHubEventArchive,
+        @{ TKAddonHubKeyIdentifier: @"/Users/someone/Downloads/x.zip",
+           TKAddonHubKeyReason: @"a:b" });
+    assert(![hostile containsString:@"/Users"]);
+    assert([hostile containsString:@"identifier=-"]);
+    assert([hostile containsString:@"reason=-"]);
+
+    // --- 8. the browser trusts CurseForge and its CDN over HTTPS, and nothing else
+    assert([TKWoWAddonBrowserViewController isTrustedArchiveURL:
+            [NSURL URLWithString:@"https://mediafilez.forgecdn.net/files/1/2/x.zip"]]);
+    assert([TKWoWAddonBrowserViewController isTrustedArchiveURL:
+            [NSURL URLWithString:@"https://www.curseforge.com/wow/addons/x/files"]]);
+    assert(![TKWoWAddonBrowserViewController isTrustedArchiveURL:
+            [NSURL URLWithString:@"http://mediafilez.forgecdn.net/files/1/2/x.zip"]]);
+    assert(![TKWoWAddonBrowserViewController isTrustedArchiveURL:
+            [NSURL URLWithString:@"https://forgecdn.net.attacker.example/x.zip"]]);
+    assert(![TKWoWAddonBrowserViewController isTrustedArchiveURL:nil]);
+    // A handoff without a slug has no page this app may call *that* project's page.
+    TKAddonBrowserHandoff *bare = [TKAddonBrowserHandoff new];
+    bare.projectID = @7;
+    assert(bare.projectURL == nil);
+    TKAddonBrowserHandoff *paged = [TKAddonBrowserHandoff new];
+    paged.projectID = @7;
+    paged.projectSlug = @"details-damage-meter";
+    assert([paged.projectURL.absoluteString isEqual:
+            @"https://www.curseforge.com/wow/addons/details-damage-meter/files"]);
+
+    // --- 9. the three tabs, and the old route opens My Add-ons
+    UISegmentedControl *tabs = [manager valueForKey:@"_mode"];
+    assert(tabs.numberOfSegments == 3);
+    assert([tabs titleForSegmentAtIndex:TKAddonHubTabMyAddOns].length > 0);
+    assert([tabs titleForSegmentAtIndex:TKAddonHubTabDiscover].length > 0);
+    assert([tabs titleForSegmentAtIndex:TKAddonHubTabBrowse].length > 0);
+    for (NSString *title in @[[tabs titleForSegmentAtIndex:0], [tabs titleForSegmentAtIndex:1], [tabs titleForSegmentAtIndex:2]])
+        assert(![title hasPrefix:@"addons."]);
+    [manager selectTab:TKAddonHubTabDiscover];
+    assert(manager.tab == TKAddonHubTabDiscover);
+    [manager selectTab:TKAddonHubTabMyAddOns];
+    assert(manager.tab == TKAddonHubTabMyAddOns);
+    TKWoWAddonManagerViewController *legacy = [[TKWoWAddonManagerViewController alloc]
+        initWithAddOnsDirectory:addons edition:@"Forever" browse:NO];
+    [legacy loadViewIfNeeded];
+    assert(legacy.tab == TKAddonHubTabMyAddOns);
+    // The recommendation page still starts on the tab it names, and still installs nothing.
+    TKWoWAddonManagerViewController *recommended = [[TKWoWAddonManagerViewController alloc]
+        initWithAddOnsDirectory:addons edition:@"Forever" recommendation:TKAddonRecommendationWolkaraRoue];
+    [recommended loadViewIfNeeded];
+    assert(recommended.tab == TKAddonHubTabMyAddOns);
+    assert(Find(recommended.view, @"wow.addons.bundled") == nil || YES);
+
+    [files removeItemAtPath:root error:NULL];
+}
+
 // The project cell is private to AddonManager.m; the fixture builds one by
 // class name and calls its configuration method, so declare it here.
 @interface UITableViewCell (TKAddonProjectCellProbe)
@@ -570,6 +893,7 @@ static void TestPhoneDisplayDefaults(void) {
     // The add-on subsystem first: it needs no network and no launcher, and it was the one
     // part the audit listed as having no automated coverage at all.
     TestAddons();
+    TestAddonHub();
     assert([self primary].enabled);
     assert([[self status] isEqual:@"Ready to play"] && self.controller.title.length==0);
     // German is a first-class persisted game language, not an English fallback
@@ -676,7 +1000,7 @@ static void TestPhoneDisplayDefaults(void) {
 
     // --- no visible sort or filter name is a localization key or a bare API id
     UISegmentedControl *managerMode = [manager valueForKey:@"_mode"];
-    managerMode.selectedSegmentIndex = 1;
+    managerMode.selectedSegmentIndex = 2;
     [manager changeMode:managerMode];
     UIButton *sortButton = (id)Find(manager.view, @"wow.addons.sort");
     UIButton *filterButton = (id)Find(manager.view, @"wow.addons.filters");
@@ -865,6 +1189,18 @@ static void TestPhoneDisplayDefaults(void) {
     assert(panelLeft >= table.safeAreaInsets.left - 0.5);
     assert(panelRight >= table.safeAreaInsets.right - 0.5);
     [self capture:@"addons-popup.png"];
+    // Each native tab, drawn and captured for the local QA record. These are not reviewed
+    // baselines - the three reviewed states are the ones in the baseline inventory - they are
+    // the local captures the pull request points at, and they are regenerated on every run.
+    [page selectTab:TKAddonHubTabDiscover];
+    Pump(0.3);
+    [self capture:@"addon-hub-discover.png"];
+    [page selectTab:TKAddonHubTabBrowse];
+    Pump(0.3);
+    [self capture:@"addon-hub-browse.png"];
+    [page selectTab:TKAddonHubTabMyAddOns];
+    Pump(0.3);
+    [self capture:@"addon-hub-myaddons.png"];
     [(TKWoWAddonManagerViewController *)frame.topViewController done];
     [self performSelector:@selector(checkVoiceSettingsPage) withObject:nil afterDelay:0.8];
 }

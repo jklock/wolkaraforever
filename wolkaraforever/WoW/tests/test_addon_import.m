@@ -129,7 +129,7 @@ int TestRealAddonImport(const char *fixtures, const char *temporary) {
         unsafe.managed = NO;
         CHECK(![store removeRecord:unsafe error:&error], "refuse an existing-package removal outside AddOns");
 
-        // --- format-1 -> format-2 migration, and recovery from an interrupted one
+        // --- format 1 and format 2 -> format 3 migration, and recovery from an interrupted one
         NSString *legacyRoot = [root stringByAppendingPathComponent:@"Legacy/Interface/AddOns"];
         CHECK([fm createDirectoryAtPath:[legacyRoot stringByAppendingPathComponent:@"LegacyAddon"]
                 withIntermediateDirectories:YES attributes:nil error:&error], "create a legacy installation");
@@ -142,27 +142,37 @@ int TestRealAddonImport(const char *fixtures, const char *temporary) {
         CHECK([formatOne writeToFile:[legacyRoot stringByAppendingPathComponent:@".wolkaraforever-addons.json"]
                 atomically:YES encoding:NSUTF8StringEncoding error:&error], "write a format-1 manifest");
         TKAddonStore *legacy = [[TKAddonStore alloc] initWithAddOnsDirectory:legacyRoot product:@"wowf" gameVersion:@"1.60.1"];
-        CHECK(legacy.manifestFormat == 2, "a format-1 manifest is migrated on first read");
+        CHECK(legacy.manifestFormat == 3, "a format-1 manifest is migrated on first read");
         CHECK(legacy.manifestRevision >= 1, "and the migration commits a revision");
         CHECK(legacy.records.count == 1 && legacy.records.firstObject.managed, "the package survives the migration");
         CHECK(legacy.records.firstObject.uuid.length > 0, "and gains a stable identity");
         CHECK(legacy.records.firstObject.pinned, "and keeps its pinned state");
+        // Format 3 states how the package arrived rather than inventing a route: a record with
+        // no CurseForge identity was imported as files.
+        CHECK([legacy.records.firstObject.provenance isEqualToString:TKAddonProvenanceFiles],
+              "and records the route it actually arrived by");
+        CHECK([legacy.records.firstObject.digest isEqualToString:@"abc"],
+              "and the digest the old format stored under its old name");
+        CHECK(legacy.records.firstObject.iconCacheKey.length > 0, "and an icon cache key");
+        CHECK(legacy.records.firstObject.installedAt == nil,
+              "and does not invent an install time the old format never recorded");
+        CHECK(legacy.groups.count == 0, "and no groups the old format never had");
 
         // The interrupted case: the journal is on disk, the format-2 write never finished.
         NSString *legacySupport = [legacy valueForKey:@"support"];
         CHECK([fm createDirectoryAtPath:legacySupport withIntermediateDirectories:YES attributes:nil error:&error], "create the legacy support folder");
         CHECK([formatOne writeToFile:[legacySupport stringByAppendingPathComponent:@"manifest-v1-backup.json"]
                 atomically:YES encoding:NSUTF8StringEncoding error:&error], "keep the format-1 backup");
-        CHECK([@"{\"from\":1,\"to\":2,\"revision\":2}" writeToFile:[legacySupport stringByAppendingPathComponent:@"manifest-journal.json"]
+        CHECK([@"{\"from\":1,\"to\":3,\"revision\":2}" writeToFile:[legacySupport stringByAppendingPathComponent:@"manifest-journal.json"]
                 atomically:YES encoding:NSUTF8StringEncoding error:&error], "and the journal");
-        CHECK([@"{\"format\":2,\"revision\":2,\"packages\":[{\"identifier\":\"LegacyAddon\"}]}"
+        CHECK([@"{\"format\":3,\"revision\":2,\"packages\":[{\"identifier\":\"LegacyAddon\"}]}"
                 writeToFile:[legacyRoot stringByAppendingPathComponent:@".wolkaraforever-addons.json"]
-                atomically:YES encoding:NSUTF8StringEncoding error:&error], "and a half-written format-2 manifest");
+                atomically:YES encoding:NSUTF8StringEncoding error:&error], "and a half-written format-3 manifest");
         TKAddonStore *recovered = [[TKAddonStore alloc] initWithAddOnsDirectory:legacyRoot product:@"wowf" gameVersion:@"1.60.1"];
         CHECK(recovered.recoveredInterruptedWrite, "an interrupted migration is reported as recovered");
         CHECK(recovered.records.count == 1 && recovered.records.firstObject.managed,
               "and the package that was there before is back");
-        CHECK(recovered.manifestFormat == 2, "and the retried migration completes");
+        CHECK(recovered.manifestFormat == 3, "and the retried migration completes");
 
         // Clean only this fixture's private support directories, never another import.
         CHECK([fm removeItemAtPath:support error:&error], "remove fixture staging and backups");

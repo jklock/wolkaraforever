@@ -74,24 +74,42 @@ German game text, and playing the German game does not change the launcher's lan
 
 ![Add-on Manager with no recorded installed add-ons in the simulator](screenshots/addon-manager.jpg)
 
-Choose **Install Addons (Curse & Direct)** to manage add-ons for the selected edition.
+Choose **Install Addons (Curse & Direct)** to manage add-ons for the selected edition. The
+page is native and has three tabs; it opens on **My Add-ons**.
 
-- **Installed** lists packages on the device. Search narrows the list and refresh reloads it.
-  Select a managed package to disable or restore it, pin or unpin its version, or remove it.
-  WolkaraForever records the packages it manages and removes only those packages.
-- **Browse CurseForge** searches CurseForge through its Core API. It needs an approved API
-  key; the key is stored in this device's Keychain. The browser supports search, sorting,
-  category and game-version filtering, configurable columns, project artwork and metadata,
-  and compatible-file selection. A project or file can still be unavailable through the API;
-  the app reports the provider's reason.
+- **My Add-ons** lists every installed package, whichever way it arrived: through the
+  CurseForge API, through the in-app browser, from a ZIP you picked in Files, or as a folder
+  that was already on the device. Search narrows the list; **Sort** and **Filter** change its
+  order and its contents. **Refresh** recalculates each package's state and asks the provider
+  again. Each row shows its name, version, author, the interface versions its TOC declares, and
+  one word about its update, with one action that goes with that word: **Update**, **Retry**,
+  **Open** (see below), **Link**, or **Manage**. Selecting a row opens its detail sheet, which
+  adds enable/disable, pin, remove, group membership and the package's activity. **Update All**
+  runs one package at a time and reports each result; while it runs the same button cancels it.
+- **Create Group** organizes the packages you already have into headings of your own. A group
+  moves no file and changes no ownership.
+- **Discover** shows featured, latest and popular projects from the API.
+- **Browse** searches CurseForge through its Core API. It needs an approved API key; the key is
+  stored in this device's Keychain. The browser supports search, sorting, category and
+  game-version filtering, configurable columns, project artwork and metadata, and
+  compatible-file selection.
+- A project whose author does not allow API downloads is not a dead end. Its row's action reads
+  **Open** and opens that exact project inside WolkaraForever, in an ordinary `WKWebView`. You
+  may sign in to the site there, and the app keeps that session in WebKit's own store; it never
+  reads, copies or logs a cookie. A ZIP the page hands over is installed under the project you
+  chose, then returns you to the same row. The app never opens Safari for this.
+- A package with no project identity shows **No linked project** and a **Link** action. Linking
+  records the project you choose through native search; nothing is guessed from the package's
+  name, and nothing on disk moves. Until you link it, the package is still fully manageable
+  locally - enabled, removed, grouped, searched - and simply takes no part in updates.
 - The **plus** control imports one add-on archive from Files. **Open Add-on Directory** opens
   the relevant folder. Nothing changes until you select an archive or confirm an action.
-- **Install Recommended Add-ons** opens the Add-On Manager rather than installing anything by
-  itself. On **iPadOS** it reads **Install Recommended Add-ons (Mac-Ever)** and opens Browse
-  filtered to Mac-Ever, with the same API key and Install flow as any other project. On
-  **iOS on Duo** it reads **Install Recommended Add-ons (WolkaraRoue)** and opens the bundled
-  WolkaraRoue package, showing its version and SHA-256; tap **Install** to install it. A
-  package that is not the one this app shipped is refused, and nothing is written.
+- **Install Recommended Add-ons** opens this page rather than installing anything by itself. On
+  **iPadOS** it reads **Install Recommended Add-ons (Mac-Ever)** and opens Browse filtered to
+  Mac-Ever, with the same API key and Install flow as any other project. On **iOS on Duo** it
+  reads **Install Recommended Add-ons (WolkaraRoue)** and opens My Add-ons with the bundled
+  WolkaraRoue package, showing its version and SHA-256; tap **Install** to install it. A package
+  that is not the one this app shipped is refused, and nothing is written.
 
 Do not change add-ons while a download, update, or game startup is active.
 

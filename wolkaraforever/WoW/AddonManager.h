@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import "AddonStore.h"
+#import "AddonUpdateResolver.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -25,6 +26,9 @@ typedef NS_ENUM(NSInteger, TKAddonInstallState) {
     TKAddonInstallStateInstalled,
     TKAddonInstallStateUnavailable,
     TKAddonInstallStateFailed,
+    // The project does not hand its archive to the API, so the row's action opens that exact
+    // project in the in-app browser. It is not a failure and must not read like one.
+    TKAddonInstallStateBrowser,
 };
 
 // Whether the CurseForge list has room for all seven columns at this width.
@@ -50,7 +54,29 @@ typedef NS_ENUM(NSInteger, TKAddonRecommendation) {
     TKAddonRecommendationWolkaraRoue,
 };
 
+// The three native tabs. My Add-ons is the page's default and the only one that manages
+// packages; Discover and Browse are the two ways to acquire another one.
+typedef NS_ENUM(NSInteger, TKAddonHubTab) {
+    TKAddonHubTabMyAddOns = 0,
+    TKAddonHubTabDiscover,
+    TKAddonHubTabBrowse,
+};
+
 @interface TKWoWAddonManagerViewController : UITableViewController
+// What the installed row is showing about one package's update. Chosen by TKAddonUpdateResolve,
+// never by the row; every case here has a sentence in the string tables.
+typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
+    TKAddonUpdateStateNotUpdatable = 0,
+    TKAddonUpdateStateUnknown,
+    TKAddonUpdateStateUpToDate,
+    TKAddonUpdateStateAvailable,
+    TKAddonUpdateStateBusy,
+    TKAddonUpdateStateFailed,
+    TKAddonUpdateStateBrowser,
+    TKAddonUpdateStateUnlinked,
+    TKAddonUpdateStateUnavailable,
+    TKAddonUpdateStateTerminal,
+};
 - (instancetype)initWithAddOnsDirectory:(NSString *)directory edition:(NSString *)edition;
 // Starts on Browse rather than Installed, for the development preview and for
 // a future direct link from the home page.
@@ -60,6 +86,22 @@ typedef NS_ENUM(NSInteger, TKAddonRecommendation) {
 - (instancetype)initWithAddOnsDirectory:(NSString *)directory edition:(NSString *)edition
                          recommendation:(TKAddonRecommendation)recommendation;
 @property(nonatomic, readonly) TKAddonRecommendation recommendation;
+// Which tab is showing. `MyAddOns` is where the page opens; `Browse` is what
+// -initWithAddOnsDirectory:edition:browse:YES asks for.
+@property(nonatomic, readonly) TKAddonHubTab tab;
+- (void)selectTab:(TKAddonHubTab)tab;
+// The installed records My Add-ons currently draws, after the search text, the filter and the
+// sort have been applied. A control that changes none of those changes nothing here either.
+@property(nonatomic, readonly, copy) NSArray<TKAddonRecord *> *visibleRecords;
+// What the resolver says about one record. The row, the bulk run and the fixture all ask this
+// instead of each keeping their own opinion.
+- (TKAddonUpdateResult)updateResultForRecord:(TKAddonRecord *)record;
+// That answer in the row's own vocabulary.
+- (TKAddonUpdateState)stateForRecord:(TKAddonRecord *)record;
+// The snapshot Update all would run: every record with a newer file, in the order the page would
+// take them. A browser-confirmation record is in this list, not dropped from it.
+- (NSArray<TKAddonRecord *> *)allUpdatableRecords;
+- (NSArray<TKAddonRecord *> *)selectedUpdatableRecords;
 // The CurseForge project the Mac-Ever recommendation is filtered to (1733200), or nil.
 @property(nonatomic, readonly, copy, nullable) NSNumber *recommendedProjectID;
 // The bundled WolkaraRoue package, once resolved: `archive` (NSURL), `manifest` (NSURL),

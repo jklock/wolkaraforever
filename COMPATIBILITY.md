@@ -42,6 +42,26 @@ dated history rather than current coverage.
 | Simulator | The launcher pages, touch controls, the on-screen gamepad, input/voice/config rules, the app language, and the UIKit-backed adapters | That our screens and adapters work against stand-ins. Nothing about physical Metal, the tunnel, or memory preparation. |
 | Device script | The on-device validation on an **iPad Pro (12.9-inch, 5th generation), iPadOS 27.0.1, Developer service mode**, at source revision `96133d9` - see note below: a guarded live-session install refusal, an authorized replacement after clean stop, existing game data still current, the app's own input, voice, and render-profile self-tests, and no active update write or current error file | That this build behaved that way on that iPad. Nothing about the game. |
 
+### Add-on Hub (2026-11-12)
+
+**Simulators only.** The native Add-ons page's three tabs, the row vocabulary and every toolbar,
+row and detail action were drawn and pressed on **iPhone Duo** and **iPad Pro 13-inch (M5)** by
+`wolkaraforever/tools/test_wow_launcher_ui.sh`. That run proves the page's layout on both form
+factors, the fixture's assertions, and the two reviewed baselines it re-records
+(`wow-addons-de.png`, `wow-addons-recommended-wolkararoue.png`, plus `addons-popup.png`).
+
+What it does **not** prove, and what has not been run:
+
+- **No physical-iPad run.** The iPad Pro 12.9-inch (5th generation) was not available for this
+  change, and no simulator result is presented as a physical one.
+- **No live CurseForge traffic.** No Core API key was configured in this environment, so API
+  Discover, an API install, and an in-app browser download were not exercised against the live
+  site. The browser's host allowlist, its project-URL construction and its refusal paths are
+  asserted without a network; a real download has not been observed.
+- **No game installation.** The launcher's own Add-ons route needs a working installation to
+  resolve `Interface/AddOns`, so the page was exercised in the fixture that links the production
+  classes rather than from the installed app's home page.
+
 ### iPhone
 
 One physical iPhone has been exercised: an **iPhone 16 Pro Max on iOS 27.0**, Developer service,

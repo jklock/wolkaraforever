@@ -47,13 +47,19 @@ wolkaraforever/Shell/tests/test_localization.m tests/test_localization.m add
 #
 # WoW: the launcher module, its test script source and its tests
 wolkaraforever/WoW/AddonArchive.swift launcher/WoW/AddonArchive.swift add
+wolkaraforever/WoW/AddonBrowser.h launcher/WoW/AddonBrowser.h add
+wolkaraforever/WoW/AddonBrowser.m launcher/WoW/AddonBrowser.m add
 wolkaraforever/WoW/AddonCredentialStore.h launcher/WoW/AddonCredentialStore.h add
 wolkaraforever/WoW/AddonCredentialStore.m launcher/WoW/AddonCredentialStore.m add
+wolkaraforever/WoW/AddonHubLog.h launcher/WoW/AddonHubLog.h add
+wolkaraforever/WoW/AddonHubLog.m launcher/WoW/AddonHubLog.m add
 wolkaraforever/WoW/AddonManager.h launcher/WoW/AddonManager.h add
 wolkaraforever/WoW/AddonManager.m launcher/WoW/AddonManager.m add
 wolkaraforever/WoW/AddonPackage.swift launcher/WoW/AddonPackage.swift add
 wolkaraforever/WoW/AddonStore.h launcher/WoW/AddonStore.h add
 wolkaraforever/WoW/AddonStore.m launcher/WoW/AddonStore.m add
+wolkaraforever/WoW/AddonUpdateResolver.h launcher/WoW/AddonUpdateResolver.h add
+wolkaraforever/WoW/AddonUpdateResolver.m launcher/WoW/AddonUpdateResolver.m add
 wolkaraforever/WoW/CASC.h launcher/WoW/CASC.h add
 wolkaraforever/WoW/CASC.m launcher/WoW/CASC.m add
 wolkaraforever/WoW/Client.h launcher/WoW/Client.h add
@@ -80,6 +86,7 @@ wolkaraforever/WoW/WoWViewController.m launcher/WoW/WoWViewController.m add
 wolkaraforever/WoW/tests/test_addon_archive.swift tests/test_addon_archive.swift add
 wolkaraforever/WoW/tests/test_addon_import.m tests/test_addon_import.m add
 wolkaraforever/WoW/tests/test_addon_package.swift tests/test_addon_package.swift add
+wolkaraforever/WoW/tests/test_addon_resolver.m tests/test_addon_resolver.m add
 wolkaraforever/WoW/tests/test_curseforge.m tests/test_curseforge.m add
 wolkaraforever/WoW/tests/test_device_profile.m tests/test_device_profile.m add
 wolkaraforever/WoW/tests/test_forever_config.m tests/test_forever_config.m add

@@ -31,16 +31,20 @@ python3 wolkaraforever/tools/package_addon_zip.py --output "$build/package" \
 
 wolkaraforever/tools/prepare.sh
 cd build/platform
-for source in AddonStore UpdateLock; do
+for source in AddonStore AddonHubLog AddonUpdateResolver UpdateLock; do
     xcrun clang -fobjc-arc -Wall -Wextra -Werror -Wno-deprecated-declarations -c "launcher/WoW/$source.m" -o "$build/$source.o"
 done
 # The store names the strings it shows through the app's localization service, so that file is
 # compiled in as it is in the app. Its tables are not in this bundle: the messages are not what
 # this test asserts, and the service answers with each key's own leaf name rather than a key.
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -Wno-deprecated-declarations -c launcher/App/WKLocalization.m -o "$build/WKLocalization.o"
+# The add-on hub's own log: the store records every archive transaction through it, and a test
+# that linked the store without it would be testing a build nobody ships.
+xcrun clang -fobjc-arc -Wall -Wextra -Werror -Wno-deprecated-declarations -c launcher/App/WolkaraForeverLog.m -o "$build/WolkaraForeverLog.o"
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -Ilauncher/WoW -c tests/test_addon_import.m -o "$build/import.o"
 xcrun swiftc -warnings-as-errors -I "$build" -L "$build" -lZIPFoundation \
     -Xlinker -rpath -Xlinker "$build" launcher/WoW/AddonArchive.swift \
-    tests/test_addon_archive.swift "$build/AddonStore.o" "$build/UpdateLock.o" "$build/import.o" \
-    "$build/WKLocalization.o" -o "$build/test_addon_archive"
+    tests/test_addon_archive.swift "$build/AddonStore.o" "$build/AddonHubLog.o" \
+    "$build/AddonUpdateResolver.o" "$build/UpdateLock.o" "$build/import.o" \
+    "$build/WKLocalization.o" "$build/WolkaraForeverLog.o" -o "$build/test_addon_archive"
 "$build/test_addon_archive" "$build/fixtures" "$build/package-fixtures"

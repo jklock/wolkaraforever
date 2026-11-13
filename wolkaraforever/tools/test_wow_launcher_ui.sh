@@ -28,7 +28,7 @@ xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-a
     launcher/Controller/ControllerInspector.m tests/test_wow_launcher_app.m \
     -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics \
     -framework Security -framework UniformTypeIdentifiers -framework GameController \
-    -framework AVFAudio -framework Speech -lz \
+    -framework AVFAudio -framework Speech -framework WebKit -lz \
     -o "$APP/WoWFixture"
 cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

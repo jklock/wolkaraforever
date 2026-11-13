@@ -621,3 +621,88 @@
 "shell.repairRequired.status" = "World of Warcraft meldete beschädigte Spieldateien.";
 "shell.repairRequired.message" = "World of Warcraft konnte nicht starten, weil installierte Daten beschädigt sind. Die Reparatur prüft die Spieldateien, lädt nur Ersatzdateien und behält Ihre Einstellungen und Add-ons.\n\nGemeldeter Fehler: %@";
 "shell.repairRequired.action" = "Spieldateien reparieren";
+
+/* Add-on Hub: die drei nativen Tabs. */
+"addons.tab.myAddons" = "Meine Add-ons";
+"addons.tab.discover" = "Entdecken";
+"addons.tab.browse" = "Durchsuchen";
+
+/* Add-on Hub: der Bezugsweg, nur als diagnostisches Detail. */
+"addons.source.api" = "CurseForge-API";
+"addons.source.browser" = "Browser in der App";
+"addons.source.files" = "Datei-Import";
+"addons.source.unmanaged" = "Auf dem Gerät gefunden";
+
+/* Add-on Hub: das eine Wort, das eine Zeile zu ihrem Update sagt. */
+"addons.update.upToDate" = "Aktuell";
+"addons.update.available" = "Update verfügbar";
+"addons.update.checking" = "Wird geprüft…";
+"addons.update.downloading" = "Wird geladen…";
+"addons.update.needsBrowser" = "Bestätigung im Browser nötig";
+"addons.update.unlinked" = "Kein verknüpftes Projekt";
+"addons.update.unavailable" = "Update nicht verfügbar";
+"addons.update.failedRetry" = "Prüfung fehlgeschlagen — erneut versuchen";
+"addons.update.failedTerminal" = "Prüfung fehlgeschlagen";
+"addons.update.heldBack" = "Zurückgehalten";
+"addons.update.notChecked" = "Noch nicht geprüft";
+"addons.update.cancelled" = "Abgebrochen";
+"addons.update.browserQueued" = "%lu Paket(e) brauchen ihre Projektseite im Browser. Ihre Zeilen sagen es.";
+
+/* Add-on Hub: Aktionen. */
+"addons.action.open" = "Öffnen";
+"addons.action.link" = "Verknüpfen";
+"addons.action.cancel" = "Abbrechen";
+
+/* Add-on Hub: Bedienelemente von Meine Add-ons. */
+"addons.myaddons.sort" = "Add-ons sortieren";
+"addons.myaddons.sort.name" = "Nach Name";
+"addons.myaddons.sort.version" = "Nach Version";
+"addons.myaddons.sort.update" = "Update-Status";
+"addons.myaddons.filter" = "Add-ons filtern";
+"addons.myaddons.filter.all" = "Alle";
+"addons.myaddons.filter.enabled" = "Aktiv";
+"addons.myaddons.filter.disabled" = "Deaktiviert";
+"addons.myaddons.filter.updatable" = "Mit Update";
+"addons.myaddons.filter.unlinked" = "Ohne Projekt";
+
+/* Add-on Hub: lokale Gruppen. */
+"addons.group.create" = "Gruppe erstellen";
+"addons.group.button" = "Gruppe";
+"addons.group.message" = "Eine Gruppe ordnet nur die Add-ons, die Sie schon haben. Keine Datei wird verschoben.";
+"addons.group.placeholder" = "Gruppenname";
+"addons.group.title" = "Gruppen";
+"addons.group.none" = "Es gibt noch keine Gruppen. Erstellen Sie zuerst eine.";
+"addons.group.membership" = "Wählen Sie die Gruppen, zu denen dieses Add-on gehört.";
+"addons.group.ungrouped" = "In keiner Gruppe";
+
+/* Add-on Hub: die Aktivitätszeile im Detailblatt. */
+"addons.detail.route" = "Stammt aus: %@";
+"addons.detail.installed" = "Installiert am %@";
+"addons.detail.checked" = "Zuletzt geprüft am %@";
+
+/* Add-on Hub: ein Paket mit seinem Projekt verknüpfen. */
+"addons.link.title" = "Projekt verknüpfen";
+"addons.link.message" = "Wählen Sie das CurseForge-Projekt, das dieses Add-on ist. Aus dem Namen wird nichts abgeleitet.";
+"addons.link.remove" = "Verknüpfung entfernen";
+"addons.link.search" = "CurseForge durchsuchen…";
+"addons.link.open" = "Projektseite öffnen";
+"addons.link.choose" = "Welches Projekt ist dieses Add-on?";
+"addons.link.noResults" = "Kein passendes Projekt gefunden. Es wurde nichts verknüpft.";
+
+/* Add-on Hub: der Browser in der App. */
+"addons.browser.title" = "CurseForge-Seite";
+"addons.browser.loading" = "Projektseite wird geladen…";
+"addons.browser.downloading" = "Datei wird geladen…";
+"addons.browser.offline" = "Die Projektseite konnte nicht geladen werden. Prüfen Sie die Verbindung und versuchen Sie es erneut.";
+"addons.browser.noPage" = "Diese App hat keine Projektseite für dieses Add-on. Verknüpfen Sie zuerst das Projekt.";
+"addons.browser.untrusted" = "Dieser Download kam nicht von CurseForge und wurde deshalb abgelehnt.";
+"addons.browser.failed" = "Der Download wurde nicht fertig. Es wurde nichts installiert.";
+"addons.browser.cancelled" = "Der Browser wurde geschlossen.";
+
+/* Add-on Hub: Entdecken. */
+"addons.discover.featured" = "Empfohlen";
+"addons.discover.latest" = "Neueste";
+"addons.discover.popular" = "Beliebt";
+"addons.discover.empty" = "Für diese Spielversion gibt es nichts zu entdecken.";
+"addons.discover.hint" = "Aktualisieren fragt CurseForge erneut.";
+
