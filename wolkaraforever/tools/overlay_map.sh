@@ -68,6 +68,17 @@ intent() {
         esac
     done
     echo "#"
+    echo "# Chat: the Composer, which is compiled into the same compatibility library as the"
+    echo "# controls it draws from - the draft editor, the card and the guest's key path all"
+    echo "# live there, and the app loads that library by name."
+    git ls-files wolkaraforever/Chat | while read -r f; do
+        case "$f" in
+            wolkaraforever/Chat/tests/*) dst=tests/${f#wolkaraforever/Chat/tests/};;
+            *) dst=translation/AppKit/${f#wolkaraforever/Chat/};;
+        esac
+        echo "$f $dst $(intent "$dst")"
+    done
+    echo "#"
     echo "# AppKit: the content-view sizing test for patch 0054, which has to make"
     echo "# its own window and host because a bare test process has neither."
     git ls-files wolkaraforever/AppKit | while read -r f; do
@@ -84,6 +95,11 @@ intent() {
             wolkaraforever/Bridge/tests/*) dst=tests/${f#wolkaraforever/Bridge/tests/};;
             wolkaraforever/Bridge/BackgroundPacing.m) dst=translation/Metal/BackgroundPacing.m;;
             wolkaraforever/Bridge/DisplayRate.m) dst=translation/Metal/DisplayRate.m;;
+            # The enrolment reference belongs with the pairing storage it reads
+            # and writes: the app, its tunnel extension and the storage probe all
+            # compile authorization/Storage, and the reference is nothing more
+            # than a second item in that same protected store.
+            wolkaraforever/Bridge/EnrollmentReference.swift) dst=authorization/Storage/EnrollmentReference.swift;;
             wolkaraforever/Bridge/LocalServiceRetry.*|wolkaraforever/Bridge/AuthorizationBlockedState.*) dst=authorization/App/${f#wolkaraforever/Bridge/};;
             *) echo "# not overlaid yet (source of a pending patch): $f"; continue;;
         esac

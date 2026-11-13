@@ -644,3 +644,34 @@
 "shell.repairRequired.status" = "World of Warcraft a signalé des fichiers de jeu endommagés.";
 "shell.repairRequired.message" = "World of Warcraft n’a pas pu démarrer car les données installées sont endommagées. La réparation vérifie les fichiers du jeu, ne télécharge que les remplacements et conserve vos réglages et vos add-ons.\n\nErreur signalée : %@";
 "shell.repairRequired.action" = "Réparer les fichiers du jeu";
+
+/* ---- Chat Composer ---- */
+"chat.composer.state.opening" = "Ouverture du chat…";
+"chat.composer.state.listening" = "Écoute…";
+"chat.composer.state.editing" = "Modification";
+"chat.composer.state.ready" = "Prêt à envoyer";
+"chat.composer.state.sending" = "Envoi…";
+"chat.composer.state.cancelled" = "Annulé";
+"chat.composer.action.send" = "Envoyer";
+"chat.composer.action.cancel" = "Annuler";
+"chat.composer.action.cancel.hint" = "Ferme le composeur sans rien envoyer.";
+"chat.composer.action.listen" = "Dicter dans le composeur";
+"chat.composer.action.stop" = "Arrêter la dictée";
+"chat.composer.action.settings" = "Réglages du composeur de chat";
+"chat.composer.problem.notSent" = "Le message n’a pas été envoyé.";
+"chat.composer.problem.nothingHeard" = "Rien n’a été entendu.";
+"chat.composer.destination.hint" = "Envoie ce message vers la destination nommée par ce bouton.";
+"chat.composer.placeholder" = "Composez un message · Envoyer l’écrit dans le chat et le referme";
+"chat.composer.settings.title" = "Composeur de chat";
+"chat.composer.settings.message" = "Remise : %@. Les destinations ajoutent une commande à la ligne envoyée ; elles vous appartiennent, pas au jeu.";
+"chat.composer.settings.mode.review" = "Relire puis envoyer";
+"chat.composer.settings.mode.classic" = "Classique direct";
+"chat.composer.settings.useClassic" = "Utiliser le mode classique direct";
+"chat.composer.settings.useReview" = "Utiliser relire puis envoyer";
+"chat.composer.settings.add" = "Ajouter une destination…";
+"chat.composer.settings.add.message" = "Un nom pour le bouton et la commande qu’il envoie, par exemple /say.";
+"chat.composer.settings.remove" = "Supprimer %@";
+"chat.composer.settings.save" = "Enregistrer";
+"chat.composer.settings.done" = "Terminé";
+"chat.composer.destination.title" = "Nom";
+"chat.composer.destination.command" = "Commande, par exemple /say";

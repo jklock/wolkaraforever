@@ -182,6 +182,20 @@ What you type goes to a draft first. **Done** on the system keyboard writes the 
 the selected game field and does not press Return; **Replace** does the same from the draft
 panel, and an empty draft clears the field. **↵** on the accessory bar is a plain Return.
 
+### The Chat Composer
+
+A new installation composes in-game messages in the **Chat Composer**: the same card, with a
+microphone, **Cancel**, **Send** and any destinations you have written yourself. The toolbar
+microphone, the keyboard's microphone key and a mapped controller button all open it, and nothing
+reaches the game until you press **Send** - which types the line once, presses Return once and
+closes the chat. **Cancel** closes the chat without sending a word. If you leave the app with a
+message half-written, it is still there when you come back; it is never sent for you.
+
+Open the card's gear to choose between **Review then Send** (the default) and **Classic direct**,
+and to add up to four destinations - a name on a chip and the command it puts in front of your
+line, for example `/say`. An installation that already had dictation settings keeps **Classic
+direct**, so nothing about the way it worked changes until you change it.
+
 The app's own language can be English, German, French, or follow the iPad - the row named
 **App language** changes the launcher's words immediately. World of Warcraft's download
 language is a separate setting (**Game language**) and offers English, French, Spanish and
@@ -262,9 +276,11 @@ Do not guess from a screenshot alone. Include all of the following:
    signing data, pairing material, device identifiers, and unrelated personal paths before
    posting. Do not edit timestamps, error lines, or the surrounding context.
 
-Do not delete the app as a first repair step: it removes downloaded game data and enrollment
-state. If a download or startup fails, reopen the app, preserve its data, and use the
-Technical details message to identify the next step.
+Do not delete the app as a first repair step: it removes downloaded game data. The
+enrollment itself survives - the trust record is kept in the device's keychain, and the
+app recovers its reference to it at the next launch - so a reinstall normally does not
+mean enrolling again. If a download or startup fails, reopen the app, preserve its data,
+and use the Technical details message to identify the next step.
 
 For the boundary between feature availability and device-tested compatibility, see
 [Compatibility](../COMPATIBILITY.md).

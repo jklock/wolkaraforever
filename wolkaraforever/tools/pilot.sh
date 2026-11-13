@@ -903,7 +903,13 @@ cmd_log() {
     # across launches, so "the app logged something" is not evidence about this launch.
     local before; before=$(cat "$SESSION/log-launches-before" 2>/dev/null || echo none)
     if [ "$before" != none ]; then
-        local now; now=$(grep -c ' launched ---$' "$APP_LOG" 2>/dev/null || echo 0)
+        # grep returns 1 when there are no matches. Do not append its fallback
+        # output to the successful `grep -c` count: `0\n0` breaks the numeric
+        # comparison below and can make a stale log look like a successful run.
+        local now; now=$(grep -c ' launched ---$' "$APP_LOG" 2>/dev/null || true)
+        case "$now" in
+            ''|*[!0-9]*) now=0 ;;
+        esac
         if [ "$now" -gt "$before" ]; then
             say "this log holds the launch from this run ($before before it, $now now)"
         else
