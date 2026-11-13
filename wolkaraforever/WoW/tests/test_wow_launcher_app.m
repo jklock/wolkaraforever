@@ -857,7 +857,9 @@ static void TestPhoneDisplayDefaults(void) {
     // iPad Pro 13-inch (M5) in the matrix of 2026-11-09, so a fixture still going after this
     // is stuck rather than slow. It has to stay well clear of the slower matrix device: the
     // first version of this guard used 60 s and killed a healthy iPad run two seconds early.
-    if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,180*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
+    // The Add-on Hub's assertions and the three tab captures cost the iPad lane about a third of
+    // a minute more, so the guard moved with them (measured 2026-11-13).
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,240*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
         fprintf(stderr,"WoW UIKit TIMEOUT\n"); _Exit(1);
     });
     // Watching for the software keyboard tells a shim-level input block apart
