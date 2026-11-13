@@ -157,9 +157,18 @@ static BOOL PumpUntil(BOOL (^condition)(void), NSTimeInterval limit) {
 // of those guesses has already failed on a freshly erased simulator with nothing wrong in the
 // app. This waits for the alert to be there.
 static UIAlertController *WaitForAlert(UIViewController *presenter, NSTimeInterval limit) {
-    PumpUntil(^{ return (BOOL)[presenter.presentedViewController isKindOfClass:UIAlertController.class]; }, limit);
+    // Only an alert that has finished arriving counts. A sheet that is on its way out is still
+    // `presentedViewController` until the transition ends, so a step that waits naively can be
+    // handed the sheet the previous step asked to close and then assert the wrong title - which
+    // reads as a fault in the app. Found on a loaded iPad Pro 13-inch (M5), 2026-11-13.
+    PumpUntil(^{
+        UIViewController *presented = presenter.presentedViewController;
+        return (BOOL)([presented isKindOfClass:UIAlertController.class] &&
+                      !presented.isBeingPresented && !presented.isBeingDismissed);
+    }, limit);
     UIViewController *presented = presenter.presentedViewController;
-    return [presented isKindOfClass:UIAlertController.class] ? (UIAlertController *)presented : nil;
+    if (![presented isKindOfClass:UIAlertController.class]) return nil;
+    return presented.isBeingDismissed ? nil : (UIAlertController *)presented;
 }
 // One way out, and only one. UIKit raises on the second one - that is the crash that
 // made Render Profile a dead row - so every sheet this page opens is asked.
@@ -818,6 +827,7 @@ static void TestPhoneDisplayDefaults(void) {
 @property(nonatomic) TKWoWAddonManagerViewController *probeManager;
 @property(nonatomic) NSUInteger launches, setups;
 - (UIButton *)row:(NSString *)identifier;
+- (id)settledPresentedController;
 @end
 @implementation TKWoWFixtureDelegate
 - (UIButton *)primary { return (id)Find(self.controller.view,@"wow.primary"); }
@@ -902,7 +912,7 @@ static void TestPhoneDisplayDefaults(void) {
     [self.controller render];
     assert([[(UIButton *)Find(self.controller.view,@"wow.preferences") configuration].title containsString:@"German"]);
     [self.controller choosePreference:NO];
-    UIAlertController *languages=(id)self.controller.presentedViewController;
+    UIAlertController *languages=[self settledPresentedController];
     assert([languages isKindOfClass:UIAlertController.class]);
     // French is a game language now, between English and Spanish as the downloader's own
     // list orders it, and it is named in the launcher's language rather than the game's.
@@ -1149,7 +1159,7 @@ static void TestPhoneDisplayDefaults(void) {
     [self performSelector:@selector(checkAddonsPopupSettled) withObject:nil afterDelay:0.6];
 }
 - (void)checkAddonsPopupSettled {
-    UINavigationController *frame=(id)self.controller.presentedViewController;
+    UINavigationController *frame=[self settledPresentedController];
     assert(frame!=nil);
     // Drawn and closed only once it is actually up: dismissing a sheet that is still
     // arriving is a race, and the race is the test's fault, not the app's.
@@ -1220,7 +1230,7 @@ static void TestPhoneDisplayDefaults(void) {
     [self performSelector:@selector(captureVoiceSettings) withObject:nil afterDelay:0.7];
 }
 - (void)captureVoiceSettings {
-    UINavigationController *frame=(id)self.controller.presentedViewController;
+    UINavigationController *frame=[self settledPresentedController];
     assert(frame!=nil && [frame.topViewController isKindOfClass:AKVoiceViewController.class]);
     [self.window layoutIfNeeded];
     [self capture:@"voice-settings.png"];
@@ -1235,7 +1245,7 @@ static void TestPhoneDisplayDefaults(void) {
     [self performSelector:@selector(captureVoiceTest) withObject:nil afterDelay:0.7];
 }
 - (void)captureVoiceTest {
-    UINavigationController *frame=(id)self.controller.presentedViewController;
+    UINavigationController *frame=[self settledPresentedController];
     assert(frame!=nil && [frame.topViewController isKindOfClass:AKVoiceTestViewController.class]);
     [self.window layoutIfNeeded];
     [self capture:@"voice-test.png"];
@@ -1507,9 +1517,29 @@ static void TestPhoneDisplayDefaults(void) {
 - (UISwitch *)toggle:(NSString *)identifier {
     return (id)Find(self.controller.view, [identifier stringByAppendingString:@".switch"]);
 }
+// The controller on top, once UIKit has finished moving it.
+//
+// A sheet that is arriving or leaving is still `presentedViewController`, and every step here is
+// scheduled with a fixed delay: reading the property then is a guess about how fast the machine
+// is, not a check. Measured on a loaded iPad Pro 13-inch (M5), 2026-11-13, where such a read
+// reported a nested sheet as missing when it was one transition away from being there.
+- (id)settledPresentedController {
+    PumpUntil(^{
+        UIViewController *presented = self.controller.presentedViewController;
+        return (BOOL)(presented != nil && !presented.isBeingPresented && !presented.isBeingDismissed);
+    }, 20.0);
+    return self.controller.presentedViewController;
+}
+
 - (void)dismissPresented {
+    // Waited for, not fired and forgotten. Dismissal is asynchronous, and the step after this one
+    // waits for *its* alert; if this one were still on screen it would be handed back instead, and
+    // the failure would be reported against the wrong control. Every step that closes a sheet goes
+    // through here, so this is where the wait belongs rather than in each of them.
     UIViewController *presented = self.controller.presentedViewController;
-    if (presented) [self.controller dismissViewControllerAnimated:NO completion:nil];
+    if (!presented) return;
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
 }
 - (NSString *)configText {
     return [NSString stringWithContentsOfFile:[fixture.directory stringByAppendingPathComponent:@"WTF/Config.wtf"]
@@ -1716,7 +1746,7 @@ static void TestPhoneDisplayDefaults(void) {
     // bundled-package flow itself, with its release and hash, is asserted in full below.
     [[self row:@"wow.addons.macEver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController != nil); }, 5.0);
-    UINavigationController *recommended = (id)self.controller.presentedViewController;
+    UINavigationController *recommended = [self settledPresentedController];
     assert([recommended isKindOfClass:UINavigationController.class]);
     // Dismissing a page sheet while it is still arriving leaves it presented, and the next
     // sheet then has nowhere to go. Wait for it to be on screen first.
@@ -1747,7 +1777,7 @@ static void TestPhoneDisplayDefaults(void) {
     [self capture:@"wow-launcher-ipados.png"];
     [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
-    UIAlertController *modeSheet = (id)self.controller.presentedViewController;
+    UIAlertController *modeSheet = [self settledPresentedController];
     assert([modeSheet.title isEqual:@"Interface Mode"]);
     assert(CancelActions(modeSheet) == 1);
     // Automatic names what this device would resolve to, even while iPadOS is what is in force.
@@ -1778,7 +1808,7 @@ static void TestPhoneDisplayDefaults(void) {
     // --- On iOS on Duo the recommendation opens the bundled package, explicitly.
     [[self row:@"wow.addons.macEver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController != nil); }, 5.0);
-    UINavigationController *bundledFrame = (id)self.controller.presentedViewController;
+    UINavigationController *bundledFrame = [self settledPresentedController];
     assert([bundledFrame isKindOfClass:UINavigationController.class]);
     TKWoWAddonManagerViewController *bundledPage = (id)bundledFrame.topViewController;
     assert([bundledPage isKindOfClass:TKWoWAddonManagerViewController.class]);
@@ -1827,7 +1857,7 @@ static void TestPhoneDisplayDefaults(void) {
     // Back to iPadOS through the same sheet: the recommendation stays our own add-on.
     [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
-    modeSheet = (id)self.controller.presentedViewController;
+    modeSheet = [self settledPresentedController];
     assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"iPadOS", @"iOS", @"✓ iOS on Duo", @"Cancel"])]);
     UIAlertAction *ipados = nil;
     for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iPadOS"]) ipados = action;
@@ -1900,7 +1930,7 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkResetConfirmation) withObject:nil afterDelay:0.5];
 }
 - (void)checkResetConfirmation {
-    UIAlertController *alert = (id)self.controller.presentedViewController;
+    UIAlertController *alert = [self settledPresentedController];
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Reset to default graphics settings?"]);
     assert([alert.message containsString:@"backup"]);
@@ -1941,10 +1971,6 @@ static int backupsBeforePerformance;
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Gamepad UI enabled"]);
     [self dismissPresented];
-    // Dismissing is asynchronous. Without this the next step can be handed the sheet it has just
-    // asked to close, and then assert the wrong title - which is a fault in the check, not in the
-    // switch. Measured on a loaded iPad Pro 13-inch (M5), 2026-11-13.
-    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
     NSString *config = [self configText];
     BOOL enabled = NO;
     assert([self gamepadAssignments:config enabled:&enabled] == 1 && enabled);
@@ -1960,7 +1986,6 @@ static int backupsBeforePerformance;
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Gamepad UI disabled"]);
     [self dismissPresented];
-    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
     BOOL enabled = YES;
     assert([self gamepadAssignments:[self configText] enabled:&enabled] == 1 && !enabled);
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text] isEqual:@"Gamepad UI"]);
@@ -2016,7 +2041,7 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkFallbackRenderSheet) withObject:nil afterDelay:0.6];
 }
 - (void)checkFallbackRenderSheet {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    UIAlertController *sheet = [self settledPresentedController];
     assert([sheet isKindOfClass:UIAlertController.class]);
     assert([sheet.title isEqual:@"Render profile"]);
     assert(CancelActions(sheet) == 1);
@@ -2031,7 +2056,7 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkDeviceProfileSheet) withObject:nil afterDelay:0.6];
 }
 - (void)checkDeviceProfileSheet {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    UIAlertController *sheet = [self settledPresentedController];
     assert([sheet isKindOfClass:UIAlertController.class]);
     assert([sheet.title isEqual:@"Device profile"]);
     assert(CancelActions(sheet) == 1);
@@ -2079,7 +2104,7 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkMeasuredRenderSheet) withObject:nil afterDelay:0.6];
 }
 - (void)checkMeasuredRenderSheet {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    UIAlertController *sheet = [self settledPresentedController];
     assert([sheet isKindOfClass:UIAlertController.class]);
     assert(CancelActions(sheet) == 1);
     assert([[sheet.actions valueForKey:@"title"] isEqualToArray:
@@ -2091,7 +2116,7 @@ static int backupsBeforePerformance;
     [self dismissPresented];
     RunAction(quality);
     Pump(0.6);
-    UIAlertController *confirm = (id)self.controller.presentedViewController;
+    UIAlertController *confirm = [self settledPresentedController];
     assert([confirm isKindOfClass:UIAlertController.class]);
     assert([confirm.title isEqual:@"Above the recommendation"]);
     assert([confirm.message containsString:@"more than this profile recommends"]);
@@ -2113,12 +2138,12 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(applyBalanced) withObject:nil afterDelay:0.6];
 }
 - (void)applyBalanced {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    UIAlertController *sheet = [self settledPresentedController];
     assert([sheet isKindOfClass:UIAlertController.class]);
     [self dismissPresented];
     RunAction(sheet.actions[1]);   // Balanced
     Pump(0.6);
-    UIAlertController *alert = (id)self.controller.presentedViewController;
+    UIAlertController *alert = [self settledPresentedController];
     assert([alert isKindOfClass:UIAlertController.class]);
     assert([alert.title isEqual:@"Render profile ready"]);
     assert([alert.message containsString:@"Nothing in the game's own settings was changed"]);
@@ -2237,7 +2262,7 @@ static int backupsBeforePerformance;
 // Declared on TKWoWViewController for the fixture; see the category above.
 
 - (void)checkNestedSheet {
-    UIAlertController *preferences = (id)self.controller.presentedViewController;
+    UIAlertController *preferences = [self settledPresentedController];
     assert([preferences isKindOfClass:UIAlertController.class]);
     assert([preferences.title isEqual:@"Download preferences"]);
     assert(CancelActions(preferences) == 1);
@@ -2255,7 +2280,7 @@ static int backupsBeforePerformance;
 }
 
 - (void)checkNestedSheetOpened {
-    UIAlertController *picker = (id)self.controller.presentedViewController;
+    UIAlertController *picker = [self settledPresentedController];
     assert([picker isKindOfClass:UIAlertController.class]);
     assert([picker.title isEqual:@"Download language"]);
     NSArray *titles = [picker.actions valueForKey:@"title"];
@@ -2272,7 +2297,7 @@ static int backupsBeforePerformance;
 }
 
 - (void)checkLanguageSheet {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    UIAlertController *sheet = [self settledPresentedController];
     assert([sheet isKindOfClass:UIAlertController.class]);
     assert([sheet.title isEqual:@"App language"]);
     assert([sheet.message containsString:@"game language"]);
@@ -2323,7 +2348,7 @@ static int backupsBeforePerformance;
     [self capture:@"wow-home-de.png"];
 
     // --- the one-time offer, localized, with the two answers it promises
-    UIAlertController *offer = (id)self.controller.presentedViewController;
+    UIAlertController *offer = [self settledPresentedController];
     assert([offer isKindOfClass:UIAlertController.class]);
     assert([offer.title isEqual:@"Auch die Spielsprache ändern?"]);
     NSArray *titles = [offer.actions valueForKey:@"title"];
@@ -2419,7 +2444,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self performSelector:@selector(checkGermanAddons) withObject:nil afterDelay:1.0];
 }
 - (void)checkGermanAddons {
-    UINavigationController *frame = (id)self.controller.presentedViewController;
+    UINavigationController *frame = [self settledPresentedController];
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
     assert([page.title isEqual:@"ADD-ON-VERWALTUNG"]);
@@ -2434,7 +2459,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self performSelector:@selector(checkGermanVoice) withObject:nil afterDelay:0.8];
 }
 - (void)checkGermanVoice {
-    UINavigationController *frame = (id)self.controller.presentedViewController;
+    UINavigationController *frame = [self settledPresentedController];
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
     assert([page isKindOfClass:AKVoiceViewController.class]);
@@ -2450,7 +2475,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self performSelector:@selector(checkGermanVoiceTest) withObject:nil afterDelay:0.8];
 }
 - (void)checkGermanVoiceTest {
-    UINavigationController *frame = (id)self.controller.presentedViewController;
+    UINavigationController *frame = [self settledPresentedController];
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
     assert([page isKindOfClass:AKVoiceTestViewController.class]);
@@ -2466,7 +2491,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self performSelector:@selector(checkGermanSettings) withObject:nil afterDelay:0.6];
 }
 - (void)checkGermanSettings {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    UIAlertController *sheet = [self settledPresentedController];
     assert([sheet isKindOfClass:UIAlertController.class]);
     assert([sheet.title isEqual:@"Einstellungen"]);
     assert([sheet.message containsString:@"Aktualisierungen werden automatisch installiert"]);
@@ -2562,7 +2587,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([self row:@"wow.edition"].enabled);
     [[self row:@"wow.edition"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     Pump(0.6);
-    UIAlertController *edition = (id)self.controller.presentedViewController;
+    UIAlertController *edition = [self settledPresentedController];
     assert([edition isKindOfClass:UIAlertController.class]);
     assert([edition.title isEqual:@"Choose your edition"]);
     assert(CancelActions(edition) == 1);
@@ -2589,7 +2614,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([self row:@"wow.preferences"].enabled);
     [[self row:@"wow.preferences"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     Pump(0.6);
-    UIAlertController *preferences = (id)self.controller.presentedViewController;
+    UIAlertController *preferences = [self settledPresentedController];
     assert([preferences isKindOfClass:UIAlertController.class]);
     assert([preferences.title isEqual:@"Download preferences"]);
     assert(CancelActions(preferences) == 1);
@@ -2599,7 +2624,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     RunAction(region);
     Pump(0.7);
-    UIAlertController *regions = (id)self.controller.presentedViewController;
+    UIAlertController *regions = [self settledPresentedController];
     assert([regions isKindOfClass:UIAlertController.class]);
     assert([regions.title isEqual:@"Region"]);
     assert(CancelActions(regions) == 1);
@@ -2619,14 +2644,14 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // page started. The row's title follows the change both ways.
     [[self row:@"wow.preferences"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     Pump(0.6);
-    preferences = (id)self.controller.presentedViewController;
+    preferences = [self settledPresentedController];
     region = nil;
     for (UIAlertAction *action in preferences.actions) if ([action.title isEqual:@"Region"]) region = action;
     assert(region != nil);
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     RunAction(region);
     Pump(0.7);
-    regions = (id)self.controller.presentedViewController;
+    regions = [self settledPresentedController];
     UIAlertAction *europe = nil;
     for (UIAlertAction *action in regions.actions) if ([action.title isEqual:@"Europe"]) europe = action;
     assert(europe != nil);
@@ -2672,7 +2697,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(gear.enabled);
     TapBarItem(gear);
     Pump(0.7);
-    UIAlertController *settings = (id)self.controller.presentedViewController;
+    UIAlertController *settings = [self settledPresentedController];
     assert([settings isKindOfClass:UIAlertController.class]);
     assert([settings.title isEqual:@"Settings"]);
     assert(CancelActions(settings) == 1);
@@ -2694,7 +2719,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // ... and About, which pushes its page onto the launcher's own stack.
     TapBarItem(gear);
     Pump(0.7);
-    settings = (id)self.controller.presentedViewController;
+    settings = [self settledPresentedController];
     assert([settings isKindOfClass:UIAlertController.class]);
     UIAlertAction *about = nil;
     for (UIAlertAction *action in settings.actions) if ([action.title isEqual:@"About and open-source licenses"]) about = action;
