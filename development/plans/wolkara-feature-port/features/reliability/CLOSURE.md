@@ -224,10 +224,13 @@ rejected drawable.
 | `test_translation_sim.sh` - iPhone Duo | PASS |
 | `test_enrollment_reference_sim.sh` - both simulators | PASS |
 | `test_background_pacing_sim.sh` - both simulators | PASS |
+| `check_ui_policy.sh` - iPhone Duo and iPad Pro 13-inch (M5) | PASS - both fixtures `WoW UIKit PASS`, both `UI baseline comparison passed`, `UI policy: PASS` |
 
 Baselines: none re-recorded. No launcher page, label, placement or screenshot changed, so
-there is no UI-review amendment for this work and `wow-*`/`voice-*`/`addons-*` baselines are
-untouched.
+there is no UI-review amendment for this work; `check_ui_policy.sh` ran the fixture on both
+matrix devices and both baseline comparisons passed, so the launcher contract is where it
+was. (Two earlier attempts at that gate were killed from outside while another run held the
+same simulators; the run recorded here is the one that completed.)
 
 Generated output (build logs, reports, probe reports) stays in ignored
 `build/`; nothing from a run is committed.
