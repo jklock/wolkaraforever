@@ -2123,7 +2123,7 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkMeasuredRenderSheet) withObject:nil afterDelay:0.6];
 }
 - (void)checkMeasuredRenderSheet {
-    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Draw a new control", 20.0);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Render profile", 20.0);
     assert(sheet != nil);
     assert(CancelActions(sheet) == 1);
     assert([[sheet.actions valueForKey:@"title"] isEqualToArray:
@@ -2660,7 +2660,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     RunAction(region);
     Pump(0.7);
-    regions = WaitForSheetTitled(self.controller, @"Download region", 20.0);
+    regions = WaitForSheetTitled(self.controller, @"Region", 20.0);
     assert(regions != nil);
     UIAlertAction *europe = nil;
     for (UIAlertAction *action in regions.actions) if ([action.title isEqual:@"Europe"]) europe = action;
