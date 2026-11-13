@@ -113,7 +113,6 @@ static BOOL hardwareKeyboardAttached(void) {
 - (BOOL)composerInReviewMode;
 - (void)draftEditorChanged:(NSString *)text;
 - (void)composerTakesDraft:(NSString *)text;
-- (void)startOrStopComposerListening;
 - (void)showComposerSettings;
 @end
 
@@ -1332,6 +1331,15 @@ static const unsigned short AKKeyF12 = 111;
                            forState:UIControlStateNormal];
     _composerListenButton.accessibilityLabel = AKHostLocalized(composer.capturing
         ? @"chat.composer.action.stop" : @"chat.composer.action.listen");
+    // VoiceOver: the card says its condition as a value and reads in one fixed order,
+    // exposing only the controls this mode shows - the classic card keeps Clear and
+    // Replace, and the Composer card puts its own row after the draft.
+    _composer.accessibilityValue = stateText;
+    _composer.accessibilityViewIsModal = YES;
+    _composer.accessibilityElements = active
+        ? @[_composerLabel, _keyboardInput, _composerChips, _composerCancelButton,
+            _composerListenButton, _composerSettingsButton, _composerSendButton]
+        : @[_composerLabel, _keyboardInput, _clearDraftButton, _insertDraftButton];
     [self rebuildDestinationChips];
     [self updateDraftButtons];
     if (self.superview) [self placeToolbarInHost:self.superview];
@@ -1403,6 +1411,15 @@ static const unsigned short AKKeyF12 = 111;
 
 - (void)composerListen {
     AKChatComposer *composer = AKChatComposer.shared;
+    if (composer.state == AKChatComposerStateIdle) {
+        // The toolbar's microphone, before any session: an Open like the layer
+        // keyboard's key and the mapped button, so the game's chat is opened once and
+        // listening starts. Capture with no open chat would record words with nowhere
+        // to put them.
+        AKLog(@"chat-composer: the card's microphone opens a session");
+        [self openChatComposerFromSource:AKChatComposerSourceToolbar];
+        return;
+    }
     if (composer.capturing) [composer pauseForEditing];
     else [composer resumeCapture];
     [self applyComposerState];

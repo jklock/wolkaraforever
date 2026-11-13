@@ -30,8 +30,9 @@ extern NSString *const AKTouchControlsDefaultsKey;   // "AKTouchControls"
 // adapter is a signed dylib the app does not link, so a call cannot exist.
 //
 // App -> adapter: open the Composer. `AKChatComposerSourceKey` carries an
-// `AKChatComposerSource` as an NSNumber. Posted by the shell for a mapped button, and read
-// here for the toolbar and the keyboard, which are this library's own.
+// `AKChatComposerSource` as an NSNumber. The shell posts it for a mapped button; this library
+// posts it for the two entries it owns - the card's microphone (the toolbar's) and the layer
+// keyboard's microphone key - and reads all of them.
 extern NSNotificationName const AKChatComposerOpenNotification;   // "AKChatComposerOpen"
 extern NSString *const AKChatComposerSourceKey;                   // "source"
 // "began" or "ended", for a hold-style mapped button: the press opens and starts listening,
