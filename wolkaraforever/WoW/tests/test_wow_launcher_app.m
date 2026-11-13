@@ -1552,27 +1552,6 @@ static void TestPhoneDisplayDefaults(void) {
     return self.controller.presentedViewController;
 }
 
-// Every step in this script is scheduled with a fixed delay, and UIKit's presentations and
-// dismissals are asynchronous: a step can begin while a sheet is still arriving or leaving. Rather
-// than teach each of the forty steps to wait, the schedule waits - the selector runs only once
-// nothing is mid-transition. This is the one place that decides it, so a step cannot be written
-// that forgets.
-- (void)performSelector:(SEL)selector withObject:(id)argument afterDelay:(NSTimeInterval)delay {
-    __weak TKWoWFixtureDelegate *weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        TKWoWFixtureDelegate *self = weakSelf;
-        if (!self) return;
-        PumpUntil(^{
-            UIViewController *presented = self.controller.presentedViewController;
-            return (BOOL)(presented == nil ||
-                          (!presented.isBeingPresented && !presented.isBeingDismissed));
-        }, 20.0);
-        void (*step)(id, SEL, id) = (void *)[self methodForSelector:selector];
-        step(self, selector, argument);
-    });
-}
-
 - (void)dismissPresented {
     // Waited for, not fired and forgotten. Dismissal is asynchronous, and the step after this one
     // waits for *its* alert; if this one were still on screen it would be handed back instead, and
