@@ -3,6 +3,8 @@
 #import "AKHostLocalization.h"
 #import "InterfaceMode.h"
 #import "TouchTrackpad.h"
+#import "TouchCamera.h"
+#import "TouchControllerLog.h"
 #import "TouchGamepadLayout.h"
 #import "TouchGamepad.h"
 #import "TouchHaptics.h"
@@ -472,7 +474,10 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     AKTouchKeyboardView *_layerKeyboard;
     NSTimer *_holdTimer;
     AKKeyboardTextView *_keyboardInput;
-    AKTrackpad _pad;
+    // The direct touch camera, with this app's lifecycle around it: one gesture at a time, one
+    // way out of it, and a centroid jump treated as a new gesture rather than a drag.
+    AKTouchCameraGesture _camera;
+    CGSize _cameraSurface;
     AKTouchHaptics *_haptics;
     AKTouchGamepad *_gamepad;
     BOOL _tookOwnPlace;
@@ -632,6 +637,9 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     (void)notification;
     AKGamepadLayout *layout = [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
     _haptics.enabled = layout.hapticsEnabled;
+    // The arrangement, the stick buttons and the zones are in the same dictionary, so the
+    // gamepad has to read it again whenever it changes - including when the launcher wrote it.
+    [_gamepad reloadLayout];
     NSMutableArray *buttons = [@[_trackpadButton, _keyboardButton, _gamepadButton, _settingsButton, _leaveButton]
         mutableCopy];
     // The handle exists only in the mobile interface; an array literal would refuse a nil.
@@ -738,6 +746,13 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 
 - (void)layoutSubviews {
     [super layoutSubviews];
+    // A rotation or a resize changes the space the remembered centroid was measured in, so the
+    // gesture is closed rather than dragged by a delta that belongs to a different screen.
+    CGSize surface = self.superview.bounds.size;
+    if (!CGSizeEqualToSize(surface, _cameraSurface)) {
+        if (AKTouchCameraIsActive(&_camera)) [self cancelCameraGesture:@"resize"];
+        _cameraSurface = surface;
+    }
     if (self.superview) [self placeToolbarInHost:self.superview];
     _trackpadButton.frame = CGRectMake(0, 0, 44, 44);
     _keyboardButton.frame = _toolbarCollapsed ? CGRectMake(0, 0, 44, 34) : CGRectMake(52, 0, 44, 44);
@@ -749,7 +764,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     _toolbarHandle.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
 }
 - (void)setTrackpadEnabled:(BOOL)enabled {
-    [self cancelTouches];
+    [self cancelCameraGesture:@"settings"];
     _trackpadEnabled = enabled;
     _trackpadButton.tintColor = enabled ? UIColor.systemCyanColor : UIColor.whiteColor;
     _trackpadButton.accessibilityLabel = enabled ? AKHostLocalized(@"touch.trackpad.disable") : AKHostLocalized(@"touch.trackpad.enable");
@@ -763,7 +778,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 - (BOOL)gamepadEnabled { return _gamepadEnabled; }
 - (BOOL)configuring { return _gamepad.configuring; }
 - (void)showControlSettings {
-    [self cancelTouches]; [self dismissKeyboard];
+    [self cancelCameraGesture:@"settings"]; [self dismissKeyboard];
     // The gamepad owns the settings sheet, so we open it here rather than asking a
     // host that may have no such thing.
     [_gamepad toggleSettings];
@@ -779,7 +794,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 // The confirmation says the rest plainly because there is no way around it: one guest per
 // process, so WolkaraForever cannot put its launcher back afterwards - opening WolkaraForever again does.
 - (void)leaveGame {
-    [self cancelTouches]; [self dismissKeyboard];
+    [self cancelCameraGesture:@"leave"]; [self dismissKeyboard];
     // One question, and no request to the guest.
     //
     // Asking the guest's own application object to terminate was tried first and is not kept.
@@ -874,7 +889,7 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
         [self.delegate touchKeyboardVisibilityChanged:self.keyboardVisible];
 }
 - (void)toggleKeyboard {
-    [self cancelTouches];
+    [self cancelCameraGesture:@"keyboard"];
     if (self.keyboardVisible) [self dismissKeyboard];
     else [self becomeFirstResponder];
 }
@@ -1142,7 +1157,7 @@ static const unsigned short AKKeyF12 = 111;
         _gamepad.visibilityChanged = ^(BOOL visible) {
             AKTouchControls *controls = weakSelf;
             if (!controls) return;
-            [controls cancelTouches];
+            [controls cancelCameraGesture:@"controller"];
             [controls setGamepadVisible:visible];
         };
         _gamepad.enabled = _gamepadEnabled;
@@ -1153,7 +1168,8 @@ static const unsigned short AKKeyF12 = 111;
 
 - (void)processTouches:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     if (!self.trackpadEnabled) return;
-    for (UITouch *touch in touches) if (touch.phase == UITouchPhaseCancelled) [self cancelTouches];
+    for (UITouch *touch in touches)
+        if (touch.phase == UITouchPhaseCancelled) { [self cancelTouches]; return; }
     unsigned count = 0;
     CGPoint center = CGPointZero;
     for (UITouch *touch in event.allTouches) {
@@ -1163,28 +1179,39 @@ static const unsigned short AKKeyF12 = 111;
         center.x += point.x; center.y += point.y; count++;
     }
     if (count) { center.x /= count; center.y /= count; }
-    AKTrackpadUpdate(&_pad, count, center.x, center.y, event.timestamp, AKEmitTouch, (__bridge void *)self);
+    AKTouchCameraUpdate(&_camera, count, center.x, center.y, event.timestamp,
+                        self.superview.bounds.size, AKEmitTouch, (__bridge void *)self);
     [_holdTimer invalidate]; _holdTimer = nil;
-    if (_pad.fingers && !_pad.blocked && !_pad.lifting && !_pad.dragging && _pad.travelled <= 8) {
+    if (_camera.pad.fingers && !_camera.pad.blocked && !_camera.pad.lifting && !_camera.pad.dragging &&
+        _camera.pad.travelled <= 8) {
         __weak AKTouchControls *weakSelf = self;
-        _holdTimer = [NSTimer timerWithTimeInterval:MAX(0.01, _pad.started + 0.46 - NSProcessInfo.processInfo.systemUptime)
+        unsigned generation = _camera.generation;
+        _holdTimer = [NSTimer timerWithTimeInterval:MAX(0.01, _camera.pad.started + 0.46 - NSProcessInfo.processInfo.systemUptime)
                                           repeats:NO block:^(NSTimer *timer) {
             (void)timer;
             AKTouchControls *controls = weakSelf;
-            if (controls) AKTrackpadHold(&controls->_pad, NSProcessInfo.processInfo.systemUptime, AKEmitTouch, (__bridge void *)controls);
+            // The gesture this timer was started for may already have been taken away (the
+            // background, a rotation, our own panel). A late fire must not press into a
+            // gesture that no longer exists, and must never outlive it.
+            if (controls && controls->_camera.generation == generation)
+                AKTouchCameraHold(&controls->_camera, NSProcessInfo.processInfo.systemUptime, AKEmitTouch, (__bridge void *)controls);
         }];
         [NSRunLoop.mainRunLoop addTimer:_holdTimer forMode:NSRunLoopCommonModes];
     }
 }
-- (void)cancelTouches {
+// The one way out of a camera gesture. `reason` is what the log will say it was.
+- (void)cancelCameraGesture:(NSString *)reason {
     [_holdTimer invalidate]; _holdTimer = nil;
-    AKTrackpadCancel(&_pad, AKEmitTouch, (__bridge void *)self);
-    if (!_pad.fingers) _pad = (AKTrackpad){0};
+    AKTouchCameraReset(&_camera, reason, AKEmitTouch, (__bridge void *)self);
+}
+- (void)cancelTouches {
+    [self cancelCameraGesture:@"cancelled"];
 }
 - (void)suspendInput:(NSNotification *)notification {
     (void)notification;
-    [self cancelTouches];
-    _pad = (AKTrackpad){0};
+    // Losing focus takes the camera gesture away: the touch that was steering is no longer
+    // ours, and leaving it half-open is how the camera used to answer nothing afterwards.
+    [self cancelCameraGesture:@"resign"];
     // Dictation and system permission panels temporarily take focus. Closing
     // the first responder here cancels dictation before its UI can appear.
     AKLog(@"input suspended (draftFirstResponder=%d)", _keyboardInput.isFirstResponder);
@@ -1211,7 +1238,8 @@ static const unsigned short AKKeyF12 = 111;
     if (!self.keyboardVisible) [self becomeFirstResponder];
 }
 - (void)backgroundInput:(NSNotification *)notification {
-    [self suspendInput:notification];
+    (void)notification;
+    [self cancelCameraGesture:@"background"];
     [self dismissKeyboard];
 }
 - (void)windowResigned:(NSNotification *)notification {
@@ -1219,11 +1247,16 @@ static const unsigned short AKKeyF12 = 111;
 }
 - (void)didMoveToWindow {
     [super didMoveToWindow];
-    if (!self.window) [self backgroundInput:nil];
+    if (!self.window) {
+        [self cancelCameraGesture:@"teardown"];
+        [self dismissKeyboard];
+    }
 }
 - (void)dealloc {
     [_composer removeFromSuperview];
     [_holdTimer invalidate];
+    // Nothing to tell at teardown (the delegate may be gone), and nothing left behind either.
+    AKTouchCameraReset(&_camera, @"teardown", NULL, NULL);
     [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 @end
