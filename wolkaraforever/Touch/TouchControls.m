@@ -82,6 +82,26 @@ static CGFloat const AKComposerCardHeightComposer = 130;
 static NSString *AKComposerDefaultLabel(BOOL mobile) {
     return AKHostLocalized(mobile ? @"touch.draft.placeholder.mobile" : @"touch.draft.placeholder");
 }
+// The draft card follows the player's text size. It sits over a game, so the card keeps the
+// proportions it has always drawn and grows its rows instead of reflowing the game underneath.
+//
+// The fonts come from `preferredFontForTextStyle:`, which at the default category returns exactly
+// the sizes the card has always used - Caption 1 is 12, Headline is 17, Subheadline is 15 - and
+// which UIKit keeps current while `adjustsFontForContentSizeCategory` is on. The heights are read
+// back from those fonts, so a title is never given less room than it needs.
+static UIFont *AKComposerFont(UIFontTextStyle style, BOOL bold) {
+    UIFont *base = [UIFont preferredFontForTextStyle:style];
+    if (!bold) return base;
+    UIFontDescriptor *descriptor = base.fontDescriptor;
+    descriptor = [descriptor fontDescriptorWithSymbolicTraits:
+                  descriptor.symbolicTraits | UIFontDescriptorTraitBold];
+    return descriptor ? ([UIFont fontWithDescriptor:descriptor size:0] ?: base) : base;
+}
+// The label's row, the action row and a destination chip: their historic minimums, or the height
+// of the text they hold at the player's size, whichever is larger.
+static CGFloat AKComposerLabelBox(UIFont *font) { return MAX(16, ceil(font.lineHeight)); }
+static CGFloat AKComposerActionBox(UIFont *font) { return MAX(44, ceil(font.lineHeight) + 16); }
+static CGFloat AKComposerChipBox(UIFont *font) { return MAX(32, ceil(font.lineHeight) + 8); }
 // GameController's own class, asked by name: this adapter's headers carry a
 // GCKeyboard of their own for the guest.
 static BOOL hardwareKeyboardAttached(void) {
@@ -519,6 +539,10 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     UIButton *_composerCancelButton, *_composerSendButton, *_composerListenButton, *_composerSettingsButton;
     UIScrollView *_composerChips;
     NSLayoutConstraint *_composerHeight;
+    // The label's and the action row's own heights, and the values they currently carry: the card
+    // is these plus its fixed parts, so a larger text size grows the card and never the editor.
+    NSLayoutConstraint *_composerLabelHeight, *_composerRowHeight;
+    CGFloat _composerLabelRowHeight, _composerActionRowHeight;
     BOOL _applyingComposerDraft;
     AKTouchKeyboardView *_layerKeyboard;
     NSTimer *_holdTimer;
@@ -666,7 +690,10 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(backgroundInput:) name:UIApplicationDidEnterBackgroundNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowResigned:) name:UIWindowDidResignKeyNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controlAppearanceChanged:)
-            name:AKGamepadLayoutDidChangeNotification object:NSUserDefaults.standardUserDefaults];    // Whether the system keyboard (and so its dictation button) exists at all on
+            name:AKGamepadLayoutDidChangeNotification object:NSUserDefaults.standardUserDefaults];
+        // The card follows the player's text size, including a change made while the game runs.
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(contentSizeCategoryChanged:)
+            name:UIContentSizeCategoryDidChangeNotification object:nil];    // Whether the system keyboard (and so its dictation button) exists at all on
     // this device, and whether UIKit is talking to our draft editor when it does.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(systemKeyboardShown:) name:UIKeyboardDidShowNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(systemKeyboardHidden:) name:UIKeyboardDidHideNotification object:nil];
@@ -675,6 +702,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(secureEventInputChanged:)
         name:@"AKSecureEventInputDidChangeNotification" object:nil];
         [self controlAppearanceChanged:nil];
+        [self applyComposerTextSize];
         [self beginChatComposer];
     }
     return self;
@@ -1252,6 +1280,54 @@ static const unsigned short AKKeyF12 = 111;
     if (opened) AKLog(@"chat-composer: card up for source %ld", (long)source);
 }
 
+// The card's height in the two modes, grown by whatever the player's text size added to the label
+// and the action row. At the default category it is exactly 82 and 130 - the heights every release
+// through v1.0.10 has used - and the editor stays 48 points either way.
+- (CGFloat)cardHeightForComposer:(BOOL)active {
+    CGFloat grown = (_composerLabelRowHeight - 16) +
+        (active ? _composerActionRowHeight - 44 : 0);
+    return (active ? AKComposerCardHeightComposer : AKComposerCardHeightClassic) + grown;
+}
+
+// The player's text size changed, or the card was just built: re-read it. The fonts come from
+// UIFontMetrics, which at the default category gives back the sizes the card has always had.
+- (void)applyComposerTextSize {
+    if (!_composer) return;
+    _composerLabel.font = AKComposerFont(UIFontTextStyleCaption1, NO);
+    UIFont *action = AKComposerFont(UIFontTextStyleHeadline, YES);
+    _composerSendButton.titleLabel.font = action;
+    _composerCancelButton.titleLabel.font = action;
+    UIFont *chip = AKComposerFont(UIFontTextStyleSubheadline, NO);
+    UIStackView *chips = (UIStackView *)_composerChips.subviews.firstObject;
+    if ([chips isKindOfClass:UIStackView.class]) {
+        for (UIView *view in chips.arrangedSubviews) {
+            if (![view isKindOfClass:UIButton.class]) continue;
+            ((UIButton *)view).titleLabel.font = chip;
+            for (NSLayoutConstraint *constraint in view.constraints) {
+                if (constraint.firstAttribute == NSLayoutAttributeHeight && !constraint.secondItem) {
+                    constraint.constant = AKComposerChipBox(chip);
+                }
+            }
+        }
+    }
+    _composerLabelRowHeight = AKComposerLabelBox(_composerLabel.font);
+    _composerActionRowHeight = AKComposerActionBox(action);
+    _composerLabelHeight.constant = _composerLabelRowHeight;
+    _composerRowHeight.constant = _composerActionRowHeight;
+    BOOL active = [self composerActive];
+    _composerHeight.constant = [self cardHeightForComposer:active];
+    AKLog(@"toolbar: draft card text size %s (label=%.0f row=%.0f)",
+          UIApplication.sharedApplication.preferredContentSizeCategory.UTF8String,
+          _composerLabelRowHeight, _composerActionRowHeight);
+}
+
+- (void)contentSizeCategoryChanged:(NSNotification *)notification {
+    (void)notification;
+    [self applyComposerTextSize];
+    [self setNeedsLayout];
+    if (self.superview) [self placeToolbarInHost:self.superview];
+}
+
 // One place draws the card from the Composer's state: the label, the draft, which row is up, the
 // card's height and what can be pressed.
 - (void)applyComposerState {
@@ -1274,14 +1350,13 @@ static const unsigned short AKKeyF12 = 111;
             _classicEditorBottom.active = NO;
             _composerEditorTrailing.active = YES;
             _composerEditorBottom.active = YES;
-        }
-        _composerHeight.constant = AKComposerCardHeightComposer;
+        }        _composerHeight.constant = [self cardHeightForComposer:YES];
     } else if (!_classicEditorTrailing.active) {
         _composerEditorTrailing.active = NO;
         _composerEditorBottom.active = NO;
         _classicEditorTrailing.active = YES;
         _classicEditorBottom.active = YES;
-        _composerHeight.constant = AKComposerCardHeightClassic;
+        _composerHeight.constant = [self cardHeightForComposer:NO];
     }
 
     NSString *stateText = nil;
@@ -1356,7 +1431,8 @@ static const unsigned short AKKeyF12 = 111;
     for (AKChatDestination *destination in destinations) {
         UIButton *chip = [UIButton buttonWithType:UIButtonTypeSystem];
         [chip setTitle:destination.title forState:UIControlStateNormal];
-        chip.titleLabel.font = [UIFont systemFontOfSize:15];
+        chip.titleLabel.font = AKComposerFont(UIFontTextStyleSubheadline, NO);
+        chip.titleLabel.adjustsFontForContentSizeCategory = YES;
         chip.layer.cornerRadius = 8;
         chip.backgroundColor = [UIColor colorWithWhite:0.26 alpha:1];
         chip.accessibilityIdentifier = [NSString stringWithFormat:@AKChatComposerDestinationIdentifierFormat,
@@ -1364,7 +1440,7 @@ static const unsigned short AKKeyF12 = 111;
         chip.accessibilityHint = AKHostLocalized(@"chat.composer.destination.hint");
         [chip addTarget:self action:@selector(composerDestinationTapped:) forControlEvents:UIControlEventTouchUpInside];
         [chips addArrangedSubview:chip];
-        [chip.heightAnchor constraintEqualToConstant:32].active = YES;
+        [chip.heightAnchor constraintEqualToConstant:AKComposerChipBox(chip.titleLabel.font)].active = YES;
         [chip.widthAnchor constraintGreaterThanOrEqualToConstant:52].active = YES;
     }
     _composerChips.accessibilityValue = destinations.count ? key : @"";
@@ -1584,6 +1660,8 @@ static const unsigned short AKKeyF12 = 111;
     row.hidden = YES;
     _composerCancelButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [_composerCancelButton setTitle:AKHostLocalized(@"chat.composer.action.cancel") forState:UIControlStateNormal];
+    _composerCancelButton.titleLabel.font = AKComposerFont(UIFontTextStyleHeadline, YES);
+    _composerCancelButton.titleLabel.adjustsFontForContentSizeCategory = YES;
     _composerCancelButton.accessibilityIdentifier = @"wolkaraforever.composer.cancel";
     _composerCancelButton.accessibilityHint = AKHostLocalized(@"chat.composer.action.cancel.hint");
     [_composerCancelButton addTarget:self action:@selector(composerCancel) forControlEvents:UIControlEventTouchUpInside];
@@ -1599,7 +1677,8 @@ static const unsigned short AKKeyF12 = 111;
     [_composerSettingsButton addTarget:self action:@selector(showComposerSettings) forControlEvents:UIControlEventTouchUpInside];
     _composerSendButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [_composerSendButton setTitle:AKHostLocalized(@"chat.composer.action.send") forState:UIControlStateNormal];
-    _composerSendButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+    _composerSendButton.titleLabel.font = AKComposerFont(UIFontTextStyleHeadline, YES);
+    _composerSendButton.titleLabel.adjustsFontForContentSizeCategory = YES;
     _composerSendButton.accessibilityIdentifier = @"wolkaraforever.composer.send";
     [_composerSendButton addTarget:self action:@selector(composerSend) forControlEvents:UIControlEventTouchUpInside];
     _composerChips = [UIScrollView new];
@@ -1625,10 +1704,11 @@ static const unsigned short AKKeyF12 = 111;
     [NSLayoutConstraint activateConstraints:@[
         [_composerCancelButton.leadingAnchor constraintEqualToAnchor:row.leadingAnchor],
         [_composerCancelButton.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
-        [_composerCancelButton.heightAnchor constraintEqualToConstant:44],
+        // A minimum, so a larger text size makes the button taller instead of clipping its title.
+        [_composerCancelButton.heightAnchor constraintGreaterThanOrEqualToConstant:44],
         [_composerChips.leadingAnchor constraintEqualToAnchor:_composerCancelButton.trailingAnchor constant:6],
         [_composerChips.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
-        [_composerChips.heightAnchor constraintEqualToConstant:44],
+        [_composerChips.heightAnchor constraintEqualToAnchor:row.heightAnchor],
         [_composerListenButton.leadingAnchor constraintEqualToAnchor:_composerChips.trailingAnchor constant:6],
         [_composerListenButton.widthAnchor constraintEqualToConstant:44],
         [_composerListenButton.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
@@ -1655,25 +1735,31 @@ static const unsigned short AKKeyF12 = 111;
     _composerEditorBottom = [_keyboardInput.bottomAnchor constraintEqualToAnchor:row.topAnchor constant:-4];
     for (NSLayoutConstraint *constraint in @[_composerEditorTrailing, _composerEditorBottom]) constraint.active = NO;
     _composerHeight = [_composer.heightAnchor constraintEqualToConstant:AKComposerCardHeightClassic];
+    _composerLabelHeight = [label.heightAnchor constraintEqualToConstant:AKComposerLabelBox(label.font)];
+    _composerRowHeight = [row.heightAnchor constraintEqualToConstant:AKComposerActionBox(_composerSendButton.titleLabel.font)];
+    _composerLabelRowHeight = _composerLabelHeight.constant;
+    _composerActionRowHeight = _composerRowHeight.constant;
     [NSLayoutConstraint activateConstraints:@[
         [label.leadingAnchor constraintEqualToAnchor:_composer.leadingAnchor constant:12],
         [label.topAnchor constraintEqualToAnchor:_composer.topAnchor constant:6],
         [label.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-12],
-        [label.heightAnchor constraintEqualToConstant:16],
+        _composerLabelHeight,
         [_keyboardInput.leadingAnchor constraintEqualToAnchor:_composer.leadingAnchor constant:8],
         [_keyboardInput.topAnchor constraintEqualToAnchor:label.bottomAnchor constant:4],
         [clear.widthAnchor constraintEqualToConstant:44],
         [clear.heightAnchor constraintEqualToConstant:44],
         [clear.centerYAnchor constraintEqualToAnchor:_keyboardInput.centerYAnchor],
         [insert.leadingAnchor constraintEqualToAnchor:clear.trailingAnchor],
-        [insert.widthAnchor constraintEqualToConstant:84],
+        // Wide enough for "Replace" at the size it has always been drawn; the localised title
+        // decides anything longer, so it is a minimum rather than a fixed width.
+        [insert.widthAnchor constraintGreaterThanOrEqualToConstant:84],
         [insert.heightAnchor constraintEqualToConstant:44],
         [insert.centerYAnchor constraintEqualToAnchor:_keyboardInput.centerYAnchor],
         [insert.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-8],
         [row.leadingAnchor constraintEqualToAnchor:_composer.leadingAnchor constant:8],
         [row.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-8],
         [row.bottomAnchor constraintEqualToAnchor:_composer.bottomAnchor constant:-8],
-        [row.heightAnchor constraintEqualToConstant:44],
+        _composerRowHeight,
         _classicEditorTrailing, _classicEditorBottom, _composerHeight,
     ]];
 }

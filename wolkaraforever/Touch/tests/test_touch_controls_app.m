@@ -416,6 +416,45 @@ static void AKFixtureInputSource(void *context) {
     // The card stays above the keyboard, inside the host.
     assert(CGRectGetMaxY(card.frame) <= CGRectGetMinY(host.keyboardLayoutGuide.layoutFrame) + 0.5);
     assert(CGRectGetMinY(card.frame) >= 0);
+    // Dynamic Type, measured rather than assumed. At the default category the card is exactly the
+    // 130 points it has always been and the action row is 44; at an accessibility category both
+    // grow, the editor keeps its 48 points, and the card is still above the keyboard - which the
+    // assertion above has just checked for whichever category this run was launched with. The
+    // suite runs this fixture twice: once plain, once with an accessibility category.
+    {
+        UIView *row = [controls valueForKey:@"_composerRow"];
+        UILabel *stateLabel = (UILabel *)AKFindInputView(host, @"wolkaraforever.composer.state");
+        CGRect editorInHost = [input convertRect:input.bounds toView:host];
+        CGFloat cardHeight = CGRectGetHeight(card.frame), rowHeight = CGRectGetHeight(row.frame);
+        BOOL accessibilityText = [UIApplication.sharedApplication.preferredContentSizeCategory
+            containsString:@"Accessibility"];
+        if (accessibilityText) {
+            if (!(cardHeight > 130.5 && rowHeight > 44.5)) {
+                fprintf(stderr, "CHAT_COMPOSER_DYNAMIC_TYPE: category=%s card=%.1f row=%.1f\n",
+                        UIApplication.sharedApplication.preferredContentSizeCategory.UTF8String,
+                        cardHeight, rowHeight);
+                fflush(stderr);
+            }
+            assert(cardHeight > 130.5 && rowHeight > 44.5);
+        } else {
+            if (fabs(cardHeight - 130) > 0.5 || fabs(rowHeight - 44) > 0.5) {
+                fprintf(stderr, "CHAT_COMPOSER_DEFAULT_SIZE: category=%s card=%.1f row=%.1f\n",
+                        UIApplication.sharedApplication.preferredContentSizeCategory.UTF8String,
+                        cardHeight, rowHeight);
+                fflush(stderr);
+            }
+            assert(fabs(cardHeight - 130) <= 0.5 && fabs(rowHeight - 44) <= 0.5);
+        }
+        // The editor is the part that must not absorb the difference, and the label is never given
+        // less room than its own text needs.
+        assert(fabs(CGRectGetHeight(editorInHost) - 48) <= 0.5);
+        assert(stateLabel && CGRectGetHeight(stateLabel.frame) + 0.5 >= stateLabel.font.lineHeight);
+        // Send is still on screen and inside the card at this size.
+        assert(CGRectContainsRect(card.frame, [send convertRect:send.bounds toView:host]));
+        NSLog(@"chat composer: Dynamic Type %s keeps the card above the keyboard (card=%.0f row=%.0f editor=%.0f)",
+              UIApplication.sharedApplication.preferredContentSizeCategory.UTF8String,
+              cardHeight, rowHeight, CGRectGetHeight(editorInHost));
+    }
     NSLog(@"chat composer: the card is up, one row, above the keyboard, Replace withdrawn");
 
     // Typing makes it sendable; pressing Send reaches the guest exactly once.
