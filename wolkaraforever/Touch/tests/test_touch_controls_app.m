@@ -5,6 +5,7 @@
 #import "TouchControls.h"
 #import "TouchGamepad.h"
 #import "TouchGamepadLayout.h"
+#import "AKHostLocalization.h"
 #include <assert.h>
 
 // The keys the layer supplies when iPadOS has no software keyboard to give. The
@@ -212,8 +213,7 @@ static void AKFixtureInputSource(void *context) {
     NSLog(@"TOUCH_UI_SELF_TEST_PASS: repeated held-button drags service default and tracking events before release");
     exit(EXIT_SUCCESS);
 }
-- (void)checkTrackingUIProgress {
-    UIView *host = [self.guest valueForKey:@"_host"];
+- (void)checkTrackingUIProgress {    UIView *host = [self.guest valueForKey:@"_host"];
     AKTouchControls *controls = [host valueForKey:@"_touchControls"];
     AKTouchGamepad *gamepad = [controls valueForKey:@"_gamepad"];
     assert(gamepad);
@@ -317,6 +317,190 @@ static void AKFixtureInputSource(void *context) {
     NSLog(@"TOUCH_UI_SELF_TEST_PASS: native UI presentation, deferred work, slider updates and queue peeking inside guest loop");
     exit(EXIT_SUCCESS);
 }
+
+#pragma mark - Live QA
+
+// Three states to look at, held long enough for a screenshot from outside the process: the card
+// with nothing typed, the card with a message ready to send, and the card reporting a refused
+// send. Runs only with `--composer-qa`; it ends by itself so a capture run cannot hang.
+- (void)checkChatComposerQA {
+    UIView *host = [self.guest valueForKey:@"_host"];
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    AKInputFixtureView *fixture = (AKInputFixtureView *)self.guest.contentView;
+    AKChatComposer *composer = AKChatComposer.shared;
+    // The capture seam the shell would otherwise fill: this run is about what the card looks
+    // like, not about a recogniser.
+    composer.testOnlyCapture = ^(BOOL start, NSUInteger generation) { (void)start; (void)generation; };
+    [self.guest makeFirstResponder:fixture];
+    [fixture.text setString:@""];
+    [controls toggleKeyboard];
+    [host layoutIfNeeded];
+    NSLog(@"CHAT_COMPOSER_QA idle");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        // A session with the result the recogniser would deliver: the state after dictation.
+        [controls openChatComposerFromSource:AKChatComposerSourceController];
+        [composer speechFinished:@"Meet me at the inn when the sun comes up."
+                      generation:composer.generation];
+        [host layoutIfNeeded];
+        NSLog(@"CHAT_COMPOSER_QA ready");
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            // A password field has the keyboard, so the chat cannot be opened: the card says so.
+            // The session above is ended first, because that is what a player does: a Composer
+            // already on screen is not re-opened by another press.
+            [AKChatComposer.shared cancel];
+            [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
+                                                             object:nil userInfo:@{@"enabled": @YES}];
+            [controls openChatComposerFromSource:AKChatComposerSourceController];
+            [host layoutIfNeeded];
+            NSLog(@"CHAT_COMPOSER_QA error");
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
+                                                                 object:nil userInfo:@{@"enabled": @NO}];
+                [AKChatComposer.shared cancel];
+                NSLog(@"CHAT_COMPOSER_QA done");
+                exit(EXIT_SUCCESS);
+            });
+        });
+    });
+}
+
+#pragma mark - The Composer card, with a real guest behind it
+
+// The state machine has its own fixture (tests/test_chat_composer_app.m); what only this file can
+// prove is that the card, driven through its real buttons, puts the right keys into the guest:
+// the text once, Return once, Escape once - and nothing at all on Cancel.
+- (void)checkChatComposerProgress {
+    UIView *host = [self.guest valueForKey:@"_host"];
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    AKInputFixtureView *fixture = (AKInputFixtureView *)self.guest.contentView;
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+
+    // Review mode, the way a fresh installation gets it. The argument domain is what the controls
+    // read first, so it is set there as well as in the database.
+    {
+        NSMutableDictionary *modes = [[defaults volatileDomainForName:NSArgumentDomain] mutableCopy];
+        modes[@"AKChatDeliveryMode"] = @"review";
+        [defaults setVolatileDomain:modes forName:NSArgumentDomain];
+    }
+    [defaults setObject:@"review" forKey:@"AKChatDeliveryMode"];
+    [defaults setBool:YES forKey:@"AKChatComposerEnabled"];
+    AKChatDeliveryModeResetCacheForTesting();
+    [controls dismissKeyboard];
+    [host layoutIfNeeded];
+    [self.guest makeFirstResponder:fixture];
+    fixture.selection = NSMakeRange(0, 0);
+    [fixture.text setString:@""];
+    fixture.keyCodes = [NSMutableArray array];
+
+    // The toolbar's keyboard button brings the card up; in review mode that card is the Composer.
+    [controls toggleKeyboard];
+    [host layoutIfNeeded];
+    UITextView *input = (UITextView *)AKFindInputView(host, @"wolkaraforever.keyboard.draft");
+    UIButton *send = (UIButton *)AKFindInputView(host, @"wolkaraforever.composer.send");
+    UIButton *cancel = (UIButton *)AKFindInputView(host, @"wolkaraforever.composer.cancel");
+    UIButton *listen = (UIButton *)AKFindInputView(host, @"wolkaraforever.composer.listen");
+    UIButton *settings = (UIButton *)AKFindInputView(host, @"wolkaraforever.composer.settings");
+    UIButton *replace = (UIButton *)AKFindInputView(host, @"wolkaraforever.keyboard.insert");
+    UIView *card = [controls valueForKey:@"_composer"];
+    if (!send || !cancel || !listen || !settings || !card || card.hidden || !input.isFirstResponder) {
+        fprintf(stderr, "CHAT_COMPOSER_CARD_MISSING send=%d cancel=%d listen=%d settings=%d card=%d editor=%d\n",
+                send != nil, cancel != nil, listen != nil, settings != nil, card != nil,
+                (int)input.isFirstResponder);
+        fflush(stderr);
+    }
+    assert(send && cancel && listen && settings && card && !card.hidden && input.isFirstResponder);
+    // The classic row gives way to the Composer's, and neither is ever on screen twice.
+    assert(replace.hidden);
+    // Nothing typed, so there is nothing to send.
+    assert(!send.enabled && cancel.enabled && listen.enabled);
+    // The card stays above the keyboard, inside the host.
+    assert(CGRectGetMaxY(card.frame) <= CGRectGetMinY(host.keyboardLayoutGuide.layoutFrame) + 0.5);
+    assert(CGRectGetMinY(card.frame) >= 0);
+    NSLog(@"chat composer: the card is up, one row, above the keyboard, Replace withdrawn");
+
+    // Typing makes it sendable; pressing Send reaches the guest exactly once.
+    [input insertText:@"hi"];
+    AKDrainFixtureEvents();
+    assert(send.enabled);
+    NSUInteger before = fixture.keyCodes.count;
+    [send sendActionsForControlEvents:UIControlEventTouchUpInside];
+    AKDrainFixtureEvents();
+    NSArray<NSNumber *> *delta = [fixture.keyCodes subarrayWithRange:
+        NSMakeRange(before, fixture.keyCodes.count - before)];
+    // Open (36), the two characters, Return (36), Escape (53): five events, one of each kind.
+    if (delta.count != 5 || delta[0].intValue != 36 || delta[3].intValue != 36 ||
+        delta[4].intValue != 53 || delta[1].intValue == 36 || delta[2].intValue == 36) {
+        fprintf(stderr, "CHAT_COMPOSER_SEND_MISMATCH keys=%s\n", delta.description.UTF8String);
+        fflush(stderr);
+    }
+    assert(delta.count == 5 && delta[0].intValue == 36 && delta[3].intValue == 36 && delta[4].intValue == 53);
+    assert(!input.text.length && !send.enabled);
+    NSLog(@"chat composer: Send is one insertion, one Return, one Escape");
+
+    // A repeated tap is not a second message.
+    before = fixture.keyCodes.count;
+    [send sendActionsForControlEvents:UIControlEventTouchUpInside];
+    AKDrainFixtureEvents();
+    assert(fixture.keyCodes.count == before);
+
+    // Cancel sends no text at all: one Escape to close the chat the Composer opened.
+    [controls openChatComposerFromSource:AKChatComposerSourceController];
+    AKDrainFixtureEvents();
+    [input insertText:@"never send this"];
+    AKDrainFixtureEvents();
+    before = fixture.keyCodes.count;
+    [cancel sendActionsForControlEvents:UIControlEventTouchUpInside];
+    AKDrainFixtureEvents();
+    delta = [fixture.keyCodes subarrayWithRange:NSMakeRange(before, fixture.keyCodes.count - before)];
+    if (delta.count != 1 || delta[0].intValue != 53) {
+        fprintf(stderr, "CHAT_COMPOSER_CANCEL_MISMATCH keys=%s\n", delta.description.UTF8String);
+        fflush(stderr);
+    }
+    assert(delta.count == 1 && delta[0].intValue == 53);
+    assert(AKChatComposer.shared.state == AKChatComposerStateCancelled);
+    NSLog(@"chat composer: Cancel posts one Escape and no text");
+
+    // The failure the card has to be able to show: the guest has a password field, so a chat key
+    // has no business there and nothing is posted. This is the Carbon adapter's real notification.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
+                                                     object:nil userInfo:@{@"enabled": @YES}];
+    before = fixture.keyCodes.count;
+    [controls openChatComposerFromSource:AKChatComposerSourceController];
+    AKDrainFixtureEvents();
+    assert(fixture.keyCodes.count == before);
+    assert(AKChatComposer.shared.state == AKChatComposerStateFailed);
+    UILabel *state = (UILabel *)AKFindInputView(host, @"wolkaraforever.composer.state");
+    assert(state && [state.text isEqual:AKHostLocalized(@"chat.composer.problem.notSent")]);
+    assert(!send.enabled && cancel.enabled);
+    NSLog(@"chat composer: a refused open shows the localized error and posts nothing");
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
+                                                     object:nil userInfo:@{@"enabled": @NO}];
+
+    // Background and return: the draft is kept, and nothing is sent while the app is away.
+    [controls openChatComposerFromSource:AKChatComposerSourceController];
+    AKDrainFixtureEvents();
+    [input insertText:@"unsent"];
+    AKDrainFixtureEvents();
+    before = fixture.keyCodes.count;
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidEnterBackgroundNotification object:nil];
+    AKDrainFixtureEvents();
+    delta = [fixture.keyCodes subarrayWithRange:NSMakeRange(before, fixture.keyCodes.count - before)];
+    // Only the Escape that closes the chat; no character of the draft reaches the guest.
+    assert(delta.count == 1 && delta[0].intValue == 53);
+    assert([AKChatComposer.shared.draft isEqual:@"unsent"]);
+    NSLog(@"chat composer: background keeps the draft and sends nothing");
+
+    // Back to the mode this installation had, so nothing here leaks into another launch.
+    [AKChatComposer.shared cancel];
+    [defaults removeObjectForKey:@"AKChatDeliveryMode"];
+    [defaults removeObjectForKey:@"AKChatComposerEnabled"];
+    AKChatDeliveryModeResetCacheForTesting();
+    [controls dismissKeyboard];
+    [host layoutIfNeeded];
+    [fixture.text setString:@""];
+    NSLog(@"TOUCH_UI_SELF_TEST_PASS: the Composer card sends once, cancels without text, reports a refused open and keeps a backgrounded draft");
+    exit(EXIT_SUCCESS);
+}
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
     // The mobile interface is chosen the way the launcher chooses it: by the defaults key, here
@@ -324,9 +508,16 @@ static void AKFixtureInputSource(void *context) {
     // an absent key means, so the default run exercises that. It has to be set before the host
     // is made, because the controls read it once, when they are created.
     BOOL mobileInterface = [NSProcessInfo.processInfo.arguments containsObject:@"--mobile-interface"];
-    if (mobileInterface) {
+    BOOL composerTestArgument = [NSProcessInfo.processInfo.arguments containsObject:@"--composer-test"] ||
+        [NSProcessInfo.processInfo.arguments containsObject:@"--composer-qa"];
+    // The delivery mode is read once, when the controls are made, so it is set here - in the
+    // argument domain, which is read before anything is written to disk. The classic self-test
+    // runs in classic direct, which is what every release through v1.0.10 has; the Composer's own
+    // run asks for review, which is what a fresh installation gets.
+    {
         NSMutableDictionary *modes = [[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
-        modes[@"WolkaraForeverInterfaceModeV1"] = @"ios";
+        modes[@"AKChatDeliveryMode"] = composerTestArgument ? @"review" : @"classicDirect";
+        if (mobileInterface) modes[@"WolkaraForeverInterfaceModeV1"] = @"ios";
         [NSUserDefaults.standardUserDefaults setVolatileDomain:modes forName:NSArgumentDomain];
     }
     if ([NSProcessInfo.processInfo.arguments containsObject:@"--tracking-progress-test"]) {
@@ -346,8 +537,10 @@ static void AKFixtureInputSource(void *context) {
         while ((event = [NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES])) [NSApp sendEvent:event];
     }];
     BOOL selfTest = [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
+    BOOL composerTest = [NSProcessInfo.processInfo.arguments containsObject:@"--composer-test"] ||
+        [NSProcessInfo.processInfo.arguments containsObject:@"--composer-qa"];
     BOOL nativeReference = [NSProcessInfo.processInfo.arguments containsObject:@"--native-keyboard-reference"];
-    if (selfTest) {
+    if (selfTest || composerTest) {
         // A blocked main thread must fail instead of leaving simctl waiting.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC),
             dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
@@ -383,6 +576,22 @@ static void AKFixtureInputSource(void *context) {
             (void)timer;
             [self.pump invalidate]; self.pump = nil;
             [self checkNativeUIProgress];
+        }];
+        return;
+    }
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--composer-qa"]) {
+        [NSTimer scheduledTimerWithTimeInterval:2 repeats:NO block:^(NSTimer *timer) {
+            (void)timer;
+            [self.pump invalidate]; self.pump = nil;
+            [self checkChatComposerQA];
+        }];
+        return;
+    }
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--composer-test"]) {
+        [NSTimer scheduledTimerWithTimeInterval:2 repeats:NO block:^(NSTimer *timer) {
+            (void)timer;
+            [self.pump invalidate]; self.pump = nil;
+            [self checkChatComposerProgress];
         }];
         return;
     }
