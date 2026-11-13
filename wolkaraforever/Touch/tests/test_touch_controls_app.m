@@ -540,6 +540,59 @@ static void AKFixtureInputSource(void *context) {
     NSLog(@"TOUCH_UI_SELF_TEST_PASS: the Composer card sends once, cancels without text, reports a refused open and keeps a backgrounded draft");
     exit(EXIT_SUCCESS);
 }
+#pragma mark - Live QA: the three states, held for a screenshot
+
+// The three states the review record names - the card with nothing typed, the card with a line
+// ready to send, and the card reporting a refused open - each held long enough for a capture taken
+// from outside the process. It prints a marker before each and ends by itself, so a capture run
+// cannot hang, and it never puts a character into the guest.
+- (void)checkChatComposerVisual {
+    UIView *host = [self.guest valueForKey:@"_host"];
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    AKInputFixtureView *fixture = (AKInputFixtureView *)self.guest.contentView;
+    AKChatComposer *composer = AKChatComposer.shared;
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setObject:@"review" forKey:@"AKChatDeliveryMode"];
+    [defaults setBool:YES forKey:@"AKChatComposerEnabled"];
+    AKChatDeliveryModeResetCacheForTesting();
+    // The capture seam the shell fills in the app; this run is about what the card looks like.
+    composer.testOnlyCapture = ^(BOOL start, NSUInteger generation) { (void)start; (void)generation; };
+    [controls dismissKeyboard];
+    [host layoutIfNeeded];
+    [self.guest makeFirstResponder:fixture];
+    [fixture.text setString:@""];
+    [controls toggleKeyboard];
+    [host layoutIfNeeded];
+    NSLog(@"CHAT_COMPOSER_VISUAL idle");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        // The state after dictation: a line on the card, Send enabled.
+        [controls openChatComposerFromSource:AKChatComposerSourceToolbar];
+        [composer speechFinished:@"Meet me at the inn when the sun comes up."
+                      generation:composer.generation];
+        [host layoutIfNeeded];
+        NSLog(@"CHAT_COMPOSER_VISUAL ready");
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            // The game has a password field, so the chat cannot be opened: the card says so.
+            [composer cancel];
+            [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
+                                                             object:nil userInfo:@{@"enabled": @YES}];
+            [controls openChatComposerFromSource:AKChatComposerSourceController];
+            [host layoutIfNeeded];
+            NSLog(@"CHAT_COMPOSER_VISUAL error");
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
+                                                                 object:nil userInfo:@{@"enabled": @NO}];
+                [composer cancel];
+                [defaults removeObjectForKey:@"AKChatDeliveryMode"];
+                [defaults removeObjectForKey:@"AKChatComposerEnabled"];
+                AKChatDeliveryModeResetCacheForTesting();
+                NSLog(@"CHAT_COMPOSER_VISUAL done");
+                exit(EXIT_SUCCESS);
+            });
+        });
+    });
+}
+
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
     // The mobile interface is chosen the way the launcher chooses it: by the defaults key, here
@@ -548,7 +601,8 @@ static void AKFixtureInputSource(void *context) {
     // is made, because the controls read it once, when they are created.
     BOOL mobileInterface = [NSProcessInfo.processInfo.arguments containsObject:@"--mobile-interface"];
     BOOL composerTestArgument = [NSProcessInfo.processInfo.arguments containsObject:@"--composer-test"] ||
-        [NSProcessInfo.processInfo.arguments containsObject:@"--composer-qa"];
+        [NSProcessInfo.processInfo.arguments containsObject:@"--composer-qa"] ||
+        [NSProcessInfo.processInfo.arguments containsObject:@"--composer-visual"];
     // The delivery mode is read once, when the controls are made, so it is set here - in the
     // argument domain, which is read before anything is written to disk. The classic self-test
     // runs in classic direct, which is what every release through v1.0.10 has; the Composer's own
@@ -577,7 +631,8 @@ static void AKFixtureInputSource(void *context) {
     }];
     BOOL selfTest = [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
     BOOL composerTest = [NSProcessInfo.processInfo.arguments containsObject:@"--composer-test"] ||
-        [NSProcessInfo.processInfo.arguments containsObject:@"--composer-qa"];
+        [NSProcessInfo.processInfo.arguments containsObject:@"--composer-qa"] ||
+        [NSProcessInfo.processInfo.arguments containsObject:@"--composer-visual"];
     BOOL nativeReference = [NSProcessInfo.processInfo.arguments containsObject:@"--native-keyboard-reference"];
     if (selfTest || composerTest) {
         // A blocked main thread must fail instead of leaving simctl waiting.
@@ -631,6 +686,14 @@ static void AKFixtureInputSource(void *context) {
             (void)timer;
             [self.pump invalidate]; self.pump = nil;
             [self checkChatComposerProgress];
+        }];
+        return;
+    }
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--composer-visual"]) {
+        [NSTimer scheduledTimerWithTimeInterval:2 repeats:NO block:^(NSTimer *timer) {
+            (void)timer;
+            [self.pump invalidate]; self.pump = nil;
+            [self checkChatComposerVisual];
         }];
         return;
     }
