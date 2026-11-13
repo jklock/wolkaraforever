@@ -16,6 +16,19 @@
 //   * **On-device or nothing.** The product says recognition happens on the iPad, so a
 //     device that cannot do it is refused rather than quietly sent to a server.
 //
+// Two things were added by the language work:
+//
+//   * **The recogniser is per capture, in the language the user chose.** A recogniser made once
+//     for one locale is what made every choice but en-US impossible. It is constructed when a
+//     capture starts, and a choice this iPad cannot recognise on device falls back to System
+//     for that hold - logged, and said to the user - rather than opening a microphone it cannot
+//     feed.
+//   * **A generation is spent before another begins.** Changing the language while the
+//     microphone is open cancels the old session and invalidates it before the new capture
+//     starts, so a late final result from the old recogniser can never be delivered as the new
+//     utterance. Nothing here opens a chat box: delivery is the transcript and (only if asked
+//     for) one Return.
+//
 // The recogniser and the audio session are behind two small protocols because they are
 // the two things that cannot run in a test, and the delivery rules are exactly what a
 // test has to be able to exercise.
@@ -64,11 +77,18 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
 - (BOOL)isAvailable;
 /// Whether recognition can happen without sending audio anywhere.
 - (BOOL)supportsOnDeviceRecognition;
+/// Whether *this language* can be recognised on device. `language` is a BCP-47 identifier such
+/// as `de-DE`, or nil for whatever the device itself uses. A recogniser is per locale, so this
+/// is asked before the audio session is taken: an unsupported choice must not open a microphone
+/// it cannot feed.
+- (BOOL)supportsOnDeviceRecognitionForLanguage:(nullable NSString *)language;
 /// Asks once per session. The answer is what matters; the call may be asynchronous.
 - (void)requestAuthorization:(void (^)(BOOL granted))completion;
-/// Starts feeding audio to the recogniser. `handler` is called with the running
-/// transcript, once with `isFinal`, and with an `error` if the session failed.
+/// Starts feeding audio to the recogniser. The recogniser is constructed for `language` (nil:
+/// the device's own) for this session only. `handler` is called with the running transcript,
+/// once with `isFinal`, and with an `error` if the session failed.
 - (void)startOnDevice:(BOOL)onDevice
+             language:(nullable NSString *)language
                 words:(NSArray<NSString *> *)words
               handler:(void (^)(NSString *transcript, BOOL isFinal, NSError *error))handler;
 /// Stop feeding audio and ask for the last result. Either `isFinal` or the deadline
@@ -108,6 +128,27 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
 /// A screen that wants the words instead of the game: the test screen. While one is
 /// set, the game is never typed into.
 @property (nonatomic, copy, nullable) void (^transcriptHandler)(NSString *text);
+
+#pragma mark - The Chat Composer's client
+
+// The Composer owns the draft, so a capture it starts must not type into the game even when a
+// game text target is registered. While a composer handler is set, the audio and recognition
+// halves are unchanged - on-device only, final result authoritative - but what they produce is
+// offered to the handler instead of being typed:
+//
+//   "draft"   a partial result, for the visible draft only. Never delivered to the game.
+//   "final"   the session's result. The Composer decides whether it is ever sent.
+//   "failure" capture failed (no permission, no on-device recogniser, a timeout, a recogniser
+//             error). `reason` says which, for the log.
+//   "stopped" capture ended without a result (a cancel, the app going away).
+//
+// The gameplay guarantee this feature must not weaken: partial recognition is never text, and a
+// session ends with exactly one of "final", "failure" or "stopped".
+@property (nonatomic, copy, nullable) void (^composerHandler)(NSString *event, NSString *text, NSString *reason);
+/// Start or abandon a Composer capture. Both are no-ops when another capture is in flight, as
+/// the classic entry points are.
+- (void)beginComposerCapture;
+- (void)cancelComposerCapture;
 @property (nonatomic, copy, nullable) void (^listeningChanged)(BOOL listening);
 /// For a screen that wants to show what is happening; used by the test screen.
 @property (nonatomic, copy, nullable) void (^stateChanged)(AKDictationState state);

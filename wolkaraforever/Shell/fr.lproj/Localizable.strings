@@ -58,6 +58,10 @@
 "home.launcher.interfaceSetup.buttons.message" = "Quelle touche de manette chaque commande envoie. Les affectations de manette du jeu décident ensuite de ce que fait cette touche.";
 "home.launcher.interfaceSetup.buttons.choose" = "Choisissez la touche envoyée par cette commande";
 "home.launcher.interfaceSetup.reserve" = "Réserver une zone…";
+"home.launcher.interfaceSetup.simple" = "Disposition simple (deux sticks, boutons de façade, gâchettes hautes)";
+"home.launcher.interfaceSetup.stickButtons" = "Boutons des sticks (double appui L3/R3)";
+"home.launcher.interfaceSetup.addZone" = "Ajouter une zone de capacité";
+"home.launcher.interfaceSetup.clearZones" = "Retirer les zones de capacité";
 "home.launcher.interfaceSetup.reserve.hint" = "Faites glisser sur la partie de l’écran que les commandes doivent laisser libre - là où un add-on place ses propres boutons - puis touchez OK.";
 
 "home.addons.install" = "Installer des addons (CurseForge et direct)";
@@ -390,6 +394,7 @@
 "touch.settings.stickSize" = "Taille des sticks et boutons de façade";
 "touch.settings.stickSize.value" = "Taille des sticks et boutons de façade · %.0f%%";
 "touch.settings.outerTriggers" = "Gâchettes à l’extérieur";
+"touch.settings.outerTriggers.simple" = "La disposition simple n’a pas de gâchettes à déplacer.";
 "touch.settings.sticksOnly" = "Sticks et saut seulement (masquer les autres boutons)";
 "touch.settings.floatingSticks" = "Sticks flottants (sous le pouce, saut dans le coin)";
 "touch.settings.haptics" = "Retour haptique";
@@ -397,6 +402,21 @@
 "touch.settings.overlay.detail" = "Affichage des performances (FPS et température)";
 "touch.settings.edit" = "Modifier la disposition";
 "touch.settings.edit.detail" = "Déplacez chaque gâchette haute, le bouton + ou un stick avec son anneau. Les changements sont enregistrés sur l’appareil.";
+"touch.settings.simpleLayout" = "Disposition simple";
+"touch.settings.simpleLayout.hint" = "Les deux sticks, les quatre boutons de façade, les deux gâchettes hautes et le menu. Les gâchettes basses et la croix directionnelle sont masquées ; en désactivant, elles reviennent à leur place.";
+"touch.settings.simpleLayout.detail" = "Les deux sticks, A/B/X/Y, LB/RB et le menu. Complète affiche toutes les commandes et reste ce qu’une disposition existante conserve.";
+"touch.settings.stickButtons" = "Boutons des sticks (L3/R3)";
+"touch.settings.stickButtons.hint" = "Deux appuis rapides sur un stick enfoncent une fois son propre bouton. Le déplacement du stick ne change pas.";
+"touch.settings.stickButtons.unsupported" = "Cette manette n’a pas de bouton de stick, donc ceci reste désactivé.";
+"touch.settings.abilityZones" = "Zones de capacité";
+"touch.settings.abilityZones.add" = "Ajouter";
+"touch.settings.abilityZones.clear" = "Retirer";
+"touch.settings.abilityZones.count" = "%lu en place";
+"touch.settings.abilityZones.detail" = "Une zone est un bouton supplémentaire que vous placez ; tant que vous la touchez, elle envoie un bouton de la manette. Déplacez-la dans l’éditeur de disposition, touchez-la pour choisir le bouton.";
+"touch.zone.button" = "Zone de capacité : %@";
+"touch.zone.hint" = "Enfonce le bouton de manette affiché tant que vous la touchez. Dans l’éditeur de disposition, touchez-la pour en choisir un autre.";
+"touch.zone.editing" = "En cours de modification";
+"touch.zone.choose" = "Bouton envoyé par cette zone";
 "touch.settings.reset" = "Rétablir les réglages par défaut";
 "touch.leave" = "Quitter le jeu";
 "touch.leave.hint" = "Ferme WolkaraForever et le jeu ; tout ce que le jeu n’a pas enregistré est perdu. Rouvrez WolkaraForever pour le relancer.";
@@ -598,6 +618,14 @@
 "voice.state.authorizing" = "En attente d’autorisation…";
 "voice.state.listening" = "Écoute…";
 "voice.state.finalizing" = "Finalisation de ce qui a été entendu…";
+"voice.language" = "Langue";
+"voice.language.hint" = "Choisissez la langue que la reconnaissance doit attendre.";
+"voice.language.system" = "Système";
+"voice.language.english" = "Anglais";
+"voice.language.german" = "Allemand";
+"voice.language.french" = "Français";
+"voice.language.spanish" = "Espagnol";
+"voice.language.unavailable" = "%@ ne peut pas être reconnu sur cet iPad ; Système a donc été utilisé pour cette prise.";
 "common.clear" = "Effacer";
 
 /* ---- Les fichiers du jeu (interface Forever) ---- */
@@ -709,3 +737,33 @@
 "addons.discover.empty" = "Il n’y a rien à découvrir pour cette version du jeu.";
 "addons.discover.hint" = "Actualiser interroge CurseForge à nouveau.";
 
+/* ---- Chat Composer ---- */
+"chat.composer.state.opening" = "Ouverture du chat…";
+"chat.composer.state.listening" = "Écoute…";
+"chat.composer.state.editing" = "Modification";
+"chat.composer.state.ready" = "Prêt à envoyer";
+"chat.composer.state.sending" = "Envoi…";
+"chat.composer.state.cancelled" = "Annulé";
+"chat.composer.action.send" = "Envoyer";
+"chat.composer.action.cancel" = "Annuler";
+"chat.composer.action.cancel.hint" = "Ferme le composeur sans rien envoyer.";
+"chat.composer.action.listen" = "Dicter dans le composeur";
+"chat.composer.action.stop" = "Arrêter la dictée";
+"chat.composer.action.settings" = "Réglages du composeur de chat";
+"chat.composer.problem.notSent" = "Le message n’a pas été envoyé.";
+"chat.composer.problem.nothingHeard" = "Rien n’a été entendu.";
+"chat.composer.destination.hint" = "Envoie ce message vers la destination nommée par ce bouton.";
+"chat.composer.placeholder" = "Composez un message · Envoyer l’écrit dans le chat et le referme";
+"chat.composer.settings.title" = "Composeur de chat";
+"chat.composer.settings.message" = "Remise : %@. Les destinations ajoutent une commande à la ligne envoyée ; elles vous appartiennent, pas au jeu.";
+"chat.composer.settings.mode.review" = "Relire puis envoyer";
+"chat.composer.settings.mode.classic" = "Classique direct";
+"chat.composer.settings.useClassic" = "Utiliser le mode classique direct";
+"chat.composer.settings.useReview" = "Utiliser relire puis envoyer";
+"chat.composer.settings.add" = "Ajouter une destination…";
+"chat.composer.settings.add.message" = "Un nom pour le bouton et la commande qu’il envoie, par exemple /say.";
+"chat.composer.settings.remove" = "Supprimer %@";
+"chat.composer.settings.save" = "Enregistrer";
+"chat.composer.settings.done" = "Terminé";
+"chat.composer.destination.title" = "Nom";
+"chat.composer.destination.command" = "Commande, par exemple /say";

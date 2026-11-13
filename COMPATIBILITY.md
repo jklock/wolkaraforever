@@ -140,6 +140,41 @@ production input files byte-identical between that revision and the merged one, 
 is not device evidence, so neither the report nor the identity is carried as a compatibility
 result. The hardware entry for held-button dragging stays absent until it is measured here.
 
+### 2026-11-13: Touch Controller 2 — simulators only
+
+The Full/Simple arrangement, the stick buttons, the ability zones and the direct-camera
+lifecycle were measured on the two matrix simulators and on no other device:
+
+```text
+touch-gamepad fixture --self-test         iPad Pro 13-inch (M5)  PASS 7/7, both interfaces
+touch-gamepad fixture --self-test         iPhone Duo            PASS 7/7, both interfaces
+touch-gamepad fixture --self-test-input   iPad Pro 13-inch (M5)  PASS 3/3, both interfaces
+touch-gamepad fixture --self-test-input   iPhone Duo            PASS 3/3, both interfaces
+touch-controls fixture --self-test        both                  PASS
+translation simulation suite              both                  PASS
+```
+
+What is proved there: a cancelled touch keeps the platform's suppress-until-lift rule while
+every exit the app causes releases once and leaves nothing behind; an old layout dictionary
+migrates to Full with every value it carried; a
+dictionary a later build wrote is never rewritten; an unknown mode is Full; Simple's positions
+are its own and turning it off deletes nothing; a stick button is one press and one release,
+never on a drag; every ability-zone press has exactly one release, even when two zones share a
+button; the direct camera rebases a jumped centroid and releases a drag on background, resign,
+resize, settings, a controller arriving and teardown.
+
+**Stick buttons are not claimable on this build, measured rather than assumed.** Apple's
+`GCVirtualController` extended profile carries the face buttons, the shoulders, the triggers,
+the menu, the D-pad and the sticks' directions - no stick-button element. Declaring
+`GCInputLeftThumbstickButton` in the configuration changes nothing, `-leftThumbstickButton` is
+nil, and a value set for it is dropped. The app therefore offers the gesture, refuses it with
+`touch-controller event=gesture outcome=refused reason=unsupported`, and says so in the row
+that owns the setting. The positive path is proved against a controller that does carry the
+element (the fixture's own stand-in), not against the virtual one.
+
+**No physical iPad result is claimed.** The iPad Pro 12.9-inch (5th generation) was not
+available for this change.
+
 ## Before you rely on it
 
 - Use your own eligible account and game files.

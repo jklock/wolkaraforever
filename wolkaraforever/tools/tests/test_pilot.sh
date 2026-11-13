@@ -522,6 +522,16 @@ after=$(ls /tmp 2>/dev/null | grep -c '^pilot-' || true)
 [ "$before" = "$after" ]
 check $? "a run must not write to the shared /tmp/pilot-* names"
 
+# A log with no launch marker is stale evidence. grep -c prints 0 and exits 1
+# for that case; pilot.sh must keep the value numeric rather than producing
+# `0\\n0` and letting the caller mistake the log for this run.
+mkdir -p "$work/sessions/stale-log"
+printf '0\n' > "$work/sessions/stale-log/log-launches-before"
+run_pilot "$work/sessions/stale-log" log
+grep -q "NO LAUNCH FROM THIS RUN IS IN THIS LOG (0 before it, 0 now)" "$work/out.txt"
+check $? "a stale app log must stay stale evidence"
+grep -q "integer expression expected" "$work/out.txt" && check 1 "the stale-log count must remain numeric"
+
 if [ "$failures" -eq 0 ]; then
     echo "PILOT PASS: $checks checks"
     exit 0

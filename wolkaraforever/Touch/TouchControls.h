@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import "ChatComposer.h"
 
 // Posted when the user chose to close WolkaraForever from the game's toolbar. Shell/main.m observes
 // it, flushes what the session owns and ends the process. By name on the shell's side,
@@ -18,10 +19,68 @@ extern NSNotificationName const AKTouchKeyboardRequestNotification;
 // this module and the voice module cannot include each other without spelling out the
 // prepared tree's layout.
 extern NSNotificationName const AKTouchGameTextInputDidAppearNotification;
+// Posted when the draft editor's composed text commits or is cancelled, so the app can record
+// the bounded `keyboard-dictation: composition.commit|cancel` event. The userInfo carries
+// AKTouchDraftCompositionPhaseKey only: never the text, the marked range, or anything derived
+// from them. The draft editor is ours and cannot reach the guest, so this says what a person
+// did with it without saying what they wrote.
+extern NSNotificationName const AKTouchDraftCompositionDidChangeNotification;
+extern NSString *const AKTouchDraftCompositionPhaseKey;   // "phase"
+// The two values the phase key carries.
+extern NSString *const AKTouchDraftCompositionCommit;
+extern NSString *const AKTouchDraftCompositionCancel;
+
+// The recogniser's language, chosen from the draft composer's own row. The adapter is a dylib
+// that cannot reach the voice module, so it asks and is answered: the request carries the
+// stored spelling (`system`, `en-US`, `de-DE`, `fr-FR`, `es-ES`) under
+// AKTouchSpeechLanguageStoredKey, and the answer carries the value now in force. Choosing a
+// language sends no key and no text - it is recognition configuration, not input.
+extern NSNotificationName const AKTouchSpeechLanguageRequestNotification;
+extern NSNotificationName const AKTouchSpeechLanguageDidChangeNotification;
+extern NSString *const AKTouchSpeechLanguageStoredKey;   // "stored"
 // Whether the controls are wanted at all. The platform's install path asks this
 // before adding them, and the launcher's On-Screen Controls switch stores its
 // choice under this key.
 extern NSString *const AKTouchControlsDefaultsKey;   // "AKTouchControls"
+
+// The Composer's two crossings, and the reason they exist: the Composer itself is compiled
+// into this compatibility library, while the microphone and the mapped button are the app's.
+// Both directions are a notification by name, exactly like the dictation ones above - the
+// adapter is a signed dylib the app does not link, so a call cannot exist.
+//
+// App -> adapter: open the Composer. `AKChatComposerSourceKey` carries an
+// `AKChatComposerSource` as an NSNumber. The shell posts it for a mapped button; this library
+// posts it for the two entries it owns - the card's microphone (the toolbar's) and the layer
+// keyboard's microphone key - and reads all of them.
+extern NSNotificationName const AKChatComposerOpenNotification;   // "AKChatComposerOpen"
+extern NSString *const AKChatComposerSourceKey;                   // "source"
+// "began" or "ended", for a hold-style mapped button: the press opens and starts listening,
+// the release stops listening and leaves the words in the draft. Absent means "began".
+extern NSString *const AKChatComposerPhaseKey;                    // "phase"
+// Adapter -> app: start or abandon capture for a generation. `AKChatComposerActionKey` is
+// "begin" or "cancel"; `AKChatComposerGenerationKey` is the Composer's generation. Which
+// dictation call answers each action is the app's decision, not this library's.
+extern NSNotificationName const AKChatComposerVoiceRequestNotification;  // "AKChatComposerVoiceRequest"
+extern NSString *const AKChatComposerActionKey;                          // "action"
+extern NSString *const AKChatComposerGenerationKey;                      // "generation"
+// App -> adapter: what the recogniser said. `AKChatComposerEventKey` is "draft", "final",
+// "failure" or "stopped"; `AKChatComposerTextKey` is the words and is never logged;
+// `AKChatComposerReasonKey` is a diagnostic phrase. Every event carries the generation it
+// belongs to, and the Composer drops the ones that are no longer in force.
+extern NSNotificationName const AKChatComposerVoiceEventNotification;   // "AKChatComposerVoiceEvent"
+extern NSString *const AKChatComposerEventKey;                          // "event"
+extern NSString *const AKChatComposerTextKey;                           // "text"
+extern NSString *const AKChatComposerReasonKey;                         // "reason"
+// Adapter -> app: what actually happened when the Composer was asked to open. `AKChatComposer-
+// OutcomeKey` is "opened", "refused" or "classic-direct", and the source is the one that asked.
+// Posted synchronously from the handler, which is what lets the shell report the interval from
+// the pad's callback to the Composer's own state being updated - the boundary the performance
+// contract names - instead of guessing at it from outside.
+extern NSNotificationName const AKChatComposerOpenResultNotification;   // "AKChatComposerOpenResult"
+extern NSString *const AKChatComposerOutcomeKey;                        // "outcome"
+
+// The identifier a destination chip carries, so a fixture (or a VoiceOver user) can name it.
+#define AKChatComposerDestinationIdentifierFormat "wolkaraforever.composer.destination.%@"
 
 @protocol AKTouchControlsDelegate <NSObject>
 - (void)touchMoveBy:(CGPoint)delta;
@@ -63,7 +122,7 @@ extern BOOL (*AKTouchKeyIsTakenForVoice)(unsigned short usage);
 extern NSNotificationName const AKTouchOwnedKeyUsagesDidChangeNotification;  // "AKTouchOwnedKeyUsagesDidChange"
 extern NSString *const AKTouchOwnedKeyUsagesKey;                             // "usages"
 
-@interface AKTouchControls : UIView <UIKeyInput>
+@interface AKTouchControls : UIView <UIKeyInput, AKChatTextTarget>
 // On unless the launcher's switch stored otherwise: this product wants the
 // toolbar wherever it runs, not only where the platform's default places it.
 @property (class, nonatomic, readonly) BOOL enabled;
@@ -82,4 +141,8 @@ extern NSString *const AKTouchOwnedKeyUsagesKey;                             // 
 // is what turns words into the guest's key events.
 - (void)touchInsertText:(NSString *)text;
 - (void)touchSpecialKey:(unsigned short)code characters:(NSString *)characters;
+
+// Open the Composer from one of this library's own controls. A mapped button arrives as the
+// notification above and lands here too, so every entry path is one method.
+- (void)openChatComposerFromSource:(AKChatComposerSource)source;
 @end

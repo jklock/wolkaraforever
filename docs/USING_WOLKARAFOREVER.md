@@ -200,6 +200,20 @@ What you type goes to a draft first. **Done** on the system keyboard writes the 
 the selected game field and does not press Return; **Replace** does the same from the draft
 panel, and an empty draft clears the field. **↵** on the accessory bar is a plain Return.
 
+### The Chat Composer
+
+A new installation composes in-game messages in the **Chat Composer**: the same card, with a
+microphone, **Cancel**, **Send** and any destinations you have written yourself. The toolbar
+microphone, the keyboard's microphone key and a mapped controller button all open it, and nothing
+reaches the game until you press **Send** - which types the line once, presses Return once and
+closes the chat. **Cancel** closes the chat without sending a word. If you leave the app with a
+message half-written, it is still there when you come back; it is never sent for you.
+
+Open the card's gear to choose between **Review then Send** (the default) and **Classic direct**,
+and to add up to four destinations - a name on a chip and the command it puts in front of your
+line, for example `/say`. An installation that already had dictation settings keeps **Classic
+direct**, so nothing about the way it worked changes until you change it.
+
 The app's own language can be English, German, French, or follow the iPad - the row named
 **App language** changes the launcher's words immediately. World of Warcraft's download
 language is a separate setting (**Game language**) and offers English, French, Spanish and
@@ -211,12 +225,47 @@ inputs. New or reset layouts put the triggers inside; existing saved layouts kee
 positions until you choose otherwise. Connecting a physical controller closes the touch
 settings or layout editor and releases touch inputs.
 
+### Two arrangements, stick buttons and ability zones
+
+The on-screen gamepad has two arrangements, chosen in **Touch controls** or in the launcher's
+**Controller Layout…** sheet:
+
+- **Full** is every control the app has always drawn, and it is what every existing
+  installation keeps after an update.
+- **Simple** draws both sticks, A/B/X/Y, LB and RB at the far top corners, and the menu. The
+  triggers and the D-pad are not drawn. Its shoulders keep their own saved positions, so
+  dragging one in Simple never moves the one in Full; turning Simple off puts every control
+  back exactly where it was, and deletes nothing.
+
+**Stick buttons (L3/R3)** is off unless you turn it on. A double tap on a stick then presses
+that stick's own button once, for a moment; one tap does nothing, and moving the stick is
+unchanged - a drag is never a tap. It is released when its moment passes, and always when the
+controls hide, the keyboard opens, or the settings are opened. Apple's virtual controller does
+not carry a stick button at all (measured: its extended profile has the face buttons, the
+shoulders, the triggers, the menu, the D-pad and the sticks' directions, and nothing else), so
+on this build the row says the controller has no stick button and stays off.
+
+**Ability zones** are extra buttons you place: up to six, each sending one controller button
+while your finger is on it. In the layout editor you drag a zone to move it and tap it to
+choose which button it sends. Two zones may send the same button; the game sees that button
+held until the last finger leaves it. A zone sends nothing but that press and its release - no
+sequences, no repeats, and nothing the game did not receive from your touch.
+
+Every one of these is virtual-controller input: nothing here issues a game command, runs a
+macro, or inspects the game.
+
 Open **Key / Button Configuration** for voice input:
 
 1. Enable **Use a button to talk** and choose **Map a button**.
 2. Press a supported keyboard key or controller control.
 3. Choose **Hold to talk** or **Press to start and stop**.
 4. Use **Test Voice** before opening the game, especially after changing a mapping.
+
+The recogniser's own **Language** is in the draft composer beside the words it types: **System**
+follows the iPad and is the default, and English, German, French and Spanish can be chosen
+explicitly. It belongs to the recogniser and is never changed by the app's own language. A
+language this iPad cannot recognise on the device falls back to System for that hold, and the
+app says so.
 
 Voice requires Microphone and Speech Recognition permission. The mapping can send text when
 recognition completes or leave it for review; it can add a space after the text and accept
@@ -251,9 +300,11 @@ Do not guess from a screenshot alone. Include all of the following:
    signing data, pairing material, device identifiers, and unrelated personal paths before
    posting. Do not edit timestamps, error lines, or the surrounding context.
 
-Do not delete the app as a first repair step: it removes downloaded game data and enrollment
-state. If a download or startup fails, reopen the app, preserve its data, and use the
-Technical details message to identify the next step.
+Do not delete the app as a first repair step: it removes downloaded game data. The
+enrollment itself survives - the trust record is kept in the device's keychain, and the
+app recovers its reference to it at the next launch - so a reinstall normally does not
+mean enrolling again. If a download or startup fails, reopen the app, preserve its data,
+and use the Technical details message to identify the next step.
 
 For the boundary between feature availability and device-tested compatibility, see
 [Compatibility](../COMPATIBILITY.md).

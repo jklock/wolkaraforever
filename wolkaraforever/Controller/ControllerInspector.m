@@ -30,6 +30,7 @@ NSNotificationName const AKInputDiagnosticsDidChangeNotification = @"AKInputDiag
 #import <UIKit/UIKit.h>
 
 #import "../Input/InputElement.h"
+#import "../Input/ControllerCommandIngress.h"
 
 // How many events the on-screen panel keeps. The log itself is not limited.
 static NSUInteger const AKCIHistoryLimit = 12;
@@ -54,6 +55,7 @@ NSString *AKControllerIdentity(GCController *pad) {
 @interface AKControllerInspector ()
 - (void)markDevice:(NSString *)device name:(NSString *)name source:(NSString *)source;
 - (void)noteElement:(NSString *)element value:(double)value pressed:(BOOL)pressed detail:(nullable NSString *)detail;
+- (void)noteDiagnosticElement:(NSString *)element value:(double)value pressed:(BOOL)pressed detail:(nullable NSString *)detail;
 - (void)noteAxis:(NSString *)element value:(double)value;
 - (void)noteIgnoredEvent;
 - (void)noteHandoffSince:(NSTimeInterval)began;
@@ -98,6 +100,38 @@ static void AKCIReportAxis(AKControllerInspector *inspector, NSString *device, N
     if (![interest admitsElement:element]) { [inspector noteIgnoredEvent]; return; }
     [inspector submitContinuous:element value:value pressed:(value != 0)
                          device:device name:name source:source detail:nil];
+}
+
+// A mapped button: the command first, the trace after it.
+//
+// Before this, one main-queue block per event carried the counter, the device mark, the readable
+// line, the panel redraw and - last - the call that fires a trigger. Everything the diagnostics
+// did was in front of the press. Now the callback hands the edge to the bounded ingress and
+// returns; the ingress schedules one drain for the batch, and that drain is what the router sees.
+// The diagnostics still get the same event, but only when someone asked to see them, and never
+// before the command.
+//
+// The inspector's own counters therefore count *diagnostic* admissions on this path. The command
+// path has its own counters in the ingress, and they are the ones the performance contract reads.
+static void AKCIButton(AKControllerInspector *inspector, NSString *device, NSString *name,
+                       NSString *element, double value, BOOL pressed) {
+    if (!inspector) return;
+    AKInputInterest *interest = inspector.interest;
+    if (![interest admitsElement:element]) { [inspector noteIgnoredEvent]; return; }
+
+    AKControllerCommandIngress *ingress = AKControllerCommandIngress.shared;
+    if (ingress.enabled &&
+        [ingress submitElement:element value:value pressed:pressed device:device rejection:NULL]) {
+        if (inspector.diagnosticsEnabled || inspector.panelVisible) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [inspector noteHandoffSince:0];
+                [inspector markDevice:device name:name source:@"controller"];
+                [inspector noteDiagnosticElement:element value:value pressed:pressed detail:nil];
+            });
+        }
+        return;
+    }
+    AKCIReport(inspector, device, name, @"controller", element, value, pressed, nil);
 }
 
 @implementation AKControllerInspector {
@@ -532,7 +566,7 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
         NSString *element = AKInputElementForControllerButton(name);
         button.pressedChangedHandler = ^(GCControllerButtonInput *input, float value, BOOL pressed) {
             (void)input;
-            AKCIReport(weakSelf, device, deviceName, @"controller", element, value, pressed, nil);
+            AKCIButton(weakSelf, device, deviceName, element, value, pressed);
         };
     }
     for (NSString *name in profile.axes) {
@@ -638,6 +672,18 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
     if (detail.length) line = [line stringByAppendingFormat:@" %@", detail];
     [self noteAdmission:began];
     [self reportLine:line element:element value:value pressed:pressed];
+}
+
+// The same event, as the trace only. Used for a button the command ingress has already taken:
+// logging it twice would be a lie about what the app did, and handing it to `onInput` a second
+// time would fire a second trigger for one press.
+- (void)noteDiagnosticElement:(NSString *)element value:(double)value pressed:(BOOL)pressed
+                       detail:(nullable NSString *)detail {
+    NSTimeInterval began = NSProcessInfo.processInfo.systemUptime;
+    NSString *line = [NSString stringWithFormat:@"%@ %@=%.2f", element, pressed ? @"pressed" : @"value", value];
+    if (detail.length) line = [line stringByAppendingFormat:@" %@", detail];
+    [self noteAdmission:began];
+    [self recordLine:line];
 }
 
 - (void)noteAxis:(NSString *)element value:(double)value {

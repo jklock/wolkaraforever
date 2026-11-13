@@ -15,6 +15,45 @@ FOUNDATION_EXPORT NSString *const AKLayoutStoredKey;     // "WolkaraForeverTouch
 /// The named arrangements the user saved, kept apart from the live one.
 FOUNDATION_EXPORT NSString *const AKLayoutProfilesKey;   // "WolkaraForeverProfilesV1"
 
+/// The shape of the stored dictionary this build writes.
+///
+/// 1 is what every release through v1.0.10 read: one arrangement, no mode. 2 adds the mode
+/// (`AKLayoutMode`), the optional stick buttons, the ability zones and Simple's own control
+/// positions. A dictionary with no `version` is a 1, and it is migrated to 2 - as Full, which
+/// is what it was - the first time either binary looks at it. A dictionary with a *higher*
+/// version is a later build's and is never rewritten by this one.
+FOUNDATION_EXPORT NSInteger const AKLayoutSchemaVersion;  // 2
+
+/// The two arrangements. Full is every control the app has ever drawn and the layout every
+/// existing installation is migrated to; Simple is opt-in and drops the triggers and the
+/// D-pad. The spelling is what the stored dictionary carries, so both binaries agree on it.
+FOUNDATION_EXPORT NSString *const AKLayoutModeFull;      // "full"
+FOUNDATION_EXPORT NSString *const AKLayoutModeSimple;    // "simple"
+
+/// The stored arrangement. "full" when there is none, when it is not one we ship, or when the
+/// stored dictionary belongs to a later build: an unknown mode never becomes an experiment.
+FOUNDATION_EXPORT NSString *AKLayoutMode(NSUserDefaults *defaults);
+/// Store an arrangement. NO for a name this build does not ship, which leaves the layout as it
+/// was; nothing a hand-edited file says can turn Simple on.
+FOUNDATION_EXPORT BOOL AKLayoutSetMode(NSUserDefaults *defaults, NSString *mode);
+
+/// Whether a double tap on a stick presses that stick's own button. Off unless the user says
+/// otherwise, which is what every release through v1.0.10 was.
+FOUNDATION_EXPORT BOOL AKLayoutStickButtons(NSUserDefaults *defaults);
+FOUNDATION_EXPORT void AKLayoutSetStickButtons(NSUserDefaults *defaults, BOOL enabled);
+
+/// The elements an ability zone may send: the buttons, never a stick and never a D-pad
+/// direction, because a zone sends one button value and nothing else.
+FOUNDATION_EXPORT NSArray<NSString *> *AKLayoutZoneElements(void);
+/// The zones, each `@{@"element", @"x", @"y"}` with the centre as fractions of the screen.
+/// Empty - nothing reserved, nothing drawn - unless the user added one.
+FOUNDATION_EXPORT NSArray<NSDictionary<NSString *, id> *> *AKLayoutAbilityZones(NSUserDefaults *defaults);
+/// Add one. NO when the element is not one a zone may send, when the list is full, or when the
+/// fractions are not finite; a refused zone changes nothing.
+FOUNDATION_EXPORT BOOL AKLayoutAddAbilityZone(NSUserDefaults *defaults, NSString *element, CGFloat x, CGFloat y);
+FOUNDATION_EXPORT BOOL AKLayoutSetAbilityZoneElement(NSUserDefaults *defaults, NSString *element, NSUInteger index);
+FOUNDATION_EXPORT void AKLayoutClearAbilityZones(NSUserDefaults *defaults);
+
 /// The built-in starting points, by their stable names.
 FOUNDATION_EXPORT NSArray<NSString *> *AKLayoutTemplateNames(void);
 /// What a template writes, or nil when the name is not one we ship.

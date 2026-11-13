@@ -36,6 +36,10 @@ NSString *const AKSelfTestRenderProfile = @"render-profile";
 NSString *const AKSelfTestCurseForge = @"curseforge";
 NSString *const AKSelfTestSpeechFile = @"speech-file";
 NSString *const AKSelfTestAddonsPage = @"addons-page";
+/// Every control on the home page, pressed on the installed build, with a screenshot either side
+/// of each press in Documents/qa/. It puts back everything it touches and names, in its own log,
+/// the controls it does not press and which check owns each of them.
+NSString *const AKSelfTestControls = @"controls";
 NSString *const AKSelfTestLanguage = @"language";
 NSString *const AKSelfTestLatency = @"latency";
 
@@ -919,6 +923,272 @@ static void AKSelfTestRunSpeechFile(AKSelfTestRecorder *recorder) {
     recorder.detail = [NSString stringWithFormat:@"heard %lu characters", (unsigned long)heard.length];
 }
 
+#pragma mark - Every control on the home page, pressed on this device
+
+// The matrix can install, launch, read the log and stop the app, but it cannot press a button;
+// this presses the launcher's own, on the installed build, and keeps a picture of what each
+// press produced in Documents/qa/. That is the difference between "the fixture says the page is
+// wired" and "the app on this iPad opened its sheet when I asked it to".
+//
+// Rows whose press leaves the app, spends the user's data, or writes the user's own files are
+// named with the reason rather than pressed. None of them is uncovered: the simulator fixture
+// presses every one, and `forever-ui` writes and restores the user's configuration and both
+// switches on this device. A skip with a reason and a pointer is evidence; a silent skip is not.
+typedef NS_ENUM(NSInteger, AKSelfTestControlExpect) {
+    AKSelfTestControlOpensSheet,
+    AKSelfTestControlOpensPage,
+    AKSelfTestControlStaysUp,
+};
+
+struct AKSelfTestControl {
+    __unsafe_unretained NSString *identifier;
+    AKSelfTestControlExpect expectation;
+    __unsafe_unretained NSString *what;
+};
+
+static const struct AKSelfTestControl AKSelfTestControlTable[] = {
+    {@"wow.refresh",                   AKSelfTestControlStaysUp,    @"Refresh checks the installation and the page stays up"},
+    {@"wow.settings",                  AKSelfTestControlOpensSheet, @"the settings button opens its sheet"},
+    {@"wow.edition",                   AKSelfTestControlOpensSheet, @"the game edition row opens the edition list"},
+    {@"wow.preferences",               AKSelfTestControlOpensSheet, @"Download preferences opens its sheet"},
+    {@"wow.language",                  AKSelfTestControlOpensSheet, @"the app language row opens the language list"},
+    {@"wow.addons.manage",             AKSelfTestControlOpensPage,  @"the Add-On Manager row opens that page"},
+    {@"wow.addons.macEver",            AKSelfTestControlOpensPage,  @"the recommended add-ons row opens the Add-On Manager"},
+    {@"wow.voice",                     AKSelfTestControlOpensPage,  @"the dictation row opens its page"},
+    {@"wow.voice.test",                AKSelfTestControlOpensPage,  @"the voice trial row opens its page"},
+    {@"wow.performance.deviceProfile", AKSelfTestControlOpensSheet, @"Device profile opens its sheet"},
+    {@"wow.performance.renderProfile", AKSelfTestControlOpensSheet, @"Render profile opens its sheet"},
+    {@"wow.launcher.interfaceMode",    AKSelfTestControlOpensSheet, @"Interface Mode opens its sheet"},
+    {@"wow.launcher.interfaceSetup",   AKSelfTestControlOpensSheet, @"Controller Layout opens its sheet"},
+};
+
+static const struct { __unsafe_unretained NSString *identifier; __unsafe_unretained NSString *why; } AKSelfTestControlsDeferred[] = {
+    {@"wow.primary",                    @"it starts the download or launches the client, which the matrix and COMPATIBILITY.md own"},
+    {@"wow.permissions",                @"it leaves the app for this app's page in Settings, which a test cannot come back from"},
+    {@"wow.addons.directory",           @"it opens the system document browser, which a test cannot dismiss for itself"},
+    {@"wow.performance.settingsFolder", @"it leaves the app for the Files browser"},
+    {@"wow.performance.backup",         @"forever-ui writes and restores the user's own configuration on this device"},
+    {@"wow.performance.restore",        @"forever-ui writes and restores the user's own configuration on this device"},
+    {@"wow.performance.reset",          @"forever-ui writes and restores the user's own configuration on this device"},
+    {@"wow.performance.gamepad",        @"forever-ui writes the game's own UI configuration and puts it back"},
+    {@"wow.performance.overlay",        @"forever-ui turns the overlay on and forever-ui-clean turns it off again"},
+    {@"wow.diagnostics",                @"the Diagnostics page runs probes of its own; the fixture presses it and the matrix reads its log"},
+};
+
+// The home page, found by selector on the connected scene; defined with the Render profile checks
+// below, and declared here because the control walk starts before it in this file.
+static TKWoWViewController *AKSelfTestHomePage(void);
+
+static UIView *AKSelfTestFindView(UIView *root, NSString *identifier) {    if ([root.accessibilityIdentifier isEqual:identifier]) return root;
+    for (UIView *child in root.subviews) {
+        UIView *found = AKSelfTestFindView(child, identifier);
+        if (found) return found;
+    }
+    return nil;
+}
+
+// Bar buttons are not in the view tree, so they are looked for where UIKit keeps them.
+static id AKSelfTestControlFor(UIViewController *page, NSString *identifier) {
+    for (id item in @[page.navigationItem.leftBarButtonItem ?: NSNull.null,
+                      page.navigationItem.rightBarButtonItem ?: NSNull.null]) {
+        if ([item isKindOfClass:UIBarButtonItem.class] &&
+            [((UIBarButtonItem *)item).accessibilityIdentifier isEqual:identifier]) return item;
+    }
+    return AKSelfTestFindView(page.view, identifier);
+}
+
+static BOOL AKSelfTestPressControl(id control) {
+    if ([control isKindOfClass:UIBarButtonItem.class]) {
+        UIBarButtonItem *item = (UIBarButtonItem *)control;
+        if (!item.target || !item.action || ![item.target respondsToSelector:item.action]) return NO;
+        IMP implementation = [item.target methodForSelector:item.action];
+        ((void (*)(id, SEL))implementation)(item.target, item.action);
+        return YES;
+    }
+    if ([control isKindOfClass:UIControl.class]) {
+        [(UIControl *)control sendActionsForControlEvents:UIControlEventTouchUpInside];
+        return YES;
+    }
+    return NO;
+}
+
+// A picture of what the press produced, in the app's own Documents so devicectl can copy it off.
+static BOOL AKSelfTestWriteSnapshot(UIView *view, NSString *path) {
+    if (!view || view.bounds.size.width < 1 || view.bounds.size.height < 1) return NO;
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
+    UIGraphicsImageRenderer *renderer =
+        [[UIGraphicsImageRenderer alloc] initWithSize:view.bounds.size format:format];
+    UIImage *image = [renderer imageWithActions:^(__unused UIGraphicsImageRendererContext *context) {
+        [view drawViewHierarchyInRect:view.bounds afterScreenUpdates:YES];
+    }];
+    NSData *png = UIImagePNGRepresentation(image);
+    return png && [png writeToFile:path atomically:YES];
+}
+
+static UIView *AKSelfTestTopView(void) {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) if (window.isKeyWindow) return window;
+    }
+    return AKSelfTestHomePage().view;
+}
+
+@interface AKSelfTestControlWalk : NSObject
+@property (nonatomic, strong) AKSelfTestRecorder *recorder;
+@property (nonatomic) NSUInteger index;
+@property (nonatomic) NSUInteger attempts;
+@property (nonatomic, copy) NSString *directory;
+@property (nonatomic) BOOL overlayBefore;
+@property (nonatomic, strong) NSDictionary *layoutBefore;
+@end
+
+// A record of where the walk has got to, and nothing else: the steps are free functions because
+// each one ends by handing the next to the main queue.
+@implementation AKSelfTestControlWalk
+@end
+
+static void AKSelfTestWalkStep(AKSelfTestControlWalk *walk);
+
+// Everything a press can leave behind: a sheet, or a page pushed onto the same navigation stack.
+// Both are put back, because a press on a covered page proves nothing about the page.
+static void AKSelfTestUnwind(AKSelfTestControlWalk *walk, void (^then)(void)) {
+    (void)walk;
+    TKWoWViewController *page = AKSelfTestHomePage();
+    if (!page) { then(); return; }
+    if (page.presentedViewController) {
+        [page dismissViewControllerAnimated:NO completion:^{
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), then);
+        }];
+        return;
+    }
+    UINavigationController *navigation = page.navigationController;
+    if (navigation && navigation.viewControllers.count > 1) {
+        [navigation popToRootViewControllerAnimated:NO];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), then);
+        return;
+    }
+    then();
+}
+
+static void AKSelfTestWalkFinish(AKSelfTestControlWalk *walk) {
+    // Nothing in the list above changes a stored value, and this puts back the one this walk
+    // reads as a guard anyway, so a run that stops half-way still leaves the user's settings
+    // exactly as it found them.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    if (walk.layoutBefore) [defaults setObject:walk.layoutBefore forKey:@"WolkaraForeverTouchLayoutV1"];
+    else [defaults removeObjectForKey:@"WolkaraForeverTouchLayoutV1"];
+    NSMutableString *deferred = [NSMutableString string];
+    for (NSUInteger i = 0; i < sizeof(AKSelfTestControlsDeferred) / sizeof(AKSelfTestControlsDeferred[0]); i++) {
+        if (i) [deferred appendString:@"; "];
+        [deferred appendFormat:@"%@ not pressed here (%@)", AKSelfTestControlsDeferred[i].identifier,
+                               AKSelfTestControlsDeferred[i].why];
+    }
+    WKLog("selftest", @"controls: %lu screenshot pair(s) in %@", (unsigned long)walk.index, walk.directory);
+    WKLog("selftest", @"controls: %@", deferred);
+    walk.recorder.detail = [NSString stringWithFormat:
+        @"%lu controls pressed with a screenshot either side in Documents/qa/",
+        (unsigned long)walk.index];
+    AKSelfTestLogVerdict(walk.recorder, @"controls");
+}
+
+static void AKSelfTestWalkEvaluate(AKSelfTestControlWalk *walk, struct AKSelfTestControl control,
+                                   NSString *identifier) {
+    TKWoWViewController *page = AKSelfTestHomePage();
+    BOOL sheet = page.presentedViewController != nil;
+    BOOL pushed = page.navigationController.viewControllers.count > 1;
+    BOOL outcome = NO;
+    NSString *saw = @"nothing";
+    switch (control.expectation) {
+    case AKSelfTestControlOpensSheet: outcome = sheet; saw = sheet ? @"a sheet" : @"nothing"; break;
+    case AKSelfTestControlOpensPage:  outcome = pushed; saw = pushed ? @"a page" : @"nothing"; break;
+    case AKSelfTestControlStaysUp:    outcome = page != nil && !sheet && !pushed;
+                                      saw = page ? @"the page still up" : @"the page gone"; break;
+    }
+    // The picture after the press, taken before anything is dismissed, so it shows what the
+    // press produced rather than the page it went back to.
+    NSString *after = [walk.directory stringByAppendingPathComponent:
+        [NSString stringWithFormat:@"%02lu-%@-after.png", (unsigned long)walk.index, identifier]];
+    BOOL afterShot = AKSelfTestWriteSnapshot(AKSelfTestTopView(), after);
+    [walk.recorder check:(outcome && afterShot)
+                      _:[NSString stringWithFormat:@"%@: %@ (%@, %@)", identifier, control.what, saw,
+                                  afterShot ? @"screenshot after the press" : @"no screenshot after the press"]];
+    AKSelfTestUnwind(walk, ^{
+        walk.index++;
+        walk.attempts = 0;
+        AKSelfTestWalkStep(walk);
+    });
+}
+
+static void AKSelfTestWalkStep(AKSelfTestControlWalk *walk) {
+    if (walk.index >= sizeof(AKSelfTestControlTable) / sizeof(AKSelfTestControlTable[0])) {
+        AKSelfTestWalkFinish(walk);
+        return;
+    }
+    struct AKSelfTestControl control = AKSelfTestControlTable[walk.index];
+    TKWoWViewController *page = AKSelfTestHomePage();
+    if (!page) {
+        [walk.recorder check:NO _:@"the home page is up, so its controls can be pressed at all"];
+        AKSelfTestWalkFinish(walk);
+        return;
+    }
+    // A sheet, a pushed page, or an automatic check left by the previous press is waited for,
+    // then put away, then the press is made - the page declines a row while it is busy, and a
+    // decline says nothing about the row.
+    BOOL covered = page.presentedViewController != nil ||
+                   page.navigationController.viewControllers.count > 1 ||
+                   [[page valueForKey:@"busy"] boolValue];
+    if (covered && walk.attempts < 80) {
+        walk.attempts++;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            AKSelfTestUnwind(walk, ^{ AKSelfTestWalkStep(walk); });
+        });
+        return;
+    }
+    id found = AKSelfTestControlFor(page, control.identifier);
+    if (!found) {
+        [walk.recorder check:NO _:[NSString stringWithFormat:@"%@ is on the home page", control.identifier]];
+        walk.index++;
+        walk.attempts = 0;
+        AKSelfTestWalkStep(walk);
+        return;
+    }
+    NSString *identifier = control.identifier;
+    NSString *before = [walk.directory stringByAppendingPathComponent:
+        [NSString stringWithFormat:@"%02lu-%@-before.png", (unsigned long)walk.index, identifier]];
+    BOOL beforeShot = AKSelfTestWriteSnapshot(AKSelfTestTopView(), before);
+    BOOL pressed = AKSelfTestPressControl(found);
+    if (!pressed || !beforeShot) {
+        [walk.recorder check:NO _:[NSString stringWithFormat:@"%@ could be pressed and photographed", identifier]];
+        walk.index++;
+        walk.attempts = 0;
+        AKSelfTestWalkStep(walk);
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        AKSelfTestWalkEvaluate(walk, control, identifier);
+    });
+}
+
+static void AKSelfTestRunControls(AKSelfTestRecorder *recorder) {
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *documents = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *directory = [documents stringByAppendingPathComponent:@"qa"];
+    [files createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:NULL];
+    // One run's pictures replace the last run's, so a copy off the device cannot mix two builds.
+    [files removeItemAtPath:directory error:NULL];
+    [files createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:NULL];
+    AKSelfTestControlWalk *walk = [AKSelfTestControlWalk new];
+    walk.recorder = recorder;
+    walk.directory = directory;
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    walk.layoutBefore = [defaults objectForKey:@"WolkaraForeverTouchLayoutV1"];
+    AKSelfTestWalkStep(walk);
+}
+
 #pragma mark - The Render profile row, pressed on this device
 
 // The row that ended the app. It builds its action sheet, gives it its own Cancel, and hands
@@ -1437,6 +1707,12 @@ void AKRunSelfTest(NSString *name) {
         // On the main queue: it builds and lays out UIKit views and changes none.
         AKSelfTestOnMain(^{ AKSelfTestRunAddonsPage(recorder); });
         AKSelfTestLogVerdict(recorder, name);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestControls]) {
+        // On the main queue: it presses the home page's own controls and reads back what each
+        // press produced, one turn at a time, and logs its verdict when the walk finishes.
+        AKSelfTestRunControls(recorder);
         return;
     }
     if ([name isEqualToString:AKSelfTestInput]) {

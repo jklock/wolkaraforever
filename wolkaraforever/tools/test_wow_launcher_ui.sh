@@ -78,11 +78,50 @@ cp "$ROOT/LICENSE" "$APP/WolkaraForever-LICENSE"
 cp "$ROOT/NOTICE.md" "$APP/WolkaraForever-NOTICE.md"
 cp "$ROOT/platform/LICENSE" "$APP/LICENSE"
 cp "$ROOT/platform/NOTICE.md" "$APP/NOTICE.md"
+# And the artwork, compiled the way the app target compiles it. Until 2026-11-12 this fixture
+# carried no asset catalog at all: -[WoWViewController markView] asks for "WolkaraForeverLogo",
+# fell back to its gold WOLKAREFOREVER wordmark, and all 17 reviewed baselines recorded the
+# fallback while a build that had lost the artwork looked exactly the same. A missing actool
+# now fails here rather than quietly changing what the pages are made of.
+mkdir -p build/wow-launcher
+xcrun actool launcher/Assets.xcassets --compile "$APP" \
+    --platform iphonesimulator --minimum-deployment-target 17.0 \
+    --output-partial-info-plist build/wow-launcher/assets-partial.plist \
+    > build/wow-launcher/actool.log 2>&1 || {
+    echo "actool could not compile launcher/Assets.xcassets for the fixture" >&2
+    tail -20 build/wow-launcher/actool.log >&2
+    exit 1
+}
+[ -f "$APP/Assets.car" ] || { echo "actool produced no Assets.car" >&2; exit 1; }
 codesign --force --sign - "$APP" > /dev/null
 # The fixture deliberately creates corrupt/legacy metadata states. Start its synthetic app with
 # a fresh container so one aborted fixture cannot become evidence for the next matrix run.
 xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.wow-launcher > /dev/null 2>&1 || true
 xcrun simctl install "$SIM_ID" "$APP"
+# `simctl install` can return before the new bundle is what the simulator launches, and a run
+# then measures the *previous* build. Both halves of that were measured on 2026-11-12: a launch
+# that reported "did not return a process handle" on the iPhone Duo, and an iPad run that
+# recorded every baseline from a fixture which still carried no artwork. Compare what is
+# installed with what was just built - the executable's size and the compiled catalog - and
+# install again when they are not the same, so a recorded image is always the image this run
+# compiled.
+built_executable=$(stat -f %z "$APP/WoWFixture")
+built_catalog=$(stat -f %z "$APP/Assets.car")
+fixture_installed() {
+    local installed
+    installed=$(xcrun simctl get_app_container "$SIM_ID" org.tolkara.tests.wow-launcher app 2>/dev/null) || return 1
+    [ -n "$installed" ] || return 1
+    [ "$(stat -f %z "$installed/WoWFixture" 2>/dev/null)" = "$built_executable" ] || return 1
+    [ "$(stat -f %z "$installed/Assets.car" 2>/dev/null)" = "$built_catalog" ]
+}
+for attempt in 1 2 3 4 5; do
+    fixture_installed && break
+    printf '[wrapper] the installed fixture is not the one just built; installing again (attempt %s)\n' "$attempt"
+    xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.wow-launcher > /dev/null 2>&1 || true
+    xcrun simctl install "$SIM_ID" "$APP"
+    sleep 1
+done
+fixture_installed || { echo "the fixture on the simulator is not the one just built" >&2; exit 1; }
 # Keep every transcript when invoked directly; matrix runners pass TEST_LOG_PATH so their
 # summary can link to the exact failing simulator log. Output still streams to the terminal.
 #
@@ -98,10 +137,42 @@ fi
 case "$LOG" in /*) ;; *) LOG="$ROOT/$LOG";; esac
 mkdir -p "$(dirname "$LOG")"
 : > "$LOG"
+# `simctl install` can return before the simulator's launch database knows the bundle, and a
+# launch in that window fails with "did not return a process handle nor launch error" and no
+# console at all - measured on the iPhone Duo at 17:03 on 2026-11-12, where the same bundle
+# launched on the next attempt without anything being rebuilt. Wait for the bundle to be
+# listed, then retry a launch that never reached the fixture, so the verdict window below is
+# spent on a fixture that ran instead of on one that was never started.
+for _ in $(seq 1 40); do
+    xcrun simctl listapps "$SIM_ID" 2>/dev/null | grep -q org.tolkara.tests.wow-launcher && break
+    sleep 0.5
+done
 # The fixture exits after its assertions, but simctl can leave the console stream open after
 # the process exits. Watch the fixture's explicit verdict so this automated wrapper cannot hang.
-xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.wow-launcher "$@" 2>&1 | tee "$LOG" &
-LAUNCH=$!
+launch_fixture() {
+    xcrun simctl launch --terminate-running-process --console "$SIM_ID" \
+        org.tolkara.tests.wow-launcher "$@" 2>&1 | tee -a "$LOG" &
+    LAUNCH=$!
+    # The fixture's own first line, written before any assertion runs.
+    for _ in $(seq 1 40); do
+        grep -q 'launcher fixture .* launched' "$LOG" && return 0
+        kill -0 "$LAUNCH" 2>/dev/null || break
+        sleep 0.25
+    done
+    return 1
+}
+attempt=1
+while ! launch_fixture "$@"; do
+    printf '[wrapper] launch attempt %s never started the fixture\n' "$attempt" >> "$LOG"
+    kill "$LAUNCH" 2>/dev/null || true
+    wait "$LAUNCH" 2>/dev/null || true
+    if [ "$attempt" -ge 3 ]; then
+        echo "the fixture could not be launched in 3 attempts" >&2
+        exit 1
+    fi
+    attempt=$((attempt + 1))
+    sleep 2
+done
 # The fixture guards itself against a hang and prints its own verdict (PASS or TIMEOUT).
 # Wait longer than that guard, so the verdict this loop sees is always the fixture's and
 # never this wrapper killing a healthy run: the iPad matrix device legitimately needs

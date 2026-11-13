@@ -65,6 +65,12 @@ extern NSString *const AKSelfTestLatency;
 /// already up rewrites its words without a relaunch. It puts the user's own choice back.
 extern NSString *const AKSelfTestLanguage;
 
+/// Every control on the home page, pressed on the installed build: each press is followed by the
+/// outcome it must produce (a sheet, a page, or the page still up) and by a screenshot in
+/// Documents/qa/. It changes no setting; it names in its own log the controls it does not press
+/// and the check that owns each of them. `pilot.sh controls` copies the pictures off the device.
+extern NSString *const AKSelfTestControls;
+
 // Runs one self-test and logs the verdict the matrix greps:
 //   selftest: <name> PASS <passed>/<total> checks (<what was exercised>)
 //   selftest: <name> FAIL <passed>/<total> checks: <the first thing that was wrong>

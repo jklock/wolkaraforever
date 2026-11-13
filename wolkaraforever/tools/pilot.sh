@@ -903,7 +903,13 @@ cmd_log() {
     # across launches, so "the app logged something" is not evidence about this launch.
     local before; before=$(cat "$SESSION/log-launches-before" 2>/dev/null || echo none)
     if [ "$before" != none ]; then
-        local now; now=$(grep -c ' launched ---$' "$APP_LOG" 2>/dev/null || echo 0)
+        # grep returns 1 when there are no matches. Do not append its fallback
+        # output to the successful `grep -c` count: `0\n0` breaks the numeric
+        # comparison below and can make a stale log look like a successful run.
+        local now; now=$(grep -c ' launched ---$' "$APP_LOG" 2>/dev/null || true)
+        case "$now" in
+            ''|*[!0-9]*) now=0 ;;
+        esac
         if [ "$now" -gt "$before" ]; then
             say "this log holds the launch from this run ($before before it, $now now)"
         else
@@ -1030,6 +1036,32 @@ cmd_selftest() {
     return 1
 }
 
+# Every control on the launcher's own home page, pressed on the installed build, with a picture of
+# what each press produced. The app does the pressing (see Shell/SelfTest.h) because nothing on
+# this Mac can tap a physical iPad; this runs that self-test and copies the pictures off, so the
+# evidence is a directory of PNGs rather than a sentence.
+#
+#   wolkaraforever/tools/pilot.sh controls [destination]
+#
+# The destination defaults to logs/qa/<UTC timestamp>/ under the repository root, which is
+# ignored output: the pictures are a decision aid for this run, not repository history.
+cmd_controls() {
+    local destination=${1:-}
+    [ -n "$destination" ] || destination="$root/logs/qa/$(date -u '+%Y%m%dT%H%M%SZ')"
+    local rc=0
+    cmd_selftest controls || rc=$?
+    step "copying the screenshots off the device"
+    mkdir -p "$destination"
+    xcrun devicectl device copy from --device "$DEVICE" --domain-type appDataContainer \
+        --domain-identifier "$BUNDLE" --source "Documents/qa" --destination "$destination" \
+        >/dev/null 2>&1 || die "the screenshots could not be copied off the device"
+    local count
+    count=$(find "$destination" -name '*.png' | wc -l | tr -d ' ')
+    say "$count screenshot(s) in $destination"
+    [ "$count" -gt 0 ] || die "the app wrote no screenshots, so there is nothing to look at"
+    return "$rc"
+}
+
 case "${1:-state}" in
     state)   cmd_state ;;
     stop)    cmd_stop "${2:-}" ;;
@@ -1043,6 +1075,7 @@ case "${1:-state}" in
     leave)   cmd_leave "${2:-}" ;;
     return)  cmd_return ;;  # `return` is a shell keyword; the case label is a plain word here
     selftest) cmd_selftest "${2:-}" ;;
+    controls) cmd_controls "${2:-}" ;;
     restore) cmd_restore ;;
     cycle)
         cmd_install "${2:-}" --no-restore

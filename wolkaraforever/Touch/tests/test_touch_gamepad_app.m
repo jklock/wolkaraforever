@@ -4,6 +4,8 @@
 #import "../translation/AppKit/InterfaceMode.h"
 #import "../translation/AppKit/TouchGamepad.h"
 #import "../translation/AppKit/TouchGamepadLayout.h"
+#import "../translation/AppKit/TouchCamera.h"
+#import "../translation/AppKit/TouchControllerLog.h"
 #import "../translation/AppKit/TouchHaptics.h"
 #include <assert.h>
 #include <math.h>
@@ -14,6 +16,9 @@
 - (NSArray<GCController *> *)connectedControllers;
 - (GCVirtualController *)makeController;
 - (AKTouchHaptics *)makeHaptics;
+// Whether the controller this drives carries the stick's own button. Apple's virtual one does
+// not, which the app honours; a fixture subclass answers yes to prove the other path.
+- (BOOL)stickButtonsAvailable;
 @end
 @interface AKTouchHaptics (FixtureSeams)
 - (void)emitImpact:(BOOL)limit;
@@ -98,8 +103,13 @@ static void TestHaptics(void) {
 @interface AKPreviewGamepad : AKTouchGamepad
 @property GCVirtualController *created;
 @property AKFixtureHaptics *feedback;
+// Apple's virtual controller has no stick button, which the app honours by refusing that
+// gesture. This stands in for a controller that has one, so the positive path - one press of
+// the right element, one release - is proved rather than described.
+@property BOOL forceStickButtons;
 @end
 @implementation AKPreviewGamepad
+- (BOOL)stickButtonsAvailable { return self.forceStickButtons || [super stickButtonsAvailable]; }
 - (AKTouchHaptics *)makeHaptics { self.feedback=[AKFixtureHaptics new]; return self.feedback; }
 - (GCVirtualController *)makeController { self.created=[super makeController]; return self.created; }
 - (NSArray<GCController *> *)connectedControllers {
@@ -131,9 +141,13 @@ static BOOL WaitUntil(BOOL (^predicate)(void)) {
 }
 @interface AKFixtureTouch : UITouch
 @property CGPoint point;
+// A tap is judged by the clock, so the fixture owns the clock: a real UITouch's timestamp is
+// whatever UIKit said, and these traces are the ones this file writes.
+@property NSTimeInterval when;
 @end
 @implementation AKFixtureTouch
 - (CGPoint)locationInView:(UIView *)view { (void)view; return self.point; }
+- (NSTimeInterval)timestamp { return _when > 0 ? _when : NSProcessInfo.processInfo.systemUptime; }
 @end
 @interface AKFixturePan : UIPanGestureRecognizer
 @property CGPoint movement;
@@ -342,6 +356,292 @@ static void TestInterfaceMode(void) {
     setMode(original);
     puts("TOUCH_INTERFACE_MODE_PASS: ios and ipados are explicit, auto is the device's own hardware class (spelled in any case), and a missing or unrecognised value is Standard.");
 }
+// --- the log a fixture can read ------------------------------------------------
+//
+// Every touch-controller line goes to the sink while these fixtures run. Counting presses
+// against releases here is how "one press has one release" is proved rather than asserted in
+// prose: the lines are the same ones a device log carries.
+static NSMutableArray<NSString *> *AKFixtureLogLines;
+static void AKFixtureCollectLine(NSString *line) {
+    if (!AKFixtureLogLines) AKFixtureLogLines = [NSMutableArray new];
+    [AKFixtureLogLines addObject:line];
+}
+static void AKFixtureBeginLog(void) {
+    AKFixtureLogLines = [NSMutableArray new];
+    AKTouchControllerLogSink = AKFixtureCollectLine;
+}
+static void AKFixtureEndLog(void) { AKTouchControllerLogSink = NULL; }
+static NSUInteger AKFixtureLogCount(NSString *needle) {
+    NSUInteger count = 0;
+    for (NSString *line in AKFixtureLogLines) if ([line containsString:needle]) count++;
+    return count;
+}
+static BOOL AKFixtureLogHas(NSString *needle) { return AKFixtureLogCount(needle) > 0; }
+// The lines themselves, when an assertion needs to say what happened rather than that
+// something did. Bounded, so a wrong expectation cannot flood a build log.
+static void AKFixtureDumpLog(void) {
+    NSUInteger from = AKFixtureLogLines.count > 12 ? AKFixtureLogLines.count - 12 : 0;
+    for (NSUInteger index = from; index < AKFixtureLogLines.count; index++)
+        fprintf(stderr, "   log: %s\n", AKFixtureLogLines[index].UTF8String);
+    fflush(stderr);
+}
+// Every press that was sent has a release that was sent: the invariant the feature is built on.
+static void AKFixtureAssertPressesHaveReleases(void) {
+    NSUInteger presses = AKFixtureLogCount(@"event=press outcome=sent");
+    NSUInteger releases = AKFixtureLogCount(@"event=release outcome=sent");
+    if (presses != releases)
+        fprintf(stderr, "TOUCH_PRESS_PAIRING_MISMATCH: presses=%lu releases=%lu\n",
+                (unsigned long)presses, (unsigned long)releases);
+    assert(presses == releases);
+}
+// No line may carry anything but a word in a known key: this is the boundary in the log.
+static void TestTouchControllerLog(void) {
+    NSString *line = AKTouchControllerLogLine(AKTouchControllerEventPress, @"sent",
+        @{@"control": @"button",
+          @"element": @"/etc/passwd",
+          @"mode": @"two words",
+          @"reason": [@"" stringByPaddingToLength:300 withString:@"a" startingAtIndex:0],
+          @"secret": @"should-not-appear"});
+    assert([line hasPrefix:@"[touch-controller] event=press outcome=sent "]);
+    assert([line containsString:@"control=button"]);
+    assert([line containsString:@"element=-"]);        // a path
+    assert([line containsString:@"mode=-"]);           // a sentence
+    assert([line containsString:@"reason=-"]);         // longer than any word
+    assert(![line containsString:@"/etc"]);
+    assert(![line containsString:@"should-not-appear"]); // a key that is not in the list
+    assert(line.length < 160);
+    // Every event has the spelling the log's readers expect.
+    assert([AKTouchControllerEventName(AKTouchControllerEventLayout) isEqual:@"layout"]);
+    assert([AKTouchControllerEventName(AKTouchControllerEventGesture) isEqual:@"gesture"]);
+    assert([AKTouchControllerEventName(AKTouchControllerEventPress) isEqual:@"press"]);
+    assert([AKTouchControllerEventName(AKTouchControllerEventRelease) isEqual:@"release"]);
+    assert([AKTouchControllerEventName(AKTouchControllerEventThreshold) isEqual:@"threshold"]);
+    assert([AKTouchControllerEventName(AKTouchControllerEventCancel) isEqual:@"cancel"]);
+    assert([AKTouchControllerEventName(AKTouchControllerEventLifecycle) isEqual:@"lifecycle"]);
+    puts("TOUCH_CONTROLLER_LOG_PASS: one tag, a closed key list, and a value that is not a short word is replaced before it reaches the line.");
+}
+// --- the layout's second schema -------------------------------------------------
+static void TestLayoutSchema(void) {
+    NSString *suite = [@"org.tolkara.touch2." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+    NSString *key = @"WolkaraForeverTouchLayoutV1";
+    CGRect bounds = CGRectMake(0,0,1000,500);
+    CGRect defaultFrame = CGRectMake(0,0,56,44);
+    AKFixtureBeginLog();
+    // 1. Nothing stored: a fresh install is Full, and reading it writes nothing at all - so
+    //    every default that depends on "nothing was saved" still holds (the shoulder order
+    //    among them, which an update must not change for a new player).
+    AKGamepadLayout *fresh = [[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(fresh.mode == AKGamepadLayoutModeFull && !fresh.stickButtonsEnabled && fresh.abilityZones.count == 0);
+    assert(!fresh.newerThanThisBuild && [fresh.modeName isEqual:@"full"]);
+    assert(fresh.swapShoulders);
+    assert([defaults dictionaryForKey:key] == nil);
+    assert(!AKFixtureLogHas(@"event=layout outcome=migrated"));
+    // 2. A dictionary every release through v1.0.10 wrote: it becomes Full, and every value it
+    //    carried is still there - the update must not move a control.
+    [defaults removePersistentDomainForName:suite];
+    AKFixtureBeginLog();
+    [defaults setObject:@{@"opacity":@0.55,@"swapShoulders":@NO,@"positions":@{@"LB":@[@0.25,@0.10]}}
+                 forKey:key];
+    AKGamepadLayout *migrated = [[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(migrated.mode == AKGamepadLayoutModeFull && fabs(migrated.opacity-0.55) < 0.001 && !migrated.swapShoulders);
+    CGRect moved = [migrated frameForItem:@"LB" defaultFrame:defaultFrame inBounds:bounds];
+    assert(fabs(CGRectGetMinX(moved)-0.25*(1000-56)) < 0.5);
+    assert(fabs(CGRectGetMinY(moved)-0.10*(500-44)) < 0.5);
+    NSDictionary *upgraded = [defaults dictionaryForKey:key];
+    assert([upgraded[@"version"] integerValue] == 2 && [upgraded[@"mode"] isEqual:@"full"]);
+    assert(AKFixtureLogHas(@"event=layout outcome=migrated mode=full from=0 to=2"));
+    // 3. A dictionary a *later* build wrote is read as defaults and never overwritten.
+    [defaults removePersistentDomainForName:suite];
+    NSDictionary *future = @{@"version":@3,@"mode":@"simple",@"stickButtons":@YES,
+                             @"opacity":@0.4,@"positions":@{@"LB":@[@0,@0]}};
+    [defaults setObject:future forKey:key];
+    AKFixtureBeginLog();
+    AKGamepadLayout *newer = [[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(newer.newerThanThisBuild && newer.mode == AKGamepadLayoutModeFull);
+    assert(fabs(newer.opacity-0.8) < 0.001 && !newer.stickButtonsEnabled && newer.abilityZones.count == 0);
+    assert(AKFixtureLogHas(@"event=layout outcome=refused reason=newer-schema"));
+    newer.opacity = 0.1; [newer setModeName:@"simple"]; [newer save];
+    assert([[defaults dictionaryForKey:key] isEqualToDictionary:future]);
+    // 4. A mode this build does not ship is Full, never an experiment - in the dictionary and
+    //    through the setter.
+    for (id value in @[@"Simple", @"TURBO", @"", @42]) {
+        [defaults setObject:@{@"version":@2,@"mode":value} forKey:key];
+        assert([[AKGamepadLayout alloc] initWithDefaults:defaults].mode == AKGamepadLayoutModeFull);
+    }
+    [defaults setObject:@{@"version":@2,@"mode":@"full"} forKey:key];
+    AKGamepadLayout *layout = [[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(![layout setModeName:@"turbo"] && layout.mode == AKGamepadLayoutModeFull);
+    // 5. Simple and Full keep their own positions, and turning Simple off is a rollback that
+    //    deletes nothing.
+    assert([layout setModeName:@"simple"] && layout.mode == AKGamepadLayoutModeSimple);
+    [layout moveItem:@"LB" toFrame:CGRectMake(0,0,56,44) inBounds:bounds];
+    [layout save];
+    AKGamepadLayout *simple = [[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(simple.mode == AKGamepadLayoutModeSimple);
+    assert(CGRectEqualToRect([simple frameForItem:@"LB" defaultFrame:defaultFrame inBounds:bounds],
+                             CGRectMake(0,0,56,44)));
+    [simple setModeName:@"full"]; [simple save];
+    AKGamepadLayout *full = [[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(full.mode == AKGamepadLayoutModeFull);
+    assert(CGRectEqualToRect([full frameForItem:@"LB" defaultFrame:CGRectMake(300,40,56,44) inBounds:bounds],
+                             CGRectMake(300,40,56,44)));
+    NSDictionary *rollback = [defaults dictionaryForKey:key];
+    assert(rollback[@"simplePositions"] && [rollback[@"simplePositions"][@"LB"] isKindOfClass:NSArray.class]);
+    // 6. The stick buttons are off unless asked for, and the answer survives a relaunch.
+    assert(!full.stickButtonsEnabled);
+    full.stickButtonsEnabled = YES; [full save];
+    assert([[AKGamepadLayout alloc] initWithDefaults:defaults].stickButtonsEnabled);
+    // 7. An ability zone sends one button: a stick and a D-pad direction are refused, a place
+    //    that is not two finite fractions is refused, a place off screen is brought inside, and
+    //    six is the most.
+    assert(![full addAbilityZoneForElement:GCInputLeftThumbstick atX:0.5 y:0.5]);
+    assert(![full addAbilityZoneForElement:@"dpad.up" atX:0.5 y:0.5]);
+    assert(![full addAbilityZoneForElement:@"Whatever" atX:0.5 y:0.5]);
+    assert(![full addAbilityZoneForElement:GCInputButtonB atX:NAN y:0.5]);
+    assert([full addAbilityZoneForElement:GCInputButtonA atX:0.5 y:0.5]);
+    assert([full addAbilityZoneForElement:GCInputButtonB atX:2 y:-1]);
+    assert(fabs([full.abilityZones[1][@"x"] doubleValue]-1) < 0.001 &&
+           fabs([full.abilityZones[1][@"y"] doubleValue]-0) < 0.001);
+    while (full.abilityZones.count < 6)
+        assert([full addAbilityZoneForElement:GCInputRightShoulder atX:0.2 y:0.2]);
+    assert(![full addAbilityZoneForElement:GCInputButtonX atX:0.5 y:0.5]);
+    assert([full setAbilityZoneElement:GCInputButtonX atIndex:0]);
+    assert(![full setAbilityZoneElement:@"dpad.left" atIndex:0]);
+    assert(![full setAbilityZoneElement:GCInputButtonX atIndex:99]);
+    assert([full moveAbilityZoneAtIndex:0 toX:0.1 y:0.9]);
+    [full save];
+    AKGamepadLayout *zones = [[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(zones.abilityZones.count == 6);
+    assert([zones.abilityZones[0][@"element"] isEqual:GCInputButtonX]);
+    assert(fabs([zones.abilityZones[0][@"x"] doubleValue]-0.1) < 0.001);
+    [zones removeAbilityZoneAtIndex:0];
+    assert(zones.abilityZones.count == 5);
+    // A hand-edited arrangement cannot smuggle in a zone that is not a button.
+    [zones applyArrangement:@{@"abilityZones":@[@{@"element":GCInputLeftThumbstick,@"x":@0.5,@"y":@0.5},
+                                               @{@"element":GCInputButtonA,@"x":@0.5,@"y":@0.5}]}];
+    assert(zones.abilityZones.count == 1 && [zones.abilityZones[0][@"element"] isEqual:GCInputButtonA]);
+    [zones clearAbilityZones];
+    assert(zones.abilityZones.count == 0);
+    // 8. A template is about sticks and reserved areas, not about the arrangement, and a saved
+    //    profile carries everything the layout is - including the mode.
+    [zones setModeName:@"simple"];
+    [zones applyTemplateNamed:@"plain"];
+    assert(zones.mode == AKGamepadLayoutModeSimple);
+    assert([zones saveAsProfileNamed:@"touch2-profile"]);
+    [zones setModeName:@"full"];
+    assert([zones applyProfileNamed:@"touch2-profile"]);
+    assert(zones.mode == AKGamepadLayoutModeSimple && zones.stickButtonsEnabled);
+    [zones deleteProfileNamed:@"touch2-profile"];
+    [defaults removePersistentDomainForName:suite];
+    AKFixtureEndLog();
+    puts("TOUCH_LAYOUT_SCHEMA_PASS: an old dictionary migrates to Full with everything it carried, a newer one is never rewritten, an unknown mode is Full, Simple keeps its own positions and turning it off deletes nothing, and only buttons may become ability zones.");
+}
+// --- the direct camera ----------------------------------------------------------
+static void AKFixtureCameraEmit(void *context, AKTrackpadAction action, double x, double y, unsigned button) {
+    NSMutableArray<NSString *> *events = (__bridge NSMutableArray<NSString *> *)context;
+    switch (action) {
+        case AKTrackpadDown: [events addObject:[NSString stringWithFormat:@"down%u",button]]; break;
+        case AKTrackpadUp: [events addObject:[NSString stringWithFormat:@"up%u",button]]; break;
+        case AKTrackpadMove: [events addObject:[NSString stringWithFormat:@"move%.1f,%.1f",x,y]]; break;
+        case AKTrackpadScroll: [events addObject:[NSString stringWithFormat:@"scroll%.1f,%.1f",x,y]]; break;
+    }
+}
+// The camera is a gesture with an end. Every one of these traces is a sequence UIKit can
+// produce, and the point of each is what the *next* touch does after it.
+static void TestDirectCamera(void) {
+    AKTouchCameraGesture camera = {0};
+    NSMutableArray<NSString *> *events = [NSMutableArray new];
+    void *context = (__bridge void *)events;
+    CGSize surface = CGSizeMake(1000,500);
+    AKFixtureBeginLog();
+    // A tap where the finger was: one press, one release, no motion.
+    AKTouchCameraUpdate(&camera,1,100,100,1,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraUpdate(&camera,0,0,0,1.1,surface,AKFixtureCameraEmit,context);
+    assert(([events isEqual:@[@"down0",@"up0"]]));
+    assert(!AKTouchCameraIsActive(&camera));
+    // Hold, then drag: one press, the motion, one release. The threshold hand-off is reported
+    // once, and only once.
+    [events removeAllObjects];
+    AKTouchCameraUpdate(&camera,1,100,100,2,surface,AKFixtureCameraEmit,context);
+    assert(AKTouchCameraHold(&camera,2.5,AKFixtureCameraEmit,context));
+    assert(!AKTouchCameraHold(&camera,2.6,AKFixtureCameraEmit,context)); // already dragging
+    AKTouchCameraUpdate(&camera,1,110,104,2.6,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraUpdate(&camera,0,0,0,2.7,surface,AKFixtureCameraEmit,context);
+    assert(([events isEqual:@[@"down0",@"move10.0,4.0",@"up0"]]));
+    assert(AKFixtureLogCount(@"event=threshold outcome=handoff") == 1);
+    // A centroid jump is a new gesture, not a drag: the held button is released exactly once,
+    // nothing is moved by the jump, and the camera answers the very next movement - which is
+    // what makes a recentered pointer survivable.
+    [events removeAllObjects];
+    AKTouchCameraUpdate(&camera,1,100,100,3,surface,AKFixtureCameraEmit,context);
+    assert(AKTouchCameraHold(&camera,3.5,AKFixtureCameraEmit,context));
+    AKTouchCameraUpdate(&camera,1,900,400,3.6,surface,AKFixtureCameraEmit,context);
+    assert(([events isEqual:@[@"down0",@"up0"]]));
+    assert(AKFixtureLogHas(@"event=threshold outcome=rebased"));
+    AKTouchCameraUpdate(&camera,1,905,402,3.7,surface,AKFixtureCameraEmit,context);
+    assert([events.lastObject isEqual:@"move5.0,2.0"]);
+    AKTouchCameraUpdate(&camera,0,0,0,3.8,surface,AKFixtureCameraEmit,context);
+    // Every exit the *app* causes is one release and nothing left behind, and the next touch
+    // is a camera drag immediately. Each pass uses its own clock, because a finger trace that
+    // goes back in time is itself a cancellation.
+    NSTimeInterval clock = 10;
+    for (NSString *reason in @[@"background",@"resign",@"resize",@"settings",@"controller",@"teardown"]) {
+        [events removeAllObjects];
+        AKTouchCameraUpdate(&camera,1,300,200,clock,surface,AKFixtureCameraEmit,context);
+        assert(AKTouchCameraHold(&camera,clock+0.5,AKFixtureCameraEmit,context));
+        AKTouchCameraReset(&camera,reason,AKFixtureCameraEmit,context);
+        assert(([events isEqual:@[@"down0",@"up0"]]));
+        assert(!AKTouchCameraIsActive(&camera));
+        // A second reset on a gesture that is already gone emits nothing at all.
+        AKTouchCameraReset(&camera,reason,AKFixtureCameraEmit,context);
+        assert(events.count == 2);
+        AKTouchCameraUpdate(&camera,1,320,210,clock+1,surface,AKFixtureCameraEmit,context);
+        AKTouchCameraUpdate(&camera,1,330,214,clock+1.1,surface,AKFixtureCameraEmit,context);
+        assert([events.lastObject isEqual:@"move10.0,4.0"]);
+        AKTouchCameraUpdate(&camera,0,0,0,clock+1.2,surface,AKFixtureCameraEmit,context);
+        clock += 10;
+    }
+    // A *cancelled* touch is the platform's rule, not the app's: the held button is released
+    // once, and then the rest of that gesture is suppressed until every finger is lifted. The
+    // leftover finger must not become camera motion - that is the jump `AKTrackpadCancel`
+    // blocks, and this app keeps it.
+    [events removeAllObjects];
+    clock = 200;
+    AKTouchCameraUpdate(&camera,1,300,200,clock,surface,AKFixtureCameraEmit,context);
+    assert(AKTouchCameraHold(&camera,clock+0.5,AKFixtureCameraEmit,context));
+    AKTouchCameraReset(&camera,@"cancelled",AKFixtureCameraEmit,context);
+    assert(([events isEqual:@[@"down0",@"up0"]]));
+    assert(AKTouchCameraIsActive(&camera));            // the finger is still down
+    AKTouchCameraUpdate(&camera,1,360,240,clock+1,surface,AKFixtureCameraEmit,context);
+    assert(events.count == 2);                          // and it does not drag the camera
+    AKTouchCameraUpdate(&camera,0,0,0,clock+1.1,surface,AKFixtureCameraEmit,context);
+    assert(events.count == 2);                          // lifting it is not a click either
+    assert(!AKTouchCameraIsActive(&camera));
+    AKTouchCameraUpdate(&camera,1,320,210,clock+2,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraUpdate(&camera,1,330,214,clock+2.1,surface,AKFixtureCameraEmit,context);
+    assert([events.lastObject isEqual:@"move10.0,4.0"]); // a new touch drags at once
+    AKTouchCameraUpdate(&camera,0,0,0,clock+2.2,surface,AKFixtureCameraEmit,context);
+    assert(AKFixtureLogHas(@"event=lifecycle outcome=cleanup reason=background"));
+    assert(AKFixtureLogHas(@"event=cancel outcome=cancelled"));
+    // Everything above is paired, press for release, before the one case that has no delegate
+    // left to tell.
+    AKFixtureAssertPressesHaveReleases();
+    // Teardown: the delegate may already be gone, so nothing is emitted - but the gesture is
+    // still cleared, so nothing can answer a later frame.
+    AKTouchCameraUpdate(&camera,1,300,200,1000,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraReset(&camera,@"teardown",NULL,NULL);
+    assert(!AKTouchCameraIsActive(&camera));
+    AKFixtureEndLog();
+    puts("TOUCH_CAMERA_LIFECYCLE_PASS: a tap clicks once, a hold drags, a centroid jump is rebased with one release and the next movement still turns the camera, every exit the app causes releases once and leaves nothing behind, and a cancelled touch releases once and then stays suppressed until the finger lifts, as it always has.");
+}
+// --- the arrangement, the stick buttons and the zones, through the real controls ---
+// A control by name, drawn or not: the identifier the gamepad gives its own controls, without
+// the helper that insists a control is visible.
+static UIView *GamepadControl(UIView *host, NSString *name) {
+    return Find(host, [@"tolkara.gamepad." stringByAppendingString:name]);
+}
+static void TestTouchControllerTwo(UIView *host, AKPreviewGamepad *manager);
 static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     GCExtendedGamepad *pad=manager.created.controller.extendedGamepad;
     assert(pad && manager.visible);
@@ -443,6 +743,14 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(done && CGRectContainsRect(panel.bounds,[done convertRect:done.bounds toView:panel]));
     host.bounds=normalBounds; [host layoutIfNeeded];
     UISwitch *outer=(id)Find(host,@"wolkaraforever.controls.swapShoulders");
+    // Said out loud when it is not the row this fixture expects: a missing row and a row that
+    // is on are different faults, and the message has to say which one happened.
+    if (!outer || outer.on) {
+        AKGamepadLayout *current=[[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+        fprintf(stderr, "TOUCH_SWAP_ROW_MISMATCH: found=%d on=%d mode=%s swapShoulders=%d\n",
+                outer != nil, outer.on, current.modeName.UTF8String, current.swapShoulders);
+        fflush(stderr);
+    }
     assert(outer && !outer.on);
     assert(CGRectGetMidX(Button(host,GCInputLeftTrigger).frame)>CGRectGetMidX(Button(host,GCInputLeftShoulder).frame));
     assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)<CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
@@ -536,6 +844,7 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     TestPreferences();
     // Sticks-only is a mobile arrangement: Standard has no switch to turn it on with.
     if (AKInterfaceModeIsMobile()) { TestJumpReach(host,manager); TestFloating(host,manager); }
+    TestTouchControllerTwo(host,manager);
     manager.keyboardVisible=YES; Drain();
     assert(!manager.visible && !pad.leftShoulder.pressed && !pad.buttonA.pressed);
     assert(!manager.feedback.enabled);
@@ -543,6 +852,216 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     [leftStick cancelTrackingWithEvent:nil]; [rightStick cancelTrackingWithEvent:nil];
     [manager invalidate];
     puts("TOUCH_GAMEPAD_INPUT_PASS: all nine buttons, D-pad diagonals/opposition/cancel, both sticks, held modifiers, neutral reset and trackpad passthrough.");
+}
+// --- the arrangement, the stick buttons and the zones, through the real controls ---
+static void TestTouchControllerTwo(UIView *host, AKPreviewGamepad *manager) {
+    AKFixtureBeginLog();
+    // The panel is the only place these are turned on, so it is where the test stands.
+    [manager toggleSettings]; [host layoutIfNeeded];
+    UISwitch *simpleSwitch = (id)Find(host,@"wolkaraforever.controls.simpleLayout");
+    UISwitch *stickSwitch = (id)Find(host,@"wolkaraforever.controls.stickButtons");
+    UIButton *addZone = (id)Find(host,@"wolkaraforever.controls.addAbilityZone");
+    UIButton *clearZones = (id)Find(host,@"wolkaraforever.controls.clearAbilityZones");
+    assert(simpleSwitch && stickSwitch && addZone && clearZones);
+    assert(!simpleSwitch.on && !stickSwitch.on && !clearZones.enabled);
+    // Full is what an existing installation has: the triggers and the D-pad are drawn.
+    assert(!GamepadControl(host,GCInputLeftTrigger).hidden && !GamepadControl(host,@"dpad.up").hidden);
+    simpleSwitch.on = YES; [simpleSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    // Simple draws both sticks, the four face buttons, both shoulders and the menu - and not
+    // the triggers or the D-pad. Said out loud when it is not so, because "missing" and
+    // "still drawn" are different faults.
+    UIView *leftTrigger = GamepadControl(host,GCInputLeftTrigger), *rightTrigger = GamepadControl(host,GCInputRightTrigger);
+    UIView *dpadUp = GamepadControl(host,@"dpad.up"), *dpadLeft = GamepadControl(host,@"dpad.left");
+    if (!leftTrigger.hidden || !rightTrigger.hidden || !dpadUp.hidden || !dpadLeft.hidden) {
+        AKGamepadLayout *current = [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+        fprintf(stderr, "TOUCH_SIMPLE_MISMATCH: mode=%s found=%d/%d/%d/%d hidden=%d/%d/%d/%d\n",
+                current.modeName.UTF8String, leftTrigger != nil, rightTrigger != nil, dpadUp != nil, dpadLeft != nil,
+                (int)leftTrigger.hidden, (int)rightTrigger.hidden, (int)dpadUp.hidden, (int)dpadLeft.hidden);
+        fflush(stderr);
+    }
+    assert(leftTrigger && rightTrigger && leftTrigger.hidden && rightTrigger.hidden);
+    assert(dpadUp.hidden && dpadLeft.hidden);
+    for (NSString *name in @[GCInputButtonA,GCInputButtonB,GCInputButtonX,GCInputButtonY,
+                             GCInputLeftShoulder,GCInputRightShoulder,GCInputButtonMenu])
+        assert(!GamepadControl(host,name).hidden);
+    assert(!Find(host,@"tolkara.gamepad.leftStick").hidden);
+    // The shoulders sit at the far corners in Simple, where the triggers used to be - and a
+    // control that is not placed is not drawn, so the frame is measured, not just the flag.
+    UIView *leftShoulder = GamepadControl(host,GCInputLeftShoulder);
+    UIView *rightShoulder = GamepadControl(host,GCInputRightShoulder);
+    CGRect shoulderFrame = [leftShoulder convertRect:leftShoulder.bounds toView:host];
+    CGRect rightShoulderFrame = [rightShoulder convertRect:rightShoulder.bounds toView:host];
+    if (shoulderFrame.size.width < 20 || shoulderFrame.size.height < 20 ||
+        rightShoulderFrame.size.width < 20 || CGRectGetMaxX(rightShoulderFrame) > host.bounds.size.width) {
+        fprintf(stderr, "TOUCH_SIMPLE_SHOULDER_FRAME: left=%.0fx%.0f at %.0f right=%.0fx%.0f at %.0f host=%.0f\n",
+                shoulderFrame.size.width, shoulderFrame.size.height, CGRectGetMinX(shoulderFrame),
+                rightShoulderFrame.size.width, rightShoulderFrame.size.height, CGRectGetMaxX(rightShoulderFrame),
+                host.bounds.size.width);
+        fflush(stderr);
+    }
+    assert(shoulderFrame.size.width > 20 && shoulderFrame.size.height > 20);
+    assert(rightShoulderFrame.size.width > 20 && CGRectGetMaxX(rightShoulderFrame) <= host.bounds.size.width);
+    assert(CGRectGetMinX(shoulderFrame) < host.bounds.size.width * 0.25);
+    assert(CGRectGetMidX(rightShoulderFrame) > host.bounds.size.width * 0.75);
+    // Turning it off restores Full exactly: the same code path, the same saved positions.
+    [manager toggleSettings]; [host layoutIfNeeded];
+    simpleSwitch = (id)Find(host,@"wolkaraforever.controls.simpleLayout");
+    assert(simpleSwitch.on);
+    // Triggers on the outside is a choice about controls Simple does not draw: the row stays
+    // where it is and its switch cannot be used.
+    UISwitch *swapRow = (id)Find(host, @"wolkaraforever.controls.swapShoulders");
+    if (!swapRow || swapRow.enabled) {
+        AKGamepadLayout *current = [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+        fprintf(stderr, "TOUCH_SWAP_ROW_MISMATCH: found=%d enabled=%d mode=%s panel=%d\n",
+                swapRow != nil, (int)swapRow.enabled, current.modeName.UTF8String,
+                Find(host,@"wolkaraforever.controls.settings") != nil);
+        fflush(stderr);
+    }
+    assert(swapRow && !swapRow.enabled);
+    simpleSwitch.on = NO; [simpleSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+    [host layoutIfNeeded];
+    assert(swapRow.enabled);
+    [manager toggleSettings]; [host layoutIfNeeded];
+    assert(!GamepadControl(host,GCInputLeftTrigger).hidden && !GamepadControl(host,@"dpad.up").hidden);
+    // A stick button is a double tap, and only that. Measured first: the controller this app
+    // creates has no stick button at all - Apple's virtual controller's extended profile is the
+    // face buttons, the shoulders, the triggers, the menu, the D-pad and the sticks' directions
+    // and nothing else - so off it is, the row that owns it says it cannot be used, and a
+    // gesture that asks for it is refused rather than pretended.
+    UIControl *leftStick = (id)Find(host,@"tolkara.gamepad.leftStick");
+    CGPoint middle = CGPointMake(CGRectGetMidX(leftStick.bounds),CGRectGetMidY(leftStick.bounds));
+    AKFixtureTouch *first = [AKFixtureTouch new], *second = [AKFixtureTouch new];
+    first.point = second.point = middle;
+    [manager toggleSettings]; [host layoutIfNeeded];
+    stickSwitch = (id)Find(host,@"wolkaraforever.controls.stickButtons");
+    assert(stickSwitch && !stickSwitch.on && !stickSwitch.enabled);
+    assert(stickSwitch.accessibilityHint.length);        // it says why it cannot be used
+    [manager toggleSettings]; [host layoutIfNeeded];
+    first.when = 100; [leftStick beginTrackingWithTouch:first withEvent:nil];
+    first.when = 100.06; [leftStick endTrackingWithTouch:first withEvent:nil]; Drain();
+    second.when = 100.14; [leftStick beginTrackingWithTouch:second withEvent:nil];
+    second.when = 100.20; [leftStick endTrackingWithTouch:second withEvent:nil]; Drain();
+    assert(AKFixtureLogHas(@"event=gesture outcome=refused control=leftStick reason=disabled"));
+    // Turned on in the layout by a controller that could carry it, the same double tap is
+    // refused for the other reason: this one has nowhere to send it.
+    AKGamepadLayout *layout = [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+    layout.stickButtonsEnabled = YES; [layout save];
+    [manager reloadLayout]; [host layoutIfNeeded];
+    first.when = 200; [leftStick beginTrackingWithTouch:first withEvent:nil];
+    first.when = 200.06; [leftStick endTrackingWithTouch:first withEvent:nil]; Drain();
+    second.when = 200.14; [leftStick beginTrackingWithTouch:second withEvent:nil];
+    second.when = 200.20; [leftStick endTrackingWithTouch:second withEvent:nil]; Drain();
+    assert(AKFixtureLogHas(@"event=gesture outcome=refused control=leftStick reason=unsupported"));
+    assert(!AKFixtureLogHas(@"event=press outcome=sent control=stickButton"));
+    // Given a controller that does carry the element - which is what the fixture's own
+    // override stands in for - the gesture is exactly one press of the stick's own button and
+    // one release, on a timer, and a single tap or a drag is neither.
+    manager.forceStickButtons = YES;
+    [manager reloadLayout]; [host layoutIfNeeded];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    stickSwitch = (id)Find(host,@"wolkaraforever.controls.stickButtons");
+    assert(stickSwitch.enabled && stickSwitch.on);
+    [manager toggleSettings]; [host layoutIfNeeded];
+    first.when = 300; [leftStick beginTrackingWithTouch:first withEvent:nil];
+    first.when = 300.06; [leftStick endTrackingWithTouch:first withEvent:nil]; Drain();
+    assert(!AKFixtureLogHas(@"event=press outcome=sent control=stickButton element=leftThumbstickButton"));
+    assert(AKFixtureLogHas(@"event=gesture outcome=armed control=leftStick"));
+    AKFixtureTouch *drag = [AKFixtureTouch new];
+    drag.point = middle; drag.when = 301;
+    [leftStick beginTrackingWithTouch:drag withEvent:nil];
+    drag.when = 301.04; drag.point = CGPointMake(middle.x+40,middle.y);
+    [leftStick continueTrackingWithTouch:drag withEvent:nil];
+    drag.when = 301.08; [leftStick endTrackingWithTouch:drag withEvent:nil]; Drain();
+    assert(!AKFixtureLogHas(@"event=press outcome=sent control=stickButton"));
+    first.when = 400; [leftStick beginTrackingWithTouch:first withEvent:nil];
+    first.when = 400.05; [leftStick endTrackingWithTouch:first withEvent:nil];
+    second.when = 400.12; [leftStick beginTrackingWithTouch:second withEvent:nil];
+    second.when = 400.18; [leftStick endTrackingWithTouch:second withEvent:nil]; Drain();
+    if (!AKFixtureLogHas(@"event=gesture outcome=recognized control=leftStick element=leftThumbstickButton"))
+        AKFixtureDumpLog();
+    assert(AKFixtureLogHas(@"event=gesture outcome=recognized control=leftStick element=leftThumbstickButton"));
+    assert(AKFixtureLogHas(@"event=press outcome=sent control=stickButton element=leftThumbstickButton"));
+    // Let the bounded hold expire: it is off again with no finger on it.
+    NSTimeInterval deadline = NSProcessInfo.processInfo.systemUptime + 1;
+    while (!AKFixtureLogHas(@"event=release outcome=sent control=stickButton element=leftThumbstickButton reason=expired") &&
+           NSProcessInfo.processInfo.systemUptime < deadline) Drain();
+    assert(AKFixtureLogHas(@"event=release outcome=sent control=stickButton element=leftThumbstickButton reason=expired"));
+    // A press whose gesture is taken away is released, once, not left on.
+    first.when = 500; [leftStick beginTrackingWithTouch:first withEvent:nil];
+    first.when = 500.05; [leftStick endTrackingWithTouch:first withEvent:nil];
+    second.when = 500.12; [leftStick beginTrackingWithTouch:second withEvent:nil];
+    second.when = 500.18; [leftStick endTrackingWithTouch:second withEvent:nil]; Drain();
+    manager.keyboardVisible = YES; Drain();
+    if (!AKFixtureLogHas(@"event=release outcome=sent control=stickButton element=leftThumbstickButton"))
+        AKFixtureDumpLog();
+    assert(AKFixtureLogHas(@"event=release outcome=sent control=stickButton element=leftThumbstickButton"));
+    manager.keyboardVisible = NO; Drain();
+    assert(WaitUntil(^{ return manager.visible; }));
+    // Back to what an installation has: the preference off, so the row is off again too, and
+    // the rest of the fixture measures the arrangement it expects.
+    layout = [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+    layout.stickButtonsEnabled = NO; [layout save];
+    manager.forceStickButtons = NO;
+    [manager reloadLayout]; [host layoutIfNeeded];
+    // An ability zone is a button you place: press it, and one virtual press goes out; lift it,
+    // and one release follows. Nothing else is ever sent.
+    [manager toggleSettings]; [host layoutIfNeeded];
+    addZone = (id)Find(host,@"wolkaraforever.controls.addAbilityZone");
+    clearZones = (id)Find(host,@"wolkaraforever.controls.clearAbilityZones");
+    [addZone sendActionsForControlEvents:UIControlEventTouchUpInside];
+    assert(clearZones.enabled);
+    [manager toggleSettings]; [host layoutIfNeeded];
+    UIControl *zone1 = (id)Find(host,@"wolkaraforever.abilityZone.1");
+    assert(zone1 && !zone1.hidden);
+    [zone1 sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    GCExtendedGamepad *live = manager.created.controller.extendedGamepad;
+    BOOL anyDown = live.buttonA.pressed || live.buttonB.pressed || live.buttonX.pressed || live.buttonY.pressed ||
+                   live.leftShoulder.pressed || live.rightShoulder.pressed ||
+                   live.leftTrigger.pressed || live.rightTrigger.pressed || live.buttonMenu.pressed;
+    assert(anyDown);
+    [zone1 sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    assert(!live.buttonA.pressed && !live.buttonB.pressed && !live.buttonX.pressed && !live.buttonY.pressed);
+    assert(AKFixtureLogHas(@"event=press outcome=sent control=zone1"));
+    assert(AKFixtureLogHas(@"event=release outcome=sent control=zone1"));
+    // Two surfaces on one element: the value stays down until the last one lets go.
+    AKGamepadLayout *saved = [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+    assert([saved addAbilityZoneForElement:saved.abilityZones[0][@"element"] atX:0.62 y:0.47]);
+    [saved save]; [manager reloadLayout]; [host layoutIfNeeded];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    zone1 = (id)Find(host,@"wolkaraforever.abilityZone.1");
+    UIControl *zone2 = (id)Find(host,@"wolkaraforever.abilityZone.2");
+    assert(zone1 && zone2);
+    [zone1 sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    [zone2 sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    GCExtendedGamepad *shared = manager.created.controller.extendedGamepad;
+    BOOL sharedDown = shared.buttonA.pressed || shared.buttonB.pressed || shared.buttonX.pressed || shared.buttonY.pressed ||
+                      shared.leftShoulder.pressed || shared.rightShoulder.pressed ||
+                      shared.leftTrigger.pressed || shared.rightTrigger.pressed || shared.buttonMenu.pressed;
+    assert(sharedDown);
+    [zone1 sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    BOOL stillDown = shared.buttonA.pressed || shared.buttonB.pressed || shared.buttonX.pressed || shared.buttonY.pressed ||
+                     shared.leftShoulder.pressed || shared.rightShoulder.pressed ||
+                     shared.leftTrigger.pressed || shared.rightTrigger.pressed || shared.buttonMenu.pressed;
+    assert(stillDown);          // the second finger is still on it
+    [zone2 sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    assert(!shared.buttonA.pressed && !shared.buttonB.pressed && !shared.buttonX.pressed && !shared.buttonY.pressed);
+    // Cancelling takes both away, and the pair count is what proves there was one each.
+    [zone1 sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    [zone2 sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    manager.keyboardVisible = YES; Drain();
+    assert(!shared.buttonA.pressed && !shared.buttonB.pressed && !shared.buttonX.pressed && !shared.buttonY.pressed);
+    manager.keyboardVisible = NO; Drain();
+    assert(WaitUntil(^{ return manager.visible; }));
+    [manager toggleSettings]; [host layoutIfNeeded];
+    clearZones = (id)Find(host,@"wolkaraforever.controls.clearAbilityZones");
+    [clearZones sendActionsForControlEvents:UIControlEventTouchUpInside];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    assert(Find(host,@"wolkaraforever.abilityZone.1") == nil);
+    AKFixtureAssertPressesHaveReleases();
+    AKFixtureEndLog();
+    puts("TOUCH_CONTROLLER_TWO_PASS: Simple hides the triggers and the D-pad and turning it off restores them, one tap is not a stick button while a double tap is and lets go by itself, a drag never becomes one, and an ability zone sends exactly one press and one release even when two of them share a button.");
 }
 // The floating arrangement is the mobile interface's, and only its: the mode is the whole gate.
 // In it, each thumb's half of the screen is its stick and the corner beyond the camera stick is
@@ -711,6 +1230,12 @@ static void TestLifecycle(UIView *host) {
     TestStickMapping();
     TestHaptics();
     TestInterfaceMode();
+    // The Touch Controller 2 fixtures that need no window: the log's boundary, the layout's
+    // second schema, and the direct camera's gesture. They run here, in both interfaces, so a
+    // broken migration or a lost release fails the same suite that proves the lifecycle.
+    TestTouchControllerLog();
+    TestLayoutSchema();
+    TestDirectCamera();
     AKFixtureGamepad *pad=[[AKFixtureGamepad alloc] initWithHostView:host];
     // The fixture asserts the controller lifecycle, not the device's foreground phase.
     // A simulator launched by simctl reports the app Inactive, which would gate every
@@ -721,7 +1246,8 @@ static void TestLifecycle(UIView *host) {
     AKFixtureController *physical=[AKFixtureController new]; physical.extendedGamepad=@YES;
     pad.devices=@[(id)physical]; [pad refresh];
     assert(WaitUntil(^{ return (BOOL)!pad.visible; }));
-    [pad.lastConnection finish:nil]; assert(!pad.visible && pad.lastConnection.disconnects);
+    AKFixtureConnection *opened=pad.lastConnection; [opened finish:nil];
+    assert(WaitUntil(^{ return (BOOL)(!pad.visible && opened.disconnects); }));
     pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil];
     assert(WaitUntil(^{ return (BOOL)pad.visible; }));
     // Our own connect event must never be mistaken for physical hardware.
@@ -731,7 +1257,7 @@ static void TestLifecycle(UIView *host) {
     assert(pad.visible && pad.connections==2);
     pad.devices=@[]; pad.keyboardVisible=YES;
     assert(WaitUntil(^{ return (BOOL)!pad.visible; }) && pad.lastConnection.disconnects);
-    pad.keyboardVisible=NO; [pad.lastConnection finish:nil]; assert(pad.visible);
+    pad.keyboardVisible=NO; [pad.lastConnection finish:nil]; assert(WaitUntil(^{ return (BOOL)pad.visible; }));
     [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
     assert(!pad.visible);
     [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
@@ -743,11 +1269,11 @@ static void TestLifecycle(UIView *host) {
     [pad.lastConnection finish:[NSError errorWithDomain:@"Fixture" code:1 userInfo:nil]];
     assert(!pad.visible); count=pad.connections;
     [pad refresh]; [pad refresh]; assert(pad.connections==count); // no retry loop
-    pad.enabled=NO; pad.enabled=YES; [pad.lastConnection finish:nil]; assert(pad.visible);
+    pad.enabled=NO; pad.enabled=YES; [pad.lastConnection finish:nil]; assert(WaitUntil(^{ return (BOOL)pad.visible; }));
     [pad toggleSettings]; assert(pad.configuring);
     pad.devices=@[(id)physical]; [pad refresh]; assert(!pad.visible && !pad.configuring);
     assert(!Find(host,@"wolkaraforever.controls.settings"));
-    pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil]; assert(pad.visible);
+    pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil]; assert(WaitUntil(^{ return (BOOL)pad.visible; }));
     // A controller that is already connected closes nothing: keyboard, window and
     // application notifications reach -refresh too, and closing on those hid the panel
     // while it was being used on any device that already had a controller.
@@ -757,12 +1283,12 @@ static void TestLifecycle(UIView *host) {
     CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.03,false);
     assert(pad.configuring && Find(host,@"wolkaraforever.controls.settings"));
     [pad toggleSettings]; assert(!pad.configuring);
-    pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil]; assert(pad.visible);
+    pad.devices=@[]; [pad refresh]; [pad.lastConnection finish:nil]; assert(WaitUntil(^{ return (BOOL)pad.visible; }));
     [pad toggleSettings];
     UISwitch *edit=(id)Find(host,@"wolkaraforever.controls.edit");
     edit.on=YES; [edit sendActionsForControlEvents:UIControlEventValueChanged]; assert(pad.configuring);
     pad.devices=@[(id)physical]; [pad refresh]; assert(!pad.visible && !pad.configuring);
-    physical.isSnapshot=YES; [pad refresh]; [pad.lastConnection finish:nil]; assert(pad.visible);
+    physical.isSnapshot=YES; [pad refresh]; [pad.lastConnection finish:nil]; assert(WaitUntil(^{ return (BOOL)pad.visible; }));
     host.hidden=YES; [pad refresh]; assert(!pad.visible);
     host.hidden=NO; [pad refresh];
     [pad invalidate]; [pad.lastConnection finish:nil]; assert(!pad.visible);
@@ -814,8 +1340,13 @@ static void TestLifecycle(UIView *host) {
 }
 - (void)start {
     BOOL test=[NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
-    if (test || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test-input"])
+    if (test || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test-input"]) {
+        // A fresh installation, stated rather than assumed: the key is removed *and* the
+        // arrangement written back from this build's own defaults, so a layout left on the
+        // simulator - Simple, stick buttons, zones - cannot decide what these tests measure.
         [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverTouchLayoutV1"];
+        [[[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults] reset];
+    }
     if (test) { TestLifecycle(self.window.rootViewController.view); fflush(stdout); exit(0); }
     // A plain launch is for looking at the fixture. Without --stay it closes itself
     // after a minute anyway, so a headless run cannot sit on it for ever. (The
@@ -826,6 +1357,21 @@ static void TestLifecycle(UIView *host) {
                 fprintf(stderr, "TOUCH_GAMEPAD_LIFETIME_REACHED (pass --stay to keep it open)\n");
                 _Exit(EXIT_SUCCESS);
             });
+    }
+    // Two demonstration arrangements for a person looking at the fixture. They go through the
+    // same layout object the controls read, so what is on screen is what a player would get.
+    NSArray<NSString *> *arguments=NSProcessInfo.processInfo.arguments;
+    if ([arguments containsObject:@"--demo-simple"]) {
+        AKGamepadLayout *demo=[[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+        [demo setModeName:@"simple"];
+        [demo addAbilityZoneForElement:GCInputButtonY atX:0.50 y:0.55];
+        [demo addAbilityZoneForElement:GCInputButtonB atX:0.80 y:0.30];
+        [demo save];
+    } else if ([arguments containsObject:@"--demo-full"]) {
+        AKGamepadLayout *demo=[[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+        [demo setModeName:@"full"];
+        [demo clearAbilityZones];
+        [demo save];
     }
     self.gamepad=[[AKPreviewGamepad alloc] initWithHostView:self.window.rootViewController.view];
     UIButton *settings=[UIButton buttonWithType:UIButtonTypeSystem];
@@ -865,10 +1411,14 @@ static void TestLifecycle(UIView *host) {
     };
     NSLog(@"FIXTURE_CONTROLLER_COUNT=%lu",(unsigned long)GCController.controllers.count);
     // The input fixture measures the pad's own routing; a simctl-launched app can
-    // report Inactive, which would leave the preview pad unconnected for ever.
-    if ([NSProcessInfo.processInfo.arguments containsObject:@"--self-test-input"])
+    // report Inactive, which would leave the preview pad unconnected for ever. The same goes
+    // for the demonstration arrangements, which exist to be looked at.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--self-test-input"] ||
+        [NSProcessInfo.processInfo.arguments containsObject:@"--activate"])
         [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
     [self.gamepad refresh];
+    // A panel to photograph, for the same reason: it is the real one.
+    if ([arguments containsObject:@"--demo-settings"]) [self performSelector:@selector(openSettings) withObject:nil afterDelay:1.5];
     [self performSelector:@selector(report) withObject:nil afterDelay:2];
     // The guest owns the main thread after a timer callout and polls UIKit
     // re-entrantly. Keep an interactive fixture for that distinct input path.
@@ -885,6 +1435,7 @@ static void TestLifecycle(UIView *host) {
     }
 }
 - (void)testInput { TestNativeInput(self.window.rootViewController.view,(id)self.gamepad); fflush(stdout); exit(0); }
+- (void)openSettings { [self.gamepad toggleSettings]; }
 - (void)report {
     NSLog(@"FIXTURE_GAMEPAD: active=%d key=%d hidden=%d visible=%d controllers=%lu",UIApplication.sharedApplication.applicationState==UIApplicationStateActive,self.window.isKeyWindow,self.window.hidden,self.gamepad.visible,(unsigned long)GCController.controllers.count);
 }
@@ -902,7 +1453,10 @@ int main(int argc, char **argv) {
     @autoreleasepool {
         if ([NSProcessInfo.processInfo.arguments containsObject:@"--self-test"] || [NSProcessInfo.processInfo.arguments containsObject:@"--self-test-input"])
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_DEFAULT,0),^{
-                fputs("TOUCH_GAMEPAD_LIFECYCLE_TIMEOUT\n",stderr); _Exit(1);
+                // Say how far it got before the process is taken out: a timeout with no
+                // passes listed is a fixture that cannot be diagnosed.
+                fflush(stdout); fflush(stderr);
+                fputs("TOUCH_GAMEPAD_LIFECYCLE_TIMEOUT\n",stderr); fflush(stderr); _Exit(1);
             });
         return UIApplicationMain(argc,argv,nil,NSStringFromClass(AKGamepadFixtureApp.class));
     }

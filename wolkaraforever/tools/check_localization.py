@@ -210,6 +210,7 @@ def main():
         "home.launcher.interfaceMode.ipados": "the platform's own name, and the same word",
         "home.launcher.interfaceMode.ios": "the mode's own name, and the same words in every language",
         "addons.bundled.detail": "Version and SHA-256 are the same words in both",
+        "voice.language.system": "System is the German word for it too",
     }
     same = [key for key in order["en"] if key in german and english[key] == german[key]
             and re.search(r"[A-Za-z]{4,}", english[key])

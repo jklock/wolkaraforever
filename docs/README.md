@@ -17,7 +17,9 @@ The behaviour both form factors are held to is
 If something fails, capture the exact **Settings → Technical details** message and a
 redacted log. Do not include account credentials, signing material, pairing records, or
 device identifiers. Do not delete the app as a first troubleshooting step because that
-removes its downloaded game data and enrollment state.
+removes its downloaded game data. Its enrollment is not in that data: the trust record
+lives in the device's keychain and the app finds it again at the next launch, so a
+reinstall normally does not mean enrolling again.
 
 ## How much a statement here proves
 

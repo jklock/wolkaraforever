@@ -2,6 +2,8 @@
 #import "TouchGamepadLayout.h"
 #import "AKHostLocalization.h"
 #import "InterfaceMode.h"
+#import "LayoutStore.h"
+#import "TouchControllerLog.h"
 #import "TouchHaptics.h"
 #import "TouchControls.h"
 #include <math.h>
@@ -99,9 +101,22 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 // -reset, so a lost touch cannot leave a run on.
 @property(nonatomic) BOOL autoRunAllowed;
 @property(nonatomic, copy) void (^autoRunStage)(NSInteger stage);
+// A tap that stayed put, reported on lift so the overlay can decide whether it was the second
+// of a double tap. Nothing about movement changes: this is measured after the finger is gone,
+// and a tap that travelled is not reported at all.
+@property(nonatomic, copy, nullable) void (^tapRecognized)(NSTimeInterval time);
 - (void)pollAutoRun:(NSTimeInterval)now;
 - (void)reset;
 @end
+// The tap a stick button is recognised from: the same distance the trackpad calls a tap, and a
+// finger that is not dragged in between. The window is short enough that two deliberate taps
+// fit in it and long enough that a normal double tap does.
+static const CGFloat AKStickTapTravel = 8;
+static const NSTimeInterval AKStickTapDuration = 0.35;
+static const NSTimeInterval AKStickDoubleTapInterval = 0.32;
+// A stick button is a press, not a hold: it is released by itself after this, by a lifecycle
+// exit, or by leaving the arrangement, whichever comes first.
+static const NSTimeInterval AKStickButtonHold = 0.12;
 static const NSTimeInterval AKAutoRunHold = 2;
 static const CGFloat AKAutoRunArm = 60;
 @implementation AKGamepadStick {
@@ -109,6 +124,12 @@ static const CGFloat AKAutoRunArm = 60;
     NSTimeInterval _forwardSince;
     NSInteger _autoStage;
     BOOL _autoRunning, _stoppedRun;
+    // The tap in progress, in the units a tap is judged by: where it started, when, and how far
+    // it has travelled since.
+    NSTimeInterval _tapStarted;
+    CGPoint _tapLast;
+    CGFloat _tapTravel;
+    BOOL _tapMoved;
 }
 - (void)setAutoStage:(NSInteger)stage {
     if (_autoStage == stage) return;
@@ -163,6 +184,10 @@ static const CGFloat AKAutoRunArm = 60;
     _held = YES;
     _forwardSince = 0;
     _stoppedRun = _autoRunning;
+    _tapStarted = touch.timestamp;
+    _tapLast = [touch locationInView:self];
+    _tapTravel = 0;
+    _tapMoved = NO;
     if (_autoRunning) { _autoRunning = NO; [self setAutoStage:0]; }
     if (_floating && ring.superview) {
         ring.center = [touch locationInView:ring.superview];
@@ -172,13 +197,22 @@ static const CGFloat AKAutoRunArm = 60;
 }
 - (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
     (void)event;
-    [self updatePosition:AKTouchGamepadStickPosition([touch locationInView:self],self.bounds.size)];
+    CGPoint point = [touch locationInView:self];
+    _tapTravel += hypot(point.x - _tapLast.x, point.y - _tapLast.y);
+    _tapLast = point;
+    // A finger that leaves the tap's circle is steering, not tapping: the pending tap is gone
+    // for good, so a drag can never become a stick button on the way back.
+    if (_tapTravel > AKStickTapTravel) _tapMoved = YES;
+    [self updatePosition:AKTouchGamepadStickPosition(point,self.bounds.size)];
     [self trackAutoRun:touch];
     return YES;
 }
 - (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    (void)touch; (void)event;
+    (void)event;
     _held = NO;
+    BOOL tap = !_tapMoved && _tapTravel <= AKStickTapTravel && touch &&
+        isfinite(touch.timestamp) && isfinite(_tapStarted) &&
+        touch.timestamp >= _tapStarted && touch.timestamp - _tapStarted <= AKStickTapDuration;
     if (_autoStage == 2 && _autoRunAllowed) {
         // Confirmed: the run stays on with the stick held forward, and the ring goes away.
         _autoRunning = YES;
@@ -188,9 +222,17 @@ static const CGFloat AKAutoRunArm = 60;
         return;
     }
     [self reset]; [self fadeOut];
+    // Reported after the reset, so the tap is judged against a stick that is already let go of:
+    // a gesture never depends on the position the tap left behind.
+    if (tap && self.tapRecognized) self.tapRecognized(touch.timestamp);
     if (_stoppedRun) { _stoppedRun = NO; return; }
 }
-- (void)cancelTrackingWithEvent:(UIEvent *)event { (void)event; _held = NO; [self reset]; [self fadeOut]; }
+- (void)cancelTrackingWithEvent:(UIEvent *)event {
+    (void)event;
+    _held = NO;
+    _tapMoved = YES;   // cancelled is never a tap
+    [self reset]; [self fadeOut];
+}
 - (void)fadeOut { if (_floating) self.superview.alpha = _idleAlpha > 0 ? _idleAlpha : 0.02; }
 - (void)reset {
     // Every reset is a release: the overlay resets on settings, on the keyboard and when the
@@ -210,9 +252,19 @@ static const CGFloat AKAutoRunArm = 60;
 @property(nonatomic, readonly) BOOL configuring;
 @property(nonatomic, readonly) BOOL editing;
 @property(nonatomic, copy) void (^configurationChanged)(void);
+// The stick buttons and the ability zones, told to the manager as presses and releases it
+// counts. Everything about what a press means lives on the manager side; this side only knows
+// which surface was touched.
+@property(nonatomic, copy, nullable) void (^elementPress)(NSString *element, BOOL pressed, NSString *control, NSString *reason);
+// Whether the controller on the other end of this overlay has a stick button. Apple's
+// virtual controller does not (measured: its extended profile carries no stick-button
+// element at all), so on it the gesture is refused rather than pretended.
+@property(nonatomic) BOOL stickButtonsAvailable;
 - (void)reset;
 - (void)toggleSettings;
 - (void)finishConfiguration;
+- (void)reloadLayout;
+- (void)releaseTransientInput:(NSString *)reason;
 @end
 // The floating arrangement's own geometry, in fractions of the overlay. Each thumb owns a
 // half of the screen, and the corner beyond the camera stick is the jump. Nothing here knows
@@ -232,7 +284,15 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
     UIButton *_editDone;
     UILabel *_hint;
     UISwitch *_editSwitch, *_hapticsSwitch, *_overlaySwitch, *_swapShouldersSwitch, *_sticksOnlySwitch;
-    UISwitch *_floatingSwitch;
+    UISwitch *_floatingSwitch, *_simpleSwitch, *_stickButtonsSwitch;
+    UIButton *_addZoneButton, *_clearZoneButton;
+    // The ability zones on screen, in the order the layout lists them.
+    NSMutableArray<AKGamepadButton *> *_zoneButtons;
+    // The double tap: when each stick was last tapped, and the one stick button that may be held
+    // at a time, with the timer that lets it go.
+    NSTimeInterval _leftTap, _rightTap;
+    NSString *_stickButtonElement;
+    NSTimer *_stickButtonTimer;
     UIStackView *_settingsColumns;
     NSArray<UISlider *> *_sliders;
     NSArray<UILabel *> *_values;
@@ -331,6 +391,17 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
         [self addSubview:_autoBadge];
         __weak AKGamepadOverlay *weakOverlay = self;
         _leftStick.autoRunStage = ^(NSInteger stage) { [weakOverlay showAutoRun:stage]; };
+        _zoneButtons = [NSMutableArray new];
+        // A tap reports itself on lift; whether it was the second of a double tap is decided
+        // here, where the two sticks' times can be compared with one another.
+        _leftStick.tapRecognized = ^(NSTimeInterval time) {
+            AKGamepadOverlay *overlay = weakOverlay;
+            if (overlay) [overlay stickTapped:overlay->_leftStick at:time];
+        };
+        _rightStick.tapRecognized = ^(NSTimeInterval time) {
+            AKGamepadOverlay *overlay = weakOverlay;
+            if (overlay) [overlay stickTapped:overlay->_rightStick at:time];
+        };
         // Common modes, because the guest drives the main run loop in modes of its own while it
         // runs; a default-mode timer would wait for the game to return to the default mode.
         __weak AKGamepadOverlay *weakSelf = self;
@@ -340,11 +411,240 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
             [overlay hideIdleRings];
         }];
         [NSRunLoop.mainRunLoop addTimer:idle forMode:NSRunLoopCommonModes];
+        // The launcher writes the same dictionary the settings panel does, so a change from
+        // either side has to reach the arrangement that is on screen.
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(layoutDidChange:)
+                                                   name:AKGamepadLayoutDidChangeNotification
+                                                 object:NSUserDefaults.standardUserDefaults];
+        [self syncAbilityZones];
         [self updateAppearance];
     }
     return self;
 }
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+    [_stickButtonTimer invalidate];
+}
 - (BOOL)configuring { return _settings != nil || _editing; }
+
+#pragma mark - Stick buttons (L3/R3)
+
+// Two taps on the same stick, each one that stayed put, inside the window: that is the stick's
+// own button, pressed for a moment. One tap is nothing - it is how a thumb lands on the ring
+// before steering - and a drag is never a tap at all, which is the rule that keeps this away
+// from the camera.
+- (void)stickTapped:(AKGamepadStick *)stick at:(NSTimeInterval)time {
+    NSTimeInterval *last = stick == _leftStick ? &_leftTap : &_rightTap;
+    BOOL wanted = _preferences.stickButtonsEnabled && !self.configuring && _controlsVisible;
+    if (wanted && !self.stickButtonsAvailable) {
+        *last = 0;
+        AKTouchControllerLog(AKTouchControllerEventGesture, @"refused",
+                             @{@"control": stick == _leftStick ? @"leftStick" : @"rightStick",
+                               @"reason": @"unsupported"});
+        return;
+    }
+    if (!wanted || !isfinite(time)) {
+        *last = 0;
+        AKTouchControllerLog(AKTouchControllerEventGesture, @"refused",
+                             @{@"control": stick == _leftStick ? @"leftStick" : @"rightStick",
+                               @"reason": wanted ? @"not-visible" : @"disabled"});
+        return;
+    }
+    if (*last > 0 && time >= *last && time - *last <= AKStickDoubleTapInterval) {
+        *last = 0;
+        [self pressStickButtonFor:stick];
+        return;
+    }
+    *last = time;
+    AKTouchControllerLog(AKTouchControllerEventGesture, @"armed",
+                         @{@"control": stick == _leftStick ? @"leftStick" : @"rightStick"});
+}
+- (void)pressStickButtonFor:(AKGamepadStick *)stick {
+    // The element is the stick's own click, which is the button a controller calls L3 or R3.
+    NSString *element = AKGamepadStickButtonElement(stick.element);
+    if (!element.length) return;
+    AKTouchControllerLog(AKTouchControllerEventGesture, @"recognized",
+                         @{@"control": stick == _leftStick ? @"leftStick" : @"rightStick",
+                           @"element": AKGamepadElementToken(element)});
+    if (self.elementPress) self.elementPress(element, YES, @"stickButton", @"gesture");
+    [_stickButtonTimer invalidate];
+    // One at a time: a second stick button replaces the first, and the first is released first.
+    if (_stickButtonElement.length && ![_stickButtonElement isEqualToString:element])
+        [self releaseStickButton:@"replaced"];
+    _stickButtonElement = element;
+    __weak AKGamepadOverlay *weakSelf = self;
+    _stickButtonTimer = [NSTimer timerWithTimeInterval:AKStickButtonHold repeats:NO block:^(NSTimer *timer) {
+        (void)timer;
+        AKGamepadOverlay *overlay = weakSelf;
+        if (overlay) [overlay releaseStickButton:@"expired"];
+    }];
+    [NSRunLoop.mainRunLoop addTimer:_stickButtonTimer forMode:NSRunLoopCommonModes];
+}
+// Exactly one release for every press: this is the only place the stick button is let go of,
+// whether by its own timer, by a lifecycle exit or by the next gesture.
+- (void)releaseStickButton:(NSString *)reason {
+    [_stickButtonTimer invalidate]; _stickButtonTimer = nil;
+    NSString *element = _stickButtonElement;
+    _stickButtonElement = nil;
+    if (!element.length) return;
+    if (self.elementPress) self.elementPress(element, NO, @"stickButton", reason ?: @"expired");
+}
+- (void)releaseTransientInput:(NSString *)reason {
+    [self releaseStickButton:reason];
+    for (AKGamepadButton *zone in _zoneButtons) [zone releaseInput];
+}
+
+#pragma mark - Ability zones
+
+- (NSString *)titleForElement:(NSString *)element {
+    static NSDictionary *titles;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        titles = @{GCInputButtonA:@"A", GCInputButtonB:@"B", GCInputButtonX:@"X", GCInputButtonY:@"Y",
+                   GCInputLeftShoulder:@"LB", GCInputLeftTrigger:@"LT", GCInputRightTrigger:@"RT",
+                   GCInputRightShoulder:@"RB", GCInputButtonMenu:@"+"};
+    });
+    return titles[element] ?: @"";
+}
+// The zones on screen are rebuilt from the layout whenever it changes, so there is one source
+// of truth for what they are and where they sit: the saved dictionary.
+- (void)syncAbilityZones {
+    NSArray<NSDictionary<NSString *, id> *> *zones = _preferences.abilityZones;
+    while (_zoneButtons.count > zones.count) {
+        [_zoneButtons.lastObject removeFromSuperview];
+        [_zoneButtons removeLastObject];
+    }
+    for (NSUInteger index = 0; index < zones.count; index++) {
+        AKGamepadButton *zone = index < _zoneButtons.count ? _zoneButtons[index] : nil;
+        if (!zone) {
+            zone = [AKGamepadButton new];
+            zone.slot = nil;
+            [zone addTarget:self action:@selector(zoneChanged:) forControlEvents:UIControlEventValueChanged];
+            UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(drag:)];
+            pan.delegate = self; [zone addGestureRecognizer:pan];
+            UITapGestureRecognizer *choose = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(chooseZoneElement:)];
+            choose.delegate = self; [zone addGestureRecognizer:choose];
+            [self addSubview:zone];
+            [_zoneButtons addObject:zone];
+        }
+        zone.element = zones[index][@"element"];
+        [zone setTitle:[self titleForElement:zone.element] forState:UIControlStateNormal];
+        zone.accessibilityIdentifier = [@"wolkaraforever.abilityZone." stringByAppendingFormat:@"%lu",(unsigned long)(index+1)];
+        zone.accessibilityLabel = AKHostLocalizedFormat(@"touch.zone.button", [self titleForElement:zone.element]);
+        zone.accessibilityHint = AKHostLocalized(@"touch.zone.hint");
+        zone.accessibilityValue = self.editing ? AKHostLocalized(@"touch.zone.editing") : nil;
+        [self updateZoneMenuForZone:zone atIndex:index];
+    }
+    [self updateAppearance];
+    [self setNeedsLayout];
+}
+- (NSString *)nextZoneElement {
+    NSArray<NSString *> *elements = AKLayoutZoneElements();
+    NSMutableSet<NSString *> *used = [NSMutableSet new];
+    for (NSDictionary *zone in _preferences.abilityZones) [used addObject:zone[@"element"]];
+    for (NSString *element in elements) if (![used containsObject:element]) return element;
+    // Every element is already on a zone: the first one again, which is a second surface for
+    // the same button and is accounted for the same way as any other duplicate.
+    return elements.firstObject;
+}
+- (void)updateZoneMenuForZone:(AKGamepadButton *)zone atIndex:(NSUInteger)index {
+    // Editing a zone changes which button it sends. It is a menu on the zone itself, opened by
+    // a tap while the editor is open; outside the editor the same tap presses the button.
+    if (!self.editing) { zone.menu = nil; zone.showsMenuAsPrimaryAction = NO; return; }
+    __weak AKGamepadOverlay *weakSelf = self;
+    NSMutableArray<UIAction *> *actions = [NSMutableArray new];
+    for (NSString *element in AKLayoutZoneElements()) {
+        NSString *title = [self titleForElement:element];
+        UIAction *action = [UIAction actionWithTitle:title image:nil identifier:nil
+                                              handler:^(__unused UIAction *chosen) {
+            AKGamepadOverlay *overlay = weakSelf;
+            if (!overlay) return;
+            [overlay->_preferences setAbilityZoneElement:element atIndex:index];
+            [overlay->_preferences save];
+            [overlay syncAbilityZones];
+        }];
+        action.state = [element isEqualToString:zone.element] ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [actions addObject:action];
+    }
+    zone.menu = [UIMenu menuWithTitle:AKHostLocalized(@"touch.zone.choose") children:actions];
+    zone.showsMenuAsPrimaryAction = YES;
+}
+- (void)zoneChanged:(AKGamepadButton *)zone {
+    NSUInteger index = [_zoneButtons indexOfObject:zone];
+    if (index == NSNotFound || !self.elementPress) return;
+    // Nothing is sent while a surface of ours is open: the same rule every other control
+    // follows. In the editor a zone is edited, not pressed.
+    if (self.configuring) {
+        AKTouchControllerLog(AKTouchControllerEventPress, @"refused",
+                             @{@"control": @"abilityZone", @"element": AKGamepadElementToken(zone.element), @"reason": @"configuring"});
+        return;
+    }
+    // The zone's own name is where it is in the list, not what it does: the element travels
+    // beside it, so a log line never has to guess which button a zone was pointing at.
+    NSString *control = [NSString stringWithFormat:@"zone%lu", (unsigned long)(index + 1)];
+    self.elementPress(zone.element, zone.pressed, control, zone.pressed ? @"touch" : @"lifted");
+}
+- (void)chooseZoneElement:(UITapGestureRecognizer *)tap {
+    (void)tap;
+    // The menu is on the zone (showsMenuAsPrimaryAction while editing); this recognizer exists
+    // only so a tap in the editor is not also a press, which -zoneChanged: already refuses.
+}
+- (void)addAbilityZoneTapped {
+    NSUInteger count = _preferences.abilityZones.count;
+    NSString *element = [self nextZoneElement];
+    CGFloat x = 0.44 + 0.06 * (CGFloat)count;
+    if ([_preferences addAbilityZoneForElement:element atX:x y:0.47]) {
+        [_preferences save];
+        [self syncAbilityZones];
+        [self updateSettingsZoneCount];
+    }
+}
+- (void)clearAbilityZonesTapped {
+    [_preferences clearAbilityZones];
+    [_preferences save];
+    [self syncAbilityZones];
+    [self updateSettingsZoneCount];
+}
+- (void)updateSettingsZoneCount {
+    if (!_addZoneButton) return;
+    NSUInteger count = _preferences.abilityZones.count;
+    _addZoneButton.enabled = count < 6;
+    _clearZoneButton.enabled = count > 0;
+    _clearZoneButton.accessibilityValue = AKHostLocalizedFormat(@"touch.settings.abilityZones.count", count);
+}
+
+#pragma mark - The arrangement, from the settings panel
+
+- (void)simpleLayoutChanged:(UISwitch *)sender {
+    [self reset];
+    [_preferences setModeName:sender.on ? AKLayoutModeSimple : AKLayoutModeFull];
+    [_preferences save];
+    [self updateSwapShouldersRow];
+    [self updateAppearance];
+}
+// The trigger order is only in force where triggers are drawn.
+- (void)updateSwapShouldersRow {
+    if (!_swapShouldersSwitch) return;
+    BOOL simple = _preferences.mode == AKGamepadLayoutModeSimple;
+    _swapShouldersSwitch.enabled = !simple;
+    _swapShouldersSwitch.accessibilityHint = simple ? AKHostLocalized(@"touch.settings.outerTriggers.simple") : nil;
+}
+- (void)stickButtonsChanged:(UISwitch *)sender {
+    [self releaseStickButton:@"disabled"];
+    _preferences.stickButtonsEnabled = sender.on;
+    [_preferences save];
+}
+- (void)layoutDidChange:(NSNotification *)notification {
+    (void)notification;
+    [self reloadLayout];
+}
+- (void)reloadLayout {
+    _preferences = [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+    [self releaseStickButton:@"layout"];
+    [self syncAbilityZones];
+    [self updateAppearance];
+    [self setNeedsLayout];
+}
 - (void)setControlsVisible:(BOOL)visible { _controlsVisible = visible; [self updateAppearance]; }
 - (void)updateAppearance {
     self.hidden = !_controlsVisible && !self.configuring;
@@ -365,9 +665,25 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
         else if (![placed containsObject:button]) button.hidden = NO;
         if (jump) [button setTitle:sticksOnly ? AKHostLocalized(@"touch.gamepad.jump") : @"A" forState:UIControlStateNormal];
     }
+    // Simple is the same layout with fewer controls drawn: both sticks, the four face buttons,
+    // the two shoulders and the menu. The triggers and the D-pad sectors are not there, and
+    // nothing is deleted from the layout - turning Simple off draws them again exactly where
+    // they were saved. Sticks-only wins where both apply, because it is the smaller arrangement.
+    if (_preferences.mode == AKGamepadLayoutModeSimple && !sticksOnly) {
+        for (NSString *slot in @[GCInputLeftTrigger, GCInputRightTrigger,
+                                 @"dpad.up", @"dpad.right", @"dpad.down", @"dpad.left"]) {
+            AKGamepadButton *button = _slots[slot];
+            if (button) button.hidden = YES;
+        }
+    }
     // An enabled UIControl is needed for its own pan recognizer to receive
     // touches. The manager suppresses game input throughout configuration.
     for (AKGamepadButton *button in _buttons.allValues) button.enabled = !self.configuring || _editing;
+    for (AKGamepadButton *zone in _zoneButtons) {
+        zone.hidden = !_controlsVisible && !self.configuring;
+        zone.alpha = _editing ? MAX(0.5,_preferences.opacity) : _preferences.opacity;
+        zone.enabled = !self.configuring || _editing;
+    }
     _leftStick.enabled = _rightStick.enabled = !self.configuring;
     _editDone.hidden = _hint.hidden = !_editing;
     _editGrid.hidden = _editAxes.hidden = !_editing;
@@ -453,6 +769,12 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
         CGFloat aw = area[@"w"].doubleValue, ah = area[@"h"].doubleValue;
         if (fx >= ax && fx <= ax + aw && fy >= ay && fy <= ay + ah) return nil;
     }
+    // An ability zone is the player's own surface and sits inside a thumb's half, so it is
+    // answered before the halves are: a zone under the camera thumb is still the zone.
+    for (AKGamepadButton *zone in _zoneButtons) {
+        if (zone.hidden) continue;
+        if (CGRectContainsPoint(zone.frame, point)) return zone;
+    }
     CGFloat corner = hypot(size.width - point.x, h - point.y);
     if (corner <= AKFloatJumpRadius * h) {
         AKGamepadButton *jump = _jumpButton;
@@ -499,6 +821,20 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     item.center = CGPointMake(CGRectGetMidX(placed),CGRectGetMidY(placed));
     item.transform = CGAffineTransformMakeScale(placed.size.width/base.width,placed.size.height/base.height);
 }
+// The same placement without the shoulder swap, for the one arrangement that has nothing to
+// swap: Simple draws no triggers, so a "swapped" LB would be a hidden trigger and the shoulder
+// would vanish. The control a person presses is named by its slot and placed by its slot.
+- (void)placeSlot:(NSString *)slot frame:(CGRect)frame baseSize:(CGSize)base safe:(CGRect)safe {
+    // _items is keyed by the *slot* a control sits in ("LB"), not by the element it sends.
+    NSString *name = @{GCInputLeftShoulder:@"LB", GCInputRightShoulder:@"RB",
+                       GCInputLeftTrigger:@"LT", GCInputRightTrigger:@"RT"}[slot] ?: slot;
+    UIView *item = _items[name];
+    if (!item) return;
+    CGRect placed = [_preferences frameForItem:name defaultFrame:frame inBounds:safe];
+    item.transform = CGAffineTransformIdentity; item.bounds = (CGRect){CGPointZero,base};
+    item.center = CGPointMake(CGRectGetMidX(placed),CGRectGetMidY(placed));
+    item.transform = CGAffineTransformMakeScale(placed.size.width/base.width,placed.size.height/base.height);
+}
 - (void)layoutSubviews {
     [super layoutSubviews]; CGRect safe = [self usableBounds];
     if (_editing) [self layoutEditGridInBounds:safe];
@@ -521,10 +857,31 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
         if (b.sector != (NSInteger)i) b.sector = i;
         a.frame = b.frame = CGRectMake(0,0,216,216);
     }
-    [self place:@"LT" frame:CGRectMake(left,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
-    [self place:@"LB" frame:CGRectMake(left+w+8,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
-    [self place:@"RT" frame:CGRectMake(right-w,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
-    [self place:@"RB" frame:CGRectMake(right-w*2-8,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
+    if (_preferences.mode == AKGamepadLayoutModeSimple) {
+        // Simple draws no triggers, so its two shoulders take the far corners - where an index
+        // finger already rests on a phone held in landscape - and keep their own saved places:
+        // moving a shoulder in Simple never moves the one in Full, and the other way round.
+        [self placeSlot:GCInputLeftShoulder frame:CGRectMake(left,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
+        [self placeSlot:GCInputRightShoulder frame:CGRectMake(right-w,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
+    } else {
+        [self place:@"LT" frame:CGRectMake(left,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
+        [self place:@"LB" frame:CGRectMake(left+w+8,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
+        [self place:@"RT" frame:CGRectMake(right-w,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
+        [self place:@"RB" frame:CGRectMake(right-w*2-8,top,w,h) baseSize:CGSizeMake(56,44) safe:safe];
+    }
+    // Ability zones: a circle at the centre the layout saved, kept inside the safe area so a
+    // zone dragged to the edge can still be reached and dragged back.
+    CGFloat zoneSide = MAX(44,52*_preferences.frontScale);
+    NSArray<NSDictionary<NSString *, id> *> *zones = _preferences.abilityZones;
+    for (NSUInteger index = 0; index < _zoneButtons.count && index < zones.count; index++) {
+        CGFloat fx = [zones[index][@"x"] doubleValue], fy = [zones[index][@"y"] doubleValue];
+        CGPoint centre = CGPointMake(CGRectGetMinX(safe) + fx * safe.size.width,
+                                     CGRectGetMinY(safe) + fy * safe.size.height);
+        CGFloat x = MIN(MAX(centre.x - zoneSide/2,CGRectGetMinX(safe)),CGRectGetMaxX(safe)-zoneSide);
+        CGFloat y = MIN(MAX(centre.y - zoneSide/2,CGRectGetMinY(safe)),CGRectGetMaxY(safe)-zoneSide);
+        _zoneButtons[index].frame = CGRectMake(x,y,zoneSide,zoneSide);
+        _zoneButtons[index].layer.cornerRadius = zoneSide/2;
+    }
     // Mobile: the app's toolbar sits at the bottom centre (TouchControls, 44 pt tall and 8 pt
     // up), so the full layout's menu button waits just above it rather than under it.
     // Standard: the menu button stays where the layout has always put it, above the bottom.
@@ -590,18 +947,30 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     }
 }
 - (void)drag:(UIPanGestureRecognizer *)pan {
-    NSString *name = [_items allKeysForObject:pan.view].firstObject;
+    // An ability zone is dragged like any other control: its place is fractions of the screen,
+    // and the layout it belongs to is the one that is in force.
+    NSUInteger zone = [_zoneButtons indexOfObject:(AKGamepadButton *)pan.view];
+    BOOL isZone = pan.view && [_zoneButtons containsObject:(AKGamepadButton *)pan.view];
+    NSString *name = isZone ? [NSString stringWithFormat:@"zone.%lu",(unsigned long)zone]
+                            : [_items allKeysForObject:pan.view].firstObject;
     if (!name || !_editing) return;
     if (pan.state == UIGestureRecognizerStateBegan) {
         [_dragOrigins setObject:[NSValue valueWithCGRect:pan.view.frame] forKey:name]; [self reset];
     }
-    CGRect frame = [_dragOrigins[name] CGRectValue];
-    if (pan.state == UIGestureRecognizerStateCancelled) {
-        [_preferences moveItem:[self positionName:name] toFrame:frame inBounds:[self usableBounds]];
-    } else {
+    NSValue *origin = _dragOrigins[name];
+    if (!origin) return;
+    CGRect frame = origin.CGRectValue;
+    if (pan.state != UIGestureRecognizerStateCancelled) {
         CGPoint delta = [pan translationInView:self];
         frame.origin.x += delta.x; frame.origin.y += delta.y;
-        [_preferences moveItem:[self positionName:name] toFrame:frame inBounds:[self usableBounds]];
+    }
+    CGRect safe = [self usableBounds];
+    if (isZone) {
+        CGFloat fx = safe.size.width > 0 ? (CGRectGetMidX(frame)-CGRectGetMinX(safe))/safe.size.width : 0;
+        CGFloat fy = safe.size.height > 0 ? (CGRectGetMidY(frame)-CGRectGetMinY(safe))/safe.size.height : 0;
+        [_preferences moveAbilityZoneAtIndex:zone toX:fx y:fy];
+    } else {
+        [_preferences moveItem:[self positionName:name] toFrame:frame inBounds:safe];
     }
     [self setNeedsLayout]; [self layoutIfNeeded];
     if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
@@ -615,6 +984,8 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
 }
 - (void)toggleSettings {
     if (_settings || _editing) { [self finishConfiguration]; return; }
+    // What is on screen may have been changed from the launcher since this overlay was built.
+    [self reloadLayout];
     [self reset];
     _settings = [UIView new]; _settings.backgroundColor = [UIColor colorWithRed:.06 green:.08 blue:.11 alpha:1];
     _settings.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -664,9 +1035,13 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
         floatingRow.axis = UILayoutConstraintAxisHorizontal; floatingRow.alignment = UIStackViewAlignmentCenter;
         [options addArrangedSubview:floatingRow];
     }
+    // Triggers on the outside is a choice about two controls Simple does not draw, so in Simple
+    // the row stays where it is and its switch is not usable. A row that vanished and came back
+    // would move every row under it; a switch that is greyed says the same thing and stays put.
     _swapShouldersSwitch = [UISwitch new]; _swapShouldersSwitch.on = !_preferences.swapShoulders;
     _swapShouldersSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.outerTriggers");
     _swapShouldersSwitch.accessibilityIdentifier = @"wolkaraforever.controls.swapShoulders";
+    [self updateSwapShouldersRow];
     [_swapShouldersSwitch addTarget:self action:@selector(swapShouldersChanged:) forControlEvents:UIControlEventValueChanged];
     UIStackView *shouldersRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.outerTriggers")],_swapShouldersSwitch]];
     shouldersRow.axis = UILayoutConstraintAxisHorizontal; shouldersRow.alignment = UIStackViewAlignmentCenter;
@@ -694,6 +1069,42 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     editRow.axis = UILayoutConstraintAxisHorizontal; editRow.alignment = UIStackViewAlignmentCenter;
     [options addArrangedSubview:editRow];
     [options addArrangedSubview:[self label:AKHostLocalized(@"touch.settings.edit.detail")]];
+    // --- the Touch Controller 2 rows, appended: every row above keeps its place and its name ---
+    _simpleSwitch = [UISwitch new]; _simpleSwitch.on = _preferences.mode == AKGamepadLayoutModeSimple;
+    _simpleSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.simpleLayout");
+    _simpleSwitch.accessibilityHint = AKHostLocalized(@"touch.settings.simpleLayout.hint");
+    _simpleSwitch.accessibilityIdentifier = @"wolkaraforever.controls.simpleLayout";
+    [_simpleSwitch addTarget:self action:@selector(simpleLayoutChanged:) forControlEvents:UIControlEventValueChanged];
+    UIStackView *simpleRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.simpleLayout")],_simpleSwitch]];
+    simpleRow.axis = UILayoutConstraintAxisHorizontal; simpleRow.alignment = UIStackViewAlignmentCenter;
+    [options addArrangedSubview:simpleRow];
+    [options addArrangedSubview:[self label:AKHostLocalized(@"touch.settings.simpleLayout.detail")]];
+    // A stick button is a gesture, so it is a switch of its own - off, as it has always been.
+    _stickButtonsSwitch = [UISwitch new];
+    _stickButtonsSwitch.on = _preferences.stickButtonsEnabled && self.stickButtonsAvailable;
+    _stickButtonsSwitch.enabled = self.stickButtonsAvailable;
+    _stickButtonsSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.stickButtons");
+    _stickButtonsSwitch.accessibilityHint = AKHostLocalized(@"touch.settings.stickButtons.hint");
+    _stickButtonsSwitch.accessibilityIdentifier = @"wolkaraforever.controls.stickButtons";
+    if (!self.stickButtonsAvailable)
+        _stickButtonsSwitch.accessibilityHint = AKHostLocalized(@"touch.settings.stickButtons.unsupported");
+    [_stickButtonsSwitch addTarget:self action:@selector(stickButtonsChanged:) forControlEvents:UIControlEventValueChanged];
+    UIStackView *stickButtonsRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.stickButtons")],_stickButtonsSwitch]];
+    stickButtonsRow.axis = UILayoutConstraintAxisHorizontal; stickButtonsRow.alignment = UIStackViewAlignmentCenter;
+    [options addArrangedSubview:stickButtonsRow];
+    _addZoneButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [_addZoneButton setTitle:AKHostLocalized(@"touch.settings.abilityZones.add") forState:UIControlStateNormal];
+    _addZoneButton.accessibilityIdentifier = @"wolkaraforever.controls.addAbilityZone";
+    [_addZoneButton addTarget:self action:@selector(addAbilityZoneTapped) forControlEvents:UIControlEventTouchUpInside];
+    _clearZoneButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [_clearZoneButton setTitle:AKHostLocalized(@"touch.settings.abilityZones.clear") forState:UIControlStateNormal];
+    _clearZoneButton.accessibilityIdentifier = @"wolkaraforever.controls.clearAbilityZones";
+    [_clearZoneButton addTarget:self action:@selector(clearAbilityZonesTapped) forControlEvents:UIControlEventTouchUpInside];
+    UIStackView *zonesRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.abilityZones")],_addZoneButton,_clearZoneButton]];
+    zonesRow.axis = UILayoutConstraintAxisHorizontal; zonesRow.alignment = UIStackViewAlignmentCenter; zonesRow.distribution = UIStackViewDistributionFillEqually;
+    [options addArrangedSubview:zonesRow];
+    [options addArrangedSubview:[self label:AKHostLocalized(@"touch.settings.abilityZones.detail")]];
+    [self updateSettingsZoneCount];
     UIButton *reset = [UIButton buttonWithType:UIButtonTypeSystem]; [reset setTitle:AKHostLocalized(@"touch.settings.reset") forState:UIControlStateNormal];
     reset.accessibilityIdentifier = @"wolkaraforever.controls.reset";
     [reset addTarget:self action:@selector(resetLayout) forControlEvents:UIControlEventTouchUpInside];
@@ -750,7 +1161,10 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     if (!sender.on) return;
     [self reset]; _editing = YES; [_settings removeFromSuperview]; _settings = nil;
     _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _floatingSwitch = nil; _settingsColumns = nil;
+    _simpleSwitch = nil; _stickButtonsSwitch = nil; _addZoneButton = nil; _clearZoneButton = nil;
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
+    // The zones' own menus (which button each sends) belong to the editor.
+    [self syncAbilityZones];
 }
 - (void)resetLayout {
     [self reset]; [_preferences reset];
@@ -758,14 +1172,24 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     _hapticsSwitch.on = _preferences.hapticsEnabled; _swapShouldersSwitch.on = !_preferences.swapShoulders;
     _overlaySwitch.on = _preferences.performanceOverlayEnabled;
     _sticksOnlySwitch.on = _preferences.sticksOnly; _floatingSwitch.on = _preferences.floatingSticks;
+    _simpleSwitch.on = _preferences.mode == AKGamepadLayoutModeSimple;
+    _stickButtonsSwitch.on = _preferences.stickButtonsEnabled;
+    [self syncAbilityZones]; [self updateSettingsZoneCount];
     [self updateValues]; [self updateAppearance];
 }
 - (void)finishConfiguration {
     [self reset]; [_preferences save]; _editing = NO; [_dragOrigins removeAllObjects];
     [_settings removeFromSuperview]; _settings = nil; _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _floatingSwitch = nil; _settingsColumns = nil;
+    _simpleSwitch = nil; _stickButtonsSwitch = nil; _addZoneButton = nil; _clearZoneButton = nil;
+    [self syncAbilityZones];
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
 }
 - (void)reset {
+    // Every reset releases everything this overlay can be holding: the stick button, the zones'
+    // presses and the buttons' own. A press without its release is the one thing a virtual
+    // controller must never be left with.
+    [self releaseStickButton:@"reset"];
+    for (AKGamepadButton *zone in _zoneButtons) [zone releaseInput];
     for (AKGamepadButton *button in _buttons.allValues) [button releaseInput];
     [_leftStick reset]; [_rightStick reset];
 }
@@ -776,6 +1200,11 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     GCVirtualController *_virtualController;
     AKGamepadOverlay *_overlay;
     AKTouchHaptics *_haptics;
+    // How many surfaces are holding each element. Two fingers may press one button (a button
+    // and an ability zone that sends it); the virtual controller's value is 1 while any is
+    // down and returns to 0 only when the last one lets go, so a release can never cut another
+    // finger's press short.
+    NSMutableDictionary<NSString *, NSNumber *> *_holds;
     BOOL _active, _connecting, _cancelConnect, _failed, _invalidated;
     BOOL _controllerArrived;
     BOOL _spaceDown;
@@ -783,6 +1212,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
 - (instancetype)initWithHostView:(UIView *)host {
     if ((self = [super init])) {
         _host = host; _enabled = YES;
+        _holds = [NSMutableDictionary new];
         _haptics = [self makeHaptics];
         _overlay = [[AKGamepadOverlay alloc] initWithFrame:host.bounds];
         _overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
@@ -792,6 +1222,14 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
             AKTouchGamepad *self = weakSelf;
             [self updateHaptics];
             if (self.visibilityChanged) self.visibilityChanged(self.visible);
+        };
+        // The stick buttons and the ability zones reach the controller through the same counted
+        // path every other control uses.
+        _overlay.elementPress = ^(NSString *element, BOOL pressed, NSString *control, NSString *reason) {
+            AKTouchGamepad *self = weakSelf;
+            if (!self) return;
+            if (pressed) [self pressElement:element control:control];
+            else [self releaseElement:element control:control reason:reason];
         };
         for (AKGamepadButton *button in _overlay.buttons.allValues)
             [button addTarget:self action:@selector(buttonChanged:) forControlEvents:UIControlEventValueChanged];
@@ -819,6 +1257,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     // The connected extended profile provides D-pad and Menu nonetheless;
     // the public setters for both are covered by the real-controller fixture.
     configuration.elements = [NSSet setWithArray:@[GCInputLeftThumbstick,GCInputRightThumbstick,
+        GCInputLeftThumbstickButton,GCInputRightThumbstickButton,
         GCInputButtonA,GCInputButtonB,GCInputButtonX,GCInputButtonY,
         GCInputLeftShoulder,GCInputRightShoulder,GCInputLeftTrigger,GCInputRightTrigger]];
     return [[GCVirtualController alloc] initWithConfiguration:configuration];
@@ -841,9 +1280,15 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     return !_invalidated && _enabled && !_keyboardVisible && [self hostIsActive];
 }
 - (void)setVisible:(BOOL)visible {
-    if (!visible) [self holdSpace:NO];
+    if (!visible) {
+        [self holdSpace:NO];
+        // A stick button is a press with a timer: hiding the controls takes the gesture away,
+        // so it is let go of here rather than by a timer that may never run.
+        [_overlay releaseTransientInput:@"hidden"];
+    }
     if (_visible == visible) return;
     _visible = visible; _overlay.controlsVisible = visible;
+    _overlay.stickButtonsAvailable = [self stickButtonsAvailable];
     [self updateHaptics];
     if (self.visibilityChanged) self.visibilityChanged(visible);
 }
@@ -853,6 +1298,24 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
 // player ran, 20 to 179 ms each, and the character did not jump once. The key is held as long
 // as the finger is (a held Space swims or flies up), and a release always goes out, even if
 // the controls were hidden meanwhile. A host without the key method keeps the gamepad's A.
+// Apple's virtual controller has no stick click: its extended profile is A/B/X/Y, the
+// shoulders, the triggers, the menu, the D-pad and the two sticks' directions - and nothing
+// else. Measured on the iPad Pro 13-inch (M5) simulator, 2026-11-13: the profile's button list
+// has no stick-button element, `-leftThumbstickButton` is nil, and a value set for it is
+// dropped. So a press for it is refused, and the settings row says so.
+- (BOOL)stickButtonsAvailable {
+    // A controller's profile is asked politely: a test's stand-in is not a real one, and a
+    // capability question must never be able to end the process.
+    GCController *controller = _virtualController.controller;
+    if (![controller isKindOfClass:GCController.class]) return NO;
+    GCExtendedGamepad *pad = controller.extendedGamepad;
+    if (![pad isKindOfClass:GCExtendedGamepad.class]) return NO;
+    return pad.leftThumbstickButton != nil && pad.rightThumbstickButton != nil;
+}
+- (BOOL)isStickButtonElement:(NSString *)element {
+    return [element isEqualToString:GCInputLeftThumbstickButton] ||
+           [element isEqualToString:GCInputRightThumbstickButton];
+}
 - (BOOL)jumpsWithSpace:(AKGamepadButton *)button {
     return [button.slot isEqualToString:GCInputButtonA] && _overlay.preferences.sticksOnly &&
         [_host respondsToSelector:@selector(touchKey:characters:pressed:)];
@@ -870,13 +1333,110 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
         [self holdSpace:YES];
         return;
     }
-    if (!_visible || _overlay.configuring) return;
-    if (button.pressed) [_haptics buttonPressed];
+    // The D-pad is one axis recomputed from four sectors, so it is not counted per element:
+    // its value follows whichever sectors are down right now.
     if ([button.element hasPrefix:@"dpad."]) {
-        CGPoint value = CGPointMake(_overlay.buttons[@"dpad.right"].pressed - _overlay.buttons[@"dpad.left"].pressed,
-                                    _overlay.buttons[@"dpad.up"].pressed - _overlay.buttons[@"dpad.down"].pressed);
-        [_virtualController setPosition:value forDirectionPadElement:GCInputDirectionPad];
-    } else [_virtualController setValue:button.pressed ? 1 : 0 forButtonElement:button.element];
+        if (!button.pressed) {
+            [self updateDirectionPad];
+            AKTouchControllerLog(AKTouchControllerEventRelease, @"sent",
+                                 @{@"control": @"button", @"element": AKGamepadElementToken(button.element), @"reason": @"lifted"});
+            return;
+        }
+        if (!_visible || _overlay.configuring) {
+            AKTouchControllerLog(AKTouchControllerEventPress, @"refused",
+                                 @{@"control": @"button", @"element": AKGamepadElementToken(button.element), @"reason": @"hidden"});
+            return;
+        }
+        [_haptics buttonPressed];
+        [self updateDirectionPad];
+        AKTouchControllerLog(AKTouchControllerEventPress, @"sent",
+                             @{@"control": @"button", @"element": AKGamepadElementToken(button.element)});
+        return;
+    }
+    // A release always goes out, whatever the controls are doing by then: a press whose
+    // release is dropped is a button the game believes is still held. The feedback is the
+    // press's, exactly as before: one pulse per press, none for a release or a refusal.
+    if (button.pressed) {
+        if (_visible && !_overlay.configuring) [_haptics buttonPressed];
+        [self pressElement:button.element control:@"button"];
+    } else {
+        [self releaseElement:button.element control:@"button" reason:@"lifted"];
+    }
+}
+- (void)updateDirectionPad {
+    NSString *right = _overlay.buttons[@"dpad.right"].pressed ? @"1" : @"0";
+    NSString *left = _overlay.buttons[@"dpad.left"].pressed ? @"1" : @"0";
+    NSString *up = _overlay.buttons[@"dpad.up"].pressed ? @"1" : @"0";
+    NSString *down = _overlay.buttons[@"dpad.down"].pressed ? @"1" : @"0";
+    CGPoint value = CGPointMake(right.integerValue - left.integerValue,
+                                up.integerValue - down.integerValue);
+    [_virtualController setPosition:value forDirectionPadElement:GCInputDirectionPad];
+}
+// One counted hold per element. `count` is how many surfaces are on it, and the controller only
+// hears about the first press and the last release.
+- (void)pressElement:(NSString *)element control:(NSString *)control {
+    if (!element.length) return;
+    if (!_visible || _overlay.configuring) {
+        AKTouchControllerLog(AKTouchControllerEventPress, @"refused",
+                             @{@"control": control, @"element": AKGamepadElementToken(element),
+                               @"reason": _visible ? @"configuring" : @"hidden"});
+        return;
+    }
+    if ([self isStickButtonElement:element] && ![self stickButtonsAvailable]) {
+        AKTouchControllerLog(AKTouchControllerEventPress, @"refused",
+                             @{@"control": control, @"element": AKGamepadElementToken(element),
+                               @"reason": @"unsupported"});
+        return;
+    }
+    NSUInteger count = [_holds[element] unsignedIntegerValue];
+    _holds[element] = @(count + 1);
+    if (count == 0) [_virtualController setValue:1 forButtonElement:[self buttonElementForElement:element]];
+    AKTouchControllerLog(AKTouchControllerEventPress, @"sent",
+                         @{@"control": control, @"element": AKGamepadElementToken(element),
+                           @"count": [@(count + 1) stringValue]});
+}
+- (void)releaseElement:(NSString *)element control:(NSString *)control reason:(NSString *)reason {
+    if (!element.length) return;
+    NSUInteger count = [_holds[element] unsignedIntegerValue];
+    if (!count) {
+        // A release with nothing held is refused and said so: it is the shape a doubled release
+        // would take, and a fixture reads this line to prove there is only ever one.
+        AKTouchControllerLog(AKTouchControllerEventRelease, @"refused",
+                             @{@"control": control, @"element": AKGamepadElementToken(element),
+                               @"reason": reason ?: @"unknown"});
+        return;
+    }
+    _holds[element] = @(count - 1);
+    if (count == 1) [_virtualController setValue:0 forButtonElement:[self buttonElementForElement:element]];
+    AKTouchControllerLog(AKTouchControllerEventRelease, @"sent",
+                         @{@"control": control, @"element": AKGamepadElementToken(element),
+                           @"count": [@(count - 1) stringValue], @"reason": reason ?: @"lifted"});
+}
+// Everything this manager is holding, released once each. Used at teardown, where the virtual
+// controller is about to go away and nothing may be left pressed.
+- (void)releaseAllElements:(NSString *)reason {
+    NSArray<NSString *> *elements = _holds.allKeys;
+    for (NSString *element in elements) {
+        if (![_holds[element] unsignedIntegerValue]) continue;
+        _holds[element] = @0;
+        [_virtualController setValue:0 forButtonElement:[self buttonElementForElement:element]];
+        AKTouchControllerLog(AKTouchControllerEventRelease, @"sent",
+                             @{@"control": @"button", @"element": AKGamepadElementToken(element), @"reason": reason ?: @"teardown"});
+    }
+    [_holds removeAllObjects];
+}
+- (void)reloadLayout {
+    // The controller may have come or gone since the overlay last looked, so what it can send
+    // is re-read here too: the settings row and the gesture both depend on it.
+    _overlay.stickButtonsAvailable = [self stickButtonsAvailable];
+    [_overlay reloadLayout];
+    [self updateHaptics];
+}
+// A stick's click is not the stick. The direction is GCInputLeftThumbstick and the button a
+// controller calls L3 is GCInputLeftThumbstickButton; the virtual controller refuses the
+// direction as a button, and says so by throwing, so the two are never mixed up here.
+- (NSString *)buttonElementForElement:(NSString *)element {
+    return AKGamepadStickButtonElement(element);
 }
 - (void)stickChanged:(AKGamepadStick *)stick {
     if (_visible && !_overlay.configuring) {
@@ -889,7 +1449,9 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     GCVirtualController *controller = _virtualController;
     // Explicitly release our held controls before removing the virtual device.
     // No value or handler on a physical controller is changed.
+    [_overlay releaseTransientInput:@"teardown"];
     [_overlay reset];
+    [self releaseAllElements:@"teardown"];
     _virtualController = nil;
     [controller disconnect];
     [self setVisible:NO];
@@ -962,6 +1524,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     _invalidated = YES;
     [NSNotificationCenter.defaultCenter removeObserver:self];
     [self refresh];
+    [self releaseAllElements:@"teardown"];
     [_overlay removeFromSuperview];
 }
 - (void)dealloc {

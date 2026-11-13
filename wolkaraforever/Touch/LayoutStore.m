@@ -3,6 +3,28 @@
 
 NSString *const AKLayoutStoredKey = @"WolkaraForeverTouchLayoutV1";
 NSString *const AKLayoutProfilesKey = @"WolkaraForeverProfilesV1";
+NSInteger const AKLayoutSchemaVersion = 2;
+NSString *const AKLayoutModeFull = @"full";
+NSString *const AKLayoutModeSimple = @"simple";
+// The most zones a layout may carry. Six is a thumb's worth on a phone and it bounds what a
+// hand-edited or imported arrangement can put on the screen.
+static const NSUInteger AKLayoutMaximumZones = 6;
+
+// The stored dictionary, ready to be written: a mutable copy of whatever is there, with the
+// schema version this build writes. Every writer below goes through it, so a writer can never
+// leave a v1 dictionary behind that the next read would migrate back to Full - which is
+// exactly how a choice made in the launcher would have been undone by the adapter.
+static NSMutableDictionary *MutableLayout(NSUserDefaults *defaults) {
+    id stored = [defaults objectForKey:AKLayoutStoredKey];
+    NSMutableDictionary *layout = [stored isKindOfClass:NSDictionary.class] ? [stored mutableCopy]
+                                                                           : [NSMutableDictionary new];
+    layout[@"version"] = @(AKLayoutSchemaVersion);
+    return layout;
+}
+static NSMutableDictionary *StoredValues(NSUserDefaults *defaults) {
+    id stored = [defaults objectForKey:AKLayoutStoredKey];
+    return [stored isKindOfClass:NSDictionary.class] ? [stored mutableCopy] : [NSMutableDictionary new];
+}
 
 // The starting points. "plain" is the fixed rings every release through v1.0.9 had; "duo" is
 // the mobile arrangement with nothing reserved; "duo-addon" reserves the left edge and the
@@ -32,10 +54,11 @@ NSDictionary<NSString *, id> *AKLayoutTemplatePayload(NSString *name) {
 
 void AKLayoutApplyPayload(NSUserDefaults *defaults, NSDictionary<NSString *, id> *payload) {
     if (![payload isKindOfClass:NSDictionary.class]) return;
-    id stored = [defaults objectForKey:AKLayoutStoredKey];
-    NSMutableDictionary *layout = [stored isKindOfClass:NSDictionary.class]
-        ? [stored mutableCopy] : [NSMutableDictionary new];
+    NSMutableDictionary *layout = MutableLayout(defaults);
     [layout addEntriesFromDictionary:payload];
+    // A template carries the arrangement keys it is about and nothing else; the version is
+    // this build's, so it is written after the merge rather than being taken from the payload.
+    layout[@"version"] = @(AKLayoutSchemaVersion);
     [defaults setObject:[layout copy] forKey:AKLayoutStoredKey];
 }
 
@@ -105,9 +128,7 @@ BOOL AKLayoutSetElement(NSUserDefaults *defaults, NSString *element, NSString *s
     }
     if ([slot isEqualToString:element]) [mapping removeObjectForKey:slot];
     else mapping[slot] = element;
-    id stored = [defaults objectForKey:AKLayoutStoredKey];
-    NSMutableDictionary *layout = [stored isKindOfClass:NSDictionary.class] ? [stored mutableCopy]
-                                                                            : [NSMutableDictionary new];
+    NSMutableDictionary *layout = MutableLayout(defaults);
     layout[@"elements"] = [mapping copy];
     [defaults setObject:[layout copy] forKey:AKLayoutStoredKey];
     return YES;
@@ -120,9 +141,7 @@ BOOL AKLayoutAddKeepFreeArea(NSUserDefaults *defaults, CGFloat x, CGFloat y,
     if (width < 0.02 || height < 0.02) return NO;
     x = MAX(0, MIN(1, x)); y = MAX(0, MIN(1, y));
     width = MIN(MAX(0.02, width), 1 - x); height = MIN(MAX(0.02, height), 1 - y);
-    id stored = [defaults objectForKey:AKLayoutStoredKey];
-    NSMutableDictionary *layout = [stored isKindOfClass:NSDictionary.class] ? [stored mutableCopy]
-                                                                            : [NSMutableDictionary new];
+    NSMutableDictionary *layout = MutableLayout(defaults);
     NSMutableArray *areas = [NSMutableArray array];
     id existing = layout[@"keepFree"];
     if ([existing isKindOfClass:NSArray.class]) [areas addObjectsFromArray:existing];
@@ -139,4 +158,119 @@ BOOL AKLayoutDeleteProfile(NSUserDefaults *defaults, NSString *name) {
     [all removeObjectForKey:name];
     [defaults setObject:[all copy] forKey:AKLayoutProfilesKey];
     return YES;
+}
+
+#pragma mark - The arrangement, its version, and what it carries
+
+static BOOL AKLayoutKnownMode(NSString *mode) {
+    return [mode isKindOfClass:NSString.class] &&
+        ([mode isEqualToString:AKLayoutModeFull] || [mode isEqualToString:AKLayoutModeSimple]);
+}
+
+// A dictionary a later build wrote is not ours to interpret or to rewrite: everything it says
+// reads as this build's defaults, and every writer below refuses rather than overwriting it.
+// Losing a newer layout to an older build is the one mistake a schema version exists to stop.
+static BOOL AKLayoutIsFromANewerBuild(NSDictionary *values) {
+    id version = values[@"version"];
+    return [version isKindOfClass:NSNumber.class] && [version integerValue] > AKLayoutSchemaVersion;
+}
+
+NSString *AKLayoutMode(NSUserDefaults *defaults) {
+    NSDictionary *values = StoredValues(defaults);
+    if (AKLayoutIsFromANewerBuild(values)) return AKLayoutModeFull;
+    id mode = values[@"mode"];
+    return [mode isKindOfClass:NSString.class] && [mode isEqualToString:AKLayoutModeSimple]
+        ? AKLayoutModeSimple : AKLayoutModeFull;
+}
+
+BOOL AKLayoutSetMode(NSUserDefaults *defaults, NSString *mode) {
+    if (!AKLayoutKnownMode(mode)) return NO;
+    if (AKLayoutIsFromANewerBuild(StoredValues(defaults))) return NO;
+    NSMutableDictionary *layout = MutableLayout(defaults);
+    layout[@"mode"] = mode;
+    [defaults setObject:[layout copy] forKey:AKLayoutStoredKey];
+    return YES;
+}
+
+BOOL AKLayoutStickButtons(NSUserDefaults *defaults) {
+    id stored = StoredValues(defaults)[@"stickButtons"];
+    return [stored isKindOfClass:NSNumber.class] && [stored boolValue];
+}
+
+void AKLayoutSetStickButtons(NSUserDefaults *defaults, BOOL enabled) {
+    if (AKLayoutIsFromANewerBuild(StoredValues(defaults))) return;
+    NSMutableDictionary *layout = MutableLayout(defaults);
+    layout[@"stickButtons"] = @(enabled);
+    [defaults setObject:[layout copy] forKey:AKLayoutStoredKey];
+}
+
+NSArray<NSString *> *AKLayoutZoneElements(void) {
+    static NSArray *elements;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableArray *buttons = [NSMutableArray new];
+        // Every control but the D-pad directions: a zone presses one button, and a direction
+        // is not a button.
+        for (NSString *slot in AKLayoutSlots()) if (![slot hasPrefix:@"dpad."]) [buttons addObject:slot];
+        elements = [buttons copy];
+    });
+    return elements;
+}
+
+static NSArray<NSDictionary<NSString *, id> *> *AKLayoutValidZones(id stored) {
+    NSMutableArray *zones = [NSMutableArray new];
+    if (![stored isKindOfClass:NSArray.class]) return zones;
+    for (id entry in (NSArray *)stored) {
+        if (![entry isKindOfClass:NSDictionary.class]) continue;
+        id element = ((NSDictionary *)entry)[@"element"];
+        id x = ((NSDictionary *)entry)[@"x"], y = ((NSDictionary *)entry)[@"y"];
+        if (![element isKindOfClass:NSString.class] || ![AKLayoutZoneElements() containsObject:element]) continue;
+        if (![x isKindOfClass:NSNumber.class] || ![y isKindOfClass:NSNumber.class]) continue;
+        CGFloat fx = [x doubleValue], fy = [y doubleValue];
+        if (!isfinite(fx) || !isfinite(fy)) continue;
+        if (zones.count >= AKLayoutMaximumZones) break;
+        [zones addObject:@{@"element": element,
+                           @"x": @(MAX(0, MIN(1, fx))), @"y": @(MAX(0, MIN(1, fy)))}];
+    }
+    return zones;
+}
+
+NSArray<NSDictionary<NSString *, id> *> *AKLayoutAbilityZones(NSUserDefaults *defaults) {
+    return AKLayoutValidZones(StoredValues(defaults)[@"abilityZones"]);
+}
+
+BOOL AKLayoutAddAbilityZone(NSUserDefaults *defaults, NSString *element, CGFloat x, CGFloat y) {
+    if (![element isKindOfClass:NSString.class] || ![AKLayoutZoneElements() containsObject:element]) return NO;
+    if (!isfinite(x) || !isfinite(y)) return NO;
+    NSDictionary *values = StoredValues(defaults);
+    if (AKLayoutIsFromANewerBuild(values)) return NO;
+    NSArray *zones = AKLayoutValidZones(values[@"abilityZones"]);
+    if (zones.count >= AKLayoutMaximumZones) return NO;
+    NSMutableDictionary *layout = MutableLayout(defaults);
+    layout[@"abilityZones"] = [zones arrayByAddingObject:
+        @{@"element": element, @"x": @(MAX(0, MIN(1, x))), @"y": @(MAX(0, MIN(1, y)))}];
+    [defaults setObject:[layout copy] forKey:AKLayoutStoredKey];
+    return YES;
+}
+
+BOOL AKLayoutSetAbilityZoneElement(NSUserDefaults *defaults, NSString *element, NSUInteger index) {
+    if (![element isKindOfClass:NSString.class] || ![AKLayoutZoneElements() containsObject:element]) return NO;
+    NSDictionary *values = StoredValues(defaults);
+    if (AKLayoutIsFromANewerBuild(values)) return NO;
+    NSMutableArray *zones = [AKLayoutValidZones(values[@"abilityZones"]) mutableCopy];
+    if (index >= zones.count) return NO;
+    NSMutableDictionary *zone = [zones[index] mutableCopy];
+    zone[@"element"] = element;
+    zones[index] = [zone copy];
+    NSMutableDictionary *layout = MutableLayout(defaults);
+    layout[@"abilityZones"] = [zones copy];
+    [defaults setObject:[layout copy] forKey:AKLayoutStoredKey];
+    return YES;
+}
+
+void AKLayoutClearAbilityZones(NSUserDefaults *defaults) {
+    if (AKLayoutIsFromANewerBuild(StoredValues(defaults))) return;
+    NSMutableDictionary *layout = MutableLayout(defaults);
+    [layout removeObjectForKey:@"abilityZones"];
+    [defaults setObject:[layout copy] forKey:AKLayoutStoredKey];
 }

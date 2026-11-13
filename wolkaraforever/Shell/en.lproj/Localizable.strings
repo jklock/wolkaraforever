@@ -61,6 +61,10 @@
 "home.launcher.interfaceSetup.buttons.message" = "Which gamepad button each on-screen control sends. The game's own controller bindings then decide what that button does.";
 "home.launcher.interfaceSetup.buttons.choose" = "Choose the button this control sends";
 "home.launcher.interfaceSetup.reserve" = "Reserve an Area…";
+"home.launcher.interfaceSetup.simple" = "Simple layout (both sticks, face buttons, shoulders)";
+"home.launcher.interfaceSetup.stickButtons" = "Stick buttons (double tap L3/R3)";
+"home.launcher.interfaceSetup.addZone" = "Add an Ability Zone";
+"home.launcher.interfaceSetup.clearZones" = "Clear the Ability Zones";
 "home.launcher.interfaceSetup.reserve.hint" = "Drag over the part of the screen the controls must leave alone - where an add-on puts its own buttons - then tap OK.";
 
 "home.addons.install" = "Install Addons (Curse & Direct)";
@@ -391,6 +395,7 @@
 "touch.settings.stickSize" = "Sticks and face button size";
 "touch.settings.stickSize.value" = "Sticks and face button size · %.0f%%";
 "touch.settings.outerTriggers" = "Triggers on the outside";
+"touch.settings.outerTriggers.simple" = "The simple layout has no triggers to move.";
 "touch.settings.sticksOnly" = "Sticks and jump only (hide the other buttons)";
 "touch.settings.floatingSticks" = "Floating sticks (find the thumb, jump in the corner)";
 "touch.settings.haptics" = "Haptic feedback";
@@ -398,6 +403,21 @@
 "touch.settings.overlay.detail" = "Performance overlay (FPS & Thermals)";
 "touch.settings.edit" = "Edit layout";
 "touch.settings.edit.detail" = "Move each shoulder button, +, or a stick with its ring. Changes are saved on this device.";
+"touch.settings.simpleLayout" = "Simple layout";
+"touch.settings.simpleLayout.hint" = "Both sticks, the four face buttons, the two shoulders and the menu. The triggers and the D-pad are hidden; turning this off puts them back where they were.";
+"touch.settings.simpleLayout.detail" = "Both sticks, A/B/X/Y, LB/RB and the menu. Full shows every control and is what an existing layout keeps.";
+"touch.settings.stickButtons" = "Stick buttons (L3/R3)";
+"touch.settings.stickButtons.hint" = "A double tap on a stick presses its own button once. Moving the stick is unchanged.";
+"touch.settings.stickButtons.unsupported" = "This controller has no stick button, so this stays off.";
+"touch.settings.abilityZones" = "Ability zones";
+"touch.settings.abilityZones.add" = "Add";
+"touch.settings.abilityZones.clear" = "Clear";
+"touch.settings.abilityZones.count" = "%lu in place";
+"touch.settings.abilityZones.detail" = "A zone is an extra button you place, and it sends one controller button while you touch it. Move it in the layout editor; tap it there to choose which button it sends.";
+"touch.zone.button" = "Ability zone: %@";
+"touch.zone.hint" = "Presses the controller button shown while you touch it. In the layout editor, tap it to choose another button.";
+"touch.zone.editing" = "Editing";
+"touch.zone.choose" = "Button this zone sends";
 "touch.settings.reset" = "Reset to defaults";
 "touch.leave" = "Leave the game";
 "touch.leave.hint" = "Closes WolkaraForever and the game; anything the game has not saved is lost. Open WolkaraForever again to start it.";
@@ -598,6 +618,14 @@
 "voice.state.authorizing" = "Waiting for permission…";
 "voice.state.listening" = "Listening…";
 "voice.state.finalizing" = "Finishing what it heard…";
+"voice.language" = "Language";
+"voice.language.hint" = "Choose the language the recogniser should expect.";
+"voice.language.system" = "System";
+"voice.language.english" = "English";
+"voice.language.german" = "German";
+"voice.language.french" = "French";
+"voice.language.spanish" = "Spanish";
+"voice.language.unavailable" = "%@ cannot be recognised on this iPad, so System was used for that hold.";
 "common.clear" = "Clear";
 
 /* ---- The game's own files (Forever UI) ---- */
@@ -709,3 +737,33 @@
 "addons.discover.empty" = "There is nothing to discover for this game version.";
 "addons.discover.hint" = "Refresh asks CurseForge again.";
 
+/* ---- Chat Composer ---- */
+"chat.composer.state.opening" = "Opening chat…";
+"chat.composer.state.listening" = "Listening…";
+"chat.composer.state.editing" = "Editing";
+"chat.composer.state.ready" = "Ready to send";
+"chat.composer.state.sending" = "Sending…";
+"chat.composer.state.cancelled" = "Cancelled";
+"chat.composer.action.send" = "Send";
+"chat.composer.action.cancel" = "Cancel";
+"chat.composer.action.cancel.hint" = "Closes the Composer without sending anything.";
+"chat.composer.action.listen" = "Dictate into the Composer";
+"chat.composer.action.stop" = "Stop dictating";
+"chat.composer.action.settings" = "Chat Composer settings";
+"chat.composer.problem.notSent" = "Message was not sent.";
+"chat.composer.problem.nothingHeard" = "Nothing was heard.";
+"chat.composer.destination.hint" = "Sends this message to the destination this chip names.";
+"chat.composer.placeholder" = "Compose a message · Send types it into the chat and closes it";
+"chat.composer.settings.title" = "Chat Composer";
+"chat.composer.settings.message" = "Delivery: %@. Destinations add a command to the line you send; they are yours, not the game’s.";
+"chat.composer.settings.mode.review" = "Review then Send";
+"chat.composer.settings.mode.classic" = "Classic direct";
+"chat.composer.settings.useClassic" = "Use Classic direct";
+"chat.composer.settings.useReview" = "Use Review then Send";
+"chat.composer.settings.add" = "Add destination…";
+"chat.composer.settings.add.message" = "A name for the chip and the command it sends, for example /say.";
+"chat.composer.settings.remove" = "Remove %@";
+"chat.composer.settings.save" = "Save";
+"chat.composer.settings.done" = "Done";
+"chat.composer.destination.title" = "Name";
+"chat.composer.destination.command" = "Command, for example /say";
