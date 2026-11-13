@@ -156,6 +156,27 @@ static BOOL PumpUntil(BOOL (^condition)(void), NSTimeInterval limit) {
 // used to be read after a fixed delay, which is a guess about how fast the machine is - and one
 // of those guesses has already failed on a freshly erased simulator with nothing wrong in the
 // app. This waits for the alert to be there.
+// The sheet this step expects, waited for by title.
+//
+// "Something is presented" is not the same question as "my sheet is presented": a step that reads
+// whatever happens to be on top can be handed the previous sheet, still transitioning or simply
+// not dismissed yet, and then assert its title against the wrong words. Every step that expects a
+// named sheet asks for that sheet.
+static UIAlertController *WaitForSheetTitled(UIViewController *presenter, NSString *title,
+                                             NSTimeInterval limit) {
+    __block BOOL matched = NO;
+    PumpUntil(^{
+        UIViewController *presented = presenter.presentedViewController;
+        if (![presented isKindOfClass:UIAlertController.class]) return NO;
+        if (presented.isBeingPresented || presented.isBeingDismissed) return NO;
+        matched = [((UIAlertController *)presented).title isEqual:title];
+        return matched;
+    }, limit);
+    UIViewController *presented = presenter.presentedViewController;
+    if (![presented isKindOfClass:UIAlertController.class]) return nil;
+    return [((UIAlertController *)presented).title isEqual:title] ? (UIAlertController *)presented : nil;
+}
+
 static UIAlertController *WaitForAlert(UIViewController *presenter, NSTimeInterval limit) {
     // Only an alert that has finished arriving counts. A sheet that is on its way out is still
     // `presentedViewController` until the transition ends, so a step that waits naively can be
@@ -1777,8 +1798,8 @@ static void TestPhoneDisplayDefaults(void) {
     [self capture:@"wow-launcher-ipados.png"];
     [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
-    UIAlertController *modeSheet = [self settledPresentedController];
-    assert([modeSheet.title isEqual:@"Interface Mode"]);
+    UIAlertController *modeSheet = WaitForSheetTitled(self.controller, @"Interface Mode", 20.0);
+    assert(modeSheet != nil);
     assert(CancelActions(modeSheet) == 1);
     // Automatic names what this device would resolve to, even while iPadOS is what is in force.
     NSString *automatic = [NSString stringWithFormat:@"Automatic (%@)",
@@ -1857,7 +1878,8 @@ static void TestPhoneDisplayDefaults(void) {
     // Back to iPadOS through the same sheet: the recommendation stays our own add-on.
     [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
-    modeSheet = [self settledPresentedController];
+    modeSheet = WaitForSheetTitled(self.controller, @"Interface Mode", 20.0);
+    assert(modeSheet != nil);
     assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"iPadOS", @"iOS", @"✓ iOS on Duo", @"Cancel"])]);
     UIAlertAction *ipados = nil;
     for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iPadOS"]) ipados = action;
@@ -1930,9 +1952,8 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkResetConfirmation) withObject:nil afterDelay:0.5];
 }
 - (void)checkResetConfirmation {
-    UIAlertController *alert = [self settledPresentedController];
-    assert([alert isKindOfClass:UIAlertController.class]);
-    assert([alert.title isEqual:@"Reset to default graphics settings?"]);
+    UIAlertController *alert = WaitForSheetTitled(self.controller, @"Reset to default graphics settings?", 20.0);
+    assert(alert != nil);
     assert([alert.message containsString:@"backup"]);
     [self dismissPresented];
     assert([[self configText] isEqual:configBeforeReset]);
@@ -2041,9 +2062,8 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkFallbackRenderSheet) withObject:nil afterDelay:0.6];
 }
 - (void)checkFallbackRenderSheet {
-    UIAlertController *sheet = [self settledPresentedController];
-    assert([sheet isKindOfClass:UIAlertController.class]);
-    assert([sheet.title isEqual:@"Render profile"]);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Render profile", 20.0);
+    assert(sheet != nil);
     assert(CancelActions(sheet) == 1);
     // A device that was never measured is offered Performance and nothing above it. An offered
     // level that cannot hold its budget is worse than one that is not there.
@@ -2056,9 +2076,8 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkDeviceProfileSheet) withObject:nil afterDelay:0.6];
 }
 - (void)checkDeviceProfileSheet {
-    UIAlertController *sheet = [self settledPresentedController];
-    assert([sheet isKindOfClass:UIAlertController.class]);
-    assert([sheet.title isEqual:@"Device profile"]);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Device profile", 20.0);
+    assert(sheet != nil);
     assert(CancelActions(sheet) == 1);
     NSArray *titles = [sheet.actions valueForKey:@"title"];
     // Automatic is the recommendation and comes first; the profile of this device is not
@@ -2104,8 +2123,8 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkMeasuredRenderSheet) withObject:nil afterDelay:0.6];
 }
 - (void)checkMeasuredRenderSheet {
-    UIAlertController *sheet = [self settledPresentedController];
-    assert([sheet isKindOfClass:UIAlertController.class]);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Draw a new control", 20.0);
+    assert(sheet != nil);
     assert(CancelActions(sheet) == 1);
     assert([[sheet.actions valueForKey:@"title"] isEqualToArray:
         (@[@"✓ Performance — 1024 × 768", @"Balanced — 1366 × 1024", @"Quality — 2732 × 2048", @"Cancel"])]);
@@ -2116,9 +2135,8 @@ static int backupsBeforePerformance;
     [self dismissPresented];
     RunAction(quality);
     Pump(0.6);
-    UIAlertController *confirm = [self settledPresentedController];
-    assert([confirm isKindOfClass:UIAlertController.class]);
-    assert([confirm.title isEqual:@"Above the recommendation"]);
+    UIAlertController *confirm = WaitForSheetTitled(self.controller, @"Above the recommendation", 20.0);
+    assert(confirm != nil);
     assert([confirm.message containsString:@"more than this profile recommends"]);
     [self dismissPresented];
     Pump(0.4);
@@ -2143,9 +2161,8 @@ static int backupsBeforePerformance;
     [self dismissPresented];
     RunAction(sheet.actions[1]);   // Balanced
     Pump(0.6);
-    UIAlertController *alert = [self settledPresentedController];
-    assert([alert isKindOfClass:UIAlertController.class]);
-    assert([alert.title isEqual:@"Render profile ready"]);
+    UIAlertController *alert = WaitForSheetTitled(self.controller, @"Render profile ready", 20.0);
+    assert(alert != nil);
     assert([alert.message containsString:@"Nothing in the game's own settings was changed"]);
     assert([alert.message containsString:@"Balanced — 1366 × 1024"]);
     [self dismissPresented];
@@ -2262,9 +2279,8 @@ static int backupsBeforePerformance;
 // Declared on TKWoWViewController for the fixture; see the category above.
 
 - (void)checkNestedSheet {
-    UIAlertController *preferences = [self settledPresentedController];
-    assert([preferences isKindOfClass:UIAlertController.class]);
-    assert([preferences.title isEqual:@"Download preferences"]);
+    UIAlertController *preferences = WaitForSheetTitled(self.controller, @"Download preferences", 20.0);
+    assert(preferences != nil);
     assert(CancelActions(preferences) == 1);
     assert([[preferences.actions valueForKey:@"title"]
         isEqualToArray:(@[@"Region", @"Language", @"Cancel"])]);
@@ -2280,9 +2296,8 @@ static int backupsBeforePerformance;
 }
 
 - (void)checkNestedSheetOpened {
-    UIAlertController *picker = [self settledPresentedController];
-    assert([picker isKindOfClass:UIAlertController.class]);
-    assert([picker.title isEqual:@"Download language"]);
+    UIAlertController *picker = WaitForSheetTitled(self.controller, @"Download language", 20.0);
+    assert(picker != nil);
     NSArray *titles = [picker.actions valueForKey:@"title"];
     assert([titles containsObject:@"German"]);
     assert([titles containsObject:@"Spanish"]);
@@ -2297,9 +2312,8 @@ static int backupsBeforePerformance;
 }
 
 - (void)checkLanguageSheet {
-    UIAlertController *sheet = [self settledPresentedController];
-    assert([sheet isKindOfClass:UIAlertController.class]);
-    assert([sheet.title isEqual:@"App language"]);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"App language", 20.0);
+    assert(sheet != nil);
     assert([sheet.message containsString:@"game language"]);
     NSArray *titles = [sheet.actions valueForKey:@"title"];
     assert([titles containsObject:@"English"]);
@@ -2348,9 +2362,8 @@ static int backupsBeforePerformance;
     [self capture:@"wow-home-de.png"];
 
     // --- the one-time offer, localized, with the two answers it promises
-    UIAlertController *offer = [self settledPresentedController];
-    assert([offer isKindOfClass:UIAlertController.class]);
-    assert([offer.title isEqual:@"Auch die Spielsprache ändern?"]);
+    UIAlertController *offer = WaitForSheetTitled(self.controller, @"Auch die Spielsprache ändern?", 20.0);
+    assert(offer != nil);
     NSArray *titles = [offer.actions valueForKey:@"title"];
     assert([titles containsObject:@"Spielsprache ebenfalls auf Deutsch ändern"]);
     assert([titles containsObject:@"Spielsprache unverändert lassen"]);
@@ -2491,9 +2504,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self performSelector:@selector(checkGermanSettings) withObject:nil afterDelay:0.6];
 }
 - (void)checkGermanSettings {
-    UIAlertController *sheet = [self settledPresentedController];
-    assert([sheet isKindOfClass:UIAlertController.class]);
-    assert([sheet.title isEqual:@"Einstellungen"]);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Einstellungen", 20.0);
+    assert(sheet != nil);
     assert([sheet.message containsString:@"Aktualisierungen werden automatisch installiert"]);
     NSArray *titles = [sheet.actions valueForKey:@"title"];
     for (NSString *expected in @[@"Spieldateien prüfen und reparieren",
@@ -2587,9 +2599,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([self row:@"wow.edition"].enabled);
     [[self row:@"wow.edition"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     Pump(0.6);
-    UIAlertController *edition = [self settledPresentedController];
-    assert([edition isKindOfClass:UIAlertController.class]);
-    assert([edition.title isEqual:@"Choose your edition"]);
+    UIAlertController *edition = WaitForSheetTitled(self.controller, @"Choose your edition", 20.0);
+    assert(edition != nil);
     assert(CancelActions(edition) == 1);
     assert(edition.actions.count == TKWoWProducts().count + 1);
     NSArray *editionTitles = [edition.actions valueForKey:@"title"];
@@ -2614,9 +2625,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([self row:@"wow.preferences"].enabled);
     [[self row:@"wow.preferences"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     Pump(0.6);
-    UIAlertController *preferences = [self settledPresentedController];
-    assert([preferences isKindOfClass:UIAlertController.class]);
-    assert([preferences.title isEqual:@"Download preferences"]);
+    UIAlertController *preferences = WaitForSheetTitled(self.controller, @"Download preferences", 20.0);
+    assert(preferences != nil);
     assert(CancelActions(preferences) == 1);
     UIAlertAction *region = nil;
     for (UIAlertAction *action in preferences.actions) if ([action.title isEqual:@"Region"]) region = action;
@@ -2624,9 +2634,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     RunAction(region);
     Pump(0.7);
-    UIAlertController *regions = [self settledPresentedController];
-    assert([regions isKindOfClass:UIAlertController.class]);
-    assert([regions.title isEqual:@"Region"]);
+    UIAlertController *regions = WaitForSheetTitled(self.controller, @"Region", 20.0);
+    assert(regions != nil);
     assert(CancelActions(regions) == 1);
     assert([[regions.actions valueForKey:@"title"]
         isEqualToArray:(@[@"Europe", @"Americas", @"Korea", @"Taiwan", @"Cancel"])]);
@@ -2651,7 +2660,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     RunAction(region);
     Pump(0.7);
-    regions = [self settledPresentedController];
+    regions = WaitForSheetTitled(self.controller, @"Download region", 20.0);
+    assert(regions != nil);
     UIAlertAction *europe = nil;
     for (UIAlertAction *action in regions.actions) if ([action.title isEqual:@"Europe"]) europe = action;
     assert(europe != nil);
@@ -2697,9 +2707,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(gear.enabled);
     TapBarItem(gear);
     Pump(0.7);
-    UIAlertController *settings = [self settledPresentedController];
-    assert([settings isKindOfClass:UIAlertController.class]);
-    assert([settings.title isEqual:@"Settings"]);
+    UIAlertController *settings = WaitForSheetTitled(self.controller, @"Settings", 20.0);
+    assert(settings != nil);
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
         (@[@"Verify and repair game files", @"Diagnostics and logs",
