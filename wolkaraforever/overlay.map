@@ -83,6 +83,9 @@ wolkaraforever/WoW/Updater.h launcher/WoW/Updater.h add
 wolkaraforever/WoW/Updater.m launcher/WoW/Updater.m add
 wolkaraforever/WoW/WoWViewController.h launcher/WoW/WoWViewController.h add
 wolkaraforever/WoW/WoWViewController.m launcher/WoW/WoWViewController.m add
+wolkaraforever/WoW/tests/addon_hub_live.h tests/addon_hub_live.h add
+wolkaraforever/WoW/tests/addon_hub_live.m tests/addon_hub_live.m add
+wolkaraforever/WoW/tests/addon_hub_live_main.m tests/addon_hub_live_main.m add
 wolkaraforever/WoW/tests/test_addon_archive.swift tests/test_addon_archive.swift add
 wolkaraforever/WoW/tests/test_addon_import.m tests/test_addon_import.m add
 wolkaraforever/WoW/tests/test_addon_package.swift tests/test_addon_package.swift add

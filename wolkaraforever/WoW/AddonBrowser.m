@@ -64,6 +64,15 @@
     [super viewDidLoad];
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     self.view.backgroundColor = WKInk();
+    // The bar belongs to the navigation controller, so it needs the same treatment: this sheet
+    // was arriving with a white bar and near-black title over a navy page.
+    UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
+    [appearance configureWithOpaqueBackground];
+    appearance.backgroundColor = WKPanel();
+    appearance.titleTextAttributes = @{ NSForegroundColorAttributeName: [UIColor colorWithWhite:0.96 alpha:1] };
+    self.navigationController.navigationBar.standardAppearance = appearance;
+    self.navigationController.navigationBar.scrollEdgeAppearance = appearance;
+    self.navigationController.navigationBar.tintColor = WKGold();
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
         initWithTitle:WKLocalized(@"common.done") style:UIBarButtonItemStyleDone target:self action:@selector(close)];
     self.navigationItem.leftBarButtonItem.tintColor = WKGold();
