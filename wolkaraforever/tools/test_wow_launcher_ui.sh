@@ -13,6 +13,18 @@ cd build/platform
 # device that is not on the matrix is not a substitute, and the resolver says which device ran
 # because "the fixture passed" without a device name is a sentence nobody can check.
 simulator_use "${SIMULATOR:-ipad}"
+# One UI suite per simulator, enforced. Two suites on the same device install over each other's
+# app, take the foreground from each other and interleave their sheets; whatever runs second then
+# reports failures it does not have. Measured on 2026-11-13: a touch-controls suite launched on the
+# iPad while this one was mid-run, and this suite's fixture was pulled out from under it. Refusing
+# to start is honest; a bogus red lane is not.
+ui_lock="${TMPDIR:-/tmp}/wolkaraforever-ui-${SIM_ID}.lock"
+if ! mkdir "$ui_lock" 2>/dev/null; then
+    echo "test_wow_launcher_ui: another UI suite is using $SIM_NAME ($ui_lock)" >&2
+    echo "test_wow_launcher_ui: remove the lock only if no suite is running" >&2
+    exit 3
+fi
+trap 'rmdir "$ui_lock" 2>/dev/null || true' EXIT INT TERM
 xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/wow-launcher/WoWFixture.app
 mkdir -p "$APP"
