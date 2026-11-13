@@ -582,18 +582,18 @@ static void TestDirectCamera(void) {
     AKTouchCameraUpdate(&camera,1,905,402,3.7,surface,AKFixtureCameraEmit,context);
     assert([events.lastObject isEqual:@"move5.0,2.0"]);
     AKTouchCameraUpdate(&camera,0,0,0,3.8,surface,AKFixtureCameraEmit,context);
-    // Every lifecycle exit is the same exit: one release, nothing left, and the next touch is
-    // a camera drag immediately. Each pass uses its own clock, because a finger trace that goes
-    // back in time is itself a cancellation.
+    // Every exit the *app* causes is one release and nothing left behind, and the next touch
+    // is a camera drag immediately. Each pass uses its own clock, because a finger trace that
+    // goes back in time is itself a cancellation.
     NSTimeInterval clock = 10;
-    for (NSString *reason in @[@"background",@"resign",@"resize",@"settings",@"controller",@"cancelled"]) {
+    for (NSString *reason in @[@"background",@"resign",@"resize",@"settings",@"controller",@"teardown"]) {
         [events removeAllObjects];
         AKTouchCameraUpdate(&camera,1,300,200,clock,surface,AKFixtureCameraEmit,context);
         assert(AKTouchCameraHold(&camera,clock+0.5,AKFixtureCameraEmit,context));
         AKTouchCameraReset(&camera,reason,AKFixtureCameraEmit,context);
         assert(([events isEqual:@[@"down0",@"up0"]]));
         assert(!AKTouchCameraIsActive(&camera));
-        // A second reset on the same gesture emits nothing at all.
+        // A second reset on a gesture that is already gone emits nothing at all.
         AKTouchCameraReset(&camera,reason,AKFixtureCameraEmit,context);
         assert(events.count == 2);
         AKTouchCameraUpdate(&camera,1,320,210,clock+1,surface,AKFixtureCameraEmit,context);
@@ -602,6 +602,26 @@ static void TestDirectCamera(void) {
         AKTouchCameraUpdate(&camera,0,0,0,clock+1.2,surface,AKFixtureCameraEmit,context);
         clock += 10;
     }
+    // A *cancelled* touch is the platform's rule, not the app's: the held button is released
+    // once, and then the rest of that gesture is suppressed until every finger is lifted. The
+    // leftover finger must not become camera motion - that is the jump `AKTrackpadCancel`
+    // blocks, and this app keeps it.
+    [events removeAllObjects];
+    clock = 200;
+    AKTouchCameraUpdate(&camera,1,300,200,clock,surface,AKFixtureCameraEmit,context);
+    assert(AKTouchCameraHold(&camera,clock+0.5,AKFixtureCameraEmit,context));
+    AKTouchCameraReset(&camera,@"cancelled",AKFixtureCameraEmit,context);
+    assert(([events isEqual:@[@"down0",@"up0"]]));
+    assert(AKTouchCameraIsActive(&camera));            // the finger is still down
+    AKTouchCameraUpdate(&camera,1,360,240,clock+1,surface,AKFixtureCameraEmit,context);
+    assert(events.count == 2);                          // and it does not drag the camera
+    AKTouchCameraUpdate(&camera,0,0,0,clock+1.1,surface,AKFixtureCameraEmit,context);
+    assert(events.count == 2);                          // lifting it is not a click either
+    assert(!AKTouchCameraIsActive(&camera));
+    AKTouchCameraUpdate(&camera,1,320,210,clock+2,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraUpdate(&camera,1,330,214,clock+2.1,surface,AKFixtureCameraEmit,context);
+    assert([events.lastObject isEqual:@"move10.0,4.0"]); // a new touch drags at once
+    AKTouchCameraUpdate(&camera,0,0,0,clock+2.2,surface,AKFixtureCameraEmit,context);
     assert(AKFixtureLogHas(@"event=lifecycle outcome=cleanup reason=background"));
     assert(AKFixtureLogHas(@"event=cancel outcome=cancelled"));
     // Everything above is paired, press for release, before the one case that has no delegate
@@ -613,7 +633,7 @@ static void TestDirectCamera(void) {
     AKTouchCameraReset(&camera,@"teardown",NULL,NULL);
     assert(!AKTouchCameraIsActive(&camera));
     AKFixtureEndLog();
-    puts("TOUCH_CAMERA_LIFECYCLE_PASS: a tap clicks once, a hold drags, a centroid jump is rebased with one release and the next movement still turns the camera, and every lifecycle exit releases once and leaves nothing behind.");
+    puts("TOUCH_CAMERA_LIFECYCLE_PASS: a tap clicks once, a hold drags, a centroid jump is rebased with one release and the next movement still turns the camera, every exit the app causes releases once and leaves nothing behind, and a cancelled touch releases once and then stays suppressed until the finger lifts, as it always has.");
 }
 // --- the arrangement, the stick buttons and the zones, through the real controls ---
 // A control by name, drawn or not: the identifier the gamepad gives its own controls, without

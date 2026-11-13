@@ -48,8 +48,8 @@ static void AKTouchCameraDeliver(AKTrackpadEmit _Nullable emit, void *_Nullable 
     AKTouchCameraSinkEmit(&sink, action, 0, 0, button);
 }
 
-// Forget the gesture. The caller has already released whatever it held.
-static void AKTouchCameraClear(AKTouchCameraGesture *camera) {
+// Forget the gesture completely. The caller has already released whatever it held.
+static void AKTouchCameraForget(AKTouchCameraGesture *camera) {
     memset(&camera->pad, 0, sizeof camera->pad);
     camera->handedOff = NO;
     camera->generation++;
@@ -58,15 +58,32 @@ static void AKTouchCameraClear(AKTouchCameraGesture *camera) {
 void AKTouchCameraReset(AKTouchCameraGesture *camera, NSString *reason,
                         AKTrackpadEmit emit, void *context) {
     if (!camera) return;
-    BOOL held = camera->pad.dragging;
-    if (held) AKTouchCameraDeliver(emit, context, AKTrackpadUp, camera->pad.button);
-    BOOL wasActive = camera->pad.fingers || held || camera->pad.blocked || camera->pad.lifting;
-    AKTouchCameraClear(camera);
-    if (!emit || !wasActive) return;
-    // A cancellation the player caused ("cancelled") and one the app caused (a panel, the
-    // background, a rotation, a controller) are different events on purpose: the first is the
-    // gesture's own exit, the second is the app taking the gesture away.
     BOOL playerCancel = [reason isEqualToString:@"cancelled"];
+    BOOL wasActive = camera->pad.fingers || camera->pad.dragging || camera->pad.blocked ||
+        camera->pad.lifting;
+    camera->generation++;
+    camera->handedOff = NO;
+    if (playerCancel) {
+        // The platform's own rule, kept exactly: `AKTrackpadCancel` releases a held button
+        // once and then *suppresses the rest of this gesture until every finger is lifted*, so
+        // a cancelled touch cannot turn into a drag. Clearing the pad outright here would hand
+        // those leftover fingers to the camera as motion - the jump `blocked` exists to
+        // prevent - which is a change to behaviour this build has no reason to make.
+        AKTouchCameraSink sink = { emit, context };
+        AKTrackpadCancel(&camera->pad, emit ? AKTouchCameraSinkEmit : NULL, emit ? &sink : NULL);
+        if (!camera->pad.fingers) memset(&camera->pad, 0, sizeof camera->pad);
+    } else {
+        // Every other exit is the app taking the gesture away - the background, a panel, a
+        // rotation, a controller arriving, teardown. Nothing is touching the screen for it, so
+        // it is released once and cleared completely, which is what makes the next touch a
+        // camera drag immediately.
+        if (camera->pad.dragging) AKTouchCameraDeliver(emit, context, AKTrackpadUp, camera->pad.button);
+        AKTouchCameraForget(camera);
+    }
+    if (!emit || !wasActive) return;
+    // A cancellation the player or the system caused ("cancelled") and one the app caused are
+    // different events on purpose: the first is the gesture's own exit, the second is the app
+    // taking the gesture away.
     AKTouchControllerLog(playerCancel ? AKTouchControllerEventCancel : AKTouchControllerEventLifecycle,
                          playerCancel ? @"cancelled" : @"cleanup", @{@"reason": reason ?: @"unknown"});
 }
@@ -91,7 +108,7 @@ void AKTouchCameraUpdate(AKTouchCameraGesture *camera, unsigned fingers, double 
             // The button, if one was held, is released exactly once by the close before the
             // log line: a rebase is never a stuck press.
             if (camera->pad.dragging) AKTouchCameraDeliver(emit, context, AKTrackpadUp, camera->pad.button);
-            AKTouchCameraClear(camera);
+            AKTouchCameraForget(camera);
             AKTouchControllerLog(AKTouchControllerEventThreshold, @"rebased",
                                  @{@"control": @"camera", @"reason": @"centroid"});
         }

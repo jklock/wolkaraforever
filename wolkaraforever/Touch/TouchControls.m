@@ -1168,8 +1168,10 @@ static const unsigned short AKKeyF12 = 111;
 
 - (void)processTouches:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     if (!self.trackpadEnabled) return;
-    for (UITouch *touch in touches)
-        if (touch.phase == UITouchPhaseCancelled) { [self cancelTouches]; return; }
+    // Exactly the flow this file has always had: a cancelled touch cancels the gesture and the
+    // update below still runs, with the platform suppressing the remainder of it. Returning
+    // early would be a different rule wearing the same name.
+    for (UITouch *touch in touches) if (touch.phase == UITouchPhaseCancelled) [self cancelTouches];
     unsigned count = 0;
     CGPoint center = CGPointZero;
     for (UITouch *touch in event.allTouches) {
@@ -1207,14 +1209,19 @@ static const unsigned short AKKeyF12 = 111;
 - (void)cancelTouches {
     [self cancelCameraGesture:@"cancelled"];
 }
+// The line this app has always written when input is taken away. Kept in one place so the
+// background path and the resign path cannot drift apart again.
+- (void)logInputSuspended {
+    // Dictation and system permission panels temporarily take focus. Closing
+    // the first responder here cancels dictation before its UI can appear.
+    AKLog(@"input suspended (draftFirstResponder=%d)", _keyboardInput.isFirstResponder);
+}
 - (void)suspendInput:(NSNotification *)notification {
     (void)notification;
     // Losing focus takes the camera gesture away: the touch that was steering is no longer
     // ours, and leaving it half-open is how the camera used to answer nothing afterwards.
     [self cancelCameraGesture:@"resign"];
-    // Dictation and system permission panels temporarily take focus. Closing
-    // the first responder here cancels dictation before its UI can appear.
-    AKLog(@"input suspended (draftFirstResponder=%d)", _keyboardInput.isFirstResponder);
+    [self logInputSuspended];
 }
 - (void)systemKeyboardShown:(NSNotification *)notification {
     NSValue *frame = notification.userInfo[UIKeyboardFrameEndUserInfoKey];
@@ -1240,6 +1247,7 @@ static const unsigned short AKKeyF12 = 111;
 - (void)backgroundInput:(NSNotification *)notification {
     (void)notification;
     [self cancelCameraGesture:@"background"];
+    [self logInputSuspended];
     [self dismissKeyboard];
 }
 - (void)windowResigned:(NSNotification *)notification {
@@ -1247,10 +1255,7 @@ static const unsigned short AKKeyF12 = 111;
 }
 - (void)didMoveToWindow {
     [super didMoveToWindow];
-    if (!self.window) {
-        [self cancelCameraGesture:@"teardown"];
-        [self dismissKeyboard];
-    }
+    if (!self.window) [self backgroundInput:nil];
 }
 - (void)dealloc {
     [_composer removeFromSuperview];
