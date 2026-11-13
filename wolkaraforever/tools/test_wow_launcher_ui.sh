@@ -94,10 +94,11 @@ LAUNCH=$!
 # Wait longer than that guard, so the verdict this loop sees is always the fixture's and
 # never this wrapper killing a healthy run: the iPad matrix device legitimately needs
 # about a minute, and the guard is 180 seconds.
-# How long the runner waits for the fixture's own verdict. The fixture is the thing that decides a
-# run has hung - it carries its own guard - so this only has to be longer than that guard, or a
-# slow matrix device is killed here and reported as a failure it did not have.
-VERDICT_TIMEOUT=${VERDICT_TIMEOUT:-300}
+# How long the runner waits for the fixture's answer. The fixture carries its own hang guard and
+# prints TIMEOUT when it fires, and this loop breaks on that too - so this only has to outlast the
+# guard by enough that a slow machine is never killed here and reported as a failure it did not
+# have. A false timeout costs more than a long run.
+VERDICT_TIMEOUT=${VERDICT_TIMEOUT:-960}
 for _ in $(seq 1 "$VERDICT_TIMEOUT"); do
     if grep -qE 'WoW UIKit (PASS:|TIMEOUT)' "$LOG"; then break; fi
     sleep 1
