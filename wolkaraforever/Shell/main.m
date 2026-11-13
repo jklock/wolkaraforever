@@ -654,6 +654,12 @@ static NSString *AKAudioStateDescription(void) {
     self.library = OpenLibrary();
 #if TOLKARA_INTEGRATED_AUTH
     (void)[TKEnrollmentImport prepare];
+    // A reinstall deletes this app's container but not its Keychain: the trust
+    // pin survives and the marker beside it does not, so before this launch
+    // anything asks "is this iPad enrolled" the two are put back in agreement.
+    // Idempotent, and it states only an outcome - never a device identifier, a
+    // fingerprint or pairing material. See Bridge/EnrollmentReference.swift.
+    WKLog("enrollment", @"%@", [WKEnrollmentReference prepare]);
     self.localAuthorization=[TKLocalAuthorization new];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(arenaWillPrepare:)
         name:TKLocalArenaWillPrepare object:nil];
