@@ -1293,6 +1293,12 @@ static void TestPhoneDisplayDefaults(void) {
 }
 - (void)checkCancellation {
     // A brief interruption cancels only Play's intent; the check completes.
+    //
+    // Waited for rather than assumed. This step used to sleep a fixed 0.7 s and then assert, which
+    // is a guess about how fast the machine is: on a busy iPad Pro 13-inch it asserted against a
+    // page that had not settled, and reported a cancellation failure the app did not have. The
+    // assertion is unchanged - the wait is what moved.
+    PumpUntil(^{ return (BOOL)([[self status] isEqual:@"Ready to play"]); }, 20.0);
     assert(self.launches==0 && [[self status] isEqual:@"Ready to play"]);
     assert(!UIApplication.sharedApplication.idleTimerDisabled);
     atomic_store(&slow,false); atomic_store(&slowUpdate,true);
