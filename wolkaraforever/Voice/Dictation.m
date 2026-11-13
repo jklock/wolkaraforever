@@ -3,7 +3,9 @@
 #import "Dictation.h"
 #import "AudioSessionCoordinator.h"
 #import "../App/WolkaraForeverLog.h"
+#import "../App/WKLocalization.h"
 #import "VoiceSettings.h"
+#import "KeyboardDictationEvents.h"
 
 #import <AVFAudio/AVFAudio.h>
 #import <Speech/Speech.h>
@@ -55,6 +57,32 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
 - (void)recogniseFile:(NSURL *)file handler:(void (^)(NSString *text, BOOL isFinal, NSError *error))handler;
 @end
 
+// What every request this file makes has in common.
+//
+// Partials are asked for even though nothing is delivered from them. This is what the device
+// said on 2026-10-22: with partial results switched off, the on-device recogniser took all
+// 135,725 frames of a known sentence, was sent endAudio, and then called back *never* - no
+// result and no error, for forty seconds. The app's delivery rule is unchanged and stays where
+// it belongs: `speechReported:` ignores every non-final result, so a partial is a progress
+// signal and nothing else.
+//
+// The dictation hint and punctuation are asked for only where this SDK and this system have
+// them: both arrived in iOS 16, and a property sent to a system that has no such setter is a
+// crash rather than a preference. They shape the recogniser's own output; no text is added here.
+static void AKConfigureRecognitionRequest(SFSpeechRecognitionRequest *request,
+                                          BOOL onDevice,
+                                          NSArray<NSString *> *words) {
+    request.requiresOnDeviceRecognition = onDevice;
+    request.shouldReportPartialResults = YES;
+    if (words.count) request.contextualStrings = words;
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 160000
+    if (@available(iOS 16.0, *)) {
+        request.taskHint = SFSpeechRecognitionTaskHintDictation;
+        request.addsPunctuation = YES;
+    }
+#endif
+}
+
 @implementation AKSpeechSession {
     AVAudioRecorder *_recorder;
     NSURL *_recording;
@@ -77,6 +105,17 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
 - (BOOL)isAvailable { return _recognizer.isAvailable; }
 - (BOOL)supportsOnDeviceRecognition { return _recognizer.supportsOnDeviceRecognition; }
 
+// Per language, because on-device recognition is: the SDK answers per recogniser, and a
+// recogniser is per locale. Nil asks about the device's own language, which is what System
+// means. A locale this iPad has no recogniser for is refused here, before the audio session is
+// taken - the choice is not silently replaced by one that works.
+- (BOOL)supportsOnDeviceRecognitionForLanguage:(nullable NSString *)language {
+    SFSpeechRecognizer *recognizer = language
+        ? [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:language]]
+        : [[SFSpeechRecognizer alloc] init];
+    return recognizer.supportsOnDeviceRecognition;
+}
+
 - (void)requestAuthorization:(void (^)(BOOL granted))completion {
     // A push-to-talk hold starts on the first syllable. Re-requesting permission
     // after it was already granted needlessly dispatches the real audio start to
@@ -94,6 +133,7 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
 }
 
 - (void)startOnDevice:(BOOL)onDevice
+             language:(nullable NSString *)language
                 words:(NSArray<NSString *> *)words
               handler:(void (^)(NSString *, BOOL, NSError *))handler {
     _handler = [handler copy];
@@ -102,6 +142,24 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
     _onDevice = onDevice;
     _words = [words copy];
     AKLoudestSoFar = 0;
+
+    // The recogniser belongs to this capture, in this language.
+    //
+    // It used to be made once, in `-init`, for en-US, which is exactly why no other language
+    // could ever work. Constructed here, a choice is honoured by the next hold and a change
+    // cannot leak into a session that already started. Nil is the device's own language, which
+    // is what System means.
+    _recognizer = language
+        ? [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:language]]
+        : [[SFSpeechRecognizer alloc] init];
+    if (!_recognizer) {
+        NSError *refused = [NSError errorWithDomain:@"wolkaraforever.dictation" code:4 userInfo:@{
+            NSLocalizedDescriptionKey: @"This iPad has no recogniser for that language."}];
+        _finished = YES;
+        if (_handler) _handler(@"", NO, refused);
+        _handler = nil;
+        return;
+    }
 
     // Record to a file instead of tapping an AVAudioEngine.
     //
@@ -288,24 +346,10 @@ double AKVoiceLoudestSample(void) { return AKLoudestSoFar; }
         WKLog("voice", @"dictation: the recording is not readable as audio (%@), asking the recogniser about the file instead",
               openError.localizedDescription ?: @"no frames");
         SFSpeechURLRecognitionRequest *whole = [[SFSpeechURLRecognitionRequest alloc] initWithURL:file];
-        whole.requiresOnDeviceRecognition = _onDevice;
-        // Partials are asked for even though nothing is delivered from them - see the note on the
-        // streaming request below. With them switched off, the on-device recogniser is measurably
-        // capable of never calling back at all.
-        whole.shouldReportPartialResults = YES;
-        if (_words.count) whole.contextualStrings = _words;
+        AKConfigureRecognitionRequest(whole, _onDevice, _words);
         _request = whole;
     } else {
-        streaming.requiresOnDeviceRecognition = _onDevice;
-        // Partials on, delivery still final-only.
-        //
-        // This is what the device said on 2026-10-22: with partial results switched off, the
-        // on-device recogniser took all 135,725 frames of a known sentence, was sent endAudio,
-        // and then called back *never* - no result and no error, for forty seconds. The app's
-        // delivery rule is unchanged and stays where it belongs: `speechReported:` ignores every
-        // non-final result, so a partial is a progress signal and nothing else.
-        streaming.shouldReportPartialResults = YES;
-        if (_words.count) streaming.contextualStrings = _words;
+        AKConfigureRecognitionRequest(streaming, _onDevice, _words);
         _request = streaming;
     }
 
@@ -428,6 +472,12 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
     // result is never typed into the game.
     BOOL _composerCapture;
     NSUInteger _session;
+    // The language this generation was started in, nil for System. Kept so a settings change
+    // can tell an actual language change from the notification every other setting posts.
+    NSString *_startedLanguage;
+    // A partial result is a progress signal, not content; one line per generation is enough of
+    // a record and keeps the log bounded.
+    BOOL _loggedPartial;
 }
 
 + (instancetype)shared {
@@ -449,7 +499,7 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
         [AKAudioSessionCoordinator shared].pushToTalkWasTaken = ^(NSString *why) {
             AKDictation *self2 = weakSelf;
             if (!self2) return;
-            [self2 cancel];
+            [self2 cancelBecause:@"interrupted"];
             void (^problem)(NSString *) = self2.problemHandler;
             if (problem) problem([NSString stringWithFormat:@"Something else took the audio (%@), so nothing was typed.", why]);
         };
@@ -461,6 +511,12 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
         // indicator with the game behind it, and nothing would ever type the words.
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appLeftTheForeground:)
                                                    name:UIApplicationDidEnterBackgroundNotification object:nil];
+        // The speech language is a per-capture decision, so a change while the microphone is open
+        // is answered here rather than being discovered on the next hold. It is also how the
+        // feature being switched off reaches a session that is already running, whoever switched
+        // it off.
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(settingsChanged:)
+                                                   name:AKVoiceSettingsDidChangeNotification object:nil];
     }
     return self;
 }
@@ -471,9 +527,36 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
     WKLog("voice", @"dictation: the app went to the background (state=%ld, listening=%d)",
           (long)_state, (int)self.listening);
     if (_state == AKDictationStateIdle) return;
-    [self cancel];
+    [self cancelBecause:@"background"];
     void (^problem)(NSString *) = self.problemHandler;
     if (problem) problem(@"The app went to the background, so nothing was typed.");
+}
+
+// Any change to the settings, and the two that matter to a live session: the feature being
+// turned off, and the language being changed.
+//
+// A language change cancels the old generation *before* the new one exists. That is the whole
+// point: a recogniser that was asked for its last words can still call back, and the old
+// generation's late final must never be delivered as the utterance that was spoken in the new
+// language. Restarting is the same press continuing, so nothing here opens a chat box or
+// synthesizes a key.
+- (void)settingsChanged:(NSNotification *)note {
+    (void)note;
+    AKVoiceSettings *settings = AKVoiceSettings.shared;
+    if (!settings.enabled) {
+        if (_state == AKDictationStateIdle) return;
+        WKLog("voice", @"dictation: the feature was switched off with the microphone open");
+        [self cancelBecause:@"disabled"];
+        return;
+    }
+    if (_state != AKDictationStateAuthorizing && _state != AKDictationStateListening) return;
+    NSString *wanted = settings.speechLanguageIdentifier;
+    if (wanted == _startedLanguage) return;
+    if ([wanted isEqualToString:_startedLanguage]) return;
+    AKKDLog(@"recognizer.generation=%lu change=midcapture language=%@",
+            (unsigned long)_session, wanted ?: @"system");
+    [self cancelBecause:@"languageChange"];
+    [self begin];
 }
 
 - (BOOL)listening { return _state == AKDictationStateListening || _state == AKDictationStateFinalizing; }
@@ -534,20 +617,50 @@ static __weak UIView *AKGameTextTarget = nil;
     }
     _abandoned = NO;
     _delivered = NO;
+    _loggedPartial = NO;
     [_transcript setString:@""];
     NSUInteger session = ++_session;
     [self setState:AKDictationStateAuthorizing];
 
     id<AKDictationSpeech> speech = self.speech;
     if (!speech.supportsOnDeviceRecognition) {
-        [self fail:@"This iPad cannot recognise speech without sending it away, so the microphone stays off."];
+        [self fail:@"This iPad cannot recognise speech without sending it away, so the microphone stays off."
+            reason:@"unavailable"];
         return;
     }
+    // The chosen language, checked before the microphone is taken. A language this iPad has no
+    // on-device recogniser for falls back to System for this hold - which is the recognition
+    // behaviour that existed before the choice did - and says so, rather than opening a
+    // microphone it cannot feed or silently believing it is listening in the chosen language.
+    NSString *language = AKVoiceSettings.shared.speechLanguageIdentifier;
+    if (![speech supportsOnDeviceRecognitionForLanguage:language]) {
+        if (!language) {
+            [self fail:@"This iPad cannot recognise speech without sending it away, so the microphone stays off."
+                reason:@"unavailable"];
+            return;
+        }
+        AKKDLog(@"failure reason=languageUnavailable fallback=system language=%@", language);
+        void (^problem)(NSString *) = self.problemHandler;
+        if (problem) problem(WKLocalizedFormat(@"voice.language.unavailable", language));
+        language = nil;
+        if (![speech supportsOnDeviceRecognitionForLanguage:nil]) {
+            [self fail:@"This iPad cannot recognise speech without sending it away, so the microphone stays off."
+                reason:@"unavailable"];
+            return;
+        }
+    }
+    _startedLanguage = [language copy];
+    AKKDLog(@"recognizer.generation=%lu change=start language=%@",
+            (unsigned long)session, language ?: @"system");
     __weak AKDictation *weakSelf = self;
     [speech requestAuthorization:^(BOOL granted) {
         AKDictation *self2 = weakSelf;
         if (!self2 || self2->_session != session) return;   // a later press replaced this
-        if (!granted) { [self2 fail:@"Speech recognition permission was refused."]; return; }
+        AKKDLog(@"permission=%@", granted ? @"granted" : @"denied");
+        if (!granted) {
+            [self2 fail:@"Speech recognition permission was refused." reason:@"permission"];
+            return;
+        }
         [self2 startAudioForSession:session];
     }];
 }
@@ -557,22 +670,26 @@ static __weak UIView *AKGameTextTarget = nil;
     // Refused before anything is opened, rather than started and failed: the audio
     // session is not ours to take if there is nothing to feed it to.
     if (!self.speech.isAvailable) {
-        [self fail:@"Speech recognition is not available right now."];
+        [self fail:@"Speech recognition is not available right now." reason:@"unavailable"];
         return;
     }
 
     NSError *error = nil;
     if (![self.audio beginRecording:&error]) {
-        [self fail:[NSString stringWithFormat:@"The audio session would not start: %@", error.localizedDescription]];
+        [self fail:[NSString stringWithFormat:@"The audio session would not start: %@", error.localizedDescription]
+            reason:@"audio"];
         return;
     }
     __weak AKDictation *weakSelf = self;
-    [self.speech startOnDevice:YES words:AKVoiceSettings.shared.customWords
+    [self.speech startOnDevice:YES language:_startedLanguage words:AKVoiceSettings.shared.customWords
                        handler:^(NSString *transcript, BOOL isFinal, NSError *error2) {
         [weakSelf speechReported:transcript isFinal:isFinal error:error2 session:session];
     }];
     [self setState:AKDictationStateListening];
-    WKLog("voice", @"dictation: listening (on-device=1)");
+    WKLog("voice", @"dictation: listening (on-device=1, language=%@)", _startedLanguage ?: @"system");
+    AKKDLog(@"recognizer.language=%@", _startedLanguage ?: @"system");
+    AKKDLog(@"recognizer.session.start generation=%lu language=%@ ondevice=1",
+            (unsigned long)session, _startedLanguage ?: @"system");
 }
 
 // Read once, so a recogniser that is unavailable right now is refused rather than
@@ -584,6 +701,7 @@ static __weak UIView *AKGameTextTarget = nil;
     case AKDictationStateAuthorizing:
         // Nothing was started. Abandon it, in case the permission answer arrives late.
         _abandoned = YES;
+        AKKDLog(@"recognizer.session.end generation=%lu outcome=cancel", (unsigned long)_session);
         _session++;
         [self setState:AKDictationStateIdle];
         return;
@@ -615,6 +733,8 @@ static __weak UIView *AKGameTextTarget = nil;
 - (void)abandonForTimeout {
     if (_state != AKDictationStateFinalizing) return;
     WKLog("voice", @"dictation: no final result within %.1fs; nothing will be typed", self.finalizeTimeout);
+    AKKDLog(@"failure reason=timeout generation=%lu", (unsigned long)_session);
+    AKKDLog(@"recognizer.session.end generation=%lu outcome=timeout", (unsigned long)_session);
     [self.speech cancel];
     [self giveTheSessionBack];
     _abandoned = YES;
@@ -628,7 +748,16 @@ static __weak UIView *AKGameTextTarget = nil;
     if (problem) problem(@"The recogniser did not finish in time, so nothing was typed.");
 }
 
-- (void)cancel {
+- (void)cancel { [self cancelBecause:@"cancel"]; }
+
+// Every way a session can end without words goes through here, so the generation is spent and
+// the bounded record says why. `outcome` is one of the enumerated values in
+// KeyboardDictationEvents.h; it is never free-form.
+- (void)cancelBecause:(NSString *)outcome {
+    if (_state != AKDictationStateIdle) {
+        AKKDLog(@"recognizer.session.end generation=%lu outcome=%@",
+                (unsigned long)_session, outcome ?: @"cancel");
+    }
     _abandoned = YES;
     _delivered = YES;   // nothing may be delivered after a cancel
     _session++;
@@ -650,7 +779,9 @@ static __weak UIView *AKGameTextTarget = nil;
         // An error is not a final result. In particular, a recogniser can report an error after
         // producing a partial transcript; delivering the cached partial here would violate the
         // final-only rule and could auto-submit an incomplete chat message.
-        [self fail:[NSString stringWithFormat:@"Recognition stopped: %@", error.localizedDescription]];
+        AKKDLog(@"failure reason=recognizer generation=%lu", (unsigned long)session);
+        // The SDK's own description can quote what it heard, so only the fact is recorded.
+        [self fail:@"Recognition stopped before it finished, so nothing was typed." reason:@"recognizer"];
         return;
     }
     // A partial result is a progress signal and nothing else. For the Composer it is also the
@@ -662,7 +793,15 @@ static __weak UIView *AKGameTextTarget = nil;
     }
     // A final result is the only thing that ends a session early. Anything else is a
     // partial result, and partial results are not delivered at all.
-    if (isFinal && _state == AKDictationStateFinalizing) [self finishWithTranscript:transcript];
+    if (isFinal) {
+        AKKDLog(@"result=final generation=%lu", (unsigned long)session);
+        if (_state == AKDictationStateFinalizing) [self finishWithTranscript:transcript];
+        return;
+    }
+    if (!_loggedPartial) {
+        _loggedPartial = YES;
+        AKKDLog(@"result=partial generation=%lu", (unsigned long)session);
+    }
 }
 
 // The one place a session ends well. Everything is put back *before* the words go
@@ -671,6 +810,7 @@ static __weak UIView *AKGameTextTarget = nil;
     if (_delivered || _abandoned) return;
     _delivered = YES;
     if (transcript.length) [_transcript setString:transcript];
+    AKKDLog(@"recognizer.session.end generation=%lu outcome=final", (unsigned long)_session);
     [self giveTheSessionBack];
     [self.speech cancel];
     BOOL composer = _composerCapture;
@@ -693,14 +833,22 @@ static __weak UIView *AKGameTextTarget = nil;
 // had begun and take the session away from it, which the user saw as the microphone being broken.
 - (void)giveTheSessionBack {
     NSError *error = nil;
-    if ([self.audio restore:&error]) return;
+    if ([self.audio restore:&error]) {
+        AKKDLog(@"audio.restore=ok");
+        return;
+    }
+    AKKDLog(@"audio.restore=failed");
     WKLog("voice", @"audio: the session could not be handed back: %@", error.localizedDescription ?: @"no reason given");
     if (self.problemHandler)
         self.problemHandler(@"The microphone could not be handed back. If the microphone indicator is still on, close WolkaraForever and open it again.");
 }
 
-- (void)fail:(NSString *)message {
+// `reason` is one of the enumerated values in KeyboardDictationEvents.h. The message is for the
+// user and is localized where it is composed; nothing is derived from the SDK's own text.
+- (void)fail:(NSString *)message reason:(NSString *)reason {
     WKLog("voice", @"dictation: %@", message);
+    AKKDLog(@"failure reason=%@ generation=%lu", reason ?: @"unknown", (unsigned long)_session);
+    AKKDLog(@"recognizer.session.end generation=%lu outcome=error", (unsigned long)_session);
     [self giveTheSessionBack];
     [self.speech cancel];
     _abandoned = YES;
@@ -749,6 +897,7 @@ static __weak UIView *AKGameTextTarget = nil;
 - (BOOL)typeIntoGame:(NSString *)text {
     UIView *target = AKDictation.gameTextTarget;
     if (!target) {
+        AKKDLog(@"failure reason=target");
         WKLog("voice", @"dictation: the game has not registered a text target; nothing typed");
         return NO;
     }
@@ -761,6 +910,7 @@ static __weak UIView *AKGameTextTarget = nil;
     // running game.
     SEL selector = NSSelectorFromString(@"touchInsertText:");
     if (![target respondsToSelector:selector]) {
+        AKKDLog(@"failure reason=target");
         WKLog("voice", @"dictation: the registered text target (%@) does not take text; nothing typed",
               NSStringFromClass(target.class));
         return NO;
@@ -777,6 +927,7 @@ static __weak UIView *AKGameTextTarget = nil;
     if (!target) return;
     SEL selector = NSSelectorFromString(@"touchSpecialKey:characters:");
     if (![target respondsToSelector:selector]) {
+        AKKDLog(@"failure reason=target");
         WKLog("voice", @"dictation: the registered text target (%@) does not take keys; nothing sent",
               NSStringFromClass(target.class));
         return;

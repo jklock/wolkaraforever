@@ -618,6 +618,14 @@
 "voice.state.authorizing" = "En attente d’autorisation…";
 "voice.state.listening" = "Écoute…";
 "voice.state.finalizing" = "Finalisation de ce qui a été entendu…";
+"voice.language" = "Langue";
+"voice.language.hint" = "Choisissez la langue que la reconnaissance doit attendre.";
+"voice.language.system" = "Système";
+"voice.language.english" = "Anglais";
+"voice.language.german" = "Allemand";
+"voice.language.french" = "Français";
+"voice.language.spanish" = "Espagnol";
+"voice.language.unavailable" = "%@ ne peut pas être reconnu sur cet iPad ; Système a donc été utilisé pour cette prise.";
 "common.clear" = "Effacer";
 
 /* ---- Les fichiers du jeu (interface Forever) ---- */

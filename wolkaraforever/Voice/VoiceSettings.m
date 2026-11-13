@@ -4,11 +4,13 @@
 #import "../App/WolkaraForeverLog.h"
 #import "../Input/ControllerCommandIngress.h"
 #import "../Input/InputElement.h"
+#import "KeyboardDictationEvents.h"
 
 NSNotificationName const AKVoiceSettingsDidChangeNotification = @"AKVoiceSettingsDidChange";
 
 static NSString *const AKVoiceEnabledKey = @"AKVoiceEnabled";
 static NSString *const AKVoiceModeKey = @"AKVoiceMode";
+static NSString *const AKVoiceSpeechLanguageKey = @"AKVoiceSpeechLanguage";
 static NSString *const AKVoiceAutoSubmitKey = @"AKVoiceAutoSubmit";
 static NSString *const AKVoiceTrailingSpaceKey = @"AKVoiceTrailingSpace";
 static NSString *const AKVoiceCustomWordsKey = @"AKVoiceCustomWords";
@@ -20,6 +22,14 @@ static NSString *const AKControllerClaimsKey = @"AKControllerClaims";
 // What a record is keyed on when the caller has no device - the same "any controller" key a
 // mapping uses, so a claim and a mapping can never disagree about which pad they mean.
 static NSString *const AKControllerClaimAnyDevice = @"any";
+
+// The stored spelling of each choice. A value that is not one of these is not a language this
+// build recognises, and becomes System rather than being written back.
+static NSString *const AKVoiceSpeechLanguageSystemValue = @"system";
+static NSString *const AKVoiceSpeechLanguageEnglishValue = @"en-US";
+static NSString *const AKVoiceSpeechLanguageGermanValue = @"de-DE";
+static NSString *const AKVoiceSpeechLanguageFrenchValue = @"fr-FR";
+static NSString *const AKVoiceSpeechLanguageSpanishValue = @"es-ES";
 
 // The dictionary is biased into the recogniser, so it is bounded: a huge list is not a
 // dictionary, it is a corrupt file, and it would be handed to the SDK either way.
@@ -63,6 +73,16 @@ static BOOL AKControllerClaimSeam = NO;
         _autoSubmit = [defaults boolForKey:AKVoiceAutoSubmitKey];
         _trailingSpace = [defaults boolForKey:AKVoiceTrailingSpaceKey];
         _customWords = [self sanitizedWords:[defaults arrayForKey:AKVoiceCustomWordsKey] ?: @[]];
+        // System unless the user chose otherwise. A value this build does not know - a
+        // hand-edited config file, a choice from a later version, an older spelling - is
+        // System, which is what the recogniser did before this setting existed. The migration
+        // is said in the bounded record rather than in a message to a user who never touched it.
+        id storedLanguage = [defaults objectForKey:AKVoiceSpeechLanguageKey];
+        _speechLanguage = [AKVoiceSettings speechLanguageForStoredValue:storedLanguage];
+        if (storedLanguage && _speechLanguage == AKVoiceSpeechLanguageSystem &&
+            ![storedLanguage isEqual:AKVoiceSpeechLanguageSystemValue]) {
+            AKKDLog(@"settings.migrate language=invalid->system");
+        }
         // Off: a mapping listens to a button, and making the game stop seeing it is a
         // change to how the game behaves that the user has to ask for.
         _takeButtonFromGame = [defaults boolForKey:AKVoiceTakeButtonKey];
@@ -94,6 +114,15 @@ static BOOL AKControllerClaimSeam = NO;
     [self persist:AKVoiceModeKey value:@(mode)];
 }
 - (void)setAutoSubmit:(BOOL)autoSubmit { _autoSubmit = autoSubmit; [self persist:AKVoiceAutoSubmitKey value:@(autoSubmit)]; }
+// Validated before it is stored, and the validation is the same list the page offers: a value
+// from anywhere else becomes System rather than being written back into the database.
+- (void)setSpeechLanguage:(AKVoiceSpeechLanguage)speechLanguage {
+    if (![[AKVoiceSettings speechLanguageChoices] containsObject:@(speechLanguage)])
+        speechLanguage = AKVoiceSpeechLanguageSystem;
+    _speechLanguage = speechLanguage;
+    [self persist:AKVoiceSpeechLanguageKey
+            value:[AKVoiceSettings storedValueForSpeechLanguage:speechLanguage]];
+}
 - (void)setTakeButtonFromGame:(BOOL)takeButtonFromGame {
     _takeButtonFromGame = takeButtonFromGame;
     [self persist:AKVoiceTakeButtonKey value:@(takeButtonFromGame)];
@@ -173,6 +202,53 @@ static BOOL AKControllerClaimSeam = NO;
     WKLog("voice", @"%@ set", key);
     [NSNotificationCenter.defaultCenter postNotificationName:AKVoiceSettingsDidChangeNotification
                                                       object:self];
+}
+
+#pragma mark - The speech language
+
+// The mapping between a choice, what is written to the database and what the recogniser is
+// constructed with. One place, because three copies of it is how a value ends up selectable but
+// unusable.
++ (NSArray<NSNumber *> *)speechLanguageChoices {
+    return @[@(AKVoiceSpeechLanguageSystem), @(AKVoiceSpeechLanguageEnglish),
+             @(AKVoiceSpeechLanguageGerman), @(AKVoiceSpeechLanguageFrench),
+             @(AKVoiceSpeechLanguageSpanish)];
+}
+
++ (nullable NSString *)identifierForSpeechLanguage:(AKVoiceSpeechLanguage)language {
+    switch (language) {
+        case AKVoiceSpeechLanguageSystem: return nil;
+        case AKVoiceSpeechLanguageEnglish: return @"en-US";
+        case AKVoiceSpeechLanguageGerman: return @"de-DE";
+        case AKVoiceSpeechLanguageFrench: return @"fr-FR";
+        case AKVoiceSpeechLanguageSpanish: return @"es-ES";
+    }
+    return nil;
+}
+
++ (NSString *)storedValueForSpeechLanguage:(AKVoiceSpeechLanguage)language {
+    switch (language) {
+        case AKVoiceSpeechLanguageEnglish: return AKVoiceSpeechLanguageEnglishValue;
+        case AKVoiceSpeechLanguageGerman: return AKVoiceSpeechLanguageGermanValue;
+        case AKVoiceSpeechLanguageFrench: return AKVoiceSpeechLanguageFrenchValue;
+        case AKVoiceSpeechLanguageSpanish: return AKVoiceSpeechLanguageSpanishValue;
+        case AKVoiceSpeechLanguageSystem: break;
+    }
+    return AKVoiceSpeechLanguageSystemValue;
+}
+
++ (AKVoiceSpeechLanguage)speechLanguageForStoredValue:(nullable id)value {
+    if (![value isKindOfClass:NSString.class]) return AKVoiceSpeechLanguageSystem;
+    NSString *stored = value;
+    for (NSNumber *choice in [self speechLanguageChoices]) {
+        if ([[self storedValueForSpeechLanguage:choice.integerValue] isEqualToString:stored])
+            return choice.integerValue;
+    }
+    return AKVoiceSpeechLanguageSystem;
+}
+
+- (NSString *)speechLanguageIdentifier {
+    return [AKVoiceSettings identifierForSpeechLanguage:_speechLanguage];
 }
 
 #pragma mark - The button

@@ -196,6 +196,7 @@ wolkaraforever/Voice/AudioSessionCoordinator.h launcher/Voice/AudioSessionCoordi
 wolkaraforever/Voice/AudioSessionCoordinator.m launcher/Voice/AudioSessionCoordinator.m add
 wolkaraforever/Voice/Dictation.h launcher/Voice/Dictation.h add
 wolkaraforever/Voice/Dictation.m launcher/Voice/Dictation.m add
+wolkaraforever/Voice/KeyboardDictationEvents.h launcher/Voice/KeyboardDictationEvents.h add
 wolkaraforever/Voice/VoiceSettings.h launcher/Voice/VoiceSettings.h add
 wolkaraforever/Voice/VoiceSettings.m launcher/Voice/VoiceSettings.m add
 wolkaraforever/Voice/VoiceTestViewController.h launcher/Voice/VoiceTestViewController.h add

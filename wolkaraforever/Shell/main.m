@@ -20,6 +20,9 @@
 #import "../Input/InputRouter.h"
 #import "../Voice/Dictation.h"
 #import "../Voice/VoiceSettings.h"
+// The bounded record of the keyboard/dictation feature, in one vocabulary. See the header for
+// what may and may not appear in it.
+#import "../Voice/KeyboardDictationEvents.h"
 #import "../WoW/CASC.h"
 #import "../WoW/WoWViewController.h"
 #import "LaunchProgressView.h"
@@ -299,6 +302,27 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
     UIView *view = [note.object isKindOfClass:UIView.class] ? note.object : nil;
     [AKDictation setGameTextTarget:view];
     WKLog("voice", @"the game's text input is up; dictation will type into it");
+    // The adapter draws the composer's language control and cannot read the settings itself:
+    // the value is told to it as soon as the composer exists, not only when it next changes.
+    [self publishSpeechLanguage];
+}
+
+// The composer's language control, which is recognition configuration rather than input: the
+// only thing that crosses from the adapter is the stored spelling, and the setting validates it
+// before storing. An unknown value migrates to System exactly as a hand-edited file does.
+- (void)speechLanguageRequested:(NSNotification *)note {
+    id stored = note.userInfo[@"stored"];
+    AKVoiceSettings *settings = AKVoiceSettings.shared;
+    settings.speechLanguage = [AKVoiceSettings speechLanguageForStoredValue:stored];
+    WKLog("voice", @"speech language is now %@", [settings speechLanguageIdentifier] ?: @"system");
+}
+
+// What the adapter is shown. One bounded value, and the same spelling the file holds.
+- (void)publishSpeechLanguage {
+    NSString *stored = [AKVoiceSettings storedValueForSpeechLanguage:AKVoiceSettings.shared.speechLanguage];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKTouchSpeechLanguageDidChange"
+                                                     object:nil
+                                                   userInfo:@{@"stored": stored}];
 }
 
 // The last way out of a guest screen. The adapter's Leave game control first asks the guest
@@ -389,6 +413,14 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
     NSString *outcome = note.userInfo[AKChatComposerOutcomeKey];
     if (![outcome isKindOfClass:NSString.class]) outcome = @"unknown";
     [AKControllerCommandIngress traceComposerOpenOutcome:outcome source:source.integerValue];
+// The draft editor's composition, announced by the adapter because it is a dylib this app does
+// not link. Only the phase arrives - never the composed text, never the marked range - and only
+// the phase is recorded. This is the app-side half of the bounded `keyboard-dictation` record;
+// the recogniser half is written by the dictation object.
+- (void)draftCompositionChanged:(NSNotification *)note {
+    NSString *phase = [note.userInfo[@"phase"] isKindOfClass:NSString.class] ? note.userInfo[@"phase"] : nil;
+    if ([phase isEqualToString:@"commit"]) AKKDLog(@"composition.commit");
+    else if ([phase isEqualToString:@"cancel"]) AKKDLog(@"composition.cancel");
 }
 
 // What the adapter needs to know, and the only thing it can be told: which keys are the
@@ -401,6 +433,9 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
                                                      object:nil
                                                    userInfo:@{AKOwnedKeysUserInfoKey: usages}];
     WKLog("voice", @"the user's keys: %lu published to the adapter", (unsigned long)usages.count);
+    // The composer's language control is refreshed on the same changes, so it cannot drift from
+    // what the recogniser will actually use.
+    [self publishSpeechLanguage];
 }
 
 // What the app's own audio session is set to, for the same reason the dictation flags are
@@ -634,6 +669,14 @@ static NSString *AKAudioStateDescription(void) {
     // adapter's own entry points and already say so in its log.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatComposerOpenFinished:)
                                                name:AKChatComposerOpenResultNotification object:nil];
+    // The draft editor's composition: AKTouchDraftCompositionDidChangeNotification in
+    // wolkaraforever/Touch/TouchControls.h, spelled out for the same reason as the others.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(draftCompositionChanged:)
+                                               name:@"AKTouchDraftCompositionDidChange" object:nil];
+    // The composer's language control: AKTouchSpeechLanguageRequestNotification in
+    // wolkaraforever/Touch/TouchControls.h, spelled out for the same reason.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(speechLanguageRequested:)
+                                               name:@"AKTouchSpeechLanguageRequest" object:nil];
     // Tell the adapter which keys are the user's, so it can swallow them before the guest
     // sees them. Every change to the settings re-publishes: a mapping, the switch on the page
     // and switching voice off all change the answer. Published rather than asked because the

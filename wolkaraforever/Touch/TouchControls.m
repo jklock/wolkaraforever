@@ -33,6 +33,34 @@ static BOOL AKTouchUsageIsTaken(unsigned short usage) {
 // this adapter and the voice module.
 NSNotificationName const AKTouchGameTextInputDidAppearNotification = @"AKTouchGameTextInputDidAppear";
 
+// The draft editor's composition, as an event rather than as text. See the header: the phase is
+// the whole payload, and the app turns it into the bounded `keyboard-dictation: composition.*`
+// line. Nothing here reads or forwards what was composed.
+NSNotificationName const AKTouchDraftCompositionDidChangeNotification = @"AKTouchDraftCompositionDidChange";
+NSString *const AKTouchDraftCompositionPhaseKey = @"phase";
+NSString *const AKTouchDraftCompositionCommit = @"commit";
+NSString *const AKTouchDraftCompositionCancel = @"cancel";
+
+// The speech language as the composer shows and asks for it. `stored` is the bounded spelling
+// the voice module persists; this file never decides what a language is, it only names one.
+NSNotificationName const AKTouchSpeechLanguageRequestNotification = @"AKTouchSpeechLanguageRequest";
+NSNotificationName const AKTouchSpeechLanguageDidChangeNotification = @"AKTouchSpeechLanguageDidChange";
+NSString *const AKTouchSpeechLanguageStoredKey = @"stored";
+
+// The value in force, as last published by the shell. A file static rather than an ivar because
+// a composer is built and thrown away with the keyboard, and the choice must survive that.
+static NSString *AKSpeechLanguageStored;
+
+// The localization key naming a stored language. Anything else is System, which is also what the
+// voice module migrates an unknown value to.
+static NSString *AKSpeechLanguageNameKey(NSString *stored) {
+    if ([stored isEqualToString:@"en-US"]) return @"voice.language.english";
+    if ([stored isEqualToString:@"de-DE"]) return @"voice.language.german";
+    if ([stored isEqualToString:@"fr-FR"]) return @"voice.language.french";
+    if ([stored isEqualToString:@"es-ES"]) return @"voice.language.spanish";
+    return @"voice.language.system";
+}
+
 NSNotificationName const AKTouchKeyboardRequestNotification = @"AKTouchKeyboardRequestNotification";
 // Posted when the user has asked to leave twice and the guest still refused to quit: the shell,
 // which owns the session and what it has to flush, closes WolkaraForever. Named as a string on the
@@ -167,6 +195,10 @@ static BOOL hardwareKeyboardAttached(void) {
 @implementation AKKeyboardTextView {
     NSMutableSet *_dictationPlaceholders;
     BOOL _acceptingInput, _didSubmitDraft, _resignedForDictation;
+    // Whether UIKit is holding provisional (marked) text in this document. The marked text
+    // itself stays native and local: this is only so a commit and a cancellation can be told
+    // apart and announced as an event, never read.
+    BOOL _composing;
     // Read once, as the controls do: Standard keeps idiOS's Done key replacing the selected
     // field, which is the behaviour every release through v1.0.7 has.
     BOOL _mobileInterface;
@@ -208,8 +240,15 @@ static BOOL hardwareKeyboardAttached(void) {
 }
 - (void)textViewDidChangeSelection:(UITextView *)view { (void)view; [self.inputOwner updateDraftButtons]; }
 - (void)discardDraft {
+    BOOL wasComposing = _composing || self.markedTextRange != nil;
     [super setText:@""];
     [self.undoManager removeAllActions];
+    // A draft thrown away with provisional text in it is a cancelled composition: what was
+    // being composed never became text anywhere.
+    if (wasComposing) {
+        _composing = NO;
+        [self announceComposition:AKTouchDraftCompositionCancel];
+    }
     [self.inputOwner updateDraftButtons];
 }
 - (BOOL)forwardCommittedText {
@@ -271,6 +310,8 @@ static BOOL hardwareKeyboardAttached(void) {
         } else {
             _acceptingInput = NO;
             [_dictationPlaceholders removeAllObjects];
+            // Closing the keyboard is how a composition is abandoned, so the draft - and any
+            // provisional text in it - goes, and the cancellation is announced once.
             [self discardDraft];
         }
     }
@@ -308,14 +349,42 @@ static BOOL hardwareKeyboardAttached(void) {
     }
     return _acceptingInput;
 }
-- (void)insertText:(NSString *)text { if (_acceptingInput) [super insertText:text]; }
+- (void)insertText:(NSString *)text {
+    BOOL wasComposing = _composing || self.markedTextRange != nil;
+    if (_acceptingInput) [super insertText:text];
+    // UIKit hands a composed sequence over as one insertion. Announcing the commit here is
+    // what makes "committed" mean the same thing to the log and to the guest: the text that
+    // reaches the game is the string UIKit committed, not a re-derivation of it.
+    if (wasComposing) {
+        _composing = NO;
+        [self announceComposition:AKTouchDraftCompositionCommit];
+    }
+}
 - (void)replaceRange:(UITextRange *)range withText:(NSString *)text {
     if (_acceptingInput) [super replaceRange:range withText:text];
 }
 - (void)setMarkedText:(NSString *)text selectedRange:(NSRange)range {
     if (_acceptingInput) [super setMarkedText:text selectedRange:range];
+    // An empty marked string is how UIKit ends a composition, but whether it ended as a commit
+    // or a cancellation is only known when `insertText:` or `unmarkText` arrives. So the flag
+    // is raised here and cleared by whichever of those comes next.
+    if (_acceptingInput && text.length) _composing = YES;
 }
-- (void)unmarkText { if (_acceptingInput) [super unmarkText]; }
+- (void)unmarkText {
+    BOOL wasComposing = _composing || self.markedTextRange != nil;
+    if (_acceptingInput) [super unmarkText];
+    if (wasComposing) {
+        _composing = NO;
+        [self announceComposition:AKTouchDraftCompositionCancel];
+    }
+}
+// The one place the two phases are produced. Only the phase goes anywhere: a composition's
+// text is the user's, and the log is not a place for it.
+- (void)announceComposition:(NSString *)phase {
+    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchDraftCompositionDidChangeNotification
+                                                     object:self
+                                                   userInfo:@{AKTouchDraftCompositionPhaseKey: phase}];
+}
 - (id)insertDictationResultPlaceholder {
     // Dictation can start while the system panel, not this editor, holds focus:
     // the result is still the user's draft, so accept it from here on. UIKit also
@@ -366,9 +435,14 @@ static BOOL hardwareKeyboardAttached(void) {
     AKLog(@"dictation recognition failed (markedText=%d, placeholders=%lu)", self.markedTextRange != nil, (unsigned long)_dictationPlaceholders.count);
     // UITextView does not implement this optional callback. Preserve the
     // completed draft; only discard the provisional recognition segment.
+    BOOL wasComposing = _composing || self.markedTextRange != nil;
     if (self.markedTextRange) {
         [super setMarkedText:@"" selectedRange:NSMakeRange(0, 0)];
         [super unmarkText];
+    }
+    if (wasComposing) {
+        _composing = NO;
+        [self announceComposition:AKTouchDraftCompositionCancel];
     }
     [_dictationPlaceholders removeAllObjects];
     [self.inputOwner updateDraftButtons];
@@ -528,6 +602,7 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     BOOL _toolbarCollapsed, _mobileInterface;
     NSTimer *_toolbarCollapseTimer;
     UIButton *_insertDraftButton, *_clearDraftButton;
+    UIButton *_speechLanguageButton;
     UILabel *_composerLabel;
     BOOL _gamepadEnabled, _keyboardRequested, _systemKeyboardSeen, _ownKeyboard;
     // Which keyboard request a late check belongs to: one made for an earlier request does nothing.
@@ -635,6 +710,10 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         // Dadpad, 2026-10-21).
         [NSNotificationCenter.defaultCenter postNotificationName:AKTouchGameTextInputDidAppearNotification
                                                         object:self];
+        // The shell publishes the recogniser's language; this keeps the composer's control
+        // showing what is actually stored, including a change made elsewhere.
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(speechLanguageDidChange:)
+                                                   name:AKTouchSpeechLanguageDidChangeNotification object:nil];
         [self buildComposer];
         _keyboardButton = [self buttonWithSymbol:@"keyboard" label:AKHostLocalized(@"touch.keyboard.show") action:@selector(toggleKeyboard)];
         _keyboardButton.accessibilityIdentifier = @"tolkara.keyboard";
@@ -1168,6 +1247,44 @@ static const unsigned short AKKeyF12 = 111;
 }
 - (void)insertDraft { [_keyboardInput forwardCommittedText]; }
 - (void)clearDraft { if ([_keyboardInput canModifyDraft]) [_keyboardInput discardDraft]; }
+
+// The composer's language control. Its value is what the shell last published - the adapter
+// never invents a language - and its menu asks for one. Choosing is an event, not an input: no
+// key and no text leave this method.
+- (void)refreshSpeechLanguageButton {
+    if (!_speechLanguageButton) return;
+    NSString *stored = AKSpeechLanguageStored ?: @"system";
+    NSString *name = AKHostLocalized(AKSpeechLanguageNameKey(stored));
+    [_speechLanguageButton setTitle:name forState:UIControlStateNormal];
+    // The button keeps its label and reports its state as a value, so a screen reader reads
+    // "Language, German" rather than "Language, button".
+    _speechLanguageButton.accessibilityValue = name;
+    NSMutableArray<UIAction *> *actions = [NSMutableArray array];
+    for (NSString *choice in @[@"system", @"en-US", @"de-DE", @"fr-FR", @"es-ES"]) {
+        UIAction *action = [UIAction actionWithTitle:AKHostLocalized(AKSpeechLanguageNameKey(choice))
+                                              image:nil
+                                         identifier:choice
+                                            handler:^(UIAction *selected) {
+            (void)selected;
+            [self chooseSpeechLanguage:choice];
+        }];
+        action.state = [choice isEqualToString:stored] ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [actions addObject:action];
+    }
+    _speechLanguageButton.menu = [UIMenu menuWithTitle:AKHostLocalized(@"voice.language") children:actions];
+}
+- (void)speechLanguageDidChange:(NSNotification *)note {
+    id stored = note.userInfo[AKTouchSpeechLanguageStoredKey];
+    AKSpeechLanguageStored = [stored isKindOfClass:NSString.class] ? [stored copy] : @"system";
+    [self refreshSpeechLanguageButton];
+}
+// The one place a choice leaves the adapter. One bounded value, no key and no text: this is
+// recognition configuration, and the guest is not told anything by it.
+- (void)chooseSpeechLanguage:(NSString *)stored {
+    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchSpeechLanguageRequestNotification
+                                                     object:nil
+                                                   userInfo:@{AKTouchSpeechLanguageStoredKey: stored ?: @"system"}];
+}
 - (void)updateDraftButtons {
     BOOL active = [self composerActive];
     BOOL ready = [_keyboardInput canModifyDraft];
@@ -1372,6 +1489,7 @@ static const unsigned short AKKeyF12 = 111;
     _composerRow.hidden = !active;
     _insertDraftButton.hidden = active;
     _clearDraftButton.hidden = active;
+    _speechLanguageButton.hidden = active;
 
     if (active) {
         if (_classicEditorTrailing.active) {
@@ -1680,7 +1798,6 @@ static const unsigned short AKKeyF12 = 111;
     clear.accessibilityLabel = AKHostLocalized(@"touch.draft.clear");
     clear.accessibilityIdentifier = @"wolkaraforever.keyboard.clear";
     [clear addTarget:self action:@selector(clearDraft) forControlEvents:UIControlEventTouchUpInside];
-
     // The Composer's row: Cancel, the configured destination chips, speak, settings, Send. The
     // chips scroll sideways rather than being dropped, so four destinations on a phone in
     // landscape stay reachable and Send never moves. It sits below the draft, which is what makes
@@ -1750,13 +1867,24 @@ static const unsigned short AKKeyF12 = 111;
         [_composerSendButton.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
     ]];
 
-    for (UIView *view in @[label, _keyboardInput, clear, insert, row]) {
+    // The recogniser's language, beside the draft it will type into. It is recognition
+    // configuration rather than input: choosing a language posts one bounded value to the shell
+    // and sends nothing to the guest. It is here rather than on the launcher's settings page
+    // because that page is a reviewed baseline image, and this feature is additive.
+    UIButton *language = _speechLanguageButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    language.isAccessibilityElement = YES;
+    language.accessibilityIdentifier = @"wolkaraforever.keyboard.language";
+    language.accessibilityLabel = AKHostLocalized(@"voice.language");
+    language.accessibilityHint = AKHostLocalized(@"voice.language.hint");
+    language.titleLabel.font = [UIFont systemFontOfSize:13];
+    language.showsMenuAsPrimaryAction = YES;
+    for (UIView *view in @[label, _keyboardInput, language, clear, insert, row]) {
         view.translatesAutoresizingMaskIntoConstraints = NO;
         [_composer addSubview:view];
     }
     // The classic geometry, unchanged from every release through v1.0.10: the draft beside the
     // clear button and Replace, in a card 82 points tall.
-    _classicEditorTrailing = [_keyboardInput.trailingAnchor constraintEqualToAnchor:clear.leadingAnchor];
+    _classicEditorTrailing = [_keyboardInput.trailingAnchor constraintEqualToAnchor:language.leadingAnchor];
     _classicEditorBottom = [_keyboardInput.bottomAnchor constraintEqualToAnchor:_composer.bottomAnchor constant:-8];
     // The Composer's: the draft on its own line, the action row beneath it, and the card one
     // 44-point row taller.
@@ -1775,6 +1903,12 @@ static const unsigned short AKKeyF12 = 111;
         _composerLabelHeight,
         [_keyboardInput.leadingAnchor constraintEqualToAnchor:_composer.leadingAnchor constant:8],
         [_keyboardInput.topAnchor constraintEqualToAnchor:label.bottomAnchor constant:4],
+        [_keyboardInput.bottomAnchor constraintEqualToAnchor:_composer.bottomAnchor constant:-8],
+        [_keyboardInput.trailingAnchor constraintEqualToAnchor:language.leadingAnchor],
+        [language.heightAnchor constraintEqualToConstant:44],
+        [language.widthAnchor constraintGreaterThanOrEqualToConstant:64],
+        [language.centerYAnchor constraintEqualToAnchor:_keyboardInput.centerYAnchor],
+        [language.trailingAnchor constraintEqualToAnchor:clear.leadingAnchor],
         [clear.widthAnchor constraintEqualToConstant:44],
         [clear.heightAnchor constraintEqualToConstant:44],
         [clear.centerYAnchor constraintEqualToAnchor:_keyboardInput.centerYAnchor],
@@ -1791,6 +1925,7 @@ static const unsigned short AKKeyF12 = 111;
         _composerRowHeight,
         _classicEditorTrailing, _classicEditorBottom, _composerHeight,
     ]];
+    [self refreshSpeechLanguageButton];
 }
 - (void)didMoveToSuperview {
     [super didMoveToSuperview];

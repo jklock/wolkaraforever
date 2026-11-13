@@ -618,6 +618,14 @@
 "voice.state.authorizing" = "Waiting for permission…";
 "voice.state.listening" = "Listening…";
 "voice.state.finalizing" = "Finishing what it heard…";
+"voice.language" = "Language";
+"voice.language.hint" = "Choose the language the recogniser should expect.";
+"voice.language.system" = "System";
+"voice.language.english" = "English";
+"voice.language.german" = "German";
+"voice.language.french" = "French";
+"voice.language.spanish" = "Spanish";
+"voice.language.unavailable" = "%@ cannot be recognised on this iPad, so System was used for that hold.";
 "common.clear" = "Clear";
 
 /* ---- The game's own files (Forever UI) ---- */
