@@ -26,6 +26,7 @@
 #import "../launcher/Voice/VoiceTestViewController.h"
 #import "../launcher/Controller/ControllerInspector.h"
 #import "../launcher/App/WolkaraForeverConfig.h"
+#import "../launcher/App/WKLocalization.h"
 
 #import <AVFAudio/AVFAudio.h>
 #import "../launcher/App/WolkaraForeverLog.h"
@@ -48,6 +49,33 @@ static void Pump(NSTimeInterval seconds) {
                                  beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
 }
 
+#pragma mark - The bounded record
+
+// The `keyboard-dictation` lines the app has written so far, in the order it wrote them. The
+// file is the app's own log - the one the device matrix and a person read - so this asserts the
+// record itself, not a second representation built for the test.
+static NSArray<NSString *> *KeyboardDictationRecord(void) {
+    NSString *log = [NSString stringWithContentsOfFile:WKLogPath() encoding:NSUTF8StringEncoding error:NULL] ?: @"";
+    NSMutableArray<NSString *> *events = [NSMutableArray array];
+    for (NSString *line in [log componentsSeparatedByString:@"\n"])
+        if ([line containsString:@"keyboard-dictation"]) [events addObject:line];
+    return events;
+}
+
+// The index of the first event at or after `from` containing `needle`, or -1.
+static NSInteger EventIndex(NSArray<NSString *> *events, NSString *needle, NSInteger from) {
+    for (NSInteger index = MAX(0, from); index < (NSInteger)events.count; index++)
+        if ([events[(NSUInteger)index] containsString:needle]) return index;
+    return -1;
+}
+
+// The record written since `mark`, which is a count taken before the thing under test.
+static NSArray<NSString *> *RecordSince(NSUInteger mark) {
+    NSArray<NSString *> *all = KeyboardDictationRecord();
+    if (mark >= all.count) return @[];
+    return [all subarrayWithRange:NSMakeRange(mark, all.count - mark)];
+}
+
 // A view by the identifier the page gives it, so the test asks for what a person taps
 // rather than for an ivar.
 static UIView *Find(UIView *view, NSString *identifier) {
@@ -68,6 +96,11 @@ static UIView *Find(UIView *view, NSString *identifier) {
 @property (nonatomic, copy) void (^handler)(NSString *, BOOL, NSError *);
 @property (nonatomic) NSUInteger starts, finishes, cancels;
 @property (nonatomic, copy) NSArray<NSString *> *words;
+// The language the session was started in, nil for System. The test asks the seam, not the
+// SDK, so "which recogniser was constructed" is a fact rather than a log line.
+@property (nonatomic, copy) NSString *lastLanguage;
+// Languages this fake cannot recognise on device. Nil is "all of them that are supported".
+@property (nonatomic, copy) NSSet<NSString *> *unavailableLanguages;
 - (void)say:(NSString *)text final:(BOOL)isFinal;
 - (void)failAfterPartial:(NSString *)text;
 @end
@@ -76,11 +109,16 @@ static UIView *Find(UIView *view, NSString *identifier) {
 - (instancetype)init { if ((self = [super init])) { _available = YES; _onDevice = YES; _authorized = YES; } return self; }
 - (BOOL)isAvailable { return self.available; }
 - (BOOL)supportsOnDeviceRecognition { return self.onDevice; }
+- (BOOL)supportsOnDeviceRecognitionForLanguage:(NSString *)language {
+    if (!self.onDevice) return NO;
+    return language ? ![self.unavailableLanguages containsObject:language] : YES;
+}
 - (void)requestAuthorization:(void (^)(BOOL))completion { completion(self.authorized); }
-- (void)startOnDevice:(BOOL)onDevice words:(NSArray<NSString *> *)words handler:(void (^)(NSString *, BOOL, NSError *))handler {
+- (void)startOnDevice:(BOOL)onDevice language:(NSString *)language words:(NSArray<NSString *> *)words handler:(void (^)(NSString *, BOOL, NSError *))handler {
     (void)onDevice;
     self.starts++;
     self.words = words;
+    self.lastLanguage = language;
     self.handler = handler;
 }
 - (void)finish { self.finishes++; }
@@ -129,12 +167,17 @@ static UIView *Find(UIView *view, NSString *identifier) {
 @interface FakeGameTextView : UIView
 @property (nonatomic) NSUInteger inserts, returns;
 @property (nonatomic, copy) NSString *lastText;
+// Every special key it was given, in order. The absent chat key is the point: a cancelled or
+// restarted session must not send F12 (or anything else) that could open the game's chat box.
+@property (nonatomic, strong) NSMutableArray<NSNumber *> *keys;
 @end
 
 @implementation FakeGameTextView
 - (void)touchInsertText:(NSString *)text { self.inserts++; self.lastText = text; }
 - (void)touchSpecialKey:(NSNumber *)code characters:(NSString *)characters {
-    (void)code; (void)characters;
+    (void)characters;
+    if (!self.keys) self.keys = [NSMutableArray array];
+    [self.keys addObject:code];
     self.returns++;
 }
 @end
@@ -1155,6 +1198,257 @@ static void TestTypingIntoTheGame(void) {
     [AKDictation setGameTextTarget:nil];
 }
 
+// The speech language: what is offered, what is stored, what the recogniser is handed, what
+// happens when this iPad cannot recognise the choice, and what a change mid-capture does.
+//
+// The seam is asked rather than the SDK, because this is the suite's only way to see which
+// recogniser would have been constructed - and "the language selector changes nothing" is
+// exactly the defect this task exists to close.
+static void TestSpeechLanguage(void) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    for (NSString *key in defaults.dictionaryRepresentation.allKeys)
+        if ([key hasPrefix:@"AKVoice"] || [key hasPrefix:@"AKInputTrigger."]) [defaults removeObjectForKey:key];
+    AKVoiceSettings *settings = AKVoiceSettings.shared;
+
+    // --- what is offered ----------------------------------------------------------------
+    // A fresh instance with nothing stored, not the shared one: the simulator keeps the
+    // defaults database between runs, so the shared instance may already have read a value a
+    // previous run stored.
+    [defaults removeObjectForKey:@"AKVoiceSpeechLanguage"];
+    AKVoiceSettings *fresh = [AKVoiceSettings new];
+    CHECK((fresh.speechLanguage == AKVoiceSpeechLanguageSystem), @"a fresh install listens in System");
+    CHECK((fresh.speechLanguageIdentifier == nil), @"and System hands the recogniser no language");
+    settings.speechLanguage = AKVoiceSpeechLanguageSystem;
+    NSArray<NSString *> *spellings = @[@"system", @"en-US", @"de-DE", @"fr-FR", @"es-ES"];
+    CHECK(([AKVoiceSettings speechLanguageChoices].count == spellings.count),
+          @"five choices and no more, got %lu", (unsigned long)[AKVoiceSettings speechLanguageChoices].count);
+    for (NSNumber *choice in [AKVoiceSettings speechLanguageChoices]) {
+        NSString *stored = [AKVoiceSettings storedValueForSpeechLanguage:choice.integerValue];
+        CHECK(([spellings containsObject:stored]), @"%@ has a bounded stored spelling, got %@", choice, stored);
+        CHECK(([AKVoiceSettings speechLanguageForStoredValue:stored] == choice.integerValue),
+              @"and %@ reads back as the same choice", stored);
+    }
+    // A value from anywhere else is System, never a new language invented from a string.
+    CHECK(([AKVoiceSettings speechLanguageForStoredValue:(id)@"kl-KL"] == AKVoiceSpeechLanguageSystem),
+          @"an unknown spelling is System");
+    CHECK(([AKVoiceSettings speechLanguageForStoredValue:nil] == AKVoiceSpeechLanguageSystem),
+          @"and a missing value is System");
+
+    // --- validated before it is stored ---------------------------------------------------
+    settings.speechLanguage = (AKVoiceSpeechLanguage)99;
+    CHECK((settings.speechLanguage == AKVoiceSpeechLanguageSystem), @"a value out of range becomes System");
+    settings.speechLanguage = AKVoiceSpeechLanguageGerman;
+    CHECK(([[defaults stringForKey:@"AKVoiceSpeechLanguage"] isEqualToString:@"de-DE"]),
+          @"a real choice is stored by its bounded spelling, got %@", [defaults stringForKey:@"AKVoiceSpeechLanguage"]);
+    settings.speechLanguage = AKVoiceSpeechLanguageFrench;
+    CHECK(([settings.speechLanguageIdentifier isEqualToString:@"fr-FR"]),
+          @"and the recogniser is given the tag, got %@", settings.speechLanguageIdentifier);
+
+    // --- migration and rollback ----------------------------------------------------------
+    // A value this build cannot read - a hand-edited file, a later version - leaves the
+    // recogniser where it was before the choice existed. It is logged, because a silent
+    // change of recognition language is the kind of thing nobody can diagnose.
+    [defaults setObject:@"kl-KL" forKey:@"AKVoiceSpeechLanguage"];
+    AKVoiceSettings *reloaded = [AKVoiceSettings new];
+    CHECK((reloaded.speechLanguage == AKVoiceSpeechLanguageSystem), @"an unknown stored language migrates to System");
+    CHECK((reloaded.speechLanguageIdentifier == nil), @"and hands the recogniser nothing");
+    // The same migration in words, in the record.
+    CHECK((EventIndex(KeyboardDictationRecord(), @"settings.migrate language=invalid->system", 0) >= 0),
+          @"the migration is in the bounded record");
+    // Rollback is the same rule in reverse: a build that knows the value reads it again.
+    [defaults setObject:@"de-DE" forKey:@"AKVoiceSpeechLanguage"];
+    CHECK(([AKVoiceSettings new].speechLanguage == AKVoiceSpeechLanguageGerman),
+          @"a build that knows the value reads it back");
+    [defaults removeObjectForKey:@"AKVoiceSpeechLanguage"];
+
+    // --- what a capture is started with --------------------------------------------------
+    AKDictation *dictation = AKDictation.shared;
+    FakeSpeech *speech = [FakeSpeech new];
+    FakeAudio *audio = [FakeAudio new];
+    dictation.speech = speech;
+    dictation.audio = audio;
+    dictation.finalizeTimeout = 0.2;
+    dictation.transcriptHandler = nil;
+    NSMutableArray<NSString *> *problems = [NSMutableArray array];
+    dictation.problemHandler = ^(NSString *message) { [problems addObject:message]; };
+    FakeGameTextView *target = [FakeGameTextView new];
+    [AKDictation setGameTextTarget:target];
+    settings.enabled = YES;
+    settings.autoSubmit = NO;
+    settings.trailingSpace = NO;
+
+    settings.speechLanguage = AKVoiceSpeechLanguageGerman;
+    [dictation begin];
+    Pump(0.05);
+    CHECK(([speech.lastLanguage isEqualToString:@"de-DE"]),
+          @"a capture starts the recogniser in the chosen language, got %@", speech.lastLanguage);
+    [dictation cancel];
+    Pump(0.1);
+    settings.speechLanguage = AKVoiceSpeechLanguageSystem;
+    [dictation begin];
+    Pump(0.05);
+    CHECK((speech.lastLanguage == nil), @"and System starts it in the device's own, got %@", speech.lastLanguage);
+    [dictation cancel];
+    Pump(0.1);
+
+    // --- a language this iPad cannot recognise on device ----------------------------------
+    // Fall back to System for this hold - the recognition behaviour that existed before the
+    // choice - and say so. On-device stays mandatory: no request is ever made without it.
+    speech.unavailableLanguages = [NSSet setWithObject:@"de-DE"];
+    settings.speechLanguage = AKVoiceSpeechLanguageGerman;
+    [problems removeAllObjects];
+    NSUInteger fallbackMark = KeyboardDictationRecord().count;
+    [dictation begin];
+    Pump(0.05);
+    CHECK((dictation.state == AKDictationStateListening), @"the hold still listens after the fallback");
+    CHECK((speech.lastLanguage == nil), @"in the device's own language, not the unavailable one");
+    CHECK((problems.count > 0), @"and the user is told, got %@", problems);
+    CHECK(([[problems.firstObject description] containsString:@"de-DE"]), @"naming the language that was refused");
+    NSArray<NSString *> *fallbackEvents = RecordSince(fallbackMark);
+    CHECK((EventIndex(fallbackEvents, @"failure reason=languageUnavailable fallback=system", 0) >= 0),
+          @"and the fallback is in the record: %@", fallbackEvents);
+    [dictation cancel];
+    Pump(0.1);
+    speech.unavailableLanguages = nil;
+
+    // --- a change mid-capture --------------------------------------------------------------
+    // The old generation is cancelled and invalidated *before* the new one starts, so its late
+    // final cannot be delivered as the new utterance, and nothing opens the chat box.
+    settings.speechLanguage = AKVoiceSpeechLanguageEnglish;
+    [target.keys removeAllObjects];
+    NSUInteger insertsBefore = target.inserts;
+    [dictation begin];
+    Pump(0.05);
+    CHECK(([speech.lastLanguage isEqualToString:@"en-US"]), @"the first generation listens in English");
+    [speech say:@"first words" final:NO];
+    void (^stale)(NSString *, BOOL, NSError *) = speech.handler;
+    NSUInteger startsBefore = speech.starts, cancelsBefore = speech.cancels;
+    NSUInteger changeMark = KeyboardDictationRecord().count;
+    settings.speechLanguage = AKVoiceSpeechLanguageGerman;
+    Pump(0.05);
+    CHECK((speech.starts == startsBefore + 1), @"the language change restarts the capture, got %lu starts",
+          (unsigned long)speech.starts);
+    CHECK(([speech.lastLanguage isEqualToString:@"de-DE"]), @"in the new language");
+    CHECK((speech.cancels > cancelsBefore), @"after cancelling the old generation");
+    CHECK((dictation.state == AKDictationStateListening), @"and the new generation is open");
+    CHECK((EventIndex(RecordSince(changeMark), @"change=midcapture", 0) >= 0), @"the change is in the record");
+    if (stale) stale(@"late old words", YES, nil);
+    Pump(0.05);
+    CHECK((target.inserts == insertsBefore), @"the old generation's late final is not delivered");
+    [speech say:@"neue Worte" final:NO];
+    [dictation end];
+    [speech say:@"neue Worte" final:YES];
+    CHECK((target.inserts == insertsBefore + 1 && [target.lastText isEqualToString:@"neue Worte"]),
+          @"the new generation is what is delivered, got %@", target.lastText);
+    CHECK((target.keys.count == 0), @"and no key at all - nothing could reopen the chat, got %@", target.keys);
+
+    // The same language announced again is a settings change, not a language change.
+    settings.speechLanguage = AKVoiceSpeechLanguageFrench;
+    [dictation begin];
+    Pump(0.05);
+    NSUInteger heldStarts = speech.starts;
+    settings.speechLanguage = AKVoiceSpeechLanguageFrench;
+    Pump(0.05);
+    CHECK((speech.starts == heldStarts), @"a notification for the same language does not restart the session");
+    [dictation cancel];
+    Pump(0.1);
+
+    // --- switched off while the microphone is open ------------------------------------------
+    // Whoever switched it off - this page, an imported file, a scene teardown - the session
+    // ends and nothing is delivered.
+    settings.speechLanguage = AKVoiceSpeechLanguageEnglish;
+    NSUInteger beforeDisable = target.inserts;
+    [dictation begin];
+    Pump(0.05);
+    CHECK((dictation.state == AKDictationStateListening), @"a session is open before it is switched off");
+    [speech say:@"unwanted" final:NO];
+    NSUInteger disableMark = KeyboardDictationRecord().count;
+    settings.enabled = NO;
+    Pump(0.1);
+    CHECK((dictation.state == AKDictationStateIdle), @"switching the feature off ends the session");
+    CHECK((EventIndex(RecordSince(disableMark), @"outcome=disabled", 0) >= 0), @"and the record says why");
+    [speech say:@"unwanted" final:YES];
+    CHECK((target.inserts == beforeDisable), @"and nothing is delivered after it");
+    settings.enabled = YES;
+
+    // Put the shared state back.
+    dictation.problemHandler = nil;
+    dictation.transcriptHandler = nil;
+    [AKDictation setGameTextTarget:nil];
+    settings.speechLanguage = AKVoiceSpeechLanguageSystem;
+    for (NSString *key in defaults.dictionaryRepresentation.allKeys)
+        if ([key hasPrefix:@"AKVoice"] || [key hasPrefix:@"AKInputTrigger."]) [defaults removeObjectForKey:key];
+}
+
+// The record itself: the events of one capture arrive in the order a reader needs, and the
+// utterance is in it nowhere. The canary is a transcript-shaped string, so a log that quoted
+// what it heard would fail here rather than on a device.
+static void TestKeyboardDictationRecord(void) {
+    AKDictation *dictation = AKDictation.shared;
+    FakeSpeech *speech = [FakeSpeech new];
+    FakeAudio *audio = [FakeAudio new];
+    dictation.speech = speech;
+    dictation.audio = audio;
+    dictation.finalizeTimeout = 0.2;
+    dictation.transcriptHandler = nil;
+    dictation.problemHandler = nil;
+    AKVoiceSettings *settings = AKVoiceSettings.shared;
+    settings.enabled = YES;
+    settings.speechLanguage = AKVoiceSpeechLanguageGerman;
+    settings.autoSubmit = NO;
+    settings.trailingSpace = NO;
+    FakeGameTextView *target = [FakeGameTextView new];
+    [AKDictation setGameTextTarget:target];
+
+    NSString *canary = @"CANARY-transcript-9f2c";
+    NSUInteger mark = KeyboardDictationRecord().count;
+    [dictation begin];
+    Pump(0.05);
+    [speech say:canary final:NO];
+    [dictation end];
+    [speech say:canary final:YES];
+    Pump(0.05);
+
+    NSArray<NSString *> *events = RecordSince(mark);
+    NSInteger generation = EventIndex(events, @"recognizer.generation=", 0);
+    NSInteger permission = EventIndex(events, @"permission=granted", generation + 1);
+    NSInteger language = EventIndex(events, @"recognizer.language=de-DE", permission + 1);
+    NSInteger start = EventIndex(events, @"recognizer.session.start generation=", language + 1);
+    NSInteger partial = EventIndex(events, @"result=partial generation=", start + 1);
+    NSInteger final = EventIndex(events, @"result=final generation=", partial + 1);
+    NSInteger end = EventIndex(events, @"recognizer.session.end generation=", final + 1);
+    NSInteger restore = EventIndex(events, @"audio.restore=ok", end + 1);
+    CHECK((generation >= 0 && permission > generation && language > permission && start > language &&
+           partial > start && final > partial && end > final && restore > end),
+          @"the record reads generation, permission, language, session, results, end, restore: %@", events);
+    CHECK((events.count > 0), @"and there is a record to read");
+    CHECK((![[events componentsJoinedByString:@"\n"] containsString:canary]),
+          @"the transcript is in the record nowhere: %@", events);
+
+    // A cancellation is recorded, delivers nothing and sends no key. This is the "absence of
+    // send after cancellation" the task asks to be asserted, at the point the words would go.
+    NSUInteger insertsBefore = target.inserts;
+    NSUInteger cancelMark = KeyboardDictationRecord().count;
+    [dictation begin];
+    Pump(0.05);
+    [speech say:@"never mind" final:NO];
+    [dictation cancel];
+    Pump(0.05);
+    NSArray<NSString *> *afterCancel = RecordSince(cancelMark);
+    CHECK((EventIndex(afterCancel, @"outcome=cancel", 0) >= 0), @"a cancel is recorded: %@", afterCancel);
+    CHECK((target.inserts == insertsBefore), @"a cancelled capture delivers nothing");
+    CHECK((target.keys.count == 0), @"and sends no key at all");
+    CHECK((![[afterCancel componentsJoinedByString:@"\n"] containsString:@"never mind"]),
+          @"and the partial it had heard is not in the record either");
+
+    dictation.problemHandler = nil;
+    [AKDictation setGameTextTarget:nil];
+    settings.speechLanguage = AKVoiceSpeechLanguageSystem;
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    for (NSString *key in defaults.dictionaryRepresentation.allKeys)
+        if ([key hasPrefix:@"AKVoice"] || [key hasPrefix:@"AKInputTrigger."]) [defaults removeObjectForKey:key];
+}
+
 // Every setting the user can change has to survive the file. This is the review outcome's Phase 3
 // inventory, and the list is the test's own on purpose: a setting that nobody adds here is a setting
 // that quietly stops persisting, which is what happened to the voice layer's button choice - it was
@@ -1163,7 +1457,7 @@ static void TestEverySettingRoundTrips(void) {
     NSArray<NSString *> *userFacing = @[@"WoWProduct", @"WoWRegion", @"WoWLocale",
                                         @"AKVoiceEnabled", @"AKVoiceMode", @"AKVoiceAutoSubmit",
                                         @"AKVoiceTrailingSpace", @"AKVoiceCustomWords",
-                                        @"AKVoiceTakeButtonFromGame"];
+                                        @"AKVoiceTakeButtonFromGame", @"AKVoiceSpeechLanguage"];
     TKWolkaraForeverConfig *config = TKWolkaraForeverConfig.shared;
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
 
@@ -1173,10 +1467,12 @@ static void TestEverySettingRoundTrips(void) {
     id regionWas = [defaults objectForKey:@"WoWRegion"];
     id buttonWas = [defaults objectForKey:@"AKVoiceTakeButtonFromGame"];
     id voiceWas = [defaults objectForKey:@"AKVoiceEnabled"];
+    id languageWas = [defaults objectForKey:@"AKVoiceSpeechLanguage"];
 
     [defaults setObject:@"us" forKey:@"WoWRegion"];
     [defaults setBool:NO forKey:@"AKVoiceTakeButtonFromGame"];
     [defaults setBool:NO forKey:@"AKVoiceEnabled"];
+    [defaults setObject:@"de-DE" forKey:@"AKVoiceSpeechLanguage"];
     [config save];
 
     // Change them in the database only, then read the file back over them: what survives is what
@@ -1184,14 +1480,18 @@ static void TestEverySettingRoundTrips(void) {
     [defaults setObject:@"eu" forKey:@"WoWRegion"];
     [defaults setBool:YES forKey:@"AKVoiceTakeButtonFromGame"];
     [defaults setBool:YES forKey:@"AKVoiceEnabled"];
+    [defaults setObject:@"fr-FR" forKey:@"AKVoiceSpeechLanguage"];
     [config reloadFromFile];
     CHECK(([[defaults stringForKey:@"WoWRegion"] isEqualToString:@"us"]), @"a choice is restored from the file");
     CHECK((![defaults boolForKey:@"AKVoiceTakeButtonFromGame"]), @"the voice layer's button choice round-trips");
     CHECK((![defaults boolForKey:@"AKVoiceEnabled"]), @"and the voice switch round-trips");
+    CHECK(([[defaults stringForKey:@"AKVoiceSpeechLanguage"] isEqualToString:@"de-DE"]),
+          @"and the speech language round-trips, got %@", [defaults stringForKey:@"AKVoiceSpeechLanguage"]);
 
     if (regionWas) [defaults setObject:regionWas forKey:@"WoWRegion"]; else [defaults removeObjectForKey:@"WoWRegion"];
     if (buttonWas) [defaults setObject:buttonWas forKey:@"AKVoiceTakeButtonFromGame"]; else [defaults removeObjectForKey:@"AKVoiceTakeButtonFromGame"];
     if (voiceWas) [defaults setObject:voiceWas forKey:@"AKVoiceEnabled"]; else [defaults removeObjectForKey:@"AKVoiceEnabled"];
+    if (languageWas) [defaults setObject:languageWas forKey:@"AKVoiceSpeechLanguage"]; else [defaults removeObjectForKey:@"AKVoiceSpeechLanguage"];
     [config save];
 }
 
@@ -1245,6 +1545,7 @@ static void TestConfigCorpus(void) {
         @"WoWProduct": @"not a name!",
         @"WoWLocale": @7,
         @"AKVoiceMode": @9,
+        @"AKVoiceSpeechLanguage": @"kl-KL",
         @"AKVoiceEnabled": @"yes",
         @"AKVoiceAutoSubmit": @2,
         @"AKVoiceTrailingSpace": @[@1],
@@ -1489,6 +1790,23 @@ static void TestPageLayout(UIWindow *window) {
     [page.view layoutIfNeeded];
     CheckLayout(page.view, @"voice test page", @[@"voice.test.button", @"voice.test.box", @"voice.test.state"]);
 
+    // The largest Dynamic Type, on the page whose new card is at the bottom of a scroller. The
+    // row must still have a size and be reachable by scrolling - the leaf of the accessibility
+    // contract the launcher policy states, applied to the page this feature changed.
+    if (@available(iOS 17.0, *)) {
+        navigation.traitOverrides.preferredContentSizeCategory =
+            UIContentSizeCategoryAccessibilityExtraExtraExtraLarge;
+        [navigation popViewControllerAnimated:NO];
+        AKVoiceViewController *largeType = [AKVoiceViewController new];
+        [navigation pushViewController:largeType animated:NO];
+        Pump(0.4);
+        [largeType.view layoutIfNeeded];
+        CheckLayout(largeType.view, @"voice settings at the largest text size",
+                    @[@"voice.enabled", @"voice.mode"]);
+        [navigation popViewControllerAnimated:NO];
+        navigation.traitOverrides.preferredContentSizeCategory = UIContentSizeCategoryUnspecified;
+    }
+
     [navigation popToRootViewControllerAnimated:NO];
     Pump(0.2);
 }
@@ -1697,6 +2015,8 @@ static void TestConfigWriteFailure(void) {
     TestScreenshotIsolation();
     TestDictation();
     TestTypingIntoTheGame();
+    TestSpeechLanguage();
+    TestKeyboardDictationRecord();
     TestVoiceScreens(self.window);
     TestPageLayout(self.window);
     TestConfigCorpus();

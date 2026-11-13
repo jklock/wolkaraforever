@@ -28,6 +28,11 @@ static NSArray<NSString *> *TKWolkaraForeverConfigKeys(void) {
              @"WolkaraForeverAppLanguage", @"WolkaraForeverGameLanguageOfferShown",
              @"AKVoiceEnabled", @"AKVoiceMode", @"AKVoiceAutoSubmit",
              @"AKVoiceTrailingSpace", @"AKVoiceCustomWords",
+             // The recogniser's language. A choice the user can change belongs in the file and
+             // in the schema, or an export silently drops it. The values are the stored
+             // spellings VoiceSettings accepts; anything else is refused here and migrates to
+             // System, which is the behaviour before the choice existed.
+             @"AKVoiceSpeechLanguage",
              // The voice layer's choice about whether the game keeps the button. It lived only in
              // the defaults database, so it did not survive an export and import - which is what
              // the review outcome's Phase 3 is about: a setting the user can change belongs in the
@@ -105,6 +110,7 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
             @"WolkaraForeverGameLanguageOfferShown": @{@"kind": @"bool"},
             @"AKVoiceEnabled": @{@"kind": @"bool"},
             @"AKVoiceMode": @{@"kind": @"int", @"min": @0, @"max": @1},
+            @"AKVoiceSpeechLanguage": @{@"kind": @"enum", @"values": @[@"system", @"en-US", @"de-DE", @"fr-FR", @"es-ES"]},
             @"AKVoiceAutoSubmit": @{@"kind": @"bool"},
             @"AKVoiceTrailingSpace": @{@"kind": @"bool"},
             @"AKVoiceCustomWords": @{@"kind": @"words"},

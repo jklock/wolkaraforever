@@ -11,7 +11,22 @@
 // controls keep it private; the fixture asks for it the way the controls do.
 @interface AKTouchControls (LayerKeyboardFixture)
 - (void)showLayerKeyboard;
+// The composer's language control asks through this; the fixture drives the same method the
+// menu action calls, so what it exercises is the production path rather than a copy of it.
+- (void)chooseSpeechLanguage:(NSString *)stored;
 @end
+
+// The composer's language button, by the identifier a person's assistive technology sees.
+static UIButton *FixtureLanguageButton(UIView *root) {
+    if ([root isKindOfClass:UIButton.class] &&
+        [root.accessibilityIdentifier isEqual:@"wolkaraforever.keyboard.language"])
+        return (UIButton *)root;
+    for (UIView *child in root.subviews) {
+        UIButton *found = FixtureLanguageButton(child);
+        if (found) return found;
+    }
+    return nil;
+}
 
 @interface AKInputFixtureView : NSView
 @property CATextLayer *heading, *instructions, *result;
@@ -432,7 +447,22 @@ static void AKFixtureInputSource(void *context) {
                 }
             }
             [controls toggleKeyboard];
-            if (!selfTest) return;
+            if (!selfTest) {
+                // A capture for the pull request: the composer holding a composed draft, with
+                // the recogniser's language chosen as the shell would publish it. It asserts
+                // nothing - the checks above own that - and it is what a person sees.
+                if ([NSProcessInfo.processInfo.arguments containsObject:@"--qa-composer"]) {
+                    [NSTimer scheduledTimerWithTimeInterval:1.2 repeats:NO block:^(NSTimer *timer) {
+                        (void)timer;
+                        UITextView *draft = (UITextView *)AKFindInputView(host, @"wolkaraforever.keyboard.draft");
+                        [draft insertText:@"é e\u0301 ñ ü 🙂"];
+                        [NSNotificationCenter.defaultCenter postNotificationName:@"AKTouchSpeechLanguageDidChange"
+                                                                         object:nil
+                                                                       userInfo:@{@"stored": @"de-DE"}];
+                    }];
+                }
+                return;
+            }
             [NSTimer scheduledTimerWithTimeInterval:1 repeats:NO block:^(NSTimer *timer) {
                 (void)timer;
                 [host layoutIfNeeded];
@@ -511,6 +541,96 @@ static void AKFixtureInputSource(void *context) {
                 AKDrainFixtureEvents();
                 NSMutableString *expected = [@" ¡Hola equipo! Dictado." mutableCopy];
                 assert([fixture.text isEqual:expected]);
+                // --- committed Unicode -------------------------------------------------
+                //
+                // What UIKit committed is what the guest receives: one string, with its
+                // composing marks and its emoji intact, rather than a guessed keycode per
+                // character. The guest fixture appends exactly `event.characters`, so this is
+                // the text a game's own field would insert, and deletion is its own key.
+                [fixture.text setString:@""];
+                fixture.selection = NSMakeRange(0, 0);
+                NSMutableArray<NSString *> *phases = [NSMutableArray array];
+                id compositionObserver = [NSNotificationCenter.defaultCenter
+                    addObserverForName:AKTouchDraftCompositionDidChangeNotification object:nil
+                                queue:NSOperationQueue.mainQueue
+                           usingBlock:^(NSNotification *note) {
+                    [phases addObject:note.userInfo[AKTouchDraftCompositionPhaseKey] ?: @"?"];
+                }];
+                // Provisional text stays native: marking it sends nothing.
+                [input setMarkedText:@"provisional" selectedRange:NSMakeRange(11, 0)];
+                AKDrainFixtureEvents();
+                assert([fixture.text isEqual:@""]);
+                // A commit is announced once, when UIKit hands the composed string over.
+                [input insertText:@"é"];
+                AKDrainFixtureEvents();
+                assert(phases.count == 1 && [phases.firstObject isEqual:AKTouchDraftCompositionCommit]);
+                assert([fixture.text isEqual:@""]);   // editing a draft is not sending it
+                // A cancelled composition is announced as a cancellation, and sends nothing.
+                [input setMarkedText:@"discarded" selectedRange:NSMakeRange(9, 0)];
+                [input dictationRecognitionFailed];
+                AKDrainFixtureEvents();
+                assert(phases.count == 2 && [phases.lastObject isEqual:AKTouchDraftCompositionCancel]);
+                assert([fixture.text isEqual:@""]);
+                [NSNotificationCenter.defaultCenter removeObserver:compositionObserver];
+                [clear sendActionsForControlEvents:UIControlEventTouchUpInside];
+                AKDrainFixtureEvents();
+                assert(!input.text.length);
+                // The sequence the plan names, through the route a transcript and the layer's
+                // own keys use: accent, combining acute, ñ, ü and an emoji.
+                [controls touchInsertText:@"é"];
+                AKDrainFixtureEvents();
+                assert([fixture.text isEqual:@"é"]);
+                [controls touchInsertText:@"e\u0301"];
+                AKDrainFixtureEvents();
+                assert([fixture.text isEqual:@"ée\u0301"]);   // the combining mark is preserved, not folded
+                [controls touchInsertText:@"ñü🙂"];
+                AKDrainFixtureEvents();
+                assert([fixture.text isEqual:@"ée\u0301ñü🙂"]);
+                // Deletion is a key, and the guest deletes the whole composed character.
+                [controls touchSpecialKey:51 characters:@"\x7f"];
+                AKDrainFixtureEvents();
+                assert([fixture.text isEqual:@"ée\u0301ñü"]);
+                // Return stays explicit and never arrives as part of the text.
+                assert(![fixture.text containsString:@"\r"]);
+                [controls touchSpecialKey:36 characters:@"\r"];
+                AKDrainFixtureEvents();
+                assert([fixture.text hasSuffix:@"\r"]);
+                [expected setString:fixture.text];
+                // --- the recogniser's language, in the composer -------------------------
+                //
+                // Recognition configuration, not input: the control is named, it reports its
+                // state as a value, and choosing a language asks the shell for it without
+                // sending a single key to the guest.
+                // The composer is a sibling of the controls, in the host view.
+                UIView *composerRoot = controls.window ?: controls.superview ?: controls;
+                UIButton *language = FixtureLanguageButton(composerRoot);
+                assert(language != nil && language.isAccessibilityElement);
+                assert(language.accessibilityLabel.length > 0);
+                assert(language.accessibilityHint.length > 0);
+                assert(language.accessibilityValue.length > 0);
+                assert(language.menu.children.count == 5);
+                NSMutableArray<NSString *> *asked = [NSMutableArray array];
+                id languageObserver = [NSNotificationCenter.defaultCenter
+                    addObserverForName:@"AKTouchSpeechLanguageRequest" object:nil
+                                queue:NSOperationQueue.mainQueue
+                           usingBlock:^(NSNotification *note) {
+                    [asked addObject:note.userInfo[@"stored"] ?: @"?"];
+                }];
+                NSString *guestBefore = [fixture.text copy];
+                [controls chooseSpeechLanguage:@"de-DE"];
+                AKDrainFixtureEvents();
+                assert(asked.count == 1 && [asked.firstObject isEqual:@"de-DE"]);
+                // Nothing reached the guest, and the draft was not changed either.
+                assert([fixture.text isEqual:guestBefore]);
+                assert(input.text.length == 0);
+                // The shell answers with the value now in force, and the control shows it.
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKTouchSpeechLanguageDidChange"
+                                                                 object:nil
+                                                               userInfo:@{@"stored": @"de-DE"}];
+                AKDrainFixtureEvents();
+                assert([[language titleForState:UIControlStateNormal] isEqual:@"German"]);
+                assert([language.accessibilityValue isEqual:@"German"]);
+                [NSNotificationCenter.defaultCenter removeObserver:languageObserver];
                 // Many edits are now one normal document, not 64 resets of
                 // UIKit's selection/undo context and 64 asynchronous forwards.
                 for (NSUInteger i = 0; i < 64; i++) {

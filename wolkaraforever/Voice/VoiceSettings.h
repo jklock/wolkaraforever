@@ -27,6 +27,23 @@ typedef NS_ENUM(NSInteger, AKVoiceMode) {
     AKVoiceModeToggle,
 };
 
+// The language the recogniser listens in. On-device recognition is per locale, so this is
+// recognition configuration rather than app chrome: it never follows the app's own language
+// (`WolkaraForeverAppLanguage`), and changing the app language never changes it.
+//
+// The list is deliberately small. `System` means whatever the iPad itself recognises, which is
+// what the app used to do implicitly and what an invalid stored value falls back to. The three
+// named languages are the ones this product's copy ships in; Spanish is the game's fourth text
+// locale and is offered as the current game-text choice. Anything else is refused rather than
+// guessed at.
+typedef NS_ENUM(NSInteger, AKVoiceSpeechLanguage) {
+    AKVoiceSpeechLanguageSystem = 0,
+    AKVoiceSpeechLanguageEnglish,   // en-US
+    AKVoiceSpeechLanguageGerman,    // de-DE
+    AKVoiceSpeechLanguageFrench,    // fr-FR
+    AKVoiceSpeechLanguageSpanish,   // es-ES, the game's fourth text locale
+};
+
 @interface AKVoiceSettings : NSObject
 
 + (instancetype)shared;
@@ -36,6 +53,22 @@ typedef NS_ENUM(NSInteger, AKVoiceMode) {
 @property (nonatomic) BOOL enabled;
 
 @property (nonatomic) AKVoiceMode mode;
+// The language the recogniser listens in. Default System. Validated before it is stored: an
+// unrecognised value - a hand-edited config file, a value from a later build - becomes System
+// rather than being written back, so migration cannot leave the recogniser pointed at a
+// language this build has never heard of.
+@property (nonatomic) AKVoiceSpeechLanguage speechLanguage;
+// The BCP-47 identifier the recogniser should be constructed with, or nil for System. Read by
+// the recogniser at the start of each capture, never cached by a caller.
+@property (nonatomic, readonly, copy, nullable) NSString *speechLanguageIdentifier;
+// The stored spelling, and the setting a stored spelling means. Anything unrecognised, including
+// a missing value, is System.
++ (NSString *)storedValueForSpeechLanguage:(AKVoiceSpeechLanguage)language;
++ (AKVoiceSpeechLanguage)speechLanguageForStoredValue:(nullable id)value;
+// The identifier for a language, or nil for System. The one place the mapping lives.
++ (nullable NSString *)identifierForSpeechLanguage:(AKVoiceSpeechLanguage)language;
+// The choices the page offers, in order.
++ (NSArray<NSNumber *> *)speechLanguageChoices;
 // Send Return once the transcript has been typed in.
 @property (nonatomic) BOOL autoSubmit;
 // A space after the text, for a field that needs one.

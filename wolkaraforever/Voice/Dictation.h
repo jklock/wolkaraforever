@@ -16,6 +16,19 @@
 //   * **On-device or nothing.** The product says recognition happens on the iPad, so a
 //     device that cannot do it is refused rather than quietly sent to a server.
 //
+// Two things were added by the language work:
+//
+//   * **The recogniser is per capture, in the language the user chose.** A recogniser made once
+//     for one locale is what made every choice but en-US impossible. It is constructed when a
+//     capture starts, and a choice this iPad cannot recognise on device falls back to System
+//     for that hold - logged, and said to the user - rather than opening a microphone it cannot
+//     feed.
+//   * **A generation is spent before another begins.** Changing the language while the
+//     microphone is open cancels the old session and invalidates it before the new capture
+//     starts, so a late final result from the old recogniser can never be delivered as the new
+//     utterance. Nothing here opens a chat box: delivery is the transcript and (only if asked
+//     for) one Return.
+//
 // The recogniser and the audio session are behind two small protocols because they are
 // the two things that cannot run in a test, and the delivery rules are exactly what a
 // test has to be able to exercise.
@@ -64,11 +77,18 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
 - (BOOL)isAvailable;
 /// Whether recognition can happen without sending audio anywhere.
 - (BOOL)supportsOnDeviceRecognition;
+/// Whether *this language* can be recognised on device. `language` is a BCP-47 identifier such
+/// as `de-DE`, or nil for whatever the device itself uses. A recogniser is per locale, so this
+/// is asked before the audio session is taken: an unsupported choice must not open a microphone
+/// it cannot feed.
+- (BOOL)supportsOnDeviceRecognitionForLanguage:(nullable NSString *)language;
 /// Asks once per session. The answer is what matters; the call may be asynchronous.
 - (void)requestAuthorization:(void (^)(BOOL granted))completion;
-/// Starts feeding audio to the recogniser. `handler` is called with the running
-/// transcript, once with `isFinal`, and with an `error` if the session failed.
+/// Starts feeding audio to the recogniser. The recogniser is constructed for `language` (nil:
+/// the device's own) for this session only. `handler` is called with the running transcript,
+/// once with `isFinal`, and with an `error` if the session failed.
 - (void)startOnDevice:(BOOL)onDevice
+             language:(nullable NSString *)language
                 words:(NSArray<NSString *> *)words
               handler:(void (^)(NSString *transcript, BOOL isFinal, NSError *error))handler;
 /// Stop feeding audio and ask for the last result. Either `isFinal` or the deadline

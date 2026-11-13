@@ -595,6 +595,14 @@
 "voice.state.authorizing" = "Berechtigung wird angefragt …";
 "voice.state.listening" = "Hört zu …";
 "voice.state.finalizing" = "Gehörtes wird abgeschlossen …";
+"voice.language" = "Sprache";
+"voice.language.hint" = "Wählen Sie die Sprache, die die Erkennung erwarten soll.";
+"voice.language.system" = "System";
+"voice.language.english" = "Englisch";
+"voice.language.german" = "Deutsch";
+"voice.language.french" = "Französisch";
+"voice.language.spanish" = "Spanisch";
+"voice.language.unavailable" = "%@ kann auf diesem iPad nicht erkannt werden, daher wurde für diesen Durchgang System verwendet.";
 "common.clear" = "Leeren";
 
 /* ---- The game's own files (Forever UI) ---- */

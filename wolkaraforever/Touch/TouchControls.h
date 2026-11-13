@@ -18,6 +18,25 @@ extern NSNotificationName const AKTouchKeyboardRequestNotification;
 // this module and the voice module cannot include each other without spelling out the
 // prepared tree's layout.
 extern NSNotificationName const AKTouchGameTextInputDidAppearNotification;
+// Posted when the draft editor's composed text commits or is cancelled, so the app can record
+// the bounded `keyboard-dictation: composition.commit|cancel` event. The userInfo carries
+// AKTouchDraftCompositionPhaseKey only: never the text, the marked range, or anything derived
+// from them. The draft editor is ours and cannot reach the guest, so this says what a person
+// did with it without saying what they wrote.
+extern NSNotificationName const AKTouchDraftCompositionDidChangeNotification;
+extern NSString *const AKTouchDraftCompositionPhaseKey;   // "phase"
+// The two values the phase key carries.
+extern NSString *const AKTouchDraftCompositionCommit;
+extern NSString *const AKTouchDraftCompositionCancel;
+
+// The recogniser's language, chosen from the draft composer's own row. The adapter is a dylib
+// that cannot reach the voice module, so it asks and is answered: the request carries the
+// stored spelling (`system`, `en-US`, `de-DE`, `fr-FR`, `es-ES`) under
+// AKTouchSpeechLanguageStoredKey, and the answer carries the value now in force. Choosing a
+// language sends no key and no text - it is recognition configuration, not input.
+extern NSNotificationName const AKTouchSpeechLanguageRequestNotification;
+extern NSNotificationName const AKTouchSpeechLanguageDidChangeNotification;
+extern NSString *const AKTouchSpeechLanguageStoredKey;   // "stored"
 // Whether the controls are wanted at all. The platform's install path asks this
 // before adding them, and the launcher's On-Screen Controls switch stores its
 // choice under this key.

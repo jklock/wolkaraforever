@@ -200,6 +200,12 @@ Open **Key / Button Configuration** for voice input:
 3. Choose **Hold to talk** or **Press to start and stop**.
 4. Use **Test Voice** before opening the game, especially after changing a mapping.
 
+The recogniser's own **Language** is in the draft composer beside the words it types: **System**
+follows the iPad and is the default, and English, German, French and Spanish can be chosen
+explicitly. It belongs to the recogniser and is never changed by the app's own language. A
+language this iPad cannot recognise on the device falls back to System for that hold, and the
+app says so.
+
 Voice requires Microphone and Speech Recognition permission. The mapping can send text when
 recognition completes or leave it for review; it can add a space after the text and accept
 expected words. A mapped control can be withheld from the game while voice is active. Check
