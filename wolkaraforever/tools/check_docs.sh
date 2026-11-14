@@ -134,3 +134,5 @@ if problems:
 
 print("check_docs: OK - {} markdown files, all relative links, images and anchors resolve".format(len(md_files)))
 PY
+
+"$(dirname "$0")/check_agent_docs.sh"

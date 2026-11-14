@@ -9,6 +9,12 @@ SURFACE.raw/
 *.crash
 *.ips
 logs/
+development/archive/
+development/reviews/
+compatibility-observations/
+support-bundles/
+simulator-captures/
+device-captures/
 .DS_Store
 .codex/
 xcuserdata/

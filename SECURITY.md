@@ -1,27 +1,9 @@
 # Security
 
-> **Current as of 2026-10-30 · branch `main`.**
+> Verified: 2026-11-13 · Source: `3c33543`
 
-Tolkara's authorization module handles pairing keys and talks to the iPad's
-developer service, and its loader parses untrusted binary input. Please report
-vulnerabilities privately, by email to vk@tolkara.org or through GitHub's "Report a
-vulnerability" form on this repository, rather than in a public issue. Include the affected file, the input
-or sequence that triggers the problem, and the device and OS version.
+Report a vulnerability privately by email to `vk@tolkara.org` or through GitHub’s private vulnerability reporting for this repository. Do not open a public issue for a security problem.
 
-In scope: memory-safety bugs in the Mach-O, nib, shader-container,
-code-signature or protocol parsers; anything that lets pairing keys leave the
-device-only Keychain; any way the local tunnel could carry traffic other than
-its single private route; any path by which application code could run before
-debugger detachment is confirmed (Developer service, External JIT); and, for Local signing,
-any way code from the rewritten range could run before its unpack verification,
-a container page could run without the container's size, header and load
-commands matching the executable, or a write into signed pages could change
-them.
+Include the affected version, a minimal reproduction, and relevant device/OS information. Redact account information, credentials, signing identities, provisioning profiles, pairing records, and device identifiers.
 
-Out of scope: the fact that a development-signed app can execute unsigned code
-after the developer service or an external JIT enabler prepares memory, or can
-load a library signed with the same developer identity. These are documented
-platform behaviour for development and the basis of the three execution modes.
-
-Never post pairing records, provisioning profiles, device identifiers or logs
-containing account information in issues.
+Security reports are in scope when they affect parser memory safety, pairing-key confidentiality, the private Developer-service route, debugger detachment before guest entry, Local-signing page verification, or execution-mode boundaries. Gameplay automation, integrity bypasses, and game-code modification are not supported project work.

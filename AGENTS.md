@@ -4,8 +4,8 @@
 
 - `main` is the integration branch. Work on one short-lived, single-purpose branch and open a
   pull request; do not force-push a shared branch.
-- Rebase on current `main`, require review, resolve every conversation, and run the checks in
-  `development/guides/REPOSITORY_WORKFLOW.md` before merge.
+- Rebase on current `main`, require review, resolve every conversation, and run the relevant
+  checks before merge.
 - Squash ordinary pull requests. A merge commit is reserved for an intentional integration
   branch. Do not mix upstream ingestion, product behavior, documentation-only work, and
   formatting cleanup in one pull request.
@@ -22,22 +22,24 @@
 - `authorization/`: Developer service: bundled pairing, transport, tunnel extension and memory-preparation protocol.
 - `launcher/`: the iPad app. `profiles/`: data-only descriptions of tested applications.
 - `tests/`: C, Objective-C, Swift and Python tests; `testguest/`: our synthetic guest fixture.
-- `wolkaraforever/tools/`: the layer's scripts - prepare, the gate, and the wrappers that run the platform's own build, install, run and test scripts against the prepared tree. The platform's own tools are `platform/tools/` and run inside that tree. `docs/` is user-facing; engineering documentation is under `development/`.
-- `platform/`: upstream tolkara, vendored byte-identical to `upstream/main` and never edited by hand; `wolkaraforever/`: our layer above it. Start at `development/architecture/ARCHITECTURE.md`.
+- `wolkaraforever/tools/`: the layer's scripts - prepare, the gate, and the wrappers that run the platform's own build, install, run and test scripts against the prepared tree. The platform's own tools are `platform/tools/` and run inside that tree. `docs/` is user-facing; `docs/agent/` is the operational reference for agents and contributors.
+- `platform/`: upstream tolkara, vendored byte-identical to `upstream/main` and never edited by hand; `wolkaraforever/`: our layer above it. Start at `docs/agent/README.md`.
 - `build/` and `logs/` are ignored outputs. Third-party applications and assets are never committed.
   Validation reports, simulator logs, device captures and temporary support bundles exist only to
   decide whether a PR or release may proceed; remove them after that decision with
   `wolkaraforever/tools/clear_validation_reports.sh`. Do not attach or link them from a PR,
   release, changelog, or repository document. Reviewed UI baselines and source fixtures are the
   exception: they are deliberate source assets, not generated validation output.
-- `development/architecture/PROJECT_MAP.md`: canonical map of engine, layer modules, patches,
-  overlays, scripts, tests, and WolkaraForever enhancements. Read it before a cross-cutting change.
-- `development/guides/REPOSITORY_WORKFLOW.md`: durable branching, review, CI, release, and
-  evidence policy.
+- `docs/agent/REPOSITORY_MAP.md`: canonical map of engine, layer modules, patches, overlays,
+  scripts, tests, and WolkaraForever enhancements. Read it before a cross-cutting change.
+- `docs/agent/OPERATIONS.md`: current branching, review, release, tool, and evidence policy.
+- Before every tracked-file change, read the applicable catalog entry. Afterward, refresh the
+  catalog with `python3 wolkaraforever/tools/generate_agent_docs.py`, update the applicable
+  standalone human guide when behavior changes, and run `check_agent_docs.sh` plus `check_docs.sh`.
 
 ## Build, Test, and Development Commands
 
-Requires Xcode, XcodeGen and Python 3. Personal settings (team, bundle ID, device) live in ignored `local.env`; see `local.env.example` and `development/guides/BUILDING.md`.
+Requires Xcode, XcodeGen and Python 3. Personal settings (team, bundle ID, device) live in ignored `local.env`; see `local.env.example` and `docs/INSTALLATION.md`.
 
 ```sh
 # Ours: each prepares build/platform, then runs the platform's own script on it.

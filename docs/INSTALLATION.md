@@ -1,137 +1,58 @@
 # Install WolkaraForever
 
-> **Current as of 2026-11-05 · branch `liveupdates-11042026`.**
+> Verified: 2026-11-13 · Source: `3c33543`
 
-WolkaraForever is installed from source. It is not an App Store, TestFlight, or public-IPA
-release. The supported integrated route uses the device's Developer service, on an iPad or
-an iPhone. The behaviour contract for both form factors is
-[the supported-device contract](../development/architecture/DEVICE_CONTRACT.md), and the iPhone
-page is [iPhone support](IPHONE.md).
+Install WolkaraForever from source on an iPad or iPhone. This guide uses the supported Developer-service route.
 
 ## Requirements
 
-- Apple-silicon Mac with current Xcode and command-line tools, XcodeGen, and Python 3.
-- A paid Apple Developer membership. The required tunnel and memory capabilities are not
-  available to a Personal Team.
-- An unlocked device in Developer Mode that trusts the Mac and has sufficient free storage:
-an  iPad or an iPhone. A Forever installation needs roughly 70 GB, which in practice means an
-iPad.
-- Your own eligible WoW account. This repository contains no game files or account access.
+- Apple-silicon Mac with current Xcode, Xcode command-line tools, XcodeGen, and Python 3.
+- Paid Apple Developer membership.
+- Unlocked iPad or iPhone in Developer Mode that trusts your Mac.
+- At least 70 GB free for a Forever installation.
+- Your own eligible game account and game data.
 
-## Configure the local build
+## Configure the build
 
-```sh
-git clone https://github.com/jklock/wolkaraforever.git
-cd wolkaraforever
-cp local.env.example local.env
-wolkaraforever/tools/install_prerequisites.sh --check
-wolkaraforever/tools/device_variables.sh --write
-```
+1. Clone the repository and create your private configuration.
 
-Set the values requested in the ignored `local.env` file:
+   ```sh
+   git clone https://github.com/jklock/wolkaraforever.git
+   cd wolkaraforever
+   cp local.env.example local.env
+   ```
 
-```sh
-DEVELOPMENT_TEAM=YOUR_TEAM_ID
-TOLKARA_BUNDLE_ID=your.unique.bundle.id
-TOLKARA_KEYCHAIN_GROUP=your.unique.bundle.id.authorization
-DEVICE=YOUR_CONNECTED_DEVICE
-```
+2. Keep the bundle ID and Keychain group stable in `local.env` so updates keep the app’s data and enrollment.
+3. Check prerequisites, select the connected device, and run preflight.
 
-Keep the bundle ID and Keychain group stable. They allow later builds to replace the app
-without erasing its data or enrollment. Never commit or share `local.env`.
+   ```sh
+   wolkaraforever/tools/install_prerequisites.sh --check
+   wolkaraforever/tools/device_variables.sh --write
+   wolkaraforever/tools/preflight.sh
+   ```
 
-## Install on the device
+## Install and start
 
-Keep the device unlocked and connected, then run:
+Run:
 
 ```sh
-wolkaraforever/tools/preflight.sh
 wolkaraforever/tools/install.sh
 ```
 
-The installer prepares the project, builds and signs it, installs the app, performs
-Developer-service enrollment when needed, verifies the installed bundle, and returns the
-app to its launcher. Approve any pairing or tunnel prompt.
+The installer builds, signs, installs, and launches the app through project safety checks. It refuses to replace a running game unless you request that action. Do not use raw device-file commands to install or copy game data.
 
-The same commands install on an iPhone. `wolkaraforever/tools/device_variables.sh --write`
-reads `DEVICE` from whichever device is attached, so a build that was aimed at an iPad does not
-silently overwrite the app on a phone or the other way round.
+On first launch, choose Forever, a region, and a game language. Download the required data and select **Play** only after the launcher reports that it is ready.
 
-The installer refuses to replace an active game session. Quit the game first, or explicitly
-request a clean stop:
+## Update or recover
 
-```sh
-wolkaraforever/tools/install.sh --replace-running
-```
-
-`--force-kill` can interrupt a game-file write; use it only when you accept that risk.
-
-## Repair signing in Xcode
-
-If Xcode reports a signing error, generate the project and open it:
-
-```sh
-wolkaraforever/tools/generate.sh
-open build/platform/Tolkara.xcodeproj
-```
-
-Select **Tolkara** and **LocalAuthorizationTunnel**, choose your team under
-**Signing & Capabilities**, and let Xcode repair provisioning. Preserve the actual values in
-`local.env`; generated project changes are not a durable configuration surface.
-
-## First launch
-
-1. Open **WolkaraForever**.
-2. Choose **Forever**, a region, and a language.
-3. Select **Install**, then keep the app open while it downloads and verifies the client.
-4. Select **Play**. Allow the private tunnel if asked and keep the app foregrounded while
-   memory preparation completes; it can take several minutes.
-5. Sign in with your own account.
-
-WolkaraForever has two language settings and they are independent: **Game language** changes the
-text and audio the client downloads, and **App language** changes the launcher's own labels
-(English, German, or System Default). Both live in the Game Edition card on the home screen, and
-neither requires reinstalling the app. See [App language](USING_WOLKARAFOREVER.md#app-language).
-
-Continue with [Using WolkaraForever](USING_WOLKARAFOREVER.md).
-
-## Permanent test installation
-
-Keep production data in the stable app and validate builds in a separate app. Copy
-`local.test.env.example` to ignored `local.test.env`, give it a different bundle ID and
-Keychain group, then run approved device tools through:
-
-```sh
-wolkaraforever/tools/test_install.sh preflight
-wolkaraforever/tools/test_install.sh install
-```
-
-The wrapper records the stable app's read-only state before and after and refuses to target
-the stable identifiers. It accepts only `preflight`, `install`, `pilot`, `device_log`,
-`push_game`, `device_matrix`, and `verify_external_jit`. Copy game data only deliberately:
-
-```sh
-wolkaraforever/tools/test_install.sh push_game --source "/Applications/World of Warcraft"
-```
-
-The test app has a separate container; this copy does not modify the stable app. Use its
-separate External JIT bundle ID when validating an enabler. Capture test-app diagnostics with
-`wolkaraforever/tools/test_install.sh device_log`; it writes the selected app's
-`Documents/native-guest.log` under ignored `build/device-log/`. If test validation fails,
-collect that log, use `test_install.sh pilot state` to confirm the stable app still reports
-normally, and leave the stable app alone. The test app can be repaired or replaced through
-the wrapper without changing stable data.
+Run `install.sh` again with the same private configuration to update the app. Do not delete the app as a first recovery step: it removes downloaded game data. If signing fails, correct the selected identity in Xcode, then rerun preflight.
 
 ## Troubleshooting
 
-| Problem | Action |
+| Problem | What to do |
 | --- | --- |
-| Mac cannot see the device | Unlock and reconnect it, accept **Trust**, confirm Developer Mode, then rerun `device_variables.sh --write`. |
-| App will not install | Run `preflight.sh` and inspect the exact Xcode signing error for both app targets. |
-| Enrollment or tunnel fails | Keep the device connected and unlocked, then rerun `install.sh`. |
-| Play is unavailable | Let download or verification finish; use **Settings → Technical details** for the reason. |
-| Startup appears stalled | Keep the app foregrounded for several minutes. If it fails, reopen the app rather than deleting it. |
+| Prerequisite check fails | Install the named Mac tool, then run the check again. |
+| Device is missing | Unlock it, reconnect it, confirm trust and Developer Mode, then rerun `device_variables.sh --write`. |
+| Install refuses replacement | Stop the game from the app before retrying. |
 
-For support, provide the exact Technical details message and a redacted log—never credentials,
-pairing records, provisioning data, or a device identifier. The complete issue-report commands
-and required context are in [Help and safe recovery](USING_WOLKARAFOREVER.md#help-and-safe-recovery).
+Read [Compatibility](../COMPATIBILITY.md) for support limits.
