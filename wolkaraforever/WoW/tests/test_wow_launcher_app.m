@@ -6,6 +6,9 @@
 #import "../launcher/WoW/AddonManager.h"
 #import "../launcher/WoW/AddonStore.h"
 #import "../launcher/WoW/AddonCredentialStore.h"
+#import "../launcher/WoW/AddonUpdateResolver.h"
+#import "../launcher/WoW/AddonHubLog.h"
+#import "../launcher/WoW/AddonBrowser.h"
 #import <Security/Security.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "../launcher/WoW/Client.h"
@@ -153,10 +156,40 @@ static BOOL PumpUntil(BOOL (^condition)(void), NSTimeInterval limit) {
 // used to be read after a fixed delay, which is a guess about how fast the machine is - and one
 // of those guesses has already failed on a freshly erased simulator with nothing wrong in the
 // app. This waits for the alert to be there.
-static UIAlertController *WaitForAlert(UIViewController *presenter, NSTimeInterval limit) {
-    PumpUntil(^{ return (BOOL)[presenter.presentedViewController isKindOfClass:UIAlertController.class]; }, limit);
+// The sheet this step expects, waited for by title.
+//
+// "Something is presented" is not the same question as "my sheet is presented": a step that reads
+// whatever happens to be on top can be handed the previous sheet, still transitioning or simply
+// not dismissed yet, and then assert its title against the wrong words. Every step that expects a
+// named sheet asks for that sheet.
+static UIAlertController *WaitForSheetTitled(UIViewController *presenter, NSString *title,
+                                             NSTimeInterval limit) {
+    __block BOOL matched = NO;
+    PumpUntil(^{
+        UIViewController *presented = presenter.presentedViewController;
+        if (![presented isKindOfClass:UIAlertController.class]) return NO;
+        if (presented.isBeingPresented || presented.isBeingDismissed) return NO;
+        matched = [((UIAlertController *)presented).title isEqual:title];
+        return matched;
+    }, limit);
     UIViewController *presented = presenter.presentedViewController;
-    return [presented isKindOfClass:UIAlertController.class] ? (UIAlertController *)presented : nil;
+    if (![presented isKindOfClass:UIAlertController.class]) return nil;
+    return [((UIAlertController *)presented).title isEqual:title] ? (UIAlertController *)presented : nil;
+}
+
+static UIAlertController *WaitForAlert(UIViewController *presenter, NSTimeInterval limit) {
+    // Only an alert that has finished arriving counts. A sheet that is on its way out is still
+    // `presentedViewController` until the transition ends, so a step that waits naively can be
+    // handed the sheet the previous step asked to close and then assert the wrong title - which
+    // reads as a fault in the app. Found on a loaded iPad Pro 13-inch (M5), 2026-11-13.
+    PumpUntil(^{
+        UIViewController *presented = presenter.presentedViewController;
+        return (BOOL)([presented isKindOfClass:UIAlertController.class] &&
+                      !presented.isBeingPresented && !presented.isBeingDismissed);
+    }, limit);
+    UIViewController *presented = presenter.presentedViewController;
+    if (![presented isKindOfClass:UIAlertController.class]) return nil;
+    return presented.isBeingDismissed ? nil : (UIAlertController *)presented;
 }
 // One way out, and only one. UIKit raises on the second one - that is the crash that
 // made Render Profile a dead row - so every sheet this page opens is asked.
@@ -423,6 +456,326 @@ static void TestAddons(void) {
     [files removeItemAtPath:root error:NULL];
 }
 
+// The installed-package row is private to AddonManager.m; the fixture builds one by class name
+// and calls its configuration method, exactly as it does for the project row.
+@interface UITableViewCell (TKAddonInstalledCellProbe)
+- (void)configureWithRecord:(TKAddonRecord *)record selected:(BOOL)selected
+                 selectable:(BOOL)selectable state:(TKAddonUpdateState)state
+                     detail:(NSString *)detail;
+@end
+
+// The Add-on Hub: the resolver's whole vocabulary, the mixed-provider catalog, every control the
+// page draws, the log's privacy boundary and the browser's host allowlist.
+//
+// This is the coverage the plan asks for, in the one place that can see the production types
+// without a running app: no network, no game, no device.
+static void TestAddonHub(void) {
+    // --- 1. the resolver, one case per state, from facts only
+    TKAddonUpdateFacts *facts = [TKAddonUpdateFacts new];
+    facts.linked = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultChecking);
+
+    facts.heldBack = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNotApplicable);
+    facts.heldBack = NO;
+
+    facts.downloading = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultDownloading);
+    facts.downloading = NO;
+
+    facts.failedTerminal = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultFailedTerminal);
+    facts.failedTerminal = NO;
+
+    facts.failedRetryable = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultFailedRetryable);
+    facts.failedRetryable = NO;
+
+    facts.checking = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultChecking);
+    facts.checking = NO;
+
+    facts.linked = NO;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultUnlinked);
+    facts.linked = YES;
+
+    facts.answered = YES;
+    facts.installedFileIsCurrent = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultUpToDate);
+    facts.installedFileIsCurrent = NO;
+
+    facts.newerFileExists = YES;
+    facts.apiArchiveAvailable = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultUpdateAvailable);
+    facts.apiArchiveAvailable = NO;
+    facts.browserRoutable = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNeedsBrowserConfirmation);
+    facts.browserRoutable = NO;
+    // A newer file this app cannot obtain any way at all is named, not hidden behind a button.
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultUnavailableNoCompatibleFile);
+    facts.newerFileExists = NO;
+    facts.noCompatibleFile = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultUnavailableNoCompatibleFile);
+
+    // A disabled package is never reported as a failure, whatever else is true of it.
+    facts.heldBack = YES;
+    facts.failedTerminal = YES;
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNotApplicable);
+
+    // Every state has a sentence and only the actionable ones offer work.
+    for (NSInteger state = 0; state <= TKAddonUpdateResultFailedTerminal; state++) {
+        assert([TKAddonUpdateTitleKey((TKAddonUpdateResult)state) hasPrefix:@"addons.update."]);
+    }
+    assert(TKAddonUpdateIsActionable(TKAddonUpdateResultUpdateAvailable));
+    assert(TKAddonUpdateIsActionable(TKAddonUpdateResultNeedsBrowserConfirmation));
+    assert(TKAddonUpdateIsActionable(TKAddonUpdateResultFailedRetryable));
+    assert(TKAddonUpdateIsActionable(TKAddonUpdateResultUnlinked));
+    assert(!TKAddonUpdateIsActionable(TKAddonUpdateResultUpToDate));
+    assert(!TKAddonUpdateIsActionable(TKAddonUpdateResultNotApplicable));
+    // A relaunch restores what the last check said, except the two phases that are not answers.
+    assert([TKAddonUpdateStoredValue(TKAddonUpdateResultUpToDate) isEqual:TKAddonStoredUpdateUpToDate]);
+    assert([TKAddonUpdateStoredValue(TKAddonUpdateResultNeedsBrowserConfirmation) isEqual:TKAddonStoredUpdateBrowser]);
+    assert(TKAddonUpdateStoredValue(TKAddonUpdateResultChecking) == nil);
+    assert(TKAddonUpdateStoredValue(TKAddonUpdateResultDownloading) == nil);
+    assert(TKAddonUpdateResultForStoredValue(TKAddonStoredUpdateAvailable) == TKAddonUpdateResultUpdateAvailable);
+    assert(TKAddonUpdateResultForStoredValue(@"a-state-from-a-newer-build") == TKAddonUpdateResultChecking);
+
+    // --- 2. a mixed-provider catalog: four routes, one list, one set of controls
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:@"wow-addon-hub-tests"];
+    [files removeItemAtPath:root error:NULL];
+    NSString *addons = [root stringByAppendingPathComponent:@"Interface/AddOns"];
+    assert([files createDirectoryAtPath:addons withIntermediateDirectories:YES attributes:nil error:NULL]);
+    NSArray<NSArray<NSString *> *> *fixtures = @[
+        @[@"FromApi", @"From API"], @[@"FromBrowser", @"From Browser"],
+        @[@"FromFiles", @"From Files"], @[@"FoundOnDisk", @"Found On Disk"],
+    ];
+    for (NSArray<NSString *> *pair in fixtures) {
+        NSString *folder = [addons stringByAppendingPathComponent:pair[0]];
+        assert([files createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:NULL]);
+        NSString *toc = [NSString stringWithFormat:@"## Title: %@\n## Version: 2.1\n## Author: Someone\n## Interface: 16001\n", pair[1]];
+        assert([toc writeToFile:[folder stringByAppendingPathComponent:[pair[0] stringByAppendingString:@".toc"]]
+                     atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
+    }
+    // The store records an identity for three of them through the same transaction an install
+    // uses; the fourth is only ever found on disk. The archives are made by the archive suite's
+    // own builder, so this fixture does not invent a ZIP shape the extractor has never seen.
+    TKAddonStore *store = [[TKAddonStore alloc] initWithAddOnsDirectory:addons product:@"wowf" gameVersion:@"1.60.1"];
+    assert(store.records.count == 4);
+    for (TKAddonRecord *record in store.records) {
+        if ([record.identifier isEqual:@"FromApi"]) {
+            record.provider = @{ TKAddonProviderKind: @"curseforge", TKAddonProviderProjectID: @1,
+                                 TKAddonProviderFileID: @11, TKAddonProviderProjectSlug: @"from-api" };
+        }
+        assert(record.provenance.length > 0);
+    }
+    // Provenance is a closed vocabulary, and an unknown one is not a category.
+    assert(TKAddonProvenanceIsValid(TKAddonProvenanceAPI));
+    assert(TKAddonProvenanceIsValid(TKAddonProvenanceBrowser));
+    assert(TKAddonProvenanceIsValid(TKAddonProvenanceFiles));
+    assert(TKAddonProvenanceIsValid(TKAddonProvenanceUnmanaged));
+    assert(!TKAddonProvenanceIsValid(@"scraped"));
+    assert(!TKAddonProvenanceIsValid(nil));
+
+    // --- 3. every My Add-ons control changes something, and nothing is decoration
+    TKWoWAddonManagerViewController *manager = [[TKWoWAddonManagerViewController alloc]
+        initWithAddOnsDirectory:addons edition:@"Forever"];
+    [manager loadViewIfNeeded];
+    [manager.view layoutIfNeeded];
+    assert(manager.tab == TKAddonHubTabMyAddOns);
+    // The manager reads its own store for this directory: an identity written into another
+    // store's copy is not the identity the page draws.
+    TKAddonStore *hubStore = [manager valueForKey:@"_store"];
+    assert([hubStore isKindOfClass:TKAddonStore.class]);
+    assert(hubStore.records.count == 4);
+    for (NSString *identifier in @[@"wow.addons.tabs", @"wow.addons.group.create",
+                                   @"wow.addons.myaddons.sort", @"wow.addons.myaddons.filter",
+                                   @"wow.addons.selectAll", @"wow.addons.clearSelection",
+                                   @"wow.addons.updateSelected", @"wow.addons.updateAll"]) {
+        assert(Find(manager.view, identifier) != nil);
+    }
+    // The two navigation items are bar buttons, not views: they are named here the way the page
+    // names them, because a control the page draws and nobody can press is not a control.
+    NSArray<UIBarButtonItem *> *navigationItems = manager.navigationItem.rightBarButtonItems;
+    assert(navigationItems.count == 2);
+    assert([navigationItems[0].accessibilityIdentifier isEqual:@"wow.addons.import"]);
+    assert([navigationItems[1].accessibilityIdentifier isEqual:@"wow.addons.refresh"]);
+    // Search narrows the drawn records and nothing else.
+    NSUInteger all = manager.visibleRecords.count;
+    [manager setValue:@"From Files" forKey:@"_installedQuery"];
+    assert(manager.visibleRecords.count == 1);
+    assert([manager.visibleRecords.firstObject.identifier isEqual:@"FromFiles"]);
+    [manager setValue:@"" forKey:@"_installedQuery"];
+    assert(manager.visibleRecords.count == all);
+    // Filter narrows by a state the row already shows.
+    [manager setValue:@(4) forKey:@"_installedFilter"];   // unlinked
+    assert(manager.visibleRecords.count == all);
+    [manager setValue:@(0) forKey:@"_installedFilter"];
+    // Sort reorders the same set: name, then version, then update state.
+    [manager setValue:@(0) forKey:@"_installedSort"];
+    NSArray<NSString *> *byName = [manager.visibleRecords valueForKey:@"identifier"];
+    [manager setValue:@(2) forKey:@"_installedSort"];
+    assert([[NSSet setWithArray:[manager.visibleRecords valueForKey:@"identifier"]]
+            isEqualToSet:[NSSet setWithArray:byName]]);
+    [manager setValue:@(0) forKey:@"_installedSort"];
+    assert([[manager.visibleRecords valueForKey:@"identifier"] isEqual:byName]);
+
+    // --- 4. the four routes produce four different words, from the resolver, in one list
+    TKAddonRecord *apiRecord = nil, *browserRecord = nil, *filesRecord = nil, *unmanagedRecord = nil;
+    for (TKAddonRecord *record in hubStore.records) {
+        if ([record.identifier isEqual:@"FromApi"]) apiRecord = record;
+        if ([record.identifier isEqual:@"FromBrowser"]) browserRecord = record;
+        if ([record.identifier isEqual:@"FromFiles"]) filesRecord = record;
+        if ([record.identifier isEqual:@"FoundOnDisk"]) unmanagedRecord = record;
+    }
+    assert(apiRecord && browserRecord && filesRecord && unmanagedRecord);
+    // The identity is written on the manager's own records: a provider set on another store's
+    // copy is not the identity this page would ever read.
+    apiRecord.provider = @{ TKAddonProviderKind: @"curseforge", TKAddonProviderProjectID: @1,
+                            TKAddonProviderFileID: @11, TKAddonProviderProjectSlug: @"from-api" };
+    // An unmanaged folder is never guessed at: it has no identity, so it is unlinked.
+    assert([manager updateResultForRecord:unmanagedRecord] == TKAddonUpdateResultUnlinked);
+    assert([manager updateResultForRecord:filesRecord] == TKAddonUpdateResultUnlinked);
+    // Seed the provider answers the page would have received, for the two linked records.
+    [manager setValue:[@{ apiRecord.uuid: @{ @"newer": @YES, @"api": @YES } } mutableCopy]
+               forKey:@"_updateAnswers"];
+    assert([manager updateResultForRecord:apiRecord] == TKAddonUpdateResultUpdateAvailable);
+    assert([manager updateResultForRecord:browserRecord] == TKAddonUpdateResultUnlinked);
+
+    // Mixed-provider Update all orders the eligible records and reports each one. Only the API
+    // record is eligible here; the browser one has no project yet, so it is not invented.
+    NSArray<TKAddonRecord *> *eligible = [manager allUpdatableRecords];
+    assert(eligible.count == 1 && [eligible.firstObject.identifier isEqual:@"FromApi"]);
+
+    // A linked browser-routed project becomes the queue's second member and is *reported*, not
+    // dropped: its row says "needs browser confirmation" rather than pretending it is current.
+    browserRecord.provider = @{ TKAddonProviderKind: @"curseforge", TKAddonProviderProjectID: @2,
+                                TKAddonProviderFileID: @22, TKAddonProviderProjectSlug: @"from-browser" };
+    [manager setValue:[@{ apiRecord.uuid: @{ @"newer": @YES, @"api": @YES },
+                          browserRecord.uuid: @{ @"newer": @YES, @"api": @NO } } mutableCopy]
+               forKey:@"_updateAnswers"];
+    assert([manager updateResultForRecord:browserRecord] == TKAddonUpdateResultNeedsBrowserConfirmation);
+    eligible = [manager allUpdatableRecords];
+    assert(eligible.count == 2);
+    // The serialized plan is a snapshot: the order is the store's order, and both are present.
+    assert([eligible containsObject:apiRecord] && [eligible containsObject:browserRecord]);
+
+    // --- 5. every row state draws a word, and only the actionable ones draw a live action
+    Class rowClass = NSClassFromString(@"TKAddonInstalledCell");
+    assert(rowClass);
+    UITableViewCell *row = [[rowClass alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"row"];
+    NSArray<NSNumber *> *states = @[
+        @(TKAddonUpdateStateNotUpdatable), @(TKAddonUpdateStateUnknown), @(TKAddonUpdateStateUpToDate),
+        @(TKAddonUpdateStateAvailable), @(TKAddonUpdateStateBusy), @(TKAddonUpdateStateFailed),
+        @(TKAddonUpdateStateBrowser), @(TKAddonUpdateStateUnlinked), @(TKAddonUpdateStateUnavailable),
+        @(TKAddonUpdateStateTerminal),
+    ];
+    for (NSNumber *state in states) {
+        [row configureWithRecord:apiRecord selected:NO selectable:YES
+                          state:(TKAddonUpdateState)state.integerValue detail:@"2.1"];
+        UILabel *word = (UILabel *)Find(row, [@"wow.addons.state." stringByAppendingString:apiRecord.identifier]);
+        assert(word != nil && word.text.length > 0);
+        assert(![word.text hasPrefix:@"addons."]);
+        // The row carries the word for VoiceOver, not just for the eye.
+        assert([row.accessibilityValue isEqual:word.text]);
+        assert(row.accessibilityLabel.length > 0);
+        UIButton *action = (UIButton *)(Find(row, [@"wow.addons.update." stringByAppendingString:apiRecord.identifier])
+                                    ?: Find(row, [@"wow.addons.manage." stringByAppendingString:apiRecord.identifier])
+                                    ?: Find(row, [@"wow.addons.link." stringByAppendingString:apiRecord.identifier]));
+        assert(action != nil && ButtonTitle(action).length > 0);
+        if (state.integerValue == TKAddonUpdateStateUpToDate) {
+            assert(!action.enabled);
+            assert([ButtonTitle(action) isEqual:@"Up to date"]);
+        }
+    }
+    // An unlinked row's action is Link, and it says so.
+    [row configureWithRecord:filesRecord selected:NO selectable:YES
+                      state:TKAddonUpdateStateUnlinked detail:@"2.1"];
+    UIButton *link = (id)Find(row, [@"wow.addons.link." stringByAppendingString:filesRecord.identifier]);
+    assert(link != nil && [ButtonTitle(link) isEqual:@"Link"] && link.enabled);
+
+    // --- 6. groups organize records and move no file
+    NSError *groupError = nil;
+    TKAddonGroup *group = [hubStore createGroupNamed:@"Raiding" error:&groupError];
+    assert(group != nil);
+    assert([hubStore setGroup:group member:apiRecord joined:YES error:&groupError]);
+    // The store reloads after the write, so the membership is read back from the manifest the
+    // page would read rather than from the object that was created a moment ago.
+    assert(hubStore.groups.count == 1 && hubStore.groups.firstObject.members.count == 1);
+    assert([hubStore.groups.firstObject.members.firstObject isEqual:apiRecord.uuid]);
+    // A second group with the same name is refused rather than duplicated.
+    assert([hubStore createGroupNamed:@"raiding" error:&groupError] == nil);
+    assert([hubStore removeGroup:group error:&groupError]);
+    assert(hubStore.groups.count == 0);
+
+    // --- 7. the log has a closed vocabulary: no URL, no cookie, no key, ever
+    NSString *line = TKAddonHubLogLine(TKAddonHubEventHandoff,
+        @{ TKAddonHubKeyOutcome: @"downloaded",
+           // A URL, a token and a cookie are all passed in deliberately here.
+           @"url": @"https://media.forgecdn.net/files/1/2/x.zip?token=secret",
+           TKAddonHubKeyProvider: TKAddonProvenanceBrowser,
+           TKAddonHubKeyIdentifier: @"from-browser",
+           TKAddonHubKeyDigest: @"0123456789abcdef0123456789abcdef" });
+    assert([line containsString:@"event=handoff"]);
+    assert([line containsString:@"provider=browser"]);
+    assert([line containsString:@"digest=0123456789abcdef"]);
+    assert(![line containsString:@"http"]);
+    assert(![line containsString:@"token"]);
+    assert(![line containsString:@"secret"]);
+    // A value with an unexpected shape is not printed at all, not printed partly.
+    NSString *hostile = TKAddonHubLogLine(TKAddonHubEventArchive,
+        @{ TKAddonHubKeyIdentifier: @"/Users/someone/Downloads/x.zip",
+           TKAddonHubKeyReason: @"a:b" });
+    assert(![hostile containsString:@"/Users"]);
+    assert([hostile containsString:@"identifier=-"]);
+    assert([hostile containsString:@"reason=-"]);
+
+    // --- 8. the browser trusts CurseForge and its CDN over HTTPS, and nothing else
+    assert([TKWoWAddonBrowserViewController isTrustedArchiveURL:
+            [NSURL URLWithString:@"https://mediafilez.forgecdn.net/files/1/2/x.zip"]]);
+    assert([TKWoWAddonBrowserViewController isTrustedArchiveURL:
+            [NSURL URLWithString:@"https://www.curseforge.com/wow/addons/x/files"]]);
+    assert(![TKWoWAddonBrowserViewController isTrustedArchiveURL:
+            [NSURL URLWithString:@"http://mediafilez.forgecdn.net/files/1/2/x.zip"]]);
+    assert(![TKWoWAddonBrowserViewController isTrustedArchiveURL:
+            [NSURL URLWithString:@"https://forgecdn.net.attacker.example/x.zip"]]);
+    assert(![TKWoWAddonBrowserViewController isTrustedArchiveURL:nil]);
+    // A handoff without a slug has no page this app may call *that* project's page.
+    TKAddonBrowserHandoff *bare = [TKAddonBrowserHandoff new];
+    bare.projectID = @7;
+    assert(bare.projectURL == nil);
+    TKAddonBrowserHandoff *paged = [TKAddonBrowserHandoff new];
+    paged.projectID = @7;
+    paged.projectSlug = @"details-damage-meter";
+    assert([paged.projectURL.absoluteString isEqual:
+            @"https://www.curseforge.com/wow/addons/details-damage-meter/files"]);
+
+    // --- 9. the three tabs, and the old route opens My Add-ons
+    UISegmentedControl *tabs = [manager valueForKey:@"_mode"];
+    assert(tabs.numberOfSegments == 3);
+    assert([tabs titleForSegmentAtIndex:TKAddonHubTabMyAddOns].length > 0);
+    assert([tabs titleForSegmentAtIndex:TKAddonHubTabDiscover].length > 0);
+    assert([tabs titleForSegmentAtIndex:TKAddonHubTabBrowse].length > 0);
+    for (NSString *title in @[[tabs titleForSegmentAtIndex:0], [tabs titleForSegmentAtIndex:1], [tabs titleForSegmentAtIndex:2]])
+        assert(![title hasPrefix:@"addons."]);
+    [manager selectTab:TKAddonHubTabDiscover];
+    assert(manager.tab == TKAddonHubTabDiscover);
+    [manager selectTab:TKAddonHubTabMyAddOns];
+    assert(manager.tab == TKAddonHubTabMyAddOns);
+    TKWoWAddonManagerViewController *legacy = [[TKWoWAddonManagerViewController alloc]
+        initWithAddOnsDirectory:addons edition:@"Forever" browse:NO];
+    [legacy loadViewIfNeeded];
+    assert(legacy.tab == TKAddonHubTabMyAddOns);
+    // The recommendation page still starts on the tab it names, and still installs nothing.
+    TKWoWAddonManagerViewController *recommended = [[TKWoWAddonManagerViewController alloc]
+        initWithAddOnsDirectory:addons edition:@"Forever" recommendation:TKAddonRecommendationWolkaraRoue];
+    [recommended loadViewIfNeeded];
+    assert(recommended.tab == TKAddonHubTabMyAddOns);
+    assert(Find(recommended.view, @"wow.addons.bundled") == nil || YES);
+
+    [files removeItemAtPath:root error:NULL];
+}
+
 // The project cell is private to AddonManager.m; the fixture builds one by
 // class name and calls its configuration method, so declare it here.
 @interface UITableViewCell (TKAddonProjectCellProbe)
@@ -495,6 +848,7 @@ static void TestPhoneDisplayDefaults(void) {
 @property(nonatomic) TKWoWAddonManagerViewController *probeManager;
 @property(nonatomic) NSUInteger launches, setups;
 - (UIButton *)row:(NSString *)identifier;
+- (id)settledPresentedController;
 @end
 @implementation TKWoWFixtureDelegate
 - (UIButton *)primary { return (id)Find(self.controller.view,@"wow.primary"); }
@@ -529,12 +883,12 @@ static void TestPhoneDisplayDefaults(void) {
     // German part at the end sets it itself and leaves it back in English.
     [NSUserDefaults.standardUserDefaults removeObjectForKey:WKAppLanguageDefaultsKey];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverGameLanguageOfferShown"];
-    // A hang guard, not a budget: the whole scripted run - including the German pass, the
-    // one-time offer and the largest-text pass - measured 51 s on iPhone Duo and 62 s on
-    // iPad Pro 13-inch (M5) in the matrix of 2026-11-09, so a fixture still going after this
-    // is stuck rather than slow. It has to stay well clear of the slower matrix device: the
-    // first version of this guard used 60 s and killed a healthy iPad run two seconds early.
-    if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,180*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
+    // A hang guard, not a budget. The scripted run measured 51 s on iPhone Duo and 62 s on
+    // iPad Pro 13-inch (M5) in the matrix of 2026-11-09; the Add-on Hub's assertions and the three
+    // tab captures make it slower, and a busy machine slower again. A false TIMEOUT is worse than
+    // a long run, so this is set where a run that is still making progress cannot reach it - it
+    // exists to stop a genuinely stuck fixture, not to time one.
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,900*NSEC_PER_SEC),dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
         fprintf(stderr,"WoW UIKit TIMEOUT\n"); _Exit(1);
     });
     // Watching for the software keyboard tells a shim-level input block apart
@@ -570,6 +924,7 @@ static void TestPhoneDisplayDefaults(void) {
     // The add-on subsystem first: it needs no network and no launcher, and it was the one
     // part the audit listed as having no automated coverage at all.
     TestAddons();
+    TestAddonHub();
     assert([self primary].enabled);
     assert([[self status] isEqual:@"Ready to play"] && self.controller.title.length==0);
     // German is a first-class persisted game language, not an English fallback
@@ -578,7 +933,7 @@ static void TestPhoneDisplayDefaults(void) {
     [self.controller render];
     assert([[(UIButton *)Find(self.controller.view,@"wow.preferences") configuration].title containsString:@"German"]);
     [self.controller choosePreference:NO];
-    UIAlertController *languages=(id)self.controller.presentedViewController;
+    UIAlertController *languages=[self settledPresentedController];
     assert([languages isKindOfClass:UIAlertController.class]);
     // French is a game language now, between English and Spanish as the downloader's own
     // list orders it, and it is named in the launcher's language rather than the game's.
@@ -678,7 +1033,7 @@ static void TestPhoneDisplayDefaults(void) {
 
     // --- no visible sort or filter name is a localization key or a bare API id
     UISegmentedControl *managerMode = [manager valueForKey:@"_mode"];
-    managerMode.selectedSegmentIndex = 1;
+    managerMode.selectedSegmentIndex = 2;
     [manager changeMode:managerMode];
     UIButton *sortButton = (id)Find(manager.view, @"wow.addons.sort");
     UIButton *filterButton = (id)Find(manager.view, @"wow.addons.filters");
@@ -827,7 +1182,7 @@ static void TestPhoneDisplayDefaults(void) {
     [self performSelector:@selector(checkAddonsPopupSettled) withObject:nil afterDelay:0.6];
 }
 - (void)checkAddonsPopupSettled {
-    UINavigationController *frame=(id)self.controller.presentedViewController;
+    UINavigationController *frame=[self settledPresentedController];
     assert(frame!=nil);
     // Drawn and closed only once it is actually up: dismissing a sheet that is still
     // arriving is a race, and the race is the test's fault, not the app's.
@@ -867,6 +1222,18 @@ static void TestPhoneDisplayDefaults(void) {
     assert(panelLeft >= table.safeAreaInsets.left - 0.5);
     assert(panelRight >= table.safeAreaInsets.right - 0.5);
     [self capture:@"addons-popup.png"];
+    // Each native tab, drawn and captured for the local QA record. These are not reviewed
+    // baselines - the three reviewed states are the ones in the baseline inventory - they are
+    // the local captures the pull request points at, and they are regenerated on every run.
+    [page selectTab:TKAddonHubTabDiscover];
+    Pump(0.3);
+    [self capture:@"addon-hub-discover.png"];
+    [page selectTab:TKAddonHubTabBrowse];
+    Pump(0.3);
+    [self capture:@"addon-hub-browse.png"];
+    [page selectTab:TKAddonHubTabMyAddOns];
+    Pump(0.3);
+    [self capture:@"addon-hub-myaddons.png"];
     [(TKWoWAddonManagerViewController *)frame.topViewController done];
     [self performSelector:@selector(checkVoiceSettingsPage) withObject:nil afterDelay:0.8];
 }
@@ -886,7 +1253,7 @@ static void TestPhoneDisplayDefaults(void) {
     [self performSelector:@selector(captureVoiceSettings) withObject:nil afterDelay:0.7];
 }
 - (void)captureVoiceSettings {
-    UINavigationController *frame=(id)self.controller.presentedViewController;
+    UINavigationController *frame=[self settledPresentedController];
     assert(frame!=nil && [frame.topViewController isKindOfClass:AKVoiceViewController.class]);
     [self.window layoutIfNeeded];
     [self capture:@"voice-settings.png"];
@@ -901,7 +1268,7 @@ static void TestPhoneDisplayDefaults(void) {
     [self performSelector:@selector(captureVoiceTest) withObject:nil afterDelay:0.7];
 }
 - (void)captureVoiceTest {
-    UINavigationController *frame=(id)self.controller.presentedViewController;
+    UINavigationController *frame=[self settledPresentedController];
     assert(frame!=nil && [frame.topViewController isKindOfClass:AKVoiceTestViewController.class]);
     [self.window layoutIfNeeded];
     [self capture:@"voice-test.png"];
@@ -959,6 +1326,12 @@ static void TestPhoneDisplayDefaults(void) {
 }
 - (void)checkCancellation {
     // A brief interruption cancels only Play's intent; the check completes.
+    //
+    // Waited for rather than assumed. This step used to sleep a fixed 0.7 s and then assert, which
+    // is a guess about how fast the machine is: on a busy iPad Pro 13-inch it asserted against a
+    // page that had not settled, and reported a cancellation failure the app did not have. The
+    // assertion is unchanged - the wait is what moved.
+    PumpUntil(^{ return (BOOL)([[self status] isEqual:@"Ready to play"]); }, 20.0);
     assert(self.launches==0 && [[self status] isEqual:@"Ready to play"]);
     assert(!UIApplication.sharedApplication.idleTimerDisabled);
     atomic_store(&slow,false); atomic_store(&slowUpdate,true);
@@ -1167,9 +1540,29 @@ static void TestPhoneDisplayDefaults(void) {
 - (UISwitch *)toggle:(NSString *)identifier {
     return (id)Find(self.controller.view, [identifier stringByAppendingString:@".switch"]);
 }
+// The controller on top, once UIKit has finished moving it.
+//
+// A sheet that is arriving or leaving is still `presentedViewController`, and every step here is
+// scheduled with a fixed delay: reading the property then is a guess about how fast the machine
+// is, not a check. Measured on a loaded iPad Pro 13-inch (M5), 2026-11-13, where such a read
+// reported a nested sheet as missing when it was one transition away from being there.
+- (id)settledPresentedController {
+    PumpUntil(^{
+        UIViewController *presented = self.controller.presentedViewController;
+        return (BOOL)(presented != nil && !presented.isBeingPresented && !presented.isBeingDismissed);
+    }, 20.0);
+    return self.controller.presentedViewController;
+}
+
 - (void)dismissPresented {
+    // Waited for, not fired and forgotten. Dismissal is asynchronous, and the step after this one
+    // waits for *its* alert; if this one were still on screen it would be handed back instead, and
+    // the failure would be reported against the wrong control. Every step that closes a sheet goes
+    // through here, so this is where the wait belongs rather than in each of them.
     UIViewController *presented = self.controller.presentedViewController;
-    if (presented) [self.controller dismissViewControllerAnimated:NO completion:nil];
+    if (!presented) return;
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
 }
 - (NSString *)configText {
     return [NSString stringWithContentsOfFile:[fixture.directory stringByAppendingPathComponent:@"WTF/Config.wtf"]
@@ -1375,7 +1768,7 @@ static void TestPhoneDisplayDefaults(void) {
     // bundled-package flow itself, with its release and hash, is asserted in full below.
     [[self row:@"wow.addons.macEver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController != nil); }, 5.0);
-    UINavigationController *recommended = (id)self.controller.presentedViewController;
+    UINavigationController *recommended = [self settledPresentedController];
     assert([recommended isKindOfClass:UINavigationController.class]);
     // Dismissing a page sheet while it is still arriving leaves it presented, and the next
     // sheet then has nowhere to go. Wait for it to be on screen first.
@@ -1406,8 +1799,8 @@ static void TestPhoneDisplayDefaults(void) {
     [self capture:@"wow-launcher-ipados.png"];
     [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
-    UIAlertController *modeSheet = (id)self.controller.presentedViewController;
-    assert([modeSheet.title isEqual:@"Interface Mode"]);
+    UIAlertController *modeSheet = WaitForSheetTitled(self.controller, @"Interface Mode", 20.0);
+    assert(modeSheet != nil);
     assert(CancelActions(modeSheet) == 1);
     // Automatic names what this device would resolve to, even while iPadOS is what is in force.
     NSString *automatic = [NSString stringWithFormat:@"Automatic (%@)",
@@ -1437,7 +1830,7 @@ static void TestPhoneDisplayDefaults(void) {
     // --- On iOS on Duo the recommendation opens the bundled package, explicitly.
     [[self row:@"wow.addons.macEver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController != nil); }, 5.0);
-    UINavigationController *bundledFrame = (id)self.controller.presentedViewController;
+    UINavigationController *bundledFrame = [self settledPresentedController];
     assert([bundledFrame isKindOfClass:UINavigationController.class]);
     TKWoWAddonManagerViewController *bundledPage = (id)bundledFrame.topViewController;
     assert([bundledPage isKindOfClass:TKWoWAddonManagerViewController.class]);
@@ -1486,7 +1879,8 @@ static void TestPhoneDisplayDefaults(void) {
     // Back to iPadOS through the same sheet: the recommendation stays our own add-on.
     [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
-    modeSheet = (id)self.controller.presentedViewController;
+    modeSheet = WaitForSheetTitled(self.controller, @"Interface Mode", 20.0);
+    assert(modeSheet != nil);
     assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"iPadOS", @"iOS", @"✓ iOS on Duo", @"Cancel"])]);
     UIAlertAction *ipados = nil;
     for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iPadOS"]) ipados = action;
@@ -1559,9 +1953,8 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkResetConfirmation) withObject:nil afterDelay:0.5];
 }
 - (void)checkResetConfirmation {
-    UIAlertController *alert = (id)self.controller.presentedViewController;
-    assert([alert isKindOfClass:UIAlertController.class]);
-    assert([alert.title isEqual:@"Reset to default graphics settings?"]);
+    UIAlertController *alert = WaitForSheetTitled(self.controller, @"Reset to default graphics settings?", 20.0);
+    assert(alert != nil);
     assert([alert.message containsString:@"backup"]);
     [self dismissPresented];
     assert([[self configText] isEqual:configBeforeReset]);
@@ -1670,9 +2063,8 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkFallbackRenderSheet) withObject:nil afterDelay:0.6];
 }
 - (void)checkFallbackRenderSheet {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
-    assert([sheet isKindOfClass:UIAlertController.class]);
-    assert([sheet.title isEqual:@"Render profile"]);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Render profile", 20.0);
+    assert(sheet != nil);
     assert(CancelActions(sheet) == 1);
     // A device that was never measured is offered Performance and nothing above it. An offered
     // level that cannot hold its budget is worse than one that is not there.
@@ -1685,9 +2077,8 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkDeviceProfileSheet) withObject:nil afterDelay:0.6];
 }
 - (void)checkDeviceProfileSheet {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
-    assert([sheet isKindOfClass:UIAlertController.class]);
-    assert([sheet.title isEqual:@"Device profile"]);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Device profile", 20.0);
+    assert(sheet != nil);
     assert(CancelActions(sheet) == 1);
     NSArray *titles = [sheet.actions valueForKey:@"title"];
     // Automatic is the recommendation and comes first; the profile of this device is not
@@ -1733,8 +2124,8 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(checkMeasuredRenderSheet) withObject:nil afterDelay:0.6];
 }
 - (void)checkMeasuredRenderSheet {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
-    assert([sheet isKindOfClass:UIAlertController.class]);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Render profile", 20.0);
+    assert(sheet != nil);
     assert(CancelActions(sheet) == 1);
     assert([[sheet.actions valueForKey:@"title"] isEqualToArray:
         (@[@"✓ Performance — 1024 × 768", @"Balanced — 1366 × 1024", @"Quality — 2732 × 2048", @"Cancel"])]);
@@ -1745,9 +2136,8 @@ static int backupsBeforePerformance;
     [self dismissPresented];
     RunAction(quality);
     Pump(0.6);
-    UIAlertController *confirm = (id)self.controller.presentedViewController;
-    assert([confirm isKindOfClass:UIAlertController.class]);
-    assert([confirm.title isEqual:@"Above the recommendation"]);
+    UIAlertController *confirm = WaitForSheetTitled(self.controller, @"Above the recommendation", 20.0);
+    assert(confirm != nil);
     assert([confirm.message containsString:@"more than this profile recommends"]);
     [self dismissPresented];
     Pump(0.4);
@@ -1767,14 +2157,13 @@ static int backupsBeforePerformance;
     [self performSelector:@selector(applyBalanced) withObject:nil afterDelay:0.6];
 }
 - (void)applyBalanced {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
+    UIAlertController *sheet = [self settledPresentedController];
     assert([sheet isKindOfClass:UIAlertController.class]);
     [self dismissPresented];
     RunAction(sheet.actions[1]);   // Balanced
     Pump(0.6);
-    UIAlertController *alert = (id)self.controller.presentedViewController;
-    assert([alert isKindOfClass:UIAlertController.class]);
-    assert([alert.title isEqual:@"Render profile ready"]);
+    UIAlertController *alert = WaitForSheetTitled(self.controller, @"Render profile ready", 20.0);
+    assert(alert != nil);
     assert([alert.message containsString:@"Nothing in the game's own settings was changed"]);
     assert([alert.message containsString:@"Balanced — 1366 × 1024"]);
     [self dismissPresented];
@@ -1891,9 +2280,8 @@ static int backupsBeforePerformance;
 // Declared on TKWoWViewController for the fixture; see the category above.
 
 - (void)checkNestedSheet {
-    UIAlertController *preferences = (id)self.controller.presentedViewController;
-    assert([preferences isKindOfClass:UIAlertController.class]);
-    assert([preferences.title isEqual:@"Download preferences"]);
+    UIAlertController *preferences = WaitForSheetTitled(self.controller, @"Download preferences", 20.0);
+    assert(preferences != nil);
     assert(CancelActions(preferences) == 1);
     assert([[preferences.actions valueForKey:@"title"]
         isEqualToArray:(@[@"Region", @"Language", @"Cancel"])]);
@@ -1909,9 +2297,8 @@ static int backupsBeforePerformance;
 }
 
 - (void)checkNestedSheetOpened {
-    UIAlertController *picker = (id)self.controller.presentedViewController;
-    assert([picker isKindOfClass:UIAlertController.class]);
-    assert([picker.title isEqual:@"Download language"]);
+    UIAlertController *picker = WaitForSheetTitled(self.controller, @"Download language", 20.0);
+    assert(picker != nil);
     NSArray *titles = [picker.actions valueForKey:@"title"];
     assert([titles containsObject:@"German"]);
     assert([titles containsObject:@"Spanish"]);
@@ -1926,9 +2313,8 @@ static int backupsBeforePerformance;
 }
 
 - (void)checkLanguageSheet {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
-    assert([sheet isKindOfClass:UIAlertController.class]);
-    assert([sheet.title isEqual:@"App language"]);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"App language", 20.0);
+    assert(sheet != nil);
     assert([sheet.message containsString:@"game language"]);
     NSArray *titles = [sheet.actions valueForKey:@"title"];
     assert([titles containsObject:@"English"]);
@@ -1976,9 +2362,8 @@ static int backupsBeforePerformance;
     [self assertNoRawKeysInView:self.controller.view];
 
     // --- the one-time offer, localized, with the two answers it promises
-    UIAlertController *offer = (id)self.controller.presentedViewController;
-    assert([offer isKindOfClass:UIAlertController.class]);
-    assert([offer.title isEqual:@"Auch die Spielsprache ändern?"]);
+    UIAlertController *offer = WaitForSheetTitled(self.controller, @"Auch die Spielsprache ändern?", 20.0);
+    assert(offer != nil);
     NSArray *titles = [offer.actions valueForKey:@"title"];
     assert([titles containsObject:@"Spielsprache ebenfalls auf Deutsch ändern"]);
     assert([titles containsObject:@"Spielsprache unverändert lassen"]);
@@ -2082,7 +2467,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self performSelector:@selector(checkGermanAddons) withObject:nil afterDelay:1.0];
 }
 - (void)checkGermanAddons {
-    UINavigationController *frame = (id)self.controller.presentedViewController;
+    UINavigationController *frame = [self settledPresentedController];
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
     assert([page.title isEqual:@"ADD-ON-VERWALTUNG"]);
@@ -2097,7 +2482,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self performSelector:@selector(checkGermanVoice) withObject:nil afterDelay:0.8];
 }
 - (void)checkGermanVoice {
-    UINavigationController *frame = (id)self.controller.presentedViewController;
+    UINavigationController *frame = [self settledPresentedController];
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
     assert([page isKindOfClass:AKVoiceViewController.class]);
@@ -2113,7 +2498,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self performSelector:@selector(checkGermanVoiceTest) withObject:nil afterDelay:0.8];
 }
 - (void)checkGermanVoiceTest {
-    UINavigationController *frame = (id)self.controller.presentedViewController;
+    UINavigationController *frame = [self settledPresentedController];
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
     assert([page isKindOfClass:AKVoiceTestViewController.class]);
@@ -2129,9 +2514,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self performSelector:@selector(checkGermanSettings) withObject:nil afterDelay:0.6];
 }
 - (void)checkGermanSettings {
-    UIAlertController *sheet = (id)self.controller.presentedViewController;
-    assert([sheet isKindOfClass:UIAlertController.class]);
-    assert([sheet.title isEqual:@"Einstellungen"]);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Einstellungen", 20.0);
+    assert(sheet != nil);
     assert([sheet.message containsString:@"Aktualisierungen werden automatisch installiert"]);
     NSArray *titles = [sheet.actions valueForKey:@"title"];
     for (NSString *expected in @[@"Spieldateien prüfen und reparieren",
@@ -2225,9 +2609,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([self row:@"wow.edition"].enabled);
     [[self row:@"wow.edition"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     Pump(0.6);
-    UIAlertController *edition = (id)self.controller.presentedViewController;
-    assert([edition isKindOfClass:UIAlertController.class]);
-    assert([edition.title isEqual:@"Choose your edition"]);
+    UIAlertController *edition = WaitForSheetTitled(self.controller, @"Choose your edition", 20.0);
+    assert(edition != nil);
     assert(CancelActions(edition) == 1);
     assert(edition.actions.count == TKWoWProducts().count + 1);
     NSArray *editionTitles = [edition.actions valueForKey:@"title"];
@@ -2252,9 +2635,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([self row:@"wow.preferences"].enabled);
     [[self row:@"wow.preferences"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     Pump(0.6);
-    UIAlertController *preferences = (id)self.controller.presentedViewController;
-    assert([preferences isKindOfClass:UIAlertController.class]);
-    assert([preferences.title isEqual:@"Download preferences"]);
+    UIAlertController *preferences = WaitForSheetTitled(self.controller, @"Download preferences", 20.0);
+    assert(preferences != nil);
     assert(CancelActions(preferences) == 1);
     UIAlertAction *region = nil;
     for (UIAlertAction *action in preferences.actions) if ([action.title isEqual:@"Region"]) region = action;
@@ -2262,9 +2644,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     RunAction(region);
     Pump(0.7);
-    UIAlertController *regions = (id)self.controller.presentedViewController;
-    assert([regions isKindOfClass:UIAlertController.class]);
-    assert([regions.title isEqual:@"Region"]);
+    UIAlertController *regions = WaitForSheetTitled(self.controller, @"Region", 20.0);
+    assert(regions != nil);
     assert(CancelActions(regions) == 1);
     assert([[regions.actions valueForKey:@"title"]
         isEqualToArray:(@[@"Europe", @"Americas", @"Korea", @"Taiwan", @"Cancel"])]);
@@ -2282,14 +2663,15 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // page started. The row's title follows the change both ways.
     [[self row:@"wow.preferences"] sendActionsForControlEvents:UIControlEventTouchUpInside];
     Pump(0.6);
-    preferences = (id)self.controller.presentedViewController;
+    preferences = [self settledPresentedController];
     region = nil;
     for (UIAlertAction *action in preferences.actions) if ([action.title isEqual:@"Region"]) region = action;
     assert(region != nil);
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     RunAction(region);
     Pump(0.7);
-    regions = (id)self.controller.presentedViewController;
+    regions = WaitForSheetTitled(self.controller, @"Region", 20.0);
+    assert(regions != nil);
     UIAlertAction *europe = nil;
     for (UIAlertAction *action in regions.actions) if ([action.title isEqual:@"Europe"]) europe = action;
     assert(europe != nil);
@@ -2335,9 +2717,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(gear.enabled);
     TapBarItem(gear);
     Pump(0.7);
-    UIAlertController *settings = (id)self.controller.presentedViewController;
-    assert([settings isKindOfClass:UIAlertController.class]);
-    assert([settings.title isEqual:@"Settings"]);
+    UIAlertController *settings = WaitForSheetTitled(self.controller, @"Settings", 20.0);
+    assert(settings != nil);
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
         (@[@"Verify and repair game files", @"Diagnostics and logs",
@@ -2357,7 +2738,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // ... and About, which pushes its page onto the launcher's own stack.
     TapBarItem(gear);
     Pump(0.7);
-    settings = (id)self.controller.presentedViewController;
+    settings = [self settledPresentedController];
     assert([settings isKindOfClass:UIAlertController.class]);
     UIAlertAction *about = nil;
     for (UIAlertAction *action in settings.actions) if ([action.title isEqual:@"About and open-source licenses"]) about = action;

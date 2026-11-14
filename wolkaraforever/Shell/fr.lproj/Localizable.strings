@@ -653,6 +653,90 @@
 "shell.repairRequired.message" = "World of Warcraft n’a pas pu démarrer car les données installées sont endommagées. La réparation vérifie les fichiers du jeu, ne télécharge que les remplacements et conserve vos réglages et vos add-ons.\n\nErreur signalée : %@";
 "shell.repairRequired.action" = "Réparer les fichiers du jeu";
 
+/* Add-on Hub : les trois onglets natifs. */
+"addons.tab.myAddons" = "Mes add-ons";
+"addons.tab.discover" = "Découvrir";
+"addons.tab.browse" = "Parcourir";
+
+/* Add-on Hub : la provenance, en détail de diagnostic seulement. */
+"addons.source.api" = "API CurseForge";
+"addons.source.browser" = "Navigateur intégré";
+"addons.source.files" = "Import de fichier";
+"addons.source.unmanaged" = "Trouvé sur l’appareil";
+
+/* Add-on Hub : le mot unique qu’une ligne dit de sa mise à jour. */
+"addons.update.upToDate" = "À jour";
+"addons.update.available" = "Mise à jour disponible";
+"addons.update.checking" = "Vérification…";
+"addons.update.downloading" = "Téléchargement…";
+"addons.update.needsBrowser" = "Confirmation dans le navigateur requise";
+"addons.update.unlinked" = "Aucun projet lié";
+"addons.update.unavailable" = "Mise à jour indisponible";
+"addons.update.failedRetry" = "Échec de la vérification — réessayer";
+"addons.update.failedTerminal" = "Échec de la vérification";
+"addons.update.heldBack" = "Retenu";
+"addons.update.notChecked" = "Pas encore vérifié";
+"addons.update.cancelled" = "Annulé";
+"addons.update.browserQueued" = "%lu paquet(s) ont besoin de leur page de projet dans le navigateur. Leur ligne l’indique.";
+
+/* Add-on Hub : actions. */
+"addons.action.open" = "Ouvrir";
+"addons.action.link" = "Lier";
+"addons.action.cancel" = "Annuler";
+
+/* Add-on Hub : commandes de Mes add-ons. */
+"addons.myaddons.sort" = "Trier les add-ons";
+"addons.myaddons.sort.name" = "Nom";
+"addons.myaddons.sort.version" = "Version";
+"addons.myaddons.sort.update" = "État de mise à jour";
+"addons.myaddons.filter" = "Filtrer les add-ons";
+"addons.myaddons.filter.all" = "Tous";
+"addons.myaddons.filter.enabled" = "Activés";
+"addons.myaddons.filter.disabled" = "Désactivés";
+"addons.myaddons.filter.updatable" = "À mettre à jour";
+"addons.myaddons.filter.unlinked" = "Sans projet";
+
+/* Add-on Hub : groupes locaux. */
+"addons.group.create" = "Créer un groupe";
+"addons.group.button" = "Groupe";
+"addons.group.message" = "Un groupe ne fait qu’organiser les add-ons que vous avez déjà. Aucun fichier n’est déplacé.";
+"addons.group.placeholder" = "Nom du groupe";
+"addons.group.title" = "Groupes";
+"addons.group.none" = "Il n’y a pas encore de groupe. Créez-en un d’abord.";
+"addons.group.membership" = "Choisissez les groupes auxquels cet add-on appartient.";
+"addons.group.ungrouped" = "Dans aucun groupe";
+
+/* Add-on Hub : la ligne d’activité de la fiche de détail. */
+"addons.detail.route" = "Vient de : %@";
+"addons.detail.installed" = "Installé le %@";
+"addons.detail.checked" = "Dernière vérification le %@";
+
+/* Add-on Hub : lier un paquet à son projet. */
+"addons.link.title" = "Lier le projet";
+"addons.link.message" = "Choisissez le projet CurseForge que cet add-on est. Rien n’est déduit de son nom.";
+"addons.link.remove" = "Délier le projet";
+"addons.link.search" = "Rechercher sur CurseForge…";
+"addons.link.open" = "Ouvrir la page du projet";
+"addons.link.choose" = "Quel projet est cet add-on ?";
+"addons.link.noResults" = "Aucun projet correspondant. Rien n’a été lié.";
+
+/* Add-on Hub : le navigateur intégré. */
+"addons.browser.title" = "Page CurseForge";
+"addons.browser.loading" = "Chargement de la page du projet…";
+"addons.browser.downloading" = "Téléchargement du fichier…";
+"addons.browser.offline" = "La page du projet n’a pas pu être chargée. Vérifiez la connexion et réessayez.";
+"addons.browser.noPage" = "Cette app n’a pas de page de projet pour cet add-on. Liez d’abord le projet.";
+"addons.browser.untrusted" = "Ce téléchargement ne venait pas de CurseForge et a donc été refusé.";
+"addons.browser.failed" = "Le téléchargement ne s’est pas terminé. Rien n’a été installé.";
+"addons.browser.cancelled" = "Le navigateur a été fermé.";
+
+/* Add-on Hub : Découvrir. */
+"addons.discover.featured" = "En vedette";
+"addons.discover.latest" = "Nouveautés";
+"addons.discover.popular" = "Populaires";
+"addons.discover.empty" = "Il n’y a rien à découvrir pour cette version du jeu.";
+"addons.discover.hint" = "Actualiser interroge CurseForge à nouveau.";
+
 /* ---- Chat Composer ---- */
 "chat.composer.state.opening" = "Ouverture du chat…";
 "chat.composer.state.listening" = "Écoute…";

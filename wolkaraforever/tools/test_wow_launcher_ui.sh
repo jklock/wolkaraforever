@@ -13,6 +13,18 @@ cd build/platform
 # device that is not on the matrix is not a substitute, and the resolver says which device ran
 # because "the fixture passed" without a device name is a sentence nobody can check.
 simulator_use "${SIMULATOR:-ipad}"
+# One UI suite per simulator, enforced. Two suites on the same device install over each other's
+# app, take the foreground from each other and interleave their sheets; whatever runs second then
+# reports failures it does not have. Measured on 2026-11-13: a touch-controls suite launched on the
+# iPad while this one was mid-run, and this suite's fixture was pulled out from under it. Refusing
+# to start is honest; a bogus red lane is not.
+ui_lock="${TMPDIR:-/tmp}/wolkaraforever-ui-${SIM_ID}.lock"
+if ! mkdir "$ui_lock" 2>/dev/null; then
+    echo "test_wow_launcher_ui: another UI suite is using $SIM_NAME ($ui_lock)" >&2
+    echo "test_wow_launcher_ui: remove the lock only if no suite is running" >&2
+    exit 3
+fi
+trap 'rmdir "$ui_lock" 2>/dev/null || true' EXIT INT TERM
 xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/wow-launcher/WoWFixture.app
 mkdir -p "$APP"
@@ -28,7 +40,7 @@ xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-a
     launcher/Controller/ControllerInspector.m tests/test_wow_launcher_app.m \
     -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics \
     -framework Security -framework UniformTypeIdentifiers -framework GameController \
-    -framework AVFAudio -framework Speech -lz \
+    -framework AVFAudio -framework Speech -framework WebKit -lz \
     -o "$APP/WoWFixture"
 cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -165,7 +177,11 @@ done
 # Wait longer than that guard, so the verdict this loop sees is always the fixture's and
 # never this wrapper killing a healthy run: the iPad matrix device legitimately needs
 # about a minute, and the guard is 180 seconds.
-VERDICT_TIMEOUT=${VERDICT_TIMEOUT:-200}
+# How long the runner waits for the fixture's answer. The fixture carries its own hang guard and
+# prints TIMEOUT when it fires, and this loop breaks on that too - so this only has to outlast the
+# guard by enough that a slow machine is never killed here and reported as a failure it did not
+# have. A false timeout costs more than a long run.
+VERDICT_TIMEOUT=${VERDICT_TIMEOUT:-960}
 for _ in $(seq 1 "$VERDICT_TIMEOUT"); do
     if grep -qE 'WoW UIKit (PASS:|TIMEOUT)' "$LOG"; then break; fi
     sleep 1

@@ -42,6 +42,44 @@ dated history rather than current coverage.
 | Simulator | The launcher pages, touch controls, the on-screen gamepad, input/voice/config rules, the app language, and the UIKit-backed adapters | That our screens and adapters work against stand-ins. Nothing about physical Metal, the tunnel, or memory preparation. |
 | Device script | The on-device validation on an **iPad Pro (12.9-inch, 5th generation), iPadOS 27.0.1, Developer service mode**, at source revision `96133d9` - see note below: a guarded live-session install refusal, an authorized replacement after clean stop, existing game data still current, the app's own input, voice, and render-profile self-tests, and no active update write or current error file | That this build behaved that way on that iPad. Nothing about the game. |
 
+### Add-on Hub (2026-11-12)
+
+**Simulators, against a real installation tree.** `wolkaraforever/tools/test_addon_hub_live.sh`
+builds the production page (with the shipped Swift archive half) into a small app, fabricates the
+installation a player's own folder is - `World of Warcraft/_forever_` with `Interface/AddOns`,
+`WTF/Config.wtf`, `Data`, `Logs`, `Cache`, `Screenshots`, `Errors` and `.flavor.info`, and the
+client's own path as a placeholder file - and drives the hub on **iPhone Duo** and **iPad Pro
+13-inch (M5)**. It reported **42 passed, 0 failed** on the phone and **41 passed, 0 failed** on the
+iPad (the difference is one INFO line).
+
+What that proves, measured:
+
+- the page opens on that installation's `Interface/AddOns`, lists the folder already there as
+  found-on-device and unlinked, imports a real ZIP as a Files package with a digest and an install
+  time, discovers a folder written to disk, refuses to guess a project for either;
+- `Discover` and `Browse` are native tabs, and a package with no project reads as unlinked rather
+  than as up to date;
+- a real `WKWebView` loads `www.curseforge.com` and the site answers with a ~92-96 KB document, all
+  inside the app - the log records `event=handoff outcome=opened`; an archive request to another
+  host is refused live (`outcome=rejected reason=untrusted-host`) and installs nothing;
+- the launcher's own backup and restore carry `Interface/`, so a folder deleted by hand comes back
+  and the store reads its packages again;
+- the API key, when one is supplied, never appears in the log, and no `addon-hub` line contains a
+  URL.
+
+What is **not** covered here:
+
+- **No physical-iPad run.** The iPad Pro 12.9-inch (5th generation) was not available, and no
+  simulator result is presented as a physical one.
+- **The API half needs the player's own key.** No Core API key was configured in this environment,
+  so the live search, Discover's sections, an API install and an in-app browser download ran as
+  NOT RUN. The harness takes the key from `WK_LIVE_API_KEY` and asserts it never reaches the log;
+  until it is supplied, those four steps are fixture- and store-tested only.
+- **The page's pixels were not photographed.** WebKit renders in another process, so an in-process
+  capture shows the app's chrome and not the page, and this simulator's screen capture returned the
+  app's window as a blank frame. The page load is proven by the navigation, the document length and
+  the log, not by a picture of it.
+
 ### iPhone
 
 One physical iPhone has been exercised: an **iPhone 16 Pro Max on iOS 27.0**, Developer service,

@@ -653,6 +653,90 @@
 "shell.repairRequired.message" = "World of Warcraft could not start because its installed data is damaged. Repair verifies the game files, downloads only replacements, and keeps your settings and add-ons.\n\nReported error: %@";
 "shell.repairRequired.action" = "Repair game files";
 
+/* Add-on Hub: the three native tabs. */
+"addons.tab.myAddons" = "My Add-ons";
+"addons.tab.discover" = "Discover";
+"addons.tab.browse" = "Browse";
+
+/* Add-on Hub: the acquisition route, shown as diagnostic detail only. */
+"addons.source.api" = "CurseForge API";
+"addons.source.browser" = "In-app browser";
+"addons.source.files" = "Files import";
+"addons.source.unmanaged" = "Found on device";
+
+/* Add-on Hub: the one word a row says about its update. */
+"addons.update.upToDate" = "Up to date";
+"addons.update.available" = "Update available";
+"addons.update.checking" = "Checking…";
+"addons.update.downloading" = "Downloading…";
+"addons.update.needsBrowser" = "Needs browser confirmation";
+"addons.update.unlinked" = "No linked project";
+"addons.update.unavailable" = "Update unavailable";
+"addons.update.failedRetry" = "Check failed — retry";
+"addons.update.failedTerminal" = "Check failed";
+"addons.update.heldBack" = "Held back";
+"addons.update.notChecked" = "Not checked yet";
+"addons.update.cancelled" = "Cancelled";
+"addons.update.browserQueued" = "%lu package(s) need their project page in the browser. Their rows say so.";
+
+/* Add-on Hub: actions. */
+"addons.action.open" = "Open";
+"addons.action.link" = "Link";
+"addons.action.cancel" = "Cancel";
+
+/* Add-on Hub: My Add-ons controls. */
+"addons.myaddons.sort" = "Sort add-ons";
+"addons.myaddons.sort.name" = "Name";
+"addons.myaddons.sort.version" = "Version";
+"addons.myaddons.sort.update" = "Update state";
+"addons.myaddons.filter" = "Filter add-ons";
+"addons.myaddons.filter.all" = "All";
+"addons.myaddons.filter.enabled" = "Enabled";
+"addons.myaddons.filter.disabled" = "Disabled";
+"addons.myaddons.filter.updatable" = "Updates";
+"addons.myaddons.filter.unlinked" = "Unlinked";
+
+/* Add-on Hub: local groups. */
+"addons.group.create" = "Create Group";
+"addons.group.button" = "Group";
+"addons.group.message" = "A group only organizes the add-ons you already have. No file is moved.";
+"addons.group.placeholder" = "Group name";
+"addons.group.title" = "Groups";
+"addons.group.none" = "There are no groups yet. Create one first.";
+"addons.group.membership" = "Choose the groups this add-on belongs to.";
+"addons.group.ungrouped" = "Not in a group";
+
+/* Add-on Hub: the detail sheet's activity line. */
+"addons.detail.route" = "Came from %@";
+"addons.detail.installed" = "Installed %@";
+"addons.detail.checked" = "Last checked %@";
+
+/* Add-on Hub: linking a package to its project. */
+"addons.link.title" = "Link project";
+"addons.link.message" = "Choose the CurseForge project this add-on is. Nothing is inferred from its name.";
+"addons.link.remove" = "Unlink project";
+"addons.link.search" = "Search CurseForge…";
+"addons.link.open" = "Open the project page";
+"addons.link.choose" = "Which project is this add-on?";
+"addons.link.noResults" = "No matching project was found. Nothing was linked.";
+
+/* Add-on Hub: the in-app browser. */
+"addons.browser.title" = "CurseForge";
+"addons.browser.loading" = "Loading the project page…";
+"addons.browser.downloading" = "Downloading the file…";
+"addons.browser.offline" = "The project page could not be loaded. Check the connection and try again.";
+"addons.browser.noPage" = "This app has no project page for that add-on. Link the project first.";
+"addons.browser.untrusted" = "That download did not come from CurseForge, so it was refused.";
+"addons.browser.failed" = "The download did not finish. Nothing was installed.";
+"addons.browser.cancelled" = "The browser was closed.";
+
+/* Add-on Hub: Discover. */
+"addons.discover.featured" = "Featured";
+"addons.discover.latest" = "Latest";
+"addons.discover.popular" = "Popular";
+"addons.discover.empty" = "There is nothing to discover for this game version.";
+"addons.discover.hint" = "Refresh asks CurseForge again.";
+
 /* ---- Chat Composer ---- */
 "chat.composer.state.opening" = "Opening chat…";
 "chat.composer.state.listening" = "Listening…";

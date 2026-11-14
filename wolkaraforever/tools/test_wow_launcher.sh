@@ -51,3 +51,23 @@ xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
     launcher/WoW/DownloadStatus.m tests/test_wow_download_status.m \
     -o build/wow-launcher/test_wow_download_status
 build/wow-launcher/test_wow_download_status
+# The Add-on Hub's update resolver and its log line. Foundation only, and under the sanitizers:
+# this is the decision every row, the bulk run and the browser handoff read, and the one place a
+# value could reach the log that must never be there.
+for source in AddonStore AddonUpdateResolver AddonHubLog UpdateLock; do
+    xcrun clang -fobjc-arc -Wall -Wextra -Werror -Wno-deprecated-declarations -O1 -g \
+        -fsanitize=address,undefined -fno-omit-frame-pointer -c "launcher/WoW/$source.m" -o "build/wow-launcher/$source.o"
+done
+xcrun clang -fobjc-arc -Wall -Wextra -Werror -Wno-deprecated-declarations -O1 -g \
+    -fsanitize=address,undefined -fno-omit-frame-pointer -c launcher/App/WKLocalization.m \
+    -o build/wow-launcher/WKLocalization.o
+xcrun clang -fobjc-arc -Wall -Wextra -Werror -Wno-deprecated-declarations -O1 -g \
+    -fsanitize=address,undefined -fno-omit-frame-pointer -c launcher/App/WolkaraForeverLog.m \
+    -o build/wow-launcher/WolkaraForeverLog.o
+xcrun clang -fobjc-arc -Wall -Wextra -Werror -Wno-deprecated-declarations -O1 -g \
+    -fsanitize=address,undefined -fno-omit-frame-pointer -framework Foundation -Ilauncher/WoW \
+    tests/test_addon_resolver.m build/wow-launcher/AddonStore.o build/wow-launcher/AddonUpdateResolver.o \
+    build/wow-launcher/AddonHubLog.o build/wow-launcher/UpdateLock.o \
+    build/wow-launcher/WKLocalization.o build/wow-launcher/WolkaraForeverLog.o \
+    -o build/wow-launcher/test_addon_resolver
+build/wow-launcher/test_addon_resolver
