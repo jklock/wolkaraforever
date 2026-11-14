@@ -149,6 +149,17 @@ TKCurseForgeFileCandidate *TKCurseForgeChooseFile(NSArray *files, NSString *game
     NSURLSessionDataTask *task=[_session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *failure){NSHTTPURLResponse *http=(id)response;if(failure){completion(nil,failure);return;}if(http.statusCode<200||http.statusCode>=300){NSError *refusal=CFHTTPError(http.statusCode,data);TKAddonLog(@"GET %@ -> HTTP %ld: %@",path,(long)http.statusCode,refusal.localizedDescription);completion(nil,refusal);return;}id value=[NSJSONSerialization JSONObjectWithData:data options:0 error:&failure];if(![value isKindOfClass:NSDictionary.class]||failure){completion(nil,CFError(@"CurseForge returned invalid JSON."));return;}id payload=value[@"data"];if(!payload || payload == NSNull.null){completion(nil,CFError(@"CurseForge returned no data."));return;}completion(payload,nil);}];
     [task resume];
 }
+- (void)post:(NSString *)path body:(NSDictionary *)body completion:(TKCurseForgeCompletion)completion {
+    NSURL *url=[NSURL URLWithString:[BaseURL stringByAppendingString:path]]; if(!url){completion(nil,CFError(@"Invalid CurseForge API URL."));return;}
+    NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];
+    request.HTTPMethod=@"POST";
+    [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [request setValue:_key forHTTPHeaderField:@"x-api-key"];
+    request.HTTPBody=[NSJSONSerialization dataWithJSONObject:body options:0 error:NULL];
+    NSURLSessionDataTask *task=[_session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *failure){NSHTTPURLResponse *http=(id)response;if(failure){completion(nil,failure);return;}if(http.statusCode<200||http.statusCode>=300){NSError *refusal=CFHTTPError(http.statusCode,data);TKAddonLog(@"POST %@ -> HTTP %ld: %@",path,(long)http.statusCode,refusal.localizedDescription);completion(nil,refusal);return;}id value=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:NULL]:nil;if(![value isKindOfClass:NSDictionary.class]){completion(nil,CFError(@"CurseForge returned invalid JSON."));return;}id payload=value[@"data"];if(!payload || payload == NSNull.null){completion(nil,CFError(@"CurseForge returned no data."));return;}completion(payload,nil);}];
+    [task resume];
+}
 - (void)categoriesForGameID:(NSInteger)gameID completion:(TKCurseForgeCompletion)completion { [self get:[NSString stringWithFormat:@"/categories?gameId=%ld",(long)gameID] completion:completion]; }
 - (void)browseModsWithQuery:(NSString *)query sortField:(NSInteger)sortField sortOrder:(NSString *)sortOrder categoryID:(NSNumber *)categoryID index:(NSUInteger)index completion:(TKCurseForgeCompletion)completion {
     [self browseModsWithQuery:query sortField:sortField sortOrder:sortOrder categoryID:categoryID
@@ -170,6 +181,30 @@ TKCurseForgeFileCandidate *TKCurseForgeChooseFile(NSArray *files, NSString *game
         if (![value isKindOfClass:NSDictionary.class]) { completion(nil, CFError(@"CurseForge returned an invalid project.")); return; }
         completion(value, nil);
     }];
+}
+// Several projects in one request. The API's own batch endpoint takes up to 50 ids, so a page
+// of installed packages costs one round trip rather than one per row - the request that used
+// to be made from inside a table-view cell, which drew each picture only after a separate
+// fetch and could show none of them at all while the page was being scrolled.
+- (void)projectsForModIDs:(NSArray<NSNumber *> *)modIDs completion:(TKCurseForgeCompletion)completion {
+    NSMutableArray *ids=[NSMutableArray array];
+    for (NSNumber *modID in modIDs) if([modID isKindOfClass:NSNumber.class] && modID.longLongValue>0 && ![ids containsObject:modID]) [ids addObject:modID];
+    if(!ids.count){completion(@[],nil);return;}
+    NSMutableArray *batches=[NSMutableArray array];
+    for(NSUInteger start=0;start<ids.count;start+=50)
+        [batches addObject:[ids subarrayWithRange:NSMakeRange(start,MIN((NSUInteger)50,ids.count-start))]];
+    NSMutableArray *collected=[NSMutableArray array];
+    __block NSError *firstFailure=nil;
+    __block NSUInteger remaining=batches.count;
+    for(NSArray *batch in batches){
+        [self post:@"/mods" body:@{ @"modIds": batch } completion:^(id value,NSError *error){
+            if(error && !firstFailure) firstFailure=error;
+            if([value isKindOfClass:NSArray.class]) [collected addObjectsFromArray:value];
+            if(--remaining) return;
+            if(!collected.count && firstFailure){ completion(nil,firstFailure); return; }
+            completion(collected,nil);
+        }];
+    }
 }
 - (void)fetchFilesForModID:(NSNumber *)modID completion:(void (^)(NSArray *_Nullable files, NSError *_Nullable error))completion {
     [self get:[NSString stringWithFormat:@"/mods/%@/files?pageSize=50", modID] completion:^(id value, NSError *error) {

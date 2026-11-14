@@ -41,7 +41,12 @@ static NSArray<NSString *> *TKWolkaraForeverConfigKeys(void) {
              // The Chat Composer: its flag, the delivery mode a message takes, and the player's
              // own destinations. A destination list is a choice that costs time to retype, so it
              // belongs in the file like the dictionary and the mapping do.
-             @"AKChatComposerEnabled", @"AKChatDeliveryMode", @"AKChatDestinationsV1"];
+             @"AKChatComposerEnabled", @"AKChatDeliveryMode", @"AKChatDestinationsV1",
+             // The controller button a person is holding back from the game, per controller. It
+             // is a choice they made, so a config transfer that dropped it would silently undo
+             // it. The review of 2026-11-12 found exactly that: a key the voice layer writes and
+             // this allowlist did not know.
+             @"AKControllerClaims"];
 }
 
 // One mapping per controller, so the key carries an identity we cannot know in advance.
@@ -132,6 +137,10 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
             // controls would not accept.
             @"WolkaraForeverTouchLayoutV1": @{@"kind": @"arrangement"},
             @"WolkaraForeverProfilesV1": @{@"kind": @"arrangements"},
+            // Which controller button is held back from the game, per controller. Written
+            // by VoiceSettings and read back by it; here so it travels with the rest of
+            // the choices.
+            @"AKControllerClaims": @{@"kind": @"claims"},
         };
     });
     return schema;
@@ -260,6 +269,52 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
                                  @"enabled": @([TKWolkaraForeverConfig isBoolean:enabled] ? [enabled boolValue] : NO)}];
         }
         if (refused) WKLog("config", @"%lu destination(s) were refused and the rest kept", (unsigned long)refused);
+        return records;
+    }
+    if ([kind isEqualToString:@"claims"]) {
+        // The claim records VoiceSettings stores: one entry per controller, each holding the
+        // button it takes and whether it is taken. Only a button can be claimed, which is the
+        // same rule the voice layer applies when it writes a record; a record that does not
+        // name one is refused rather than carried as a claim nothing can honour.
+        if (![value isKindOfClass:NSDictionary.class]) { *problem = @"not a set of claims"; return nil; }
+        NSDictionary *object = value;
+        if (object.count > 8) { *problem = @"too many controllers"; return nil; }
+        NSMutableDictionary *records = [NSMutableDictionary dictionary];
+        for (id key in object) {
+            if (![key isKindOfClass:NSString.class] || ![(NSString *)key length] ||
+                [(NSString *)key length] > 96) { *problem = @"a controller's name is the wrong length"; return nil; }
+            id entry = object[key];
+            if (![entry isKindOfClass:NSDictionary.class]) { *problem = @"a claim is not a claim"; return nil; }
+            id element = ((NSDictionary *)entry)[@"element"];
+            if (![element isKindOfClass:NSString.class] || ![(NSString *)element hasPrefix:@"controller.button."] ||
+                [(NSString *)element length] > 96) { *problem = @"a claim names no button"; return nil; }
+            id claimed = ((NSDictionary *)entry)[@"claimed"];
+            records[key] = @{@"element": element,
+                             @"claimed": @([TKWolkaraForeverConfig isBoolean:claimed] ? [claimed boolValue] : NO)};
+        }
+        return records;
+    }
+    if ([kind isEqualToString:@"claims"]) {
+        // The claim records VoiceSettings stores: one entry per controller, each holding the
+        // button it takes and whether it is taken. Only a button can be claimed, which is the
+        // same rule the voice layer applies when it writes a record; a record that does not
+        // name one is refused rather than carried as a claim nothing can honour.
+        if (![value isKindOfClass:NSDictionary.class]) { *problem = @"not a set of claims"; return nil; }
+        NSDictionary *object = value;
+        if (object.count > 8) { *problem = @"too many controllers"; return nil; }
+        NSMutableDictionary *records = [NSMutableDictionary dictionary];
+        for (id key in object) {
+            if (![key isKindOfClass:NSString.class] || ![(NSString *)key length] ||
+                [(NSString *)key length] > 96) { *problem = @"a controller's name is the wrong length"; return nil; }
+            id entry = object[key];
+            if (![entry isKindOfClass:NSDictionary.class]) { *problem = @"a claim is not a claim"; return nil; }
+            id element = ((NSDictionary *)entry)[@"element"];
+            if (![element isKindOfClass:NSString.class] || ![(NSString *)element hasPrefix:@"controller.button."] ||
+                [(NSString *)element length] > 96) { *problem = @"a claim names no button"; return nil; }
+            id claimed = ((NSDictionary *)entry)[@"claimed"];
+            records[key] = @{@"element": element,
+                             @"claimed": @([TKWolkaraForeverConfig isBoolean:claimed] ? [claimed boolValue] : NO)};
+        }
         return records;
     }
     *problem = @"the rule for this key is not one we know";

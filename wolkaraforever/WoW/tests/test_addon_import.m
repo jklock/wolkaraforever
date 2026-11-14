@@ -60,11 +60,13 @@ int TestRealAddonImport(const char *fixtures, const char *temporary) {
         // --- provider identity is recorded, never inferred
         NSDictionary *identity = @{ @"kind": @"curseforge", @"projectID": @61284,
                                     @"fileID": @100, @"fileName": @"Fixture-1.zip",
-                                    @"version": @"1", @"compatibility": @"verified" };
+                                    @"version": @"1", @"compatibility": @"verified",
+                                    @"logo": @"https://media.forgecdn.net/avatars/fixture.png" };
         CHECK([store importZIPAtURL:zip provider:identity error:&error], "import records a provider identity");
         TKAddonRecord *owned = ManagedRecord(store);
         CHECK(owned.providerUpdatable, "a package with a CurseForge project and file is provider-updatable");
         CHECK([owned.provider[@"projectID"] isEqual:@61284], "the identity is the API's, not the folder's");
+        CHECK([owned.provider[@"logo"] isEqual:identity[@"logo"]], "the project thumbnail survives the manifest write");
         CHECK(owned.uuid.length > 0, "the package has a stable identity of its own");
         CHECK([owned.compatibility isEqual:@"verified"], "a TOC declaring Forever's interface is verified");
         // An add-on the user already had is displayed and left alone, and it is never treated

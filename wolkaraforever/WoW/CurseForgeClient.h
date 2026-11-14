@@ -72,6 +72,11 @@ FOUNDATION_EXPORT TKCurseForgeFileCandidate *_Nullable TKCurseForgeChooseFile(NS
 // result that happens to be named similarly. The reply is the API's own project object.
 - (void)projectForModID:(NSNumber *)modID completion:(TKCurseForgeCompletion)completion;
 
+// Several projects in one request, for artwork and names on a page of installed packages. The
+// reply is the API's own project objects, in the order the server returns them; ids the API
+// does not know are absent rather than an error. One round trip per 50 ids.
+- (void)projectsForModIDs:(NSArray<NSNumber *> *)modIDs completion:(TKCurseForgeCompletion)completion;
+
 // The file this build would install for a project.
 // A Forever-tagged, available file wins when there is one. When there is not, the newest
 // available file is offered with `TKCurseForgeCompatibilityUnverified` - it is no longer an

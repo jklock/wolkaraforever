@@ -1,10 +1,12 @@
 # Compatibility
 
-> **Current source review: 2026-11-05 · branch `liveupdates-11042026`.**
+> **Current source review: 2026-11-13 · `main` at `3c33543` (v1.0.17).**
 
 Compatibility is specific to a device model, its OS version, the WoW build, the execution
 mode, the account state, and the exact source revision. This page deliberately does not turn a past
-result into a broad support promise.
+result into a broad support promise. The headline above names the revision this page was last
+reviewed against; a section that records an older run says so in its own words, with its own
+revision.
 
 ## Current product boundary
 

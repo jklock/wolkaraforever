@@ -99,7 +99,8 @@ static NSDictionary *CleanProvider(NSDictionary *provider) {
     for (NSString *key in @[TKAddonProviderKind, TKAddonProviderProjectID, TKAddonProviderFileID,
                             TKAddonProviderFileName, TKAddonProviderVersion,
                             TKAddonProviderPublishedDate, TKAddonProviderCompatibility,
-                            TKAddonProviderProjectName, TKAddonProviderProjectSlug]) {
+                            TKAddonProviderProjectName, TKAddonProviderProjectSlug,
+                            @"logo"]) {
         id value = provider[key];
         if ([value isKindOfClass:NSString.class] && ((NSString *)value).length) copy[key] = value;
         else if ([value isKindOfClass:NSNumber.class]) copy[key] = value;
@@ -852,6 +853,52 @@ BOOL TKAddonProviderIsCurseForge(NSDictionary *provider) {
     @try { NSMutableArray *packages=[self mutablePackages];NSUInteger index=NSNotFound;NSDictionary *item=[self packageForRecord:record packages:packages index:&index];if(!item)return Fail(error,@"The package ownership record is missing.");NSString *base=[item[@"disabled"] boolValue]?[[_support stringByAppendingPathComponent:@"disabled"] stringByAppendingPathComponent:identifier]:_directory;[packages removeObjectAtIndex:index];if(![self writePackages:packages error:error])return NO;NSString *previous=[[_support stringByAppendingPathComponent:@"previous"] stringByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@",identifier,NSUUID.UUID.UUIDString]];if(![fm createDirectoryAtPath:previous withIntermediateDirectories:YES attributes:nil error:error])return Fail(error,@"Nothing was installed by that name any more. There was nothing to move; the folders are still in the add-on directory.");for(NSString *folder in record.folders){NSString *source=[base stringByAppendingPathComponent:folder];if([fm fileExistsAtPath:source]&&![fm moveItemAtPath:source toPath:[previous stringByAppendingPathComponent:folder] error:error])return Fail(error,@"The package is no longer managed, and its folders could not be set aside. They are still in the add-on directory; remove them by hand.");}NSString *keeping=previous.lastPathComponent,*root=previous.stringByDeletingLastPathComponent;for(NSString *name in [fm contentsOfDirectoryAtPath:root error:NULL])if([name hasPrefix:[identifier stringByAppendingString:@"-"]]&&![name isEqual:keeping])[fm removeItemAtPath:[root stringByAppendingPathComponent:name] error:NULL];success=YES;[self reload];return YES; } @finally { TKWoWReleaseUpdateLock(lock);if(!success)[self reload]; }
 }
 - (BOOL)setPinned:(BOOL)pinned record:(TKAddonRecord *)record error:(NSError **)error { if(!record.managed)return Fail(error,@"Only managed packages can be pinned.");int lock=[self lock:error];if(lock<0)return NO;BOOL success=NO;@try {NSMutableArray *packages=[self mutablePackages];NSUInteger index=NSNotFound;NSMutableDictionary *item=[[self packageForRecord:record packages:packages index:&index] mutableCopy];if(!item)return Fail(error,@"The package ownership record is missing.");item[@"pinned"]=@(pinned);packages[index]=item;if(![self writePackages:packages error:error])return NO;[self reload];success=YES;return YES;} @finally {TKWoWReleaseUpdateLock(lock);if(!success)[self reload];} }
+
+// The project's artwork, kept beside the identity the package already has.
+//
+// A package installed before thumbnails were recorded still names its project, so one batched
+// provider query can fill every missing picture without touching anything a row acts on: the
+// folders, the file identity and the update answer are left exactly as they were. Only the
+// artwork key changes, and it is never the source of a decision.
+- (BOOL)setProviderArtwork:(NSString *)logoURLString record:(TKAddonRecord *)record
+                     error:(NSError **)error {
+    if (![logoURLString isKindOfClass:NSString.class] || !logoURLString.length)
+        return Fail(error, @"There is no artwork URL to keep.");
+    int lock=[self lock:error]; if(lock<0) return NO; BOOL success=NO;
+    @try {
+        NSMutableArray *packages=[self mutablePackages];
+        NSUInteger index=NSNotFound;
+        NSMutableDictionary *item=[[self packageForRecord:record packages:packages index:&index] mutableCopy];
+        if(item){
+            NSMutableDictionary *provider=[item[@"provider"] isKindOfClass:NSDictionary.class]
+                ? [item[@"provider"] mutableCopy] : [NSMutableDictionary dictionary];
+            provider[@"logo"]=logoURLString;
+            item[@"provider"]=provider;
+            packages[index]=item;
+            if(![self writePackages:packages error:error])return NO;
+            [self reload];success=YES;return YES;
+        }
+        // A folder this store does not own keeps its identity in the link table beside the
+        // ownership records, so its artwork belongs there too. Only the artwork key changes:
+        // the link, the project and the folder stay exactly as the player left them.
+        NSMutableArray *links=[self mutableLinks];
+        NSUInteger existing=NSNotFound;
+        for (NSUInteger i=0;i<links.count;i++) {
+            if (![links[i] isKindOfClass:NSDictionary.class]) continue;
+            if ((record.uuid.length && [links[i][@"uuid"] isEqual:record.uuid]) ||
+                [links[i][@"folder"] isEqual:record.identifier]) { existing=i; break; }
+        }
+        if(existing==NSNotFound) return Fail(error,@"That add-on has no linked project to keep artwork for.");
+        NSMutableDictionary *link=[links[existing] mutableCopy];
+        NSMutableDictionary *provider=[link[@"provider"] isKindOfClass:NSDictionary.class]
+            ? [link[@"provider"] mutableCopy] : [NSMutableDictionary dictionary];
+        provider[@"logo"]=logoURLString;
+        link[@"provider"]=provider;
+        links[existing]=link;
+        if(![self writeLinks:links packages:packages error:error])return NO;
+        [self reload];success=YES;return YES;
+    } @finally {TKWoWReleaseUpdateLock(lock);if(!success)[self reload];}
+}
 
 #pragma mark - Source linking
 

@@ -57,17 +57,40 @@ UIButton *WKRowButton(NSString *identifier) {
 // Twenty attempts of a tenth of a second is several times the longest dismissal UIKit has; a
 // page still up after that is one the person opened, and putting ours over it would be the wrong
 // answer anyway.
+//
+// "Free" is not only "nothing presented". UIKit balances its own appearance bookkeeping per
+// transition, and a presentation started while the presenter is still arriving (or leaving)
+// produces "Unbalanced calls to begin/end appearance transitions". That is exactly what the
+// Add-on Hub did on 2026-11-12 when the in-app browser was opened from a page sheet that was
+// still coming in, so the wait now names every state that means "a transition is in flight".
+static BOOL WKSettled(UIViewController *controller) {
+    // Deliberately not "is its view in a window": a fixture builds pages without one and asks
+    // them to present, and refusing there would break the very checks that keep this honest.
+    //
+    // Nor is the transition coordinator consulted. UIKit keeps one around for a page that is
+    // merely hosted in a navigation stack, and waiting on it stopped every prompt from ever
+    // appearing - measured on 2026-11-13, when the launcher fixture hung on the first alert it
+    // expected. What is waited for is the presenter's *own* appearance transition, which is the
+    // state that unbalances UIKit's begin/end calls. A page inside a presented navigation
+    // controller is arriving when that controller is, so both are asked.
+    if (controller.presentedViewController) return NO;
+    if (controller.isBeingPresented || controller.isBeingDismissed) return NO;
+    UINavigationController *frame=controller.navigationController;
+    if (frame && (frame.isBeingPresented || frame.isBeingDismissed)) return NO;
+    return YES;
+}
+
 static void WKPresentWhenFreeAfter(UIViewController *controller, void (^presentation)(void),
                                    NSInteger attempts) {
     if (!controller) return;
-    if (!controller.presentedViewController) { presentation(); return; }
+    if (WKSettled(controller)) { presentation(); return; }
     if (attempts<=0) {
-        WKLog("ui", @"not presenting over %@: it is still presented",
-              NSStringFromClass(controller.presentedViewController.class));
+        WKLog("ui", @"not presenting over %@: it is still on its way in or out",
+              NSStringFromClass(controller.presentedViewController.class ?: controller.class));
         return;
     }
     __weak UIViewController *weakController=controller;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.1*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.05*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
         WKPresentWhenFreeAfter(weakController, presentation, attempts-1);
     });
 }

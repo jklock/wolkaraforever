@@ -32,6 +32,11 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateResult) {
     TKAddonUpdateResultFailedRetryable,
     // The check failed in a way a second attempt cannot fix: a rejected key, a gone project.
     TKAddonUpdateResultFailedTerminal,
+    // No check has answered for this package yet - often because there is no API key, or because
+    // the sweep has not reached it. This is a named state with its own word and its own action,
+    // and it is deliberately *not* `Checking`: a row that says "Checking…" while nothing is on
+    // the wire is the lie this value exists to end.
+    TKAddonUpdateResultNotChecked,
 };
 
 // The facts a decision is made from. Every one of them is something a caller knows for certain;
@@ -47,6 +52,9 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateResult) {
 @property(nonatomic) BOOL browserRoutable;
 // A check has answered for this package.
 @property(nonatomic) BOOL answered;
+// No check has answered and no request is in flight: ask again is the honest offer, and it is
+// not the same thing as waiting. An unlinked package is still unlinked, not unanswered.
+@property(nonatomic) BOOL pending;
 // What that answer said. Only meaningful when `answered` is YES.
 @property(nonatomic) BOOL newerFileExists;
 @property(nonatomic) BOOL installedFileIsCurrent;
@@ -71,6 +79,11 @@ FOUNDATION_EXPORT TKAddonUpdateResult TKAddonUpdateResultForStoredValue(NSString
 // The localization key for the row's own word, e.g. `addons.update.state.upToDate`. Every
 // visible sentence about an update comes from here, so no caller invents its own.
 FOUNDATION_EXPORT NSString *TKAddonUpdateTitleKey(TKAddonUpdateResult result);
+
+// A stable, language-free name for every state, including the ones with no stored form. The log
+// uses this: printing the stored value meant every transient state came out as the same word, so
+// a sweep that resolved nothing looked identical to one that was still working.
+FOUNDATION_EXPORT NSString *TKAddonUpdateName(TKAddonUpdateResult result);
 
 // YES when tapping the row's action should start work (an update, a retry, or a browser
 // handoff). NO when the action is a statement rather than a control.
