@@ -47,7 +47,7 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS on Duo";
-"home.launcher.interfaceSetup.row" = "Edit Controller Layout…";
+"home.launcher.interfaceSetup.row" = "Edit Controller Layout";
 "home.launcher.interfaceSetup.title" = "Controller Layout";
 /* The three rows that used to be inside the one Controller Layout sheet. */
 "home.launcher.layout.create" = "Create Controller Layout";

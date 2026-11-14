@@ -80,6 +80,11 @@ FOUNDATION_EXPORT TKAddonUpdateResult TKAddonUpdateResultForStoredValue(NSString
 // visible sentence about an update comes from here, so no caller invents its own.
 FOUNDATION_EXPORT NSString *TKAddonUpdateTitleKey(TKAddonUpdateResult result);
 
+// A stable, language-free name for every state, including the ones with no stored form. The log
+// uses this: printing the stored value meant every transient state came out as the same word, so
+// a sweep that resolved nothing looked identical to one that was still working.
+FOUNDATION_EXPORT NSString *TKAddonUpdateName(TKAddonUpdateResult result);
+
 // YES when tapping the row's action should start work (an update, a retry, or a browser
 // handoff). NO when the action is a statement rather than a control.
 FOUNDATION_EXPORT BOOL TKAddonUpdateIsActionable(TKAddonUpdateResult result);

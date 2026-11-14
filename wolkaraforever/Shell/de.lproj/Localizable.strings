@@ -47,7 +47,7 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS auf dem Duo";
-"home.launcher.interfaceSetup.row" = "Steuerungslayout bearbeiten…";
+"home.launcher.interfaceSetup.row" = "Steuerungslayout bearbeiten";
 "home.launcher.interfaceSetup.title" = "Steuerungslayout";
 /* Die drei Zeilen, die früher in einem einzigen Blatt versteckt waren. */
 "home.launcher.layout.create" = "Steuerungslayout anlegen";

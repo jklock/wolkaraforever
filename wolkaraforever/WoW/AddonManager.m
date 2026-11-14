@@ -10,6 +10,9 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 static NSString *const TKForeverGameVersion=@"1.60.1";
+// The artwork URL, stored with a record's provider identity. Local to this page: it is a
+// presentation detail, and the manifest just carries it as one more string in the dictionary.
+static NSString *const TKAddonProviderLogo=@"logo";
 
 // A record's acquisition route as a person reads it. The stored word is contract - the store
 // writes it and the log repeats it - so only the words beside it are translated. An unknown one
@@ -413,11 +416,12 @@ static UIImage *TKAddonPlaceholderIcon(void) {
 // out, and the link sheet for a package that has no project identity yet.
 @property (nonatomic, copy, nullable) void (^onBrowser)(void);
 @property (nonatomic, copy, nullable) void (^onLink)(void);
-@property (nonatomic, readonly) UIButton *checkbox;
-@property (nonatomic, readonly) UIButton *updateButton;
+- (UIButton *)checkbox;
+- (UIButton *)updateButton;
 - (void)configureWithRecord:(TKAddonRecord *)record selected:(BOOL)selected
-                   selectable:(BOOL)selectable state:(TKAddonUpdateState)state
-                       detail:(NSString *)detail;
+                 selectable:(BOOL)selectable state:(TKAddonUpdateState)state
+                     detail:(NSString *)detail
+                       logo:(nullable NSString *)logoURLString;
 @end
 
 @implementation TKAddonInstalledCell {
@@ -506,11 +510,29 @@ static UIImage *TKAddonPlaceholderIcon(void) {
 }
 - (void)configureWithRecord:(TKAddonRecord *)record selected:(BOOL)selected
                    selectable:(BOOL)selectable state:(TKAddonUpdateState)state
-                       detail:(NSString *)detail {
+                       detail:(NSString *)detail
+                        logo:(NSString *)logoURLString {
     NSString *identifier=record.identifier ?: @"";
     self.accessibilityIdentifier=[@"wow.addons.installed." stringByAppendingString:identifier];
     _titleLabel.text=record.name ?: identifier;
     _detailLabel.text=detail ?: @"";
+    // The project's own artwork, when the record carries the URL for it. The placeholder is
+    // what a row shows until then; a row that never got one used to show the placeholder for
+    // ever, because nothing ever asked for it.
+    _iconView.image=TKAddonPlaceholderIcon();
+    _iconView.tintColor=[UIColor colorWithWhite:0.55 alpha:1];
+    if (logoURLString.length) {
+        __weak TKAddonInstalledCell *weakSelf=self;
+        NSString *wanted=logoURLString.copy;
+        [[TKAddonIconLoader shared] imageForURLString:wanted completion:^(UIImage *image) {
+            TKAddonInstalledCell *self=weakSelf;
+            if (!self || ![self->_iconView.accessibilityIdentifier isEqual:wanted]) return;
+            if (image) { self->_iconView.image=image; self->_iconView.tintColor=nil; }
+        }];
+        _iconView.accessibilityIdentifier=wanted;
+    } else {
+        _iconView.accessibilityIdentifier=nil;
+    }
     _checkbox.hidden=!selectable;
     _checkbox.selected=selectable && selected;
     UIImage *mark=[UIImage systemImageNamed:_checkbox.selected?@"checkmark.square.fill":@"square"];
@@ -574,15 +596,6 @@ static UIImage *TKAddonPlaceholderIcon(void) {
             _updateButton.accessibilityIdentifier=[@"wow.addons.update." stringByAppendingString:identifier];
             [_updateButton setTitle:WKLocalized(@"addons.action.unavailable") forState:UIControlStateNormal];
             _updateButton.enabled=NO;
-            break;
-        case TKAddonUpdateStateNotChecked:
-            // Nothing has asked the provider about this package. The row says so and offers the
-            // check, rather than sitting on "Updating…" with nothing running - the state the
-            // installed list was seen in on 2026-11-13.
-            stateKey=@"addons.update.notChecked";
-            _updateButton.accessibilityIdentifier=[@"wow.addons.check." stringByAppendingString:identifier];
-            [_updateButton setTitle:WKLocalized(@"addons.action.check") forState:UIControlStateNormal];
-            _updateButton.enabled=YES;
             break;
         case TKAddonUpdateStateNotUpdatable:
         case TKAddonUpdateStateUnknown:
@@ -836,6 +849,9 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 @property(nonatomic) NSString *discoverStatus;
 @property(nonatomic) BOOL discoverLoading;
 @property(nonatomic) UIButton *createGroupButton, *installedFilterButton, *installedSortButton;
+// Packages whose artwork has already been asked for, so a row that has none does not send a
+// request every time the table reloads.
+@property(nonatomic) NSMutableSet<NSString *> *logoRequests;
 @property(nonatomic) TKAddonHubTab tab;
 @property(nonatomic) NSUInteger updateGeneration;
 @property(nonatomic) BOOL checkingUpdates;
@@ -1273,8 +1289,6 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     } else if (tab==TKAddonHubTabDiscover) {
         [self fetchDiscover];
     } else {
-        // My Add-ons: reread the folder and ask the provider about every linked package. This
-        // is the check the page exists for, and it runs because a person opened this tab.
         [self reloadAddons];
         [self checkForUpdates];
     }
@@ -1509,7 +1523,57 @@ static NSString *BrowseSortLabel(NSInteger field) {
     if ([file[@"fileDate"] isKindOfClass:NSString.class]) identity[TKAddonProviderPublishedDate]=file[@"fileDate"];
     identity[TKAddonProviderCompatibility]=compatibility==TKCurseForgeCompatibilityVerified
         ? TKAddonCompatibilityVerified : TKAddonCompatibilityUnverified;
+    // The project's artwork, kept with the identity so the installed row can draw it. The row
+    // had an icon view that nothing ever filled, which is why My Add-ons showed a grey
+    // placeholder for every package.
+    NSString *logo=[self thumbnailURLStringForProject:project];
+    if (logo.length) identity[TKAddonProviderLogo]=logo;
+    if ([project[@"name"] isKindOfClass:NSString.class]) identity[TKAddonProviderProjectName]=project[@"name"];
+    if ([project[@"slug"] isKindOfClass:NSString.class]) identity[TKAddonProviderProjectSlug]=project[@"slug"];
     return identity;
+}
+
+// The artwork URL a project result carries, thumbnail first.
+- (nullable NSString *)thumbnailURLStringForProject:(NSDictionary *)project {
+    NSDictionary *logo=[project[@"logo"] isKindOfClass:NSDictionary.class]?project[@"logo"]:nil;
+    NSString *thumbnail=[logo[@"thumbnailUrl"] isKindOfClass:NSString.class]?logo[@"thumbnailUrl"]:nil;
+    if (thumbnail.length) return thumbnail;
+    NSString *full=[logo[@"url"] isKindOfClass:NSString.class]?logo[@"url"]:nil;
+    return full.length?full:nil;
+}
+
+// The artwork for an installed row. A package installed before this field existed has none, so
+// the first time such a row is drawn the project is asked for once and the answer is kept with
+// the record; the request never repeats for that package.
+- (nullable NSString *)logoURLStringForRecord:(TKAddonRecord *)record {
+    NSString *stored=record.provider[TKAddonProviderLogo];
+    if ([stored isKindOfClass:NSString.class] && stored.length) return stored;
+    NSNumber *projectID=record.provider[TKAddonProviderProjectID];
+    NSString *apiKey=[_credentials curseForgeKey:NULL];
+    NSString *key=record.uuid ?: record.identifier;
+    if (![projectID isKindOfClass:NSNumber.class] || !apiKey.length || !key) return nil;
+    if (!_logoRequests) _logoRequests=[NSMutableSet new];
+    if ([_logoRequests containsObject:key]) return nil;
+    [_logoRequests addObject:key];
+    TKCurseForgeClient *client=[[TKCurseForgeClient alloc] initWithAPIKey:apiKey];
+    __weak TKWoWAddonManagerViewController *weakSelf=self;
+    [client projectForModID:projectID completion:^(id value, NSError *failure) {
+        (void)failure;
+        NSString *logo=[value isKindOfClass:NSDictionary.class]
+            ? [weakSelf thumbnailURLStringForProject:value] : nil;
+        if (!logo.length) return;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            TKWoWAddonManagerViewController *self=weakSelf;
+            if (!self) return;
+            // Kept on the record the page is drawing, so the row draws it from now on and the
+            // request is not repeated for this package while the page is open.
+            NSMutableDictionary *identity=[NSMutableDictionary dictionaryWithDictionary:record.provider ?: @{}];
+            identity[TKAddonProviderLogo]=logo;
+            record.provider=identity;
+            [self.tableView reloadData];
+        });
+    }];
+    return nil;
 }
 
 - (void)installMod:(NSDictionary *)entry {
@@ -1733,10 +1797,6 @@ static NSString *BrowseSortLabel(NSInteger field) {
     facts.linked=record.linked;
     facts.checking=[_checkingPackages containsObject:key];
     facts.downloading=[_downloadingPackages containsObject:key];
-    // Nothing has answered and nothing is in flight: the row's honest answer is "not checked
-    // yet", and its action is to ask.
-    facts.pending=!_updateAnswers[key] && !_updateFailures[key] &&
-        !facts.checking && !facts.downloading;
     NSString *failure=_updateFailures[key];
     facts.failedRetryable=[failure isEqual:@"retryable"];
     facts.failedTerminal=[failure isEqual:@"terminal"];
@@ -1776,8 +1836,11 @@ static NSString *BrowseSortLabel(NSInteger field) {
         case TKAddonUpdateResultUnavailableNoCompatibleFile: return TKAddonUpdateStateUnavailable;
         case TKAddonUpdateResultFailedRetryable: return TKAddonUpdateStateFailed;
         case TKAddonUpdateResultFailedTerminal: return TKAddonUpdateStateTerminal;
-        // Never asked. Its own row state, so the row offers the check instead of claiming one.
-        case TKAddonUpdateResultNotChecked: return TKAddonUpdateStateNotChecked;
+        // No check has answered for this package. It is not busy and must not read as busy:
+        // the row says "Not checked yet" and offers Manage, which is truthful. This is the
+        // whole of the 2026-11-13 fix - the list used to sit on "Updating…" forever because
+        // this case did not exist and the resolver answered Checking for it.
+        case TKAddonUpdateResultNotChecked: return TKAddonUpdateStateUnknown;
     }
     return TKAddonUpdateStateUnknown;
 }
@@ -1846,18 +1909,8 @@ static NSString *BrowseSortLabel(NSInteger field) {
     }
     NSString *key=[_credentials curseForgeKey:NULL];
     if (!key.length) {
-        // No key: the sweep cannot ask anything, so every linked package keeps its honest
-        // answer - "Not checked yet" with a Check action - instead of being left on the word
-        // "Checking…" that nothing is backing up. This is what the installed list showed on
-        // 2026-11-13 when the row state and the work had drifted apart.
         TKAddonHubLog(TKAddonHubEventUpdate, @{ TKAddonHubKeyOutcome: @"skipped",
             TKAddonHubKeyReason: @"no-api-key" });
-        for (TKAddonRecord *record in _store.records) {
-            [_checkingPackages removeObject:record.uuid ?: record.identifier];
-        }
-        _checkingUpdates=NO;
-        _updateQueue=nil;
-        _updateClient=nil;
         [self.tableView reloadData];
         [self updateToolbar];
         return;
@@ -1872,6 +1925,9 @@ static NSString *BrowseSortLabel(NSInteger field) {
     }
     if (!candidates.count) { [self.tableView reloadData]; return; }
     _checkingUpdates=YES;
+    // A new sweep starts from a clean in-flight set. Anything the previous sweep had not finished
+    // is dropped here, where it belongs, instead of lingering on as a row that says it is busy.
+    [_checkingPackages removeAllObjects];
     _updateQueue=candidates;
     _updateClient=[[TKCurseForgeClient alloc] initWithAPIKey:key];
     _updateGeneration+=1;
@@ -1916,7 +1972,13 @@ static NSString *BrowseSortLabel(NSInteger field) {
         dispatch_async(dispatch_get_main_queue(), ^{
             TKWoWAddonManagerViewController *self=weakSelf;
             if (!self) return;
-            if (generation != self->_updateGeneration) { self->_checkingUpdates=NO; return; }
+            if (generation != self->_updateGeneration) {
+                // A newer sweep owns the in-flight set. Dropping this answer must not touch it:
+                // clearing `_checkingUpdates` here stopped the *new* sweep dead and left every
+                // package marked as checking, which is why My Add-ons could sit on "Updating…"
+                // with nothing running and why Update All found nothing eligible (2026-11-13).
+                return;
+            }
             [self.checkingPackages removeObject:recordKey];
             if (error) {
                 // A rejected key or a missing project will not fix itself; a network or a rate
@@ -1931,22 +1993,24 @@ static NSString *BrowseSortLabel(NSInteger field) {
             } else {
                 NSNumber *newest=candidate.file[@"id"];
                 BOOL current=[newest isKindOfClass:NSNumber.class] && [newest isEqual:currentFile];
-                // `downloadUrl` present, or an API answer that is not a 403, is what makes the
-                // archive obtainable here. A file the API lists without a URL is the project
-                // saying "not through the API", which is the browser's job.
-                NSString *carried=[candidate.file[@"downloadUrl"] isKindOfClass:NSString.class]
-                    ? candidate.file[@"downloadUrl"] : nil;
+                // A file the API lists is a file this app can fetch: CurseForge normally omits
+                // `downloadUrl` from the file object and expects the download-url endpoint,
+                // which -installCandidate: already calls. Reading a missing URL as "the author
+                // will not distribute it" made every package resolve to Unavailable, so no row
+                // offered Update and Update All found nothing eligible (2026-11-13). The
+                // endpoint's own refusal, if it comes, is a real failure and shows as Retry.
+                BOOL obtainable=[newest isKindOfClass:NSNumber.class];
                 self.updateAnswers[recordKey]=@{ @"newer": @(!current), @"current": @(current),
-                                                 @"api": @(carried.length>0) };
+                                                 @"api": @(obtainable) };
                 [self.updateFailures removeObjectForKey:recordKey];
-                if (!current && carried.length && [candidate.file isKindOfClass:NSDictionary.class])
+                if (!current && obtainable && [candidate.file isKindOfClass:NSDictionary.class])
                     self.updateCandidates[recordKey]=candidate.file;
                 else [self.updateCandidates removeObjectForKey:recordKey];
             }
             self.updateResults[recordKey]=@([self updateResultForRecord:record]);
             TKAddonHubLog(TKAddonHubEventUpdate, @{ TKAddonHubKeyOutcome: @"checked",
                 TKAddonHubKeyIdentifier: record.identifier,
-                TKAddonHubKeyState: TKAddonUpdateStoredValue([self updateResultForRecord:record]) ?: @"checking" });
+                TKAddonHubKeyState: TKAddonUpdateName([self updateResultForRecord:record]) });
             [self.tableView reloadData];
             [self checkNextUpdate];
         });
@@ -2333,17 +2397,9 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
     if ([kind isEqual:@"browseResults"]) return (NSInteger)_results.count + ([self canLoadMore]?1:0);
     return (NSInteger)[entry[@"rows"] count];
 }
-// Whether a given section is the Browse results, whatever index it has: the bundled
-// recommendation section sits above them, so the header that names the columns cannot be the
-// second section by position any more.
-- (BOOL)sectionIsBrowseResults:(NSInteger)section {
-    NSArray<NSDictionary *> *sections=[self sectionsForCurrentTab];
-    if (section<0 || section>=(NSInteger)sections.count) return NO;
-    return [sections[section][@"kind"] isEqual:@"browseResults"];
-}
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
     (void)tableView;
-    if ([self sectionIsBrowseResults:section] && _results.count) {
+    if (_tab==TKAddonHubTabBrowse && section==1 && _results.count) {
         TKAddonColumnsHeaderView *header=[[TKAddonColumnsHeaderView alloc] initWithFrame:CGRectMake(0,0,tableView.bounds.size.width,22)];
         [header configureWithColumns:_columns compact:TKAddonRowsAreCompact(self.tableView.bounds.size.width)];
         return header;
@@ -2352,7 +2408,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
 }
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
     (void)tableView;
-    if ([self sectionIsBrowseResults:section] && _results.count) return 22;
+    if (_tab==TKAddonHubTabBrowse && section==1 && _results.count) return 22;
     return UITableViewAutomaticDimension;
 }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -2428,18 +2484,6 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         cell.detailTextLabel.text=WKLocalized(@"addons.discover.hint");
         cell.selectionStyle=UITableViewCellSelectionStyleNone;
         cell.accessibilityIdentifier=@"wow.addons.discover.state";
-    } else if ([kind isEqual:@"bundled"]) {
-        // The launcher's own package, as a row with its own explicit Install action. It is the
-        // only installed package this page draws: installing it is still a press, never a
-        // consequence of opening the page.
-        TKAddonBundledCell *bundled=[tableView dequeueReusableCellWithIdentifier:@"bundled"];
-        if (!bundled) bundled=[[TKAddonBundledCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"bundled"];
-        bundled.accessibilityIdentifier=@"wow.addons.bundled";
-        __weak TKWoWAddonManagerViewController *weakSelf=self;
-        bundled.onInstall=^{ [weakSelf installBundledPackage]; };
-        [bundled configureWithPackage:_bundledPackage error:_bundledPackageError
-                                 busy:_bundledInstalling installed:[self bundledRecord]!=nil];
-        return bundled;
     } else if ([kind isEqual:@"summary"]) {
         NSDictionary *row=entry[@"rows"][indexPath.row];
         if ([row[@"kind"] isEqual:@"bundled"]) {
@@ -2486,7 +2530,8 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
                               selected:[_selected containsObject:identifier]
                             selectable:[self recordIsSelectable:addon]
                                  state:[self stateForRecord:addon]
-                                detail:[self detailForRecord:addon]];
+                                detail:[self detailForRecord:addon]
+                                  logo:[self logoURLStringForRecord:addon]];
         return installed;
     }
     cell.backgroundColor=[UIColor colorWithRed:0.07 green:0.09 blue:0.13 alpha:1]; cell.textLabel.textColor=[UIColor colorWithRed:0.9 green:0.72 blue:0.35 alpha:1]; cell.detailTextLabel.textColor=[UIColor colorWithWhite:0.75 alpha:1]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
@@ -2522,7 +2567,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
     if (indexPath.section<0 || indexPath.section>=(NSInteger)sections.count) return;
     NSDictionary *entry=sections[indexPath.section];
     NSString *kind=entry[@"kind"];
-    if ([kind isEqual:@"summary"] || [kind isEqual:@"bundled"]) return;
+    if ([kind isEqual:@"summary"]) return;
     if ([kind isEqual:@"browseResults"]) {
         if (indexPath.row==(NSInteger)_results.count) { [self loadMore]; return; }
         [self presentProject:_results[indexPath.row]]; return;
@@ -2693,18 +2738,6 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         case TKAddonUpdateResultUnlinked:
             [self presentLinkSheetForRecord:record from:nil];
             return;
-        case TKAddonUpdateResultNotChecked: {
-            // The check this row has never had. Without a key there is nothing to ask, so the
-            // key prompt is the action - and the rows then say "Not checked yet" instead of
-            // pretending a request is running.
-            if (![self hasKey]) { [self setupKey]; return; }
-            [self checkForUpdates];
-            return;
-        }
-        case TKAddonUpdateResultChecking:
-            // Already being asked. Nested before the default so a second tap does not queue a
-            // second sweep behind the first.
-            return;
         case TKAddonUpdateResultDownloading:
             // The only cancel that means anything: the archive is in flight and nothing has
             // been committed yet.
@@ -2790,19 +2823,11 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             [self reloadAddons];
         }];
     };
-    // Through the page's own presentation funnel: this is opened from a page sheet, and on
-    // 2026-11-12 opening it while that sheet was still arriving produced UIKit's "unbalanced
-    // calls to begin/end appearance transitions". The funnel now waits for a transition to end
-    // before it presents anything.
-    __weak TKWoWAddonManagerViewController *weakPresenter=self;
-    WKPresentWhenFree(self, ^{
-        TKWoWAddonManagerViewController *self=weakPresenter;
-        if (!self) return;
-        [self presentViewController:navigation animated:YES completion:^{
-            WKConstrainPopupToScreen(navigation, self.view);
-        }];
-    });
+    [self presentViewController:navigation animated:YES completion:^{
+        WKConstrainPopupToScreen(navigation, self.view);
+    }];
 }
+
 - (void)installBrowserArchive:(NSURL *)archive handoff:(TKAddonBrowserHandoff *)handoff
                     replacing:(nullable TKAddonRecord *)record {
     NSDictionary *provider=@{ TKAddonProviderKind: @"curseforge",

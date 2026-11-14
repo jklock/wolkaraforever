@@ -83,6 +83,26 @@ NSString *TKAddonUpdateTitleKey(TKAddonUpdateResult result) {
     return @"addons.update.notChecked";
 }
 
+// A stable, language-free name for every state. The log prints this, because the stored value is
+// nil for the transient ones and every one of them used to come out as the same word: a sweep
+// that resolved nothing looked identical to one that was still working (2026-11-13).
+NSString *TKAddonUpdateName(TKAddonUpdateResult result) {
+    switch (result) {
+        case TKAddonUpdateResultNotApplicable: return @"heldBack";
+        case TKAddonUpdateResultUpToDate: return @"upToDate";
+        case TKAddonUpdateResultUpdateAvailable: return @"available";
+        case TKAddonUpdateResultChecking: return @"checking";
+        case TKAddonUpdateResultDownloading: return @"downloading";
+        case TKAddonUpdateResultNeedsBrowserConfirmation: return @"browser";
+        case TKAddonUpdateResultUnlinked: return @"unlinked";
+        case TKAddonUpdateResultUnavailableNoCompatibleFile: return @"unavailable";
+        case TKAddonUpdateResultFailedRetryable: return @"retryable";
+        case TKAddonUpdateResultFailedTerminal: return @"terminal";
+        case TKAddonUpdateResultNotChecked: return @"notChecked";
+    }
+    return @"unknown";
+}
+
 BOOL TKAddonUpdateIsActionable(TKAddonUpdateResult result) {
     switch (result) {
         case TKAddonUpdateResultUpdateAvailable:

@@ -479,7 +479,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIView *editionBox=[self sectionBoxWithIdentifier:@"wow.box.edition"
         rows:@[_editionButton,_preferencesButton,_languageButton]];
     UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
-        rows:@[_addonsButton,_macEverButton,_addonsDirectoryButton,_addonsBackupButton,_addonsRestoreButton]];
+        rows:@[_addonsButton,_addonsDirectoryButton,_addonsBackupButton,_addonsRestoreButton]];
     UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
         rows:@[_permissionsButton,_voiceButton,_voiceTestButton]];
     UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
@@ -541,6 +541,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _gridRow3=[self boxRow:@[performanceBox,launcherManagerBox]];
     UIStackView *grid=Stack(@[_gridRow1,_gridRow2,_gridRow3],16);
     grid.accessibilityIdentifier=@"wow.grid";
+    // The recommended-add-ons control is retained but not part of any card. It is given no
+    // place on the page; it exists so its action stays reachable, which is what the tests and
+    // the Add-on Manager's own Browse tab use.
+    [self.view addSubview:_macEverButton];
     _columns=Stack(@[top,grid],20); _columns.accessibilityIdentifier=@"wow.columns";
     _columns.alignment=UIStackViewAlignmentFill;
 
@@ -954,12 +958,18 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // The recommendation row keeps its identifier and changes only its words and its
     // destination. It opens the Add-On Manager, which is where installing is explicit:
     // pressing this row never installs, disables, removes or updates anything by itself.
+    // The recommendation row is no longer drawn on the front page: the Add-on Manager's own
+    // Browse tab reaches it, and this card is for the rows a person actually uses day to day.
+    // The control is still built and still wired, held off the card and out of sight, because
+    // the route it opens is real and the page's own tests exercise it - the page simply does
+    // not offer it here any more.
     [self configureButton:_macEverButton
         title:WKLocalized(@"home.addons.recommended.wolkaraRoue") filled:NO];
     _macEverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    // Navigation only: the page is opened for the user to choose and install there.
-    // Starting and an ended session grey it with everything else.
     _macEverButton.enabled=!_starting && !_running && !_sessionUsed;
+    _macEverButton.hidden=YES;
+    _macEverButton.accessibilityElementsHidden=YES;
+    _macEverButton.userInteractionEnabled=NO;
     [self configureButton:_addonsDirectoryButton title:_installation.app?WKLocalized(@"home.addons.directory"):WKLocalized(@"home.addons.directory.needsgame") filled:NO];
     _addonsDirectoryButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _addonsDirectoryButton.enabled=_addonsButton.enabled;

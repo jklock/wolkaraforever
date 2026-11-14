@@ -44,7 +44,7 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS sur Duo";
-"home.launcher.interfaceSetup.row" = "Modifier la disposition des commandes…";
+"home.launcher.interfaceSetup.row" = "Modifier la disposition des commandes";
 "home.launcher.interfaceSetup.title" = "Disposition des commandes";
 /* Les trois lignes qui étaient auparavant dans une seule feuille. */
 "home.launcher.layout.create" = "Créer une disposition des commandes";
