@@ -1306,6 +1306,11 @@ static const unsigned short AKKeyF12 = 111;
 // Classic direct - what an existing player has - keeps every entry path doing exactly what it
 // did before this feature existed.
 - (BOOL)composerInReviewMode {
+    // A password field has the keyboard (the game turned on secure event input): this is not
+    // chat, so the Composer stands aside and Return takes the classic protected-field path -
+    // type exactly what was written, then Return. Without this the Composer's Send refused to
+    // open chat in a protected field and the login could never be submitted.
+    if (_protectedField) return NO;
     return AKChatComposerIsAvailable() && AKChatDeliveryModeInForce() == AKChatDeliveryModeReview;
 }
 
