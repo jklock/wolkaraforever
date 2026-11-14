@@ -269,12 +269,17 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_voiceTestButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
-        *_renderProfileButton, *_deviceProfileButton, *_interfaceModeButton;
+        *_renderProfileButton, *_deviceProfileButton, *_interfaceModeButton,
+        *_addonsBackupButton, *_addonsRestoreButton,
+        *_layoutCreateButton, *_layoutRestoreButton, *_layoutBackupButton;
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
     TKWoWSwitchRow *_gamepadRow, *_overlayRow;
     UIButton *_interfaceSetupButton;
+    // Set while the layout-import picker is up, so a document chosen there is read as a layout
+    // backup and never mistaken for the UI restore's snapshot.
+    BOOL _layoutImportPending;
     NSString *_backupsDirectory;
     UIView *_markView;
     NSLayoutConstraint *_markCap;
@@ -432,6 +437,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // where the package is chosen and installed explicitly; it never installs silently.
     _macEverButton=[self button:@"wow.addons.macEver" action:@selector(openRecommendedAddons)];
     _addonsDirectoryButton=[self button:@"wow.addons.directory" action:@selector(openAddonDirectory)];
+    // The whole add-on folder, in one ZIP and back again. Two rows and nothing else: there is
+    // no list to keep in step, no check that runs while the page is open, and no state that can
+    // sit at "updating" - a backup is made when this row is pressed and a restore happens when
+    // that one is.
+    _addonsBackupButton=[self button:@"wow.addons.backup" action:@selector(backupAddons)];
+    _addonsRestoreButton=[self button:@"wow.addons.restore" action:@selector(restoreAddons)];
     // Straight to this app's own page in Settings, which is where the Microphone and Speech Recognition
     // switches live. Available before the game is installed, because it is a setting and not a game
     // action - and it is the only place those switches can be changed.
@@ -451,9 +462,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // The interface this launcher drives. One setting, one row: it writes the single key the
     // guest reads and never touches an installed package.
     _interfaceModeButton=[self button:@"wow.launcher.interfaceMode" action:@selector(chooseInterfaceMode)];
-    // The arrangement the on-screen controls use: a built-in starting point, an arrangement the
-    // user saved, or saving the one in use. All of it is data the layout owns.
+    // The arrangement the on-screen controls use, as four rows instead of one sheet with
+    // everything behind it: make one from a starting point, change the one in use, put a saved
+    // one back, or keep a copy of it outside the app. All of it is data the layout owns.
+    _layoutCreateButton=[self button:@"wow.launcher.layoutCreate" action:@selector(createInterfaceSetup)];
     _interfaceSetupButton=[self button:@"wow.launcher.interfaceSetup" action:@selector(chooseInterfaceSetup)];
+    _layoutRestoreButton=[self button:@"wow.launcher.layoutRestore" action:@selector(restoreInterfaceSetup)];
+    _layoutBackupButton=[self button:@"wow.launcher.layoutBackup" action:@selector(backupInterfaceSetup)];
 
     // Five sections, as boxes, in the order they are read. The compatibility note belongs to
     // the edition it is about, so it lives in that box rather than loose on the page. The
@@ -464,7 +479,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIView *editionBox=[self sectionBoxWithIdentifier:@"wow.box.edition"
         rows:@[_editionButton,_preferencesButton,_languageButton]];
     UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
-        rows:@[_addonsButton,_macEverButton,_addonsDirectoryButton]];
+        rows:@[_addonsButton,_macEverButton,_addonsDirectoryButton,_addonsBackupButton,_addonsRestoreButton]];
     UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
         rows:@[_permissionsButton,_voiceButton,_voiceTestButton]];
     UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
@@ -478,7 +493,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // beside UI Manager on a wide page and after it on a narrow one, and it changes no other
     // card's width, inset or order.
     UIView *launcherManagerBox=[self sectionBoxWithIdentifier:@"wow.box.launcherManager"
-        rows:@[_interfaceModeButton, _interfaceSetupButton]];
+        rows:@[_interfaceModeButton, _layoutCreateButton, _interfaceSetupButton,
+               _layoutRestoreButton, _layoutBackupButton]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _activity.color=Gold(); _activity.hidesWhenStopped=YES;
@@ -947,6 +963,17 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_addonsDirectoryButton title:_installation.app?WKLocalized(@"home.addons.directory"):WKLocalized(@"home.addons.directory.needsgame") filled:NO];
     _addonsDirectoryButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _addonsDirectoryButton.enabled=_addonsButton.enabled;
+    // Backup and Restore hold the whole add-on folder, so they need the same idle page the
+    // rows above do - and Restore additionally waits for any other game-file operation, because
+    // it replaces the folder.
+    [self configureButton:_addonsBackupButton
+        title:_installation.app?WKLocalized(@"home.addons.backup"):WKLocalized(@"home.addons.backup.needsgame") filled:NO];
+    _addonsBackupButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _addonsBackupButton.enabled=_addonsButton.enabled && !_uiOperation;
+    [self configureButton:_addonsRestoreButton
+        title:_installation.app?WKLocalized(@"home.addons.restore"):WKLocalized(@"home.addons.restore.needsgame") filled:NO];
+    _addonsRestoreButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _addonsRestoreButton.enabled=_addonsBackupButton.enabled;
     [self configureButton:_voiceButton title:WKLocalized(@"home.voice.keys") filled:NO];
     _voiceButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     // Available before the game is installed: it is a setting, not a game action.
@@ -989,6 +1016,18 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         title:WKLocalized(@"home.launcher.interfaceSetup.row") filled:NO];
     _interfaceSetupButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _interfaceSetupButton.enabled=_interfaceModeButton.enabled;
+    // The other three rows of the same subject: make one, put one back, keep a copy. They are
+    // separate rows because they are separate decisions - the sheet they used to share made a
+    // person read eleven actions to find the four they came for.
+    [self configureButton:_layoutCreateButton title:WKLocalized(@"home.launcher.layout.create") filled:NO];
+    _layoutCreateButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _layoutCreateButton.enabled=_interfaceModeButton.enabled;
+    [self configureButton:_layoutRestoreButton title:WKLocalized(@"home.launcher.layout.restore") filled:NO];
+    _layoutRestoreButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _layoutRestoreButton.enabled=_interfaceModeButton.enabled;
+    [self configureButton:_layoutBackupButton title:WKLocalized(@"home.launcher.layout.backup") filled:NO];
+    _layoutBackupButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _layoutBackupButton.enabled=_interfaceModeButton.enabled;
     // Switches, not changing commands: the label is fixed and the control shows
     // the state.
     _gamepadRow.enabled=foreverReady;
@@ -1119,8 +1158,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_primaryButton title:action filled:YES]; _primaryButton.enabled=enabled;
     _refreshItem.enabled=!_busy && !_sessionUsed && !_starting && !_running;
     for (UIButton *button in @[_editionButton,_preferencesButton,_addonsButton,_macEverButton,_addonsDirectoryButton,
+                                _addonsBackupButton,_addonsRestoreButton,
                                 _permissionsButton,_voiceButton,_voiceTestButton,_backupButton,_resetButton,
-                                _restoreButton,_settingsFolderButton,_interfaceModeButton])
+                                _restoreButton,_settingsFolderButton,_interfaceModeButton,
+                                _layoutCreateButton,_interfaceSetupButton,_layoutRestoreButton,_layoutBackupButton])
         [self stylePlainButton:button];
     [self stylePrimaryButton];
     _diagnosticsButton.tintColor=_diagnosticsButton.enabled?Gold():RowGrey();
@@ -1303,6 +1344,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 // controls. The restore picker's choice is the snapshot to bring back, and only
 // a ZIP inside WTF/Backups is accepted - the archive checks the rest.
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    if (_layoutImportPending) {
+        _layoutImportPending=NO;
+        if (urls.count) [self applyInterfaceSetupFromURL:urls.firstObject];
+        return;
+    }
     NSString *backups=_backupsDirectory;
     _backupsDirectory=nil;
     // Only the restore picker resumes a restore. Checking the picker's own
@@ -1321,6 +1367,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
     (void)controller;
+    _layoutImportPending=NO;
     _backupsDirectory=nil;
 }
 #pragma mark - Forever UI file operations
@@ -1782,9 +1829,150 @@ static NSString *ElementLabel(NSString *element) {
     });
     return labels[element] ?: element;
 }
-// The arrangement row. It writes only the dictionary the on-screen controls read, through the
-// same functions the adapter uses, so a choice here is what the next guest starts with; it
+// The arrangement rows. They write only the dictionary the on-screen controls read, through
+// the same functions the adapter uses, so a choice here is what the next guest starts with; it
 // touches no game file and no package.
+//
+// Four rows, four decisions. This used to be one sheet that held a starting point, every saved
+// arrangement, the save prompt, twelve control mappings, the reserved area and the delete list
+// at once; the rows below say which of those a person is doing before they are shown any of it.
+
+// Create: a starting point becomes the layout, then it is named. The name is how it is found
+// again under Restore.
+- (void)createInterfaceSetup {
+    if (_busy || _starting || _running || _sessionUsed) {
+        WKLog("ui", @"interface setup: declined while the page is busy");
+        return;
+    }
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.layout.createTitle")
+        message:WKLocalized(@"home.launcher.layout.createMessage")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak TKWoWViewController *weakSelf=self;
+    for (NSString *template in AKLayoutTemplateNames()) {
+        NSString *title=WKLocalized([@"home.launcher.interfaceSetup.template." stringByAppendingString:template]);
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            TKWoWViewController *self=weakSelf; if(!self) return;
+            AKLayoutApplyTemplate(defaults, template);
+            WKLog("ui", @"interface setup: created from %@", template);
+            [self render];
+            [self saveInterfaceSetup];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_layoutCreateButton];
+}
+
+// Restore: an arrangement this app saved, or one from a backup file.
+- (void)restoreInterfaceSetup {
+    if (_busy || _starting || _running || _sessionUsed) {
+        WKLog("ui", @"interface setup: declined while the page is busy");
+        return;
+    }
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.layout.restoreTitle")
+        message:WKLocalized(@"home.launcher.layout.restoreMessage")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak TKWoWViewController *weakSelf=self;
+    for (NSString *name in AKLayoutSavedNames(defaults)) {
+        [sheet addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            TKWoWViewController *self=weakSelf; if(!self) return;
+            if (AKLayoutApplyProfile(defaults, name)) WKLog("ui", @"interface setup: restored %@", name);
+            [self render];
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.layout.restoreFile")
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [weakSelf importInterfaceSetup];
+    }]];
+    if (AKLayoutSavedNames(defaults).count) {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
+            style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            [weakSelf deleteInterfaceSetup];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_layoutRestoreButton];
+}
+
+// Backup: the layout, out of the app as one JSON file, through the system's own share sheet so
+// it can go to Files, to Mail, or anywhere else. Nothing is written inside the app.
+- (void)backupInterfaceSetup {
+    if (_busy || _starting || _running || _sessionUsed) return;
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSMutableDictionary *payload=[NSMutableDictionary new];
+    payload[@"format"]=@"WolkaraForever.ControllerLayout";
+    payload[@"version"]=@(AKLayoutSchemaVersion);
+    id layout=[defaults objectForKey:AKLayoutStoredKey];
+    if ([layout isKindOfClass:NSDictionary.class]) payload[@"layout"]=layout;
+    id profiles=[defaults objectForKey:AKLayoutProfilesKey];
+    if ([profiles isKindOfClass:NSDictionary.class]) payload[@"profiles"]=profiles;
+    NSISO8601DateFormatter *clock=[NSISO8601DateFormatter new];
+    payload[@"exported"]=[clock stringFromDate:NSDate.date];
+    NSError *error=nil;
+    NSData *data=[NSJSONSerialization dataWithJSONObject:payload
+        options:NSJSONWritingPrettyPrinted|NSJSONWritingSortedKeys error:&error];
+    if (!data) {
+        WKLog("ui", @"interface setup: the layout could not be written: %@", error.localizedDescription?:@"unknown reason");
+        [self presentMessage:WKLocalized(@"home.launcher.layout.backupFailed.title")
+                     message:error.localizedDescription?:WKLocalized(@"home.launcher.layout.backupFailed.message")];
+        return;
+    }
+    NSString *name=[NSString stringWithFormat:@"WolkaraForever-Layout-%@.json",
+        [clock stringFromDate:NSDate.date]];
+    name=[name stringByReplacingOccurrencesOfString:@":" withString:@"-"];
+    NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:name];
+    if (![data writeToFile:path options:NSDataWritingAtomic error:&error]) {
+        WKLog("ui", @"interface setup: the layout could not be saved: %@", error.localizedDescription?:@"unknown reason");
+        [self presentMessage:WKLocalized(@"home.launcher.layout.backupFailed.title")
+                     message:error.localizedDescription?:WKLocalized(@"home.launcher.layout.backupFailed.message")];
+        return;
+    }
+    WKLog("ui", @"interface setup: backed up");
+    UIActivityViewController *share=[[UIActivityViewController alloc]
+        initWithActivityItems:@[[NSURL fileURLWithPath:path]] applicationActivities:nil];
+    share.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
+    share.popoverPresentationController.sourceView=_layoutBackupButton;
+    share.popoverPresentationController.sourceRect=_layoutBackupButton.bounds;
+    [self presentViewController:share animated:YES completion:nil];
+}
+
+// Restore from a file: the JSON Backup wrote. It is read here and applied through the same
+// merge the templates use, so a later build's keys in the live dictionary survive.
+- (void)importInterfaceSetup {
+    _layoutImportPending=YES;
+    UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc]
+        initForOpeningContentTypes:@[UTTypeJSON]];
+    picker.allowsMultipleSelection=NO;
+    picker.delegate=self;
+    [self presentViewController:picker animated:YES completion:nil];
+}
+- (void)applyInterfaceSetupFromURL:(NSURL *)url {
+    NSError *error=nil;
+    NSData *data=[NSData dataWithContentsOfURL:url options:0 error:&error];
+    NSDictionary *payload=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:&error]:nil;
+    NSDictionary *layout=[payload[@"layout"] isKindOfClass:NSDictionary.class]?payload[@"layout"]:nil;
+    if (![payload isKindOfClass:NSDictionary.class] ||
+        ![payload[@"format"] isEqual:@"WolkaraForever.ControllerLayout"] || !layout) {
+        WKLog("ui", @"interface setup: that file is not a layout backup");
+        [self presentMessage:WKLocalized(@"home.launcher.layout.importFailed.title")
+                     message:WKLocalized(@"home.launcher.layout.importFailed.message")];
+        return;
+    }
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    AKLayoutApplyPayload(defaults, layout);
+    // The saved arrangements in the file are kept as well, so a backup restores what its own
+    // Restore list showed on the day it was written.
+    NSDictionary *profiles=[payload[@"profiles"] isKindOfClass:NSDictionary.class]?payload[@"profiles"]:nil;
+    if (profiles.count) [defaults setObject:profiles forKey:AKLayoutProfilesKey];
+    WKLog("ui", @"interface setup: restored from a backup file");
+    [self render];
+    [self presentMessage:WKLocalized(@"home.launcher.layout.importDone.title")
+                 message:WKLocalized(@"home.launcher.layout.importDone.message")];
+}
+
+// Edit: the layout in force - what each control sends, the area the controls leave alone, the
+// arrangement and its stick buttons.
 - (void)chooseInterfaceSetup {
     if (_busy || _starting || _running || _sessionUsed) {
         WKLog("ui", @"interface setup: declined while the page is busy");
@@ -1794,24 +1982,6 @@ static NSString *ElementLabel(NSString *element) {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.title")
         message:WKLocalized(@"home.launcher.interfaceSetup.message")
         preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSString *template in AKLayoutTemplateNames()) {
-        NSString *title=WKLocalized([@"home.launcher.interfaceSetup.template." stringByAppendingString:template]);
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
-            handler:^(__unused UIAlertAction *action) {
-            AKLayoutApplyTemplate(defaults, template);
-            WKLog("ui", @"interface setup: template %@", template);
-            [self render];
-        }]];
-    }
-    for (NSString *name in AKLayoutSavedNames(defaults)) {
-        [sheet addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault
-            handler:^(__unused UIAlertAction *action) {
-            if (AKLayoutApplyProfile(defaults, name)) WKLog("ui", @"interface setup: layout %@", name);
-            [self render];
-        }]];
-    }
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.save")
-        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [self saveInterfaceSetup]; }]];
     // The controls themselves, each named with the element it sends, so changing one is a
     // single step from here rather than a menu inside a menu.
     for (NSString *slot in AKLayoutSlots()) {
@@ -1869,12 +2039,6 @@ static NSString *ElementLabel(NSString *element) {
             [self render];
         }]];
     }
-    if (AKLayoutSavedNames(defaults).count) {
-        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
-            style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
-            [self deleteInterfaceSetup];
-        }]];
-    }
     [self presentSheet:sheet anchor:_interfaceSetupButton];
 }
 - (void)chooseElementForSlot:(NSString *)slot {
@@ -1929,15 +2093,17 @@ static NSString *ElementLabel(NSString *element) {
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceSetup.delete")
         message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak TKWoWViewController *weakSelf=self;
     for (NSString *name in AKLayoutSavedNames(defaults)) {
         [sheet addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDestructive
             handler:^(__unused UIAlertAction *action) {
+            TKWoWViewController *self=weakSelf; if(!self) return;
             AKLayoutDeleteProfile(defaults, name);
             WKLog("ui", @"interface setup: deleted %@", name);
             [self render];
         }]];
     }
-    [self presentSheet:sheet anchor:_interfaceSetupButton];
+    [self presentSheet:sheet anchor:_layoutRestoreButton];
 }
 // The recommendation row. It opens the Add-On Manager, which is where a package is chosen
 // and installed explicitly; pressing the row never installs anything by itself. It offers
@@ -1985,6 +2151,107 @@ static NSString *ElementLabel(NSString *element) {
     if (!addons) { [self presentAddonsUnavailable:error]; return; }
     TKWoWAddonManagerViewController *manager=[[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:addons edition:_product[@"name"]];
     [self presentPage:manager];
+}
+
+#pragma mark - Add-on folder backups
+
+// The add-on rows' one rule, written once: the game must be there, nothing may be starting or
+// running, and no other file operation may be in flight.
+- (BOOL)addonFileActionAllowed {
+    return _installation.app && !_busy && !_starting && !_running && !_sessionUsed && !_uiOperation;
+}
+
+// The whole add-on folder as one ZIP. This is the only thing in the app that archives add-ons,
+// and it runs when this row is pressed: there is no list to keep in step and no sweep that can
+// leave a row saying "Updating…".
+- (void)backupAddons {
+    if (![self addonFileActionAllowed]) return;
+    NSError *error=nil;
+    NSString *addons=[self addOnsDirectoryWithError:&error];
+    if (!addons) { [self presentAddonsUnavailable:error]; return; }
+    WKLog("ui", @"addons backup: starting");
+    _uiOperation=YES; [self render];
+    __weak TKWoWViewController *weakSelf=self;
+    dispatch_async(TKForeverUIQueue(), ^{
+        NSError *failure=nil;
+        NSString *name=TKAddonBackupCreate(addons,&failure);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            TKWoWViewController *self=weakSelf; if(!self) return;
+            self->_uiOperation=NO; [self render];
+            if (name) {
+                WKLog("ui", @"addons backup: wrote a snapshot");
+                [self presentMessage:WKLocalized(@"home.addons.backup.done.title")
+                    message:WKLocalizedFormat(@"home.addons.backup.done.message",name)];
+            } else {
+                WKLog("ui", @"addons backup: failed: %@", failure.localizedDescription?:@"unknown reason");
+                [self presentMessage:WKLocalized(@"home.addons.backup.failed.title")
+                    message:failure.localizedDescription?:WKLocalized(@"home.addons.backup.failed.message")];
+            }
+        });
+    });
+}
+
+// Replacing the folder is destructive, so it is confirmed first, and the confirmation names the
+// backup that will be put back.
+- (void)restoreAddons {
+    if (![self addonFileActionAllowed]) return;
+    NSError *error=nil;
+    NSString *addons=[self addOnsDirectoryWithError:&error];
+    if (!addons) { [self presentAddonsUnavailable:error]; return; }
+    NSError *failure=nil;
+    NSArray<NSString *> *names=TKAddonBackupNames(addons,&failure);
+    if (!names.count) {
+        [self presentMessage:WKLocalized(@"home.addons.restore.none.title")
+            message:failure.localizedDescription?:WKLocalized(@"home.addons.restore.none.message")];
+        return;
+    }
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.addons.restore.title")
+        message:WKLocalized(@"home.addons.restore.message")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak TKWoWViewController *weakSelf=self;
+    for (NSString *name in names) {
+        [sheet addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            TKWoWViewController *self=weakSelf; if(!self) return;
+            [self confirmAddonRestoreNamed:name addons:addons];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_addonsRestoreButton];
+}
+- (void)confirmAddonRestoreNamed:(NSString *)name addons:(NSString *)addons {
+    UIAlertController *confirm=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.addons.restore.confirm.title")
+        message:WKLocalizedFormat(@"home.addons.restore.confirm.message",name)
+        preferredStyle:UIAlertControllerStyleAlert];
+    __weak TKWoWViewController *weakSelf=self;
+    [confirm addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.addons.restore.action")
+        style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+        TKWoWViewController *self=weakSelf; if(!self) return;
+        [self performAddonRestoreNamed:name addons:addons];
+    }]];
+    [self presentSheet:confirm anchor:_addonsRestoreButton];
+}
+- (void)performAddonRestoreNamed:(NSString *)name addons:(NSString *)addons {
+    if (_busy || _starting || _running || _sessionUsed || _uiOperation) return;
+    WKLog("ui", @"addons restore: starting");
+    _uiOperation=YES; [self render];
+    __weak TKWoWViewController *weakSelf=self;
+    dispatch_async(TKForeverUIQueue(), ^{
+        NSError *failure=nil;
+        BOOL restored=TKAddonBackupRestore(name,addons,&failure);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            TKWoWViewController *self=weakSelf; if(!self) return;
+            self->_uiOperation=NO; [self render];
+            if (restored) {
+                WKLog("ui", @"addons restore: completed from the selected snapshot");
+                [self presentMessage:WKLocalized(@"home.addons.restore.done.title")
+                    message:WKLocalizedFormat(@"home.addons.restore.done.message",name)];
+            } else {
+                WKLog("ui", @"addons restore: failed: %@", failure.localizedDescription?:@"unknown reason");
+                [self presentMessage:WKLocalized(@"home.addons.restore.failed.title")
+                    message:failure.localizedDescription?:WKLocalized(@"home.addons.restore.failed.message")];
+            }
+        });
+    });
 }
 - (UILabel *)startupStatusLabel { [self loadViewIfNeeded]; return _detailLabel; }
 - (void)beginStartup {

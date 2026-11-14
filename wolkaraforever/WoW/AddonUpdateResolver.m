@@ -16,7 +16,9 @@ TKAddonUpdateResult TKAddonUpdateResolve(TKAddonUpdateFacts *facts) {
     if (facts.failedRetryable) return TKAddonUpdateResultFailedRetryable;
     if (facts.checking) return TKAddonUpdateResultChecking;
     if (!facts.linked) return TKAddonUpdateResultUnlinked;
-    if (!facts.answered) return TKAddonUpdateResultChecking;
+    // Nothing has answered for this package. That is not "checking" unless a request is actually
+    // in flight, which was handled above; it is a package whose update nobody has asked about.
+    if (!facts.answered) return TKAddonUpdateResultNotChecked;
     if (facts.installedFileIsCurrent) return TKAddonUpdateResultUpToDate;
     if (facts.newerFileExists) {
         if (facts.apiArchiveAvailable) return TKAddonUpdateResultUpdateAvailable;
@@ -26,8 +28,9 @@ TKAddonUpdateResult TKAddonUpdateResolve(TKAddonUpdateFacts *facts) {
                                      : TKAddonUpdateResultUnavailableNoCompatibleFile;
     }
     if (facts.noCompatibleFile) return TKAddonUpdateResultUnavailableNoCompatibleFile;
-    // An answer that names neither a newer file nor the installed one tells us nothing.
-    return TKAddonUpdateResultChecking;
+    // An answer that names neither a newer file nor the installed one tells us nothing, so the
+    // row asks to be checked rather than pretending a request is running.
+    return TKAddonUpdateResultNotChecked;
 }
 
 NSString *TKAddonUpdateStoredValue(TKAddonUpdateResult result) {
@@ -43,13 +46,14 @@ NSString *TKAddonUpdateStoredValue(TKAddonUpdateResult result) {
         case TKAddonUpdateResultNotApplicable:
         case TKAddonUpdateResultChecking:
         case TKAddonUpdateResultDownloading:
+        case TKAddonUpdateResultNotChecked:
             return nil;
     }
     return nil;
 }
 
 TKAddonUpdateResult TKAddonUpdateResultForStoredValue(NSString *value) {
-    if (![value isKindOfClass:NSString.class]) return TKAddonUpdateResultChecking;
+    if (![value isKindOfClass:NSString.class]) return TKAddonUpdateResultNotChecked;
     if ([value isEqual:TKAddonStoredUpdateUpToDate]) return TKAddonUpdateResultUpToDate;
     if ([value isEqual:TKAddonStoredUpdateAvailable]) return TKAddonUpdateResultUpdateAvailable;
     if ([value isEqual:TKAddonStoredUpdateBrowser]) return TKAddonUpdateResultNeedsBrowserConfirmation;
@@ -57,7 +61,9 @@ TKAddonUpdateResult TKAddonUpdateResultForStoredValue(NSString *value) {
     if ([value isEqual:TKAddonStoredUpdateUnavailable]) return TKAddonUpdateResultUnavailableNoCompatibleFile;
     if ([value isEqual:TKAddonStoredUpdateRetryable]) return TKAddonUpdateResultFailedRetryable;
     if ([value isEqual:TKAddonStoredUpdateTerminal]) return TKAddonUpdateResultFailedTerminal;
-    return TKAddonUpdateResultChecking;
+    // A word from a build that does not exist here tells us nothing, so the row asks to be
+    // checked rather than claiming a check is running.
+    return TKAddonUpdateResultNotChecked;
 }
 
 NSString *TKAddonUpdateTitleKey(TKAddonUpdateResult result) {
@@ -72,8 +78,9 @@ NSString *TKAddonUpdateTitleKey(TKAddonUpdateResult result) {
         case TKAddonUpdateResultFailedRetryable: return @"addons.update.failedRetry";
         case TKAddonUpdateResultFailedTerminal: return @"addons.update.failedTerminal";
         case TKAddonUpdateResultNotApplicable: return @"addons.update.heldBack";
+        case TKAddonUpdateResultNotChecked: return @"addons.update.notChecked";
     }
-    return @"addons.update.checking";
+    return @"addons.update.notChecked";
 }
 
 BOOL TKAddonUpdateIsActionable(TKAddonUpdateResult result) {
@@ -82,6 +89,8 @@ BOOL TKAddonUpdateIsActionable(TKAddonUpdateResult result) {
         case TKAddonUpdateResultNeedsBrowserConfirmation:
         case TKAddonUpdateResultFailedRetryable:
         case TKAddonUpdateResultUnlinked:
+        // Asking again is the action: it starts the check the row has never had.
+        case TKAddonUpdateResultNotChecked:
             return YES;
         default:
             return NO;

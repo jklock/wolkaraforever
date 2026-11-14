@@ -12,6 +12,42 @@ This changelog records release history. It is not a compatibility guarantee: rea
 
 ## Unreleased
 
+- **The installed list no longer sits on "Updating…".** Every row of **My Add-ons** could read
+  "Updating…" while nothing was happening: the resolver answered *Checking* for a linked package
+  that no check had ever answered for, so a page with no API key - or a sweep that had not
+  reached a package - looked like work in progress forever. "Never asked" is now its own state,
+  **Not checked yet**, with a **Check** action that runs the check; *Checking…* only appears
+  while a request is genuinely in flight, and a sweep with no key clears its own in-flight marks
+  and says why. Opening **My Add-ons**, and **Refresh**, still ask the provider about every
+  linked package. The tab is unchanged and still the page's default.
+
+- **Backup Add-ons and Restore Add-ons: the whole add-on folder, in one ZIP and back.** Two new
+  rows in the Add-On Manager card write `WTF/Backups/AddOns-<date>T<time>Z.zip` - every package
+  folder and the store's manifest - and put one back. A restore extracts into a staging folder,
+  renames the live folder aside and the staging folder into place, and puts the old one back if
+  either move fails, so a failed restore changes nothing. Neither row runs on its own, neither
+  reaches the network, and the restore names the backup it will apply before it applies it.
+
+- **The four Controller Layout decisions are four rows.** One **Controller Layout…** sheet used
+  to hold a starting point, every saved arrangement, the save prompt, twelve control mappings,
+  the reserved area and the delete list at once. The Launcher Manager card now offers **Create
+  Controller Layout**, **Edit Controller Layout**, **Restore Controller Layout** and **Backup
+  Controller Layout**: a starting point and a name, the layout in use, a saved layout or a
+  backup file, and the layout out of the app as one JSON file through the system share sheet.
+
+- **A controller claim survives a config transfer.** `AKControllerClaims` is written by the
+  voice layer and was missing from the config file's export/import allowlist, so a claim a
+  claim-capable build recorded would have been dropped by an export and by a restore. It is in
+  the allowlist and in the schema now, bounded and checked like the other stored preferences.
+
+- **The in-app add-on browser no longer opens during a transition.** Opening it from the
+  add-on page while that page sheet was still arriving produced UIKit's "unbalanced calls to
+  begin/end appearance transitions". The presentation funnel now waits for the presenter to
+  settle - not merely for nothing to be presented - before it presents anything.
+
+- `COMPATIBILITY.md` names the revision it was last reviewed against, and the UI review that
+  introduced the hub no longer carries a stray blank line at end of file.
+
 - **A mapped controller button no longer waits behind the diagnostics.** The
   inspector used to hand every interested controller event to the main queue as
   its own block, and that block wrote the log line, redrew the panel and only

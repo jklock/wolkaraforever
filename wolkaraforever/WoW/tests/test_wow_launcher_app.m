@@ -473,7 +473,16 @@ static void TestAddonHub(void) {
     // --- 1. the resolver, one case per state, from facts only
     TKAddonUpdateFacts *facts = [TKAddonUpdateFacts new];
     facts.linked = YES;
+    // Never asked is its own answer, not "Checking…". The installed list sat on that word with
+    // nothing in flight, which is the fault this state ends.
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNotChecked);
+    assert([TKAddonUpdateTitleKey(TKAddonUpdateResultNotChecked) isEqual:@"addons.update.notChecked"]);
+    assert(TKAddonUpdateIsActionable(TKAddonUpdateResultNotChecked));
+    assert(!TKAddonUpdateIsBusy(TKAddonUpdateResultNotChecked));
+    facts.checking = YES;
     assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultChecking);
+    assert(TKAddonUpdateIsBusy(TKAddonUpdateResultChecking));
+    facts.checking = NO;
 
     facts.heldBack = YES;
     assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNotApplicable);
@@ -538,7 +547,10 @@ static void TestAddonHub(void) {
     assert(TKAddonUpdateStoredValue(TKAddonUpdateResultChecking) == nil);
     assert(TKAddonUpdateStoredValue(TKAddonUpdateResultDownloading) == nil);
     assert(TKAddonUpdateResultForStoredValue(TKAddonStoredUpdateAvailable) == TKAddonUpdateResultUpdateAvailable);
-    assert(TKAddonUpdateResultForStoredValue(@"a-state-from-a-newer-build") == TKAddonUpdateResultChecking);
+    // A state from a newer build, and no state at all, both mean "ask again" - never "a check
+    // is running", which is the word the page was stuck on.
+    assert(TKAddonUpdateResultForStoredValue(@"a-state-from-a-newer-build") == TKAddonUpdateResultNotChecked);
+    assert(TKAddonUpdateResultForStoredValue(nil) == TKAddonUpdateResultNotChecked);
 
     // --- 2. a mixed-provider catalog: four routes, one list, one set of controls
     NSFileManager *files = NSFileManager.defaultManager;
@@ -771,7 +783,8 @@ static void TestAddonHub(void) {
         initWithAddOnsDirectory:addons edition:@"Forever" recommendation:TKAddonRecommendationWolkaraRoue];
     [recommended loadViewIfNeeded];
     assert(recommended.tab == TKAddonHubTabMyAddOns);
-    assert(Find(recommended.view, @"wow.addons.bundled") == nil || YES);
+    [recommended.view layoutIfNeeded];
+    assert(Find(recommended.view, @"wow.addons.bundled") != nil);
 
     [files removeItemAtPath:root error:NULL];
 }
@@ -1662,7 +1675,7 @@ static void TestPhoneDisplayDefaults(void) {
         @"wow.box.edition": @[@"wow.heading.edition", @"wow.edition", @"wow.preferences",
                               @"wow.language"],
         @"wow.box.addons": @[@"wow.heading.addons", @"wow.addons.manage", @"wow.addons.macEver",
-                             @"wow.addons.directory"],
+                             @"wow.addons.directory", @"wow.addons.backup", @"wow.addons.restore"],
         @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.voice.test"],
         // The profile card: which device, which render scale, and the overlay. Nothing here
         // reads or writes the game's files, and there is no "restore defaults" row: the way
@@ -1674,10 +1687,11 @@ static void TestPhoneDisplayDefaults(void) {
         @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.backup",
                                   @"wow.performance.restore", @"wow.performance.reset",
                                   @"wow.performance.settingsFolder", @"wow.performance.gamepad"],
-        // The sixth card: the interface this launcher drives, and the arrangement its controls
-        // use. Two settings, two rows.
+        // The sixth card: the interface this launcher drives, then the four controller-layout
+        // rows that used to be hidden inside one sheet - create, edit, restore, backup.
         @"wow.box.launcherManager": @[@"wow.heading.launcherManager", @"wow.launcher.interfaceMode",
-                                      @"wow.launcher.interfaceSetup"],
+                                      @"wow.launcher.layoutCreate", @"wow.launcher.interfaceSetup",
+                                      @"wow.launcher.layoutRestore", @"wow.launcher.layoutBackup"],
     };
     for (UIView *box in boxes) {
         UIStackView *stack = box.subviews.firstObject;
@@ -2753,7 +2767,10 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // --- and no control on the page is dead: every one has a target and an action
     for (NSString *identifier in @[@"wow.edition", @"wow.preferences", @"wow.language",
                                    @"wow.addons.manage", @"wow.addons.macEver", @"wow.addons.directory",
+                                   @"wow.addons.backup", @"wow.addons.restore",
                                    @"wow.launcher.interfaceMode",
+                                   @"wow.launcher.layoutCreate", @"wow.launcher.interfaceSetup",
+                                   @"wow.launcher.layoutRestore", @"wow.launcher.layoutBackup",
                                    @"wow.permissions", @"wow.voice", @"wow.voice.test",
                                    @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
                                    @"wow.performance.backup",

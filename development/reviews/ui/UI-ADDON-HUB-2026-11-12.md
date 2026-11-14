@@ -152,4 +152,3 @@ Baselines re-recorded on both matrix devices for `addons-popup.png`, `wow-addons
 `wow-addons-recommended-wolkararoue.png`. `wow-home*`, `wow-voice*`, `wow-launcher-*` and
 `voice-*` are unchanged; a recording run rewrites them with sub-tolerance rounding noise and
 those rewrites were reverted, so the diff carries only the three pages that really changed.
-

@@ -79,13 +79,16 @@ page is native and has three tabs; it opens on **My Add-ons**.
 
 - **My Add-ons** lists every installed package, whichever way it arrived: through the
   CurseForge API, through the in-app browser, from a ZIP you picked in Files, or as a folder
-  that was already on the device. Search narrows the list; **Sort** and **Filter** change its
-  order and its contents. **Refresh** recalculates each package's state and asks the provider
-  again. Each row shows its name, version, author, the interface versions its TOC declares, and
-  one word about its update, with one action that goes with that word: **Update**, **Retry**,
-  **Open** (see below), **Link**, or **Manage**. Selecting a row opens its detail sheet, which
-  adds enable/disable, pin, remove, group membership and the package's activity. **Update All**
-  runs one package at a time and reports each result; while it runs the same button cancels it.
+  that was already on the device. Opening the tab, and **Refresh**, ask the provider about every
+  linked package and compare the file it holds with the file the provider has. Search narrows
+  the list; **Sort** and **Filter** change its order and its contents. Each row shows its name,
+  version, author, the interface versions its TOC declares, and one word about its update, with
+  one action that goes with that word: **Update**, **Check**, **Retry**, **Open** (see below),
+  **Link**, or **Manage**. "Not checked yet" means nothing has asked about that package - usually
+  because no API key is stored - and **Check** is what asks. "Checking…" only ever appears while
+  a request is genuinely in flight. Selecting a row opens its detail sheet, which adds
+  enable/disable, pin, remove, group membership and the package's activity. **Update All** runs
+  one package at a time and reports each result; while it runs the same button cancels it.
 - **Create Group** organizes the packages you already have into headings of your own. A group
   moves no file and changes no ownership.
 - **Discover** shows featured, latest and popular projects from the API.
@@ -111,6 +114,17 @@ page is native and has three tabs; it opens on **My Add-ons**.
   WolkaraRoue package, showing its version and SHA-256; tap **Install** to install it. A package
   that is not the one this app shipped is refused, and nothing is written.
 
+Two rows on the home screen hold the whole folder as a copy:
+
+- **Backup Add-ons** writes one ZIP of everything under `Interface/AddOns` - every package
+  folder and the manifest that records which of them this app owns - into `WTF/Backups`, named
+  `AddOns-<date>T<time>Z.zip`. It runs only when you press it, and it reports the name it
+  wrote.
+- **Restore Add-ons** lists the backups that row made and asks you to confirm, naming the one
+  you picked. The folder is replaced in one move: if anything fails part-way the add-on folder
+  is exactly as it was. The previous contents are not kept afterwards, so take a backup of what
+  you have before restoring an older one.
+
 Do not change add-ons while a download, update, or game startup is active.
 
 ## Launcher Manager and interface mode
@@ -124,6 +138,23 @@ The **Launcher Manager** card holds one setting, **Interface Mode**, with exactl
 The choice is remembered across launches. Changing it only records the setting: it never
 installs, disables, removes or updates an add-on, and it does not change your game files. The
 recommendation row in the Add-On Manager card follows the choice, as described above.
+
+The same card holds four rows for the on-screen controls' arrangement, one decision each:
+
+- **Create Controller Layout** asks for a starting point (**Plain**, **Duo**, **Duo with room
+  for an add-on**) and then for a name. The starting point becomes the layout in use, and the
+  name is how **Restore** finds it again.
+- **Edit Controller Layout** changes the layout in use: which gamepad button each control sends,
+  the screen area the controls leave alone, Full or Simple, the stick buttons, and the ability
+  zones.
+- **Restore Controller Layout** puts a named layout back, offers **Restore From a Backup
+  File…** for a `WolkaraForever-Layout-….json` that **Backup** wrote, and can delete a layout you
+  no longer want.
+- **Backup Controller Layout** writes the layout in use, and every layout you have saved, as one
+  JSON file and hands it to the system share sheet, so it can go to Files or anywhere else.
+
+All four write only the dictionary the on-screen controls read. None of them reads or writes a
+game file, and none of them changes an installed add-on.
 
 ## Performance, device profile and UI recovery
 
@@ -228,7 +259,7 @@ settings or layout editor and releases touch inputs.
 ### Two arrangements, stick buttons and ability zones
 
 The on-screen gamepad has two arrangements, chosen in **Touch controls** or in the launcher's
-**Controller Layout…** sheet:
+**Edit Controller Layout** sheet:
 
 - **Full** is every control the app has always drawn, and it is what every existing
   installation keeps after an update.

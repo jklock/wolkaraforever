@@ -48,6 +48,7 @@ wolkaraforever/Shell/tests/test_localization.m tests/test_localization.m add
 #
 # WoW: the launcher module, its test script source and its tests
 wolkaraforever/WoW/AddonArchive.swift launcher/WoW/AddonArchive.swift add
+wolkaraforever/WoW/AddonBackup.swift launcher/WoW/AddonBackup.swift add
 wolkaraforever/WoW/AddonBrowser.h launcher/WoW/AddonBrowser.h add
 wolkaraforever/WoW/AddonBrowser.m launcher/WoW/AddonBrowser.m add
 wolkaraforever/WoW/AddonCredentialStore.h launcher/WoW/AddonCredentialStore.h add
