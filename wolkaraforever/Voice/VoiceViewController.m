@@ -241,7 +241,11 @@
                   : WKLocalized(@"voice.enabled.on.none"))
         : WKLocalized(@"voice.enabled.off");
     for (UIView *card in @[self.mappingCard, self.takeButtonCard, self.modeCard, self.afterCard, self.wordsCard]) {
-        card.alpha = on ? 1.0 : 0.4;
+        // Disabled must still be readable.  At 0.4 the explanatory text looked like a
+        // rendering failure on the iPad and hid the one thing a player needs to do next:
+        // switch Voice on.  Interaction is still disabled below; this only preserves
+        // legibility and the page's hierarchy.
+        card.alpha = on ? 1.0 : 0.78;
         card.userInteractionEnabled = on;
     }
     self.mapButton.enabled = on && !AKInputRouter.shared.learning;

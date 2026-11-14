@@ -76,6 +76,8 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
     TKAddonUpdateStateUnlinked,
     TKAddonUpdateStateUnavailable,
     TKAddonUpdateStateTerminal,
+    // Linked package whose provider has not been queried in this page yet.
+    TKAddonUpdateStateNotChecked,
 };
 - (instancetype)initWithAddOnsDirectory:(NSString *)directory edition:(NSString *)edition;
 // Starts on Browse rather than Installed, for the development preview and for

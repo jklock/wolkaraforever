@@ -586,6 +586,11 @@ static void TestAddonHub(void) {
     // --- 3. every My Add-ons control changes something, and nothing is decoration
     TKWoWAddonManagerViewController *manager = [[TKWoWAddonManagerViewController alloc]
         initWithAddOnsDirectory:addons edition:@"Forever"];
+    // Provider answers and in-flight markers must exist: Objective-C otherwise silently
+    // discards writes to nil collections and every completed row becomes Not checked.
+    assert([manager valueForKey:@"_updateAnswers"] != nil);
+    assert([manager valueForKey:@"_updateFailures"] != nil);
+    assert([manager valueForKey:@"_checkingPackages"] != nil);
     [manager loadViewIfNeeded];
     [manager.view layoutIfNeeded];
     assert(manager.tab == TKAddonHubTabMyAddOns);
@@ -699,6 +704,23 @@ static void TestAddonHub(void) {
                       state:TKAddonUpdateStateUnlinked detail:@"2.1" logo:nil];
     UIButton *link = (id)Find(row, [@"wow.addons.link." stringByAppendingString:filesRecord.identifier]);
     assert(link != nil && [ButtonTitle(link) isEqual:@"Link"] && link.enabled);
+
+    // --- 5a. a row draws the artwork its record carries. Measured on the iPad on 2026-11-13:
+    //     every installed package named a CurseForge project and not one carried a picture,
+    //     because the URL was dropped when the manifest was written and the row asked the
+    //     provider from inside the table-view cell. The page now keeps every URL with its
+    //     record in one batched query (`resolveMissingArtwork`) and the row draws that value.
+    NSMutableDictionary *withArtwork = [apiRecord.provider mutableCopy];
+    withArtwork[@"logo"] = @"https://media.forgecdn.net/avatars/thumbnails/109/996/256/256/example.png";
+    apiRecord.provider = withArtwork;
+    [row configureWithRecord:apiRecord selected:NO selectable:YES
+                      state:TKAddonUpdateStateUpToDate detail:@"2.1"
+                       logo:apiRecord.provider[@"logo"]];
+    assert(Find(row, withArtwork[@"logo"]) != nil);
+    // A package with no artwork keeps the neutral placeholder rather than borrowing one.
+    [row configureWithRecord:filesRecord selected:NO selectable:YES
+                      state:TKAddonUpdateStateUpToDate detail:@"2.1" logo:nil];
+    assert(Find(row, withArtwork[@"logo"]) == nil);
 
     // --- 6. groups organize records and move no file
     NSError *groupError = nil;

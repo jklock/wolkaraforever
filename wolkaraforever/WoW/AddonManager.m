@@ -524,12 +524,14 @@ static UIImage *TKAddonPlaceholderIcon(void) {
     if (logoURLString.length) {
         __weak TKAddonInstalledCell *weakSelf=self;
         NSString *wanted=logoURLString.copy;
+        // The cache can call back synchronously. Mark this reused cell before asking,
+        // otherwise that valid cached thumbnail is mistaken for an old cell response.
+        _iconView.accessibilityIdentifier=wanted;
         [[TKAddonIconLoader shared] imageForURLString:wanted completion:^(UIImage *image) {
             TKAddonInstalledCell *self=weakSelf;
             if (!self || ![self->_iconView.accessibilityIdentifier isEqual:wanted]) return;
             if (image) { self->_iconView.image=image; self->_iconView.tintColor=nil; }
         }];
-        _iconView.accessibilityIdentifier=wanted;
     } else {
         _iconView.accessibilityIdentifier=nil;
     }
@@ -596,6 +598,16 @@ static UIImage *TKAddonPlaceholderIcon(void) {
             _updateButton.accessibilityIdentifier=[@"wow.addons.update." stringByAppendingString:identifier];
             [_updateButton setTitle:WKLocalized(@"addons.action.unavailable") forState:UIControlStateNormal];
             _updateButton.enabled=NO;
+            break;
+        case TKAddonUpdateStateNotChecked:
+            // A linked package nobody has checked yet is still a package that can be updated:
+            // pressing Update asks the provider for its newest file and either installs it or
+            // says it is already current. Gating the button on a prior sweep is what left every
+            // row grey whenever the sweep had not answered (2026-11-13).
+            stateKey=@"addons.update.notChecked";
+            _updateButton.accessibilityIdentifier=[@"wow.addons.update." stringByAppendingString:identifier];
+            [_updateButton setTitle:WKLocalized(@"addons.action.update") forState:UIControlStateNormal];
+            _updateButton.enabled=YES;
             break;
         case TKAddonUpdateStateNotUpdatable:
         case TKAddonUpdateStateUnknown:
@@ -851,7 +863,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 @property(nonatomic) UIButton *createGroupButton, *installedFilterButton, *installedSortButton;
 // Packages whose artwork has already been asked for, so a row that has none does not send a
 // request every time the table reloads.
-@property(nonatomic) NSMutableSet<NSString *> *logoRequests;
+@property(nonatomic) BOOL resolvingArtwork;
 @property(nonatomic) TKAddonHubTab tab;
 @property(nonatomic) NSUInteger updateGeneration;
 @property(nonatomic) BOOL checkingUpdates;
@@ -899,7 +911,10 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _gameVersion=TKForeverGameVersion;
     _selected=[NSMutableSet new]; _installing=[NSMutableSet new];
     _updateCandidates=[NSMutableDictionary new]; _updateResults=[NSMutableDictionary new];
-    _downloadingPackages=[NSMutableSet new];
+    // These back the visible row state. Objective-C accepts messages to nil, so omitting
+    // their allocation made every provider answer vanish and each row return to "Not checked".
+    _updateAnswers=[NSMutableDictionary new]; _updateFailures=[NSMutableDictionary new];
+    _checkingPackages=[NSMutableSet new]; _downloadingPackages=[NSMutableSet new];
     _installedQuery=@""; _installedSort=0; _installedFilter=0;
     _discoverSections=@[];
     NSNumber *savedColumns=[NSUserDefaults.standardUserDefaults objectForKey:TKAddonColumnsKey];
@@ -1543,37 +1558,70 @@ static NSString *BrowseSortLabel(NSInteger field) {
 }
 
 // The artwork for an installed row. A package installed before this field existed has none, so
-// the first time such a row is drawn the project is asked for once and the answer is kept with
-// the record; the request never repeats for that package.
-- (nullable NSString *)logoURLStringForRecord:(TKAddonRecord *)record {
-    NSString *stored=record.provider[TKAddonProviderLogo];
-    if ([stored isKindOfClass:NSString.class] && stored.length) return stored;
-    NSNumber *projectID=record.provider[TKAddonProviderProjectID];
+// the page asks the provider once, for every such package at the same time, and keeps each
+// answer with its record; the request never repeats for a package that has one.
+//
+// This used to happen inside the table-view cell, one project at a time, which is why My
+// Add-ons showed a grey placeholder for every package: a row was drawn before its own request
+// finished, the answer was written to a record the page had already copied, and no picture was
+// ever stored. Measured on the iPad, 2026-11-13: 17 records with a CurseForge project, none of
+// them carrying an artwork URL.
+- (void)resolveMissingArtwork {
+    if (_resolvingArtwork) return;
     NSString *apiKey=[_credentials curseForgeKey:NULL];
-    NSString *key=record.uuid ?: record.identifier;
-    if (![projectID isKindOfClass:NSNumber.class] || !apiKey.length || !key) return nil;
-    if (!_logoRequests) _logoRequests=[NSMutableSet new];
-    if ([_logoRequests containsObject:key]) return nil;
-    [_logoRequests addObject:key];
+    if (!apiKey.length) return;
+    NSMutableArray<NSNumber *> *projectIDs=[NSMutableArray array];
+    for (TKAddonRecord *record in _store.records) {
+        if (!record.linked) continue;
+        NSString *stored=record.provider[TKAddonProviderLogo];
+        if ([stored isKindOfClass:NSString.class] && stored.length) continue;
+        NSNumber *projectID=record.provider[TKAddonProviderProjectID];
+        if (![projectID isKindOfClass:NSNumber.class]) continue;
+        if (![projectIDs containsObject:projectID]) [projectIDs addObject:projectID];
+    }
+    if (!projectIDs.count) return;
+    _resolvingArtwork=YES;
     TKCurseForgeClient *client=[[TKCurseForgeClient alloc] initWithAPIKey:apiKey];
     __weak TKWoWAddonManagerViewController *weakSelf=self;
-    [client projectForModID:projectID completion:^(id value, NSError *failure) {
+    [client projectsForModIDs:projectIDs completion:^(id value,NSError *failure){
+        // A page that could not reach the provider keeps its placeholders and says nothing:
+        // no key, no network and a refused request all leave the row honest, and the next
+        // refresh asks again.
         (void)failure;
-        NSString *logo=[value isKindOfClass:NSDictionary.class]
-            ? [weakSelf thumbnailURLStringForProject:value] : nil;
-        if (!logo.length) return;
         dispatch_async(dispatch_get_main_queue(), ^{
-            TKWoWAddonManagerViewController *self=weakSelf;
-            if (!self) return;
-            // Kept on the record the page is drawing, so the row draws it from now on and the
-            // request is not repeated for this package while the page is open.
-            NSMutableDictionary *identity=[NSMutableDictionary dictionaryWithDictionary:record.provider ?: @{}];
-            identity[TKAddonProviderLogo]=logo;
-            record.provider=identity;
-            [self.tableView reloadData];
+            TKWoWAddonManagerViewController *self=weakSelf; if (!self) return;
+            self->_resolvingArtwork=NO;
+            NSArray *projects=[value isKindOfClass:NSArray.class]?value:@[];
+            NSMutableDictionary<NSNumber *,NSString *> *byProject=[NSMutableDictionary new];
+            for (NSDictionary *project in projects) {
+                if (![project isKindOfClass:NSDictionary.class]) continue;
+                NSNumber *projectID=[project[@"id"] isKindOfClass:NSNumber.class]?project[@"id"]:nil;
+                NSString *logo=[self thumbnailURLStringForProject:project];
+                if (projectID && logo.length) byProject[projectID]=logo;
+            }
+            if (!byProject.count) return;
+            BOOL changed=NO;
+            for (TKAddonRecord *record in self.store.records) {
+                if (!record.linked) continue;
+                NSString *stored=record.provider[TKAddonProviderLogo];
+                if ([stored isKindOfClass:NSString.class] && stored.length) continue;
+                NSNumber *projectID=record.provider[TKAddonProviderProjectID];
+                NSString *logo=projectID?byProject[projectID]:nil;
+                if (!logo.length) continue;
+                NSError *storeError=nil;
+                if ([self.store setProviderArtwork:logo record:record error:&storeError]) changed=YES;
+                else {
+                    // A folder this store does not own keeps the picture for this page; the
+                    // next open asks again, which costs one request for the whole page.
+                    NSMutableDictionary *identity=[NSMutableDictionary dictionaryWithDictionary:record.provider ?: @{}];
+                    identity[TKAddonProviderLogo]=logo;
+                    record.provider=identity;
+                    changed=YES;
+                }
+            }
+            if (changed) [self.tableView reloadData];
         });
     }];
-    return nil;
 }
 
 - (void)installMod:(NSDictionary *)entry {
@@ -1595,19 +1643,22 @@ static NSString *BrowseSortLabel(NSInteger field) {
             [self providerFailed:error];
             return;
         }
-        [self installCandidate:candidate project:entry replacing:nil client:client name:name];
+        [self installCandidate:candidate project:entry replacing:nil client:client name:name completion:nil];
     }];
 }
 
 // Download one file and either import it as a new package or replace an existing one.
 - (void)installCandidate:(TKCurseForgeFileCandidate *)candidate project:(NSDictionary *)project
-               replacing:(TKAddonRecord *)record client:(TKCurseForgeClient *)client name:(NSString *)name {
+               replacing:(TKAddonRecord *)record client:(TKCurseForgeClient *)client name:(NSString *)name
+              completion:(void (^)(BOOL ok, NSError *error))completion {
     NSDictionary *file=candidate.file;
     NSNumber *modID=[project[@"id"] isKindOfClass:NSNumber.class]?project[@"id"]:nil;
     NSNumber *fileID=[file[@"id"] isKindOfClass:NSNumber.class]?file[@"id"]:nil;
     if (!fileID) {
         if (modID) [_installing removeObject:modID];
-        [self providerFailed:[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:WKLocalized(@"addons.error.incompleteFile")}]];
+        NSError *failure=[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:WKLocalized(@"addons.error.incompleteFile")}];
+        [self providerFailed:failure];
+        if (completion) completion(NO, failure);
         return;
     }
     NSDictionary *provider=[self providerIdentityForProject:project file:file compatibility:candidate.compatibility];
@@ -1615,12 +1666,13 @@ static NSString *BrowseSortLabel(NSInteger field) {
     // download-url endpoint for a file that already came with a URL is a request that can only
     // fail - and on 2026-10-22 it did, with a 403 that the app used to report as a rejected key.
     NSString *carried=[file[@"downloadUrl"] isKindOfClass:NSString.class]?file[@"downloadUrl"]:nil;
-    dispatch_block_t finish = ^{
+    void (^finish)(BOOL, NSError *) = ^(BOOL ok, NSError *failure) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (modID) [self.installing removeObject:modID];
             if (record) [self.downloadingPackages removeObject:record.uuid ?: record.identifier];
             [self.tableView reloadData];
             [self updateToolbar];
+            if (completion) completion(ok, failure);
         });
     };
     if (carried.length) {
@@ -1628,20 +1680,37 @@ static NSString *BrowseSortLabel(NSInteger field) {
         return;
     }
     [client downloadURLForModID:modID fileID:fileID completion:^(NSString *url,NSError *downloadError){
-        if (downloadError) { if (modID) dispatch_async(dispatch_get_main_queue(), ^{ [self.installing removeObject:modID]; }); [self providerFailed:downloadError]; return; }
+        if (downloadError) {
+            // `finish` is what takes the package out of the downloading set. Without it a
+            // refused download-url request left the row reading "Updating…" for ever, and
+            // Update All counted the package as busy rather than eligible (2026-11-13).
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (modID) [self.installing removeObject:modID];
+                if (record) [self.downloadingPackages removeObject:record.uuid ?: record.identifier];
+                [self.tableView reloadData];
+                [self updateToolbar];
+            });
+            [self providerFailed:downloadError];
+            return;
+        }
         [self downloadArchiveAt:url forClient:client name:name provider:provider record:record compatibility:candidate.compatibility completion:finish];
     }];
 }
 
 - (void)downloadArchiveAt:(NSString *)url forClient:(TKCurseForgeClient *)client name:(NSString *)name
                  provider:(NSDictionary *)provider record:(TKAddonRecord *)record
-            compatibility:(TKCurseForgeCompatibility)compatibility completion:(dispatch_block_t)completion {
+            compatibility:(TKCurseForgeCompatibility)compatibility completion:(void (^)(BOOL ok, NSError *error))completion {
     NSError *requestError=nil;
     NSURLRequest *request=[client assetRequestForURL:url error:&requestError];
-    if (!request) { if (completion) completion(); [self providerFailed:requestError]; return; }
+    if (!request) { if (completion) completion(NO, requestError); [self providerFailed:requestError]; return; }
     NSURLSessionDownloadTask *task=[[NSURLSession sharedSession] downloadTaskWithRequest:request completionHandler:^(NSURL *location,NSURLResponse *response,NSError *failure){
         (void)response;
-        if (failure||!location) { if (completion) completion(); [self providerFailed:failure?:[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:WKLocalized(@"addons.error.noArchive")}]]; return; }
+        if (failure||!location) {
+            NSError *cause=failure?:[NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:@{NSLocalizedDescriptionKey:WKLocalized(@"addons.error.noArchive")}];
+            if (completion) completion(NO, cause);
+            [self providerFailed:cause];
+            return;
+        }
         NSString *path=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:@".zip"]];
         NSError *moveError=nil; [[NSFileManager defaultManager] moveItemAtURL:location toURL:[NSURL fileURLWithPath:path] error:&moveError];
         NSError *storeError=nil;
@@ -1653,7 +1722,6 @@ static NSString *BrowseSortLabel(NSInteger field) {
                                     provenance:TKAddonProvenanceAPI error:&storeError];
         }
         [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
-        if (completion) completion();
         dispatch_async(dispatch_get_main_queue(),^{
             if (!ok) {
                 NSError *cause=moveError?:storeError;
@@ -1662,6 +1730,7 @@ static NSString *BrowseSortLabel(NSInteger field) {
                     TKAddonHubKeyIdentifier: record.identifier ?: name });
                 [self showError:WKLocalized(@"addons.error.installTitle") message:cause.localizedDescription?:WKLocalized(@"addons.error.importMessage")];
                 [self updateToolbar];
+                if (completion) completion(NO, cause);
                 return;
             }
             TKAddonHubLog(TKAddonHubEventRow, @{ TKAddonHubKeyOutcome: @"installed",
@@ -1671,7 +1740,17 @@ static NSString *BrowseSortLabel(NSInteger field) {
                 ? WKLocalizedFormat(@"addons.installedStatus",name)
                 : WKLocalizedFormat(@"addons.installedUnverified",name);
             [self reloadAddons];
-            [self checkForUpdates];
+            // Do not start a second sweep here.  The bulk runner is waiting for this archive
+            // transaction, and a sweep reset every row to Not checked while it was still
+            // reporting Update All progress on the physical iPad.
+            TKAddonRecord *updated=record ? [self recordForIdentifier:record.identifier] : nil;
+            if (updated) {
+                [self setAnswer:@{ @"current": @YES } forRecord:updated];
+                [self persistUpdateStates];
+            }
+            [self.tableView reloadData];
+            [self updateToolbar];
+            if (completion) completion(YES, nil);
         });
     }];
     [task resume];
@@ -1699,6 +1778,9 @@ static NSString *BrowseSortLabel(NSInteger field) {
     }
     [self.tableView reloadData];
     [self updateToolbar];
+    // Rows draw artwork from their own record, so a page holding packages installed before
+    // thumbnails were recorded asks for all of them at once, here, rather than from a cell.
+    [self resolveMissingArtwork];
 }
 
 #pragma mark - The bundled WolkaraRoue package
@@ -1810,6 +1892,22 @@ static NSString *BrowseSortLabel(NSInteger field) {
     // "unavailable", and it is decided from recorded facts, not from a failed request.
     facts.apiArchiveAvailable=[answer[@"api"] boolValue];
     facts.browserRoutable=[self browserPageAvailableForRecord:record];
+    // Store reloads replace record objects while a bulk operation is still using its
+    // original queue. Read the durable answer as a fallback so the visible row never
+    // falls back to “Not checked yet” between that reload and the next provider sweep.
+    if (!facts.answered) {
+        switch (TKAddonUpdateResultForStoredValue(record.lastUpdateState)) {
+            case TKAddonUpdateResultUpToDate:
+                facts.answered=YES; facts.installedFileIsCurrent=YES; break;
+            case TKAddonUpdateResultUpdateAvailable:
+                facts.answered=YES; facts.newerFileExists=YES; facts.apiArchiveAvailable=YES; break;
+            case TKAddonUpdateResultNeedsBrowserConfirmation:
+                facts.answered=YES; facts.newerFileExists=YES; break;
+            case TKAddonUpdateResultUnavailableNoCompatibleFile:
+                facts.answered=YES; facts.noCompatibleFile=YES; break;
+            default: break;
+        }
+    }
     return TKAddonUpdateResolve(facts);
 }
 
@@ -1840,7 +1938,7 @@ static NSString *BrowseSortLabel(NSInteger field) {
         // the row says "Not checked yet" and offers Manage, which is truthful. This is the
         // whole of the 2026-11-13 fix - the list used to sit on "Updating…" forever because
         // this case did not exist and the resolver answered Checking for it.
-        case TKAddonUpdateResultNotChecked: return TKAddonUpdateStateUnknown;
+        case TKAddonUpdateResultNotChecked: return TKAddonUpdateStateNotChecked;
     }
     return TKAddonUpdateStateUnknown;
 }
@@ -2069,37 +2167,34 @@ static NSString *BrowseSortLabel(NSInteger field) {
                 self.updateAnswers[key]=@{ @"current": @YES };
                 [self.updateFailures removeObjectForKey:key];
                 self.updateResults[key]=@([self updateResultForRecord:record]);
+                // The bulk finisher reloads the store after its last row.  Retain this answer
+                // before that reload, otherwise a package that was verified current returns to
+                // "Not checked yet" as soon as Update All completes.
+                [self persistUpdateStates];
                 [self.tableView reloadData];
                 [self updateToolbar];
                 if (completion) completion(YES, nil);
                 return;
             }
-            NSString *carried=[candidate.file[@"downloadUrl"] isKindOfClass:NSString.class]?candidate.file[@"downloadUrl"]:nil;
-            if (!carried.length && allowBrowser) {
-                // The API listed a newer file but will not hand it over. Nothing failed; this
-                // update belongs to the page, so the row states that and opens it.
-                [self.downloadingPackages removeObject:key];
-                self.updateAnswers[key]=@{ @"newer": @YES, @"api": @NO };
-                self.updateResults[key]=@([self updateResultForRecord:record]);
-                [self.tableView reloadData];
-                [self updateToolbar];
-                [self openBrowserForRecord:record];
-                if (completion) completion(YES, nil);
-                return;
-            }
+            // CurseForge commonly omits downloadUrl from file metadata.  The endpoint used by
+            // installCandidate: is the supported retrieval path; treating a missing field as a
+            // browser-only package made the row appear to update and immediately return.
             [self installCandidate:candidate project:project replacing:record client:client
-                              name:record.name ?: record.identifier];
-            if (completion) completion(YES, nil);
+                              name:record.name ?: record.identifier completion:completion];
         });
     }];
 }
 
-// A package the bulk run should try: one the provider has a newer file for, whether the API can
-// hand it over or only the project's own page can. A browser-confirmation package is *not*
-// dropped from the plan - it is queued, reported, and opened when the player asks.
+// A package the bulk run should try. Any linked package that is not held back: "update" means
+// "ask the provider for its newest file and install it", and a package already current answers
+// that question without writing anything. Requiring a prior check made Update All empty
+// whenever a sweep had not answered - the fault this replaces.
 - (BOOL)recordIsBulkEligible:(TKAddonRecord *)record {
+    if (!record.linked || record.disabled || record.pinned) return NO;
     TKAddonUpdateResult result=[self updateResultForRecord:record];
-    return result==TKAddonUpdateResultUpdateAvailable || result==TKAddonUpdateResultNeedsBrowserConfirmation;
+    if (result==TKAddonUpdateResultNeedsBrowserConfirmation) return YES;
+    if (result==TKAddonUpdateResultUnavailableNoCompatibleFile) return NO;
+    return YES;
 }
 - (NSArray<TKAddonRecord *> *)selectedUpdatableRecords {
     NSMutableArray<TKAddonRecord *> *records=[NSMutableArray new];
@@ -2187,7 +2282,12 @@ static NSString *BrowseSortLabel(NSInteger field) {
         NSUInteger browser=_bulkNeedsBrowser;
         _bulkQueue=nil; _bulkFailures=0; _bulkNeedsBrowser=0;
         [self updateNavigationItems];
-        [self reloadAddons];
+        // Each successful archive has already reloaded its committed record, and a
+        // current-file answer is already held in `_updateAnswers`. Reloading again at
+        // the end throws those settled answers away when the manifest write is still
+        // catching up, so every completed row visibly returned to “Not checked yet”.
+        // There is no further filesystem work to discover here.
+        [self.tableView reloadData];
         TKAddonHubLog(TKAddonHubEventUpdate, @{ TKAddonHubKeyOutcome: _bulkCancelled?@"cancelled":@"finished",
             TKAddonHubKeyCount: @(failed), TKAddonHubKeyReason: browser?@"browser-queued":@"done" });
         if (browser) {
@@ -2439,7 +2539,14 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
     NSString *kind=entry[@"kind"];
 
     if ([kind isEqual:@"browseControls"]) {
-        if (![self hasKey]) { cell.textLabel.text=WKLocalized(@"addons.setUpAccess"); cell.detailTextLabel.text=WKLocalized(@"addons.setUpAccess.detail"); }
+        if (![self hasKey]) {
+            // This is the first screen a player sees without credentials.  It must be an
+            // action, not an instruction to find a different control behind this sheet.
+            cell.textLabel.text=WKLocalized(@"addons.setUpAccess");
+            cell.detailTextLabel.text=WKLocalized(@"addons.setUpAccess.detail");
+            cell.accessibilityIdentifier=@"wow.addons.setupAccess";
+            cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+        }
         else if (indexPath.row==0) { cell.textLabel.text=WKLocalizedFormat(@"addons.sort.current",BrowseSortLabel(_sortField)); cell.detailTextLabel.text=WKLocalizedFormat(@"addons.sort.tapToChange",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")); }
         else { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
     } else if ([kind isEqual:@"browseResults"] || [kind isEqual:@"discover"]) {
@@ -2477,13 +2584,20 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             return project;
         }
     } else if ([kind isEqual:@"message"]) {
-        // A tab with nothing to list still says why. One row, no action, no spinner: the state
-        // is the sentence, and Refresh is what changes it.
+        // Discover has the same first-run route as Browse.  Leaving this as an inert sentence
+        // made the two provider tabs look broken when no key had been saved yet.
         NSArray *messageRows=entry[@"rows"];
-        cell.textLabel.text=[messageRows.firstObject isKindOfClass:NSString.class]?messageRows.firstObject:nil;
-        cell.detailTextLabel.text=WKLocalized(@"addons.discover.hint");
-        cell.selectionStyle=UITableViewCellSelectionStyleNone;
-        cell.accessibilityIdentifier=@"wow.addons.discover.state";
+        if (![self hasKey]) {
+            cell.textLabel.text=WKLocalized(@"addons.setUpAccess");
+            cell.detailTextLabel.text=WKLocalized(@"addons.setUpAccess.detail");
+            cell.accessibilityIdentifier=@"wow.addons.setupAccess";
+            cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+        } else {
+            cell.textLabel.text=[messageRows.firstObject isKindOfClass:NSString.class]?messageRows.firstObject:nil;
+            cell.detailTextLabel.text=WKLocalized(@"addons.discover.hint");
+            cell.selectionStyle=UITableViewCellSelectionStyleNone;
+            cell.accessibilityIdentifier=@"wow.addons.discover.state";
+        }
     } else if ([kind isEqual:@"summary"]) {
         NSDictionary *row=entry[@"rows"][indexPath.row];
         if ([row[@"kind"] isEqual:@"bundled"]) {
@@ -2531,7 +2645,8 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
                             selectable:[self recordIsSelectable:addon]
                                  state:[self stateForRecord:addon]
                                 detail:[self detailForRecord:addon]
-                                  logo:[self logoURLStringForRecord:addon]];
+                                  logo:[addon.provider[TKAddonProviderLogo] isKindOfClass:NSString.class]
+                                       ? addon.provider[TKAddonProviderLogo] : nil];
         return installed;
     }
     cell.backgroundColor=[UIColor colorWithRed:0.07 green:0.09 blue:0.13 alpha:1]; cell.textLabel.textColor=[UIColor colorWithRed:0.9 green:0.72 blue:0.35 alpha:1]; cell.detailTextLabel.textColor=[UIColor colorWithWhite:0.75 alpha:1]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
@@ -2568,6 +2683,19 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
     NSDictionary *entry=sections[indexPath.section];
     NSString *kind=entry[@"kind"];
     if ([kind isEqual:@"summary"]) return;
+    if ([kind isEqual:@"browseControls"] || [kind isEqual:@"message"]) {
+        // Both provider tabs expose this one explicit first-run action.  In particular, do not
+        // fall through and treat the browse-control marker (@0) as an add-on record.
+        if (![self hasKey]) { [self setupKey]; return; }
+        // With a key the two control rows are the same Sort and Filter inputs the toolbar
+        // offers.  They used to fall through to the record path and do nothing at all, which is
+        // why tapping "Sort" read as broken on the audit.
+        if ([kind isEqual:@"browseControls"] && self.tab==TKAddonHubTabBrowse) {
+            if (indexPath.row==0) [self presentSortMenuFrom:indexPath];
+            else if (indexPath.row==1) [self chooseCategoryFrom:indexPath];
+        }
+        return;
+    }
     if ([kind isEqual:@"browseResults"]) {
         if (indexPath.row==(NSInteger)_results.count) { [self loadMore]; return; }
         [self presentProject:_results[indexPath.row]]; return;
@@ -2757,8 +2885,9 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
     [self updateRecord:record completion:^(BOOL ok, NSError *error){
         (void)error;
         TKWoWAddonManagerViewController *self=weakSelf; if(!self) return;
-        [self checkForUpdates];
-        if (!ok) (void)self;
+        // updateRecord completes after the archive transaction, not when the download starts.
+        // A new full sweep here erased the settled row state and recreated the visible loop.
+        if (!ok) [self updateToolbar];
     }];
 }
 

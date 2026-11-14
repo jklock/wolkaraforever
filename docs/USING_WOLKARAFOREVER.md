@@ -82,7 +82,9 @@ page is native and has three tabs; it opens on **My Add-ons**.
   that was already on the device. Opening the tab, and **Refresh**, ask the provider about every
   linked package and compare the file it holds with the file the provider has. Search narrows
   the list; **Sort** and **Filter** change its order and its contents. Each row shows its name,
-  version, author, the interface versions its TOC declares, and one word about its update, with
+  version, author, the interface versions its TOC declares, and its CurseForge thumbnail when a
+  provider identity is recorded; packages without one retain the neutral puzzle icon. Each row
+  also shows one word about its update, with
   one action that goes with that word: **Update**, **Check**, **Retry**, **Open** (see below),
   **Link**, or **Manage**. "Not checked yet" means nothing has asked about that package - usually
   because no API key is stored - and **Check** is what asks. "Checking…" only ever appears while
