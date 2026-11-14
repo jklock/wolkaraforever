@@ -1,5 +1,4 @@
-# Enforced by the main-branch ruleset described in
-# development/guides/REPOSITORY_WORKFLOW.md: required code-owner review is on, and @jklock is
+# Enforced by the main-branch ruleset: required code-owner review is on, and @jklock is
 # the code owner for every path, so no pull request merges without the maintainer's approval.
 
 * @jklock
@@ -12,9 +11,8 @@
 /wolkaraforever/Touch/ @jklock
 /wolkaraforever/Controller/ @jklock
 /wolkaraforever/WoW/tests/ui-baselines/ @jklock
-/development/architecture/UI_POLICY.md @jklock
-/development/architecture/LAUNCHER_UI_BASELINE.md @jklock
-/development/reviews/ui/ @jklock
+/docs/agent/ @jklock
+/docs/screenshots/ @jklock
 
 # The upstream vendor tree and layer assembly boundary.
 /platform/ @jklock
@@ -29,5 +27,3 @@
 /.github/ @jklock
 /AGENTS.md @jklock
 /SECURITY.md @jklock
-/development/architecture/ @jklock
-/development/guides/REPOSITORY_WORKFLOW.md @jklock

@@ -12,8 +12,7 @@ Describe the user-visible or technical behavior changed.
 
 ## WolkaraForever UI review
 
-- [ ] This PR does not touch protected UI paths, or it has a review record in
-  `development/reviews/ui/` with classification `none`, `additive`, or `ui-contract-amendment`.
+- [ ] This PR does not touch protected UI paths, or the UI contract, localized text, and reviewed baselines are updated together.
 - [ ] Existing launcher/control elements and existing golden screenshots are unchanged.
 - [ ] Any new optional UI state has a setting/default-state explanation, localized text, named
   golden baseline, and iPhone Duo + iPad Pro 13-inch (M5) evidence.
@@ -33,6 +32,8 @@ what a person observed.
 ## Documentation and risk
 
 - [ ] Documentation is updated, or no documentation change is needed.
+- [ ] `docs/agent/` was refreshed and `check_agent_docs.sh` passes.
+- [ ] The applicable standalone human guide and screenshot were updated for every user-visible change.
 - [ ] Remaining gaps, deferred checks, and risks are listed below.
 
 <!-- State “none” when there are no remaining gaps. -->
