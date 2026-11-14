@@ -1705,6 +1705,13 @@ static void TestVoiceScreens(UIWindow *window) {
     UILabel *mapping = (id)Find(settings.view, @"voice.mapping");
     CHECK((mapping.text.length > 0), @"and it says what is mapped, got nothing");
     CHECK((Find(settings.view, @"voice.map") != nil), @"and it has the Map button");
+    // Disabled options are not actionable, but they remain readable: otherwise the page
+    // looks broken before the player has found the master switch.
+    for (NSString *key in @[@"mappingCard", @"takeButtonCard", @"modeCard", @"afterCard", @"wordsCard"]) {
+        UIView *card = [settings valueForKey:key];
+        CHECK((card.alpha >= 0.75 && !card.userInteractionEnabled),
+              @"%@ stays readable while Voice is off", key);
+    }
     // The audit's finding: the router observes input and the game observes it too, so a
     // mapped button keeps doing its game action. The product is limited to explicitly
     // mapped inputs and says so where the mapping is made; if that sentence ever goes

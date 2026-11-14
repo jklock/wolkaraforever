@@ -21,8 +21,18 @@ static TKAddonUpdateFacts *Facts(BOOL linked, BOOL answered, BOOL newer, BOOL ap
 int main(void) {
     @autoreleasepool {
         // The nine states the plan names, each reached from its own facts and no other way.
+        // A linked package nothing has answered for is *not* checking: the row says so and
+        // offers the check, which is the fault this state exists to end.
         TKAddonUpdateFacts *facts = Facts(YES, NO, NO, NO);
+        assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNotChecked);
+        assert(TKAddonUpdateStoredValue(TKAddonUpdateResultNotChecked) == nil);
+        assert([TKAddonUpdateTitleKey(TKAddonUpdateResultNotChecked) isEqual:@"addons.update.notChecked"]);
+        assert(TKAddonUpdateIsActionable(TKAddonUpdateResultNotChecked));
+        assert(!TKAddonUpdateIsBusy(TKAddonUpdateResultNotChecked));
+        facts.checking = YES;
         assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultChecking);
+        assert(TKAddonUpdateIsBusy(TKAddonUpdateResultChecking));
+        facts.checking = NO;
         facts.heldBack = YES;
         assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNotApplicable);
         facts.heldBack = NO;

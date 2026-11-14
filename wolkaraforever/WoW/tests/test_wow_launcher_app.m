@@ -461,7 +461,8 @@ static void TestAddons(void) {
 @interface UITableViewCell (TKAddonInstalledCellProbe)
 - (void)configureWithRecord:(TKAddonRecord *)record selected:(BOOL)selected
                  selectable:(BOOL)selectable state:(TKAddonUpdateState)state
-                     detail:(NSString *)detail;
+                     detail:(NSString *)detail
+                       logo:(NSString *)logoURLString;
 @end
 
 // The Add-on Hub: the resolver's whole vocabulary, the mixed-provider catalog, every control the
@@ -473,7 +474,12 @@ static void TestAddonHub(void) {
     // --- 1. the resolver, one case per state, from facts only
     TKAddonUpdateFacts *facts = [TKAddonUpdateFacts new];
     facts.linked = YES;
+    // Never asked is its own answer, not "Checking…". A row that said that with nothing on the
+    // wire is the fault this state ends.
+    assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNotChecked);
+    facts.checking = YES;
     assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultChecking);
+    facts.checking = NO;
 
     facts.heldBack = YES;
     assert(TKAddonUpdateResolve(facts) == TKAddonUpdateResultNotApplicable);
@@ -538,7 +544,7 @@ static void TestAddonHub(void) {
     assert(TKAddonUpdateStoredValue(TKAddonUpdateResultChecking) == nil);
     assert(TKAddonUpdateStoredValue(TKAddonUpdateResultDownloading) == nil);
     assert(TKAddonUpdateResultForStoredValue(TKAddonStoredUpdateAvailable) == TKAddonUpdateResultUpdateAvailable);
-    assert(TKAddonUpdateResultForStoredValue(@"a-state-from-a-newer-build") == TKAddonUpdateResultChecking);
+    assert(TKAddonUpdateResultForStoredValue(@"a-state-from-a-newer-build") == TKAddonUpdateResultNotChecked);
 
     // --- 2. a mixed-provider catalog: four routes, one list, one set of controls
     NSFileManager *files = NSFileManager.defaultManager;
@@ -580,6 +586,11 @@ static void TestAddonHub(void) {
     // --- 3. every My Add-ons control changes something, and nothing is decoration
     TKWoWAddonManagerViewController *manager = [[TKWoWAddonManagerViewController alloc]
         initWithAddOnsDirectory:addons edition:@"Forever"];
+    // Provider answers and in-flight markers must exist: Objective-C otherwise silently
+    // discards writes to nil collections and every completed row becomes Not checked.
+    assert([manager valueForKey:@"_updateAnswers"] != nil);
+    assert([manager valueForKey:@"_updateFailures"] != nil);
+    assert([manager valueForKey:@"_checkingPackages"] != nil);
     [manager loadViewIfNeeded];
     [manager.view layoutIfNeeded];
     assert(manager.tab == TKAddonHubTabMyAddOns);
@@ -672,7 +683,7 @@ static void TestAddonHub(void) {
     ];
     for (NSNumber *state in states) {
         [row configureWithRecord:apiRecord selected:NO selectable:YES
-                          state:(TKAddonUpdateState)state.integerValue detail:@"2.1"];
+                          state:(TKAddonUpdateState)state.integerValue detail:@"2.1" logo:nil];
         UILabel *word = (UILabel *)Find(row, [@"wow.addons.state." stringByAppendingString:apiRecord.identifier]);
         assert(word != nil && word.text.length > 0);
         assert(![word.text hasPrefix:@"addons."]);
@@ -690,9 +701,26 @@ static void TestAddonHub(void) {
     }
     // An unlinked row's action is Link, and it says so.
     [row configureWithRecord:filesRecord selected:NO selectable:YES
-                      state:TKAddonUpdateStateUnlinked detail:@"2.1"];
+                      state:TKAddonUpdateStateUnlinked detail:@"2.1" logo:nil];
     UIButton *link = (id)Find(row, [@"wow.addons.link." stringByAppendingString:filesRecord.identifier]);
     assert(link != nil && [ButtonTitle(link) isEqual:@"Link"] && link.enabled);
+
+    // --- 5a. a row draws the artwork its record carries. Measured on the iPad on 2026-11-13:
+    //     every installed package named a CurseForge project and not one carried a picture,
+    //     because the URL was dropped when the manifest was written and the row asked the
+    //     provider from inside the table-view cell. The page now keeps every URL with its
+    //     record in one batched query (`resolveMissingArtwork`) and the row draws that value.
+    NSMutableDictionary *withArtwork = [apiRecord.provider mutableCopy];
+    withArtwork[@"logo"] = @"https://media.forgecdn.net/avatars/thumbnails/109/996/256/256/example.png";
+    apiRecord.provider = withArtwork;
+    [row configureWithRecord:apiRecord selected:NO selectable:YES
+                      state:TKAddonUpdateStateUpToDate detail:@"2.1"
+                       logo:apiRecord.provider[@"logo"]];
+    assert(Find(row, withArtwork[@"logo"]) != nil);
+    // A package with no artwork keeps the neutral placeholder rather than borrowing one.
+    [row configureWithRecord:filesRecord selected:NO selectable:YES
+                      state:TKAddonUpdateStateUpToDate detail:@"2.1" logo:nil];
+    assert(Find(row, withArtwork[@"logo"]) == nil);
 
     // --- 6. groups organize records and move no file
     NSError *groupError = nil;
@@ -1661,8 +1689,11 @@ static void TestPhoneDisplayDefaults(void) {
         // compatibility note that used to sit at the foot of this card is gone.
         @"wow.box.edition": @[@"wow.heading.edition", @"wow.edition", @"wow.preferences",
                               @"wow.language"],
-        @"wow.box.addons": @[@"wow.heading.addons", @"wow.addons.manage", @"wow.addons.macEver",
-                             @"wow.addons.directory"],
+        // The Add-On Manager card. The recommendation row is not drawn here any more; the
+        // page's own Browse tab reaches it. What is left is what a person uses day to day,
+        // plus the two whole-folder rows.
+        @"wow.box.addons": @[@"wow.heading.addons", @"wow.addons.manage",
+                             @"wow.addons.directory", @"wow.addons.backup", @"wow.addons.restore"],
         @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.voice.test"],
         // The profile card: which device, which render scale, and the overlay. Nothing here
         // reads or writes the game's files, and there is no "restore defaults" row: the way
@@ -1677,7 +1708,8 @@ static void TestPhoneDisplayDefaults(void) {
         // The sixth card: the interface this launcher drives, and the arrangement its controls
         // use. Two settings, two rows.
         @"wow.box.launcherManager": @[@"wow.heading.launcherManager", @"wow.launcher.interfaceMode",
-                                      @"wow.launcher.interfaceSetup"],
+                                      @"wow.launcher.layoutCreate", @"wow.launcher.interfaceSetup",
+                                      @"wow.launcher.layoutRestore", @"wow.launcher.layoutBackup"],
     };
     for (UIView *box in boxes) {
         UIStackView *stack = box.subviews.firstObject;
@@ -2752,8 +2784,11 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
 
     // --- and no control on the page is dead: every one has a target and an action
     for (NSString *identifier in @[@"wow.edition", @"wow.preferences", @"wow.language",
-                                   @"wow.addons.manage", @"wow.addons.macEver", @"wow.addons.directory",
+                                   @"wow.addons.manage", @"wow.addons.directory",
+                                   @"wow.addons.backup", @"wow.addons.restore",
                                    @"wow.launcher.interfaceMode",
+                                   @"wow.launcher.layoutCreate", @"wow.launcher.layoutRestore",
+                                   @"wow.launcher.layoutBackup",
                                    @"wow.permissions", @"wow.voice", @"wow.voice.test",
                                    @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
                                    @"wow.performance.backup",

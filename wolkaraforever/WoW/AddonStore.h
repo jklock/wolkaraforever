@@ -158,6 +158,11 @@ FOUNDATION_EXPORT BOOL TKAddonProviderIsCurseForge(NSDictionary *_Nullable provi
 - (BOOL)setDisabled:(BOOL)disabled record:(TKAddonRecord *)record error:(NSError **)error;
 - (BOOL)removeRecord:(TKAddonRecord *)record error:(NSError **)error;
 - (BOOL)setPinned:(BOOL)pinned record:(TKAddonRecord *)record error:(NSError **)error;
+// Keep a project's artwork with the identity the package already has. Nothing a row acts on
+// changes: the folders, the file identity and the stored update answer are untouched, so a
+// thumbnail request can never make a package look checked or updatable.
+- (BOOL)setProviderArtwork:(NSString *)logoURLString record:(TKAddonRecord *)record
+                     error:(NSError **)error;
 
 // Record a project identity for a package that arrived as files or was found on disk. Nothing on
 // disk moves: the folders keep running exactly as they were. This is the player naming the

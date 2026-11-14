@@ -76,6 +76,8 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
     TKAddonUpdateStateUnlinked,
     TKAddonUpdateStateUnavailable,
     TKAddonUpdateStateTerminal,
+    // Linked package whose provider has not been queried in this page yet.
+    TKAddonUpdateStateNotChecked,
 };
 - (instancetype)initWithAddOnsDirectory:(NSString *)directory edition:(NSString *)edition;
 // Starts on Browse rather than Installed, for the development preview and for
@@ -120,5 +122,19 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
 // the iPad; the page presents this same sheet when a row is tapped.
 - (UIAlertController *)manageSheetForRecord:(TKAddonRecord *)record;
 @end
+
+// The whole add-on folder, as one ZIP and back again.
+//
+// These are the home page's two add-on file operations and they are the whole of that feature: a
+// backup is made because someone pressed Backup Add-ons, and a restore happens because someone
+// picked a backup and confirmed. Nothing here runs while a page is open, nothing compares
+// versions, and nothing reaches the network.
+//
+// The archive side is Swift (`TKAddonBackupArchive`, built on the ZIP library the app already
+// ships), reached by name exactly as the Forever UI archive is, so a host test that does not
+// link Swift still sees the functions and gets a named failure instead of a crash.
+FOUNDATION_EXPORT NSString * _Nullable TKAddonBackupCreate(NSString *addOnsDirectory, NSError **error);
+FOUNDATION_EXPORT NSArray<NSString *> *TKAddonBackupNames(NSString *addOnsDirectory, NSError **error);
+FOUNDATION_EXPORT BOOL TKAddonBackupRestore(NSString *name, NSString *addOnsDirectory, NSError **error);
 
 NS_ASSUME_NONNULL_END

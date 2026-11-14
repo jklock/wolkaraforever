@@ -22,6 +22,8 @@ Open **Settings** to choose an app language. Open **Launcher Manager** to choose
 
 Open **Add-On Manager** to view recorded packages, install the bundled WolkaraRoue package, import a validated archive, or browse a supported provider. An optional provider key stays in the device Keychain. The app removes only add-ons it recorded as managed.
 
+A provider tab without a key shows one **Set up access** row; opening it asks for the key and then loads the tab. Each installed row shows the package's name, version, author and its CurseForge thumbnail once the package records a provider identity, and one word about its update with the action that goes with it: **Update**, **Check**, **Retry**, **Open**, **Link** or **Manage**. **Not checked yet** means nothing has asked the provider about that package yet, and **Check** is what asks; **Update** asks anyway and either installs the newest file or reports that the package is current. **Update All** runs the same question for every eligible package and finishes when each one has been written, so rows settle together rather than returning to **Not checked yet**.
+
 ![Add-On Manager](screenshots/addon-manager.jpg)
 
 ## Back up or recover your interface
