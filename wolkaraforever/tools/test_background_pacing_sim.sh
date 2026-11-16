@@ -1,12 +1,8 @@
 #!/bin/bash
-# Inactive Metal submission, in the simulator, through the adapter's own hook.
-#
-# The product caps drawable acquisition while another app is in front and leaves
-# the foreground rate alone. That is a claim about timing, so it is measured on
-# the same -[CAMetalLayer nextDrawable] the guest renders through, on both matrix
-# simulators, rather than read off the source. No guest binary, game file or
-# account is involved: one off-screen layer, the app's own lifecycle
-# notifications, and the numbers.
+# Background lifecycle, in the simulator, through the adapter's retained entry
+# point. It measures the same -[CAMetalLayer nextDrawable] guest rendering uses
+# and proves backgrounding adds no WolkaraForever frame cap. No game binary or
+# account is involved.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh

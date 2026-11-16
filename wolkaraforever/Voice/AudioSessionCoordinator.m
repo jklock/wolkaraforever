@@ -2,6 +2,7 @@
 
 #import "AudioSessionCoordinator.h"
 #import "../App/WolkaraForeverLog.h"
+#import "VoiceSettings.h"
 
 #import <AVFAudio/AVFAudio.h>
 #include <dlfcn.h>
@@ -22,6 +23,7 @@ static char const AKAudioCoordinatorQueueKey;
     dispatch_queue_t _transitions;
     AKAudioLease _lease;
     BOOL _pushToTalk;
+    BOOL _dictationEnabled;
     // Whether the game runtime wants playback. It can ask while push to talk holds the session, and
     // the answer then is "yes, when this is over" rather than "no" - which is the difference
     // between obeying the declared policy on release and guessing at it. The first version of this
@@ -44,6 +46,7 @@ static char const AKAudioCoordinatorQueueKey;
         _transitions = dispatch_queue_create("wolkaraforever.audio.session", DISPATCH_QUEUE_SERIAL);
         dispatch_queue_set_specific(_transitions, &AKAudioCoordinatorQueueKey, (void *)&AKAudioCoordinatorQueueKey, NULL);
         _lease = AKAudioLeaseNone;
+        _dictationEnabled = AKVoiceSettings.shared.enabled;
         _lastTransition = @"none yet";
         // Reading the microphone permission needs no recording, so it can be answered at launch instead
         // of during a hold. It has to be read here because it is the one fact that cannot be told apart
@@ -127,9 +130,21 @@ static char const AKAudioCoordinatorQueueKey;
             return;
         }
         _gameWantsPlayback = YES;
+        // CoreAudio asks repeatedly while it is constructing and querying the
+        // game's output device.  A lease that already has its declared
+        // category is not a new audio request: calling setCategory/setActive
+        // again tears down RemoteIO underneath the game.  In practice that
+        // produced a burst of session resets at launch and on route queries.
+        AVAudioSessionCategory expected = _dictationEnabled
+            ? AVAudioSessionCategoryPlayAndRecord : AVAudioSessionCategoryPlayback;
+        if (_lease == AKAudioLeaseGame &&
+            [AVAudioSession.sharedInstance.category isEqualToString:expected]) {
+            ok = YES;
+            return;
+        }
         _lease = AKAudioLeaseGame;
-        ok = [self applyPlaybackForGame];
-        [self logTransitionFrom:from to:@"game" result:ok error:nil];
+        ok = [self applyGameAudioPolicy];
+        [self logTransitionFrom:from to:(_dictationEnabled ? @"game duplex" : @"game") result:ok error:nil];
     }];
     return ok;
 }
@@ -146,41 +161,38 @@ static char const AKAudioCoordinatorQueueKey;
     }];
 }
 
+- (void)setDictationEnabled:(BOOL)enabled {
+    [self onTheQueue:^{
+        if (_dictationEnabled == enabled) return;
+        _dictationEnabled = enabled;
+        if (!_gameWantsPlayback || _lease == AKAudioLeasePushToTalk) return;
+        NSString *from = [self nameForLease:_lease];
+        BOOL ok = [self applyGameAudioPolicy];
+        [self logTransitionFrom:from to:(enabled ? @"game duplex" : @"game") result:ok error:nil];
+    }];
+}
+
 - (BOOL)beginPushToTalk:(NSError **)error {
     __block BOOL ok = NO;
     __block NSError *failure = nil;
     [self onTheQueue:^{
         NSString *from = [self nameForLease:_lease];
         AVAudioSession *session = AVAudioSession.sharedInstance;
+        BOOL stableDuplex = _lease == AKAudioLeaseGame &&
+            [session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord];
         // PlayAndRecord with mixing, so the game keeps its sound while the user talks. Record
         // alone - which is what this shipped with - takes the output away from the process,
         // and a player pressing the button to say something heard the whole game go quiet for
         // the length of the hold (reported from the device, 2026-10-22).
         //
-        // PlayAndRecord was tried before and measured delivering digital silence on this
-        // device, and that is why this fell back to Record. Two things are different now:
-        // MixWithOthers is set (the echo-cancelled duplex path is what zeroed the input), and
-        // the capture that follows measures its own peak, so a silent duplex start demotes
-        // itself through -useRecordOnlyForPushToTalk: instead of being discovered days later.
-        // Game audio for the length of a hold is worth the probe.
-        if (![session setCategory:AVAudioSessionCategoryPlayAndRecord
-                             mode:AVAudioSessionModeDefault
-                          options:AVAudioSessionCategoryOptionMixWithOthers |
-                                  AVAudioSessionCategoryOptionDefaultToSpeaker |
-                                  AVAudioSessionCategoryOptionAllowBluetooth
-                            error:&failure]) {
-            WKLog("audio", @"session: push to talk could not take PlayAndRecord (%@), taking Record instead",
-                  failure.localizedDescription ?: @"no reason given");
-            failure = nil;
-            if (![session setCategory:AVAudioSessionCategoryRecord
-                                 mode:AVAudioSessionModeDefault
-                              options:0
-                                error:&failure]) {
-                [self logTransitionFrom:from to:@"push-to-talk" result:NO error:failure];
-                return;
-            }
+        // The game owns a valid output route under this category. There is deliberately
+        // no Record-only fallback: silencing the game is not an acceptable dictation mode.
+        if (!stableDuplex && ![session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord] &&
+            ![self applyDuplexForDictation:&failure]) {
+            [self logTransitionFrom:from to:@"push-to-talk" result:NO error:failure];
+            return;
         }
-        if (![session setActive:YES error:&failure]) {
+        if (!stableDuplex && ![session setActive:YES error:&failure]) {
             [self logTransitionFrom:from to:@"push-to-talk" result:NO error:failure];
             return;
         }
@@ -201,14 +213,21 @@ static char const AKAudioCoordinatorQueueKey;
 
 - (void)beginPushToTalkAsync:(void (^)(BOOL ok, NSError *_Nullable error))completion {
     dispatch_async(_transitions, ^{
+        AVAudioSession *session = AVAudioSession.sharedInstance;
         NSUInteger generation = ++self->_activationGeneration;
+        BOOL stableDuplex = self->_lease == AKAudioLeaseGame &&
+            [session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord];
         self->_lease = AKAudioLeasePushToTalk;
         self->_pushToTalk = YES;
         [self startObserving];
-        AVAudioSession *session = AVAudioSession.sharedInstance;
+        if (stableDuplex) {
+            WKLog("audio", @"session: game duplex -> push-to-talk (reusing active duplex session)");
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(YES, nil); });
+            return;
+        }
         NSError *error = nil;
-        if (![session setCategory:AVAudioSessionCategoryPlayAndRecord mode:AVAudioSessionModeDefault
-                          options:AVAudioSessionCategoryOptionMixWithOthers | AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetooth error:&error]) {
+        if (![session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord] &&
+            ![self applyDuplexForDictation:&error]) {
             self->_lease = AKAudioLeaseNone; self->_pushToTalk = NO;
             dispatch_async(dispatch_get_main_queue(), ^{ completion(NO, error); });
             return;
@@ -229,34 +248,6 @@ static char const AKAudioCoordinatorQueueKey;
     });
 }
 
-// Push to talk took PlayAndRecord so the game stayed audible, and the microphone turned out to
-// deliver silence under it. This demotes the session for the rest of *this* hold: a silent
-// microphone is worse than a quiet few seconds, and the earlier measurement on this device says
-// Record is the category that hears anything. The next hold asks for PlayAndRecord again, so a
-// fixed route - or a different microphone - is not written off for good by one bad probe.
-- (BOOL)useRecordOnlyForPushToTalk:(NSError **)error {
-    __block BOOL ok = NO;
-    __block NSError *failure = nil;
-    [self onTheQueue:^{
-        if (!self->_pushToTalk) { ok = YES; return; }
-        AVAudioSession *session = AVAudioSession.sharedInstance;
-        if ([session.category isEqualToString:AVAudioSessionCategoryRecord]) { ok = YES; return; }
-        if (![session setCategory:AVAudioSessionCategoryRecord
-                             mode:AVAudioSessionModeDefault
-                          options:0
-                            error:&failure]) return;
-        // Re-activated: changing the category under an active session can leave the input
-        // running against the previous one.
-        [session setActive:NO withOptions:0 error:NULL];
-        if (![session setActive:YES error:&failure]) return;
-        ok = YES;
-        [self logTransitionFrom:@"push-to-talk" to:@"push-to-talk (record only)" result:YES error:nil];
-        WKLog("audio", @"session: the microphone was silent while the game was audible, so this hold records only");
-    }];
-    if (!ok && error) *error = failure;
-    return ok;
-}
-
 - (BOOL)endPushToTalk:(NSError **)error {
     __block BOOL ok = NO;
     __block NSError *failure = nil;
@@ -272,7 +263,13 @@ static char const AKAudioCoordinatorQueueKey;
         [session setPreferredInput:nil error:NULL];
         if (_gameWantsPlayback) {
             _lease = AKAudioLeaseGame;
-            ok = [self applyPlaybackForGame];
+            if (_dictationEnabled && [session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]) {
+                // The game already owns the active duplex session.  Restoring it is
+                // a lease change, not another setCategory/setActive pair.
+                ok = YES;
+            } else {
+                ok = [self applyGameAudioPolicy];
+            }
             [self logTransitionFrom:from to:@"game" result:ok error:failure];
         } else {
             _lease = AKAudioLeaseNone;
@@ -298,6 +295,27 @@ static char const AKAudioCoordinatorQueueKey;
                          mode:AVAudioSessionModeDefault
                       options:0 error:&error]) return NO;
     return [session setActive:YES error:&error];
+}
+
+- (BOOL)applyDuplexForDictation:(NSError **)outError {
+    NSError *error = nil;
+    BOOL ok = [AVAudioSession.sharedInstance setCategory:AVAudioSessionCategoryPlayAndRecord
+                                                     mode:AVAudioSessionModeDefault
+                                                  options:AVAudioSessionCategoryOptionMixWithOthers |
+                                                          AVAudioSessionCategoryOptionDefaultToSpeaker |
+                                                          AVAudioSessionCategoryOptionAllowBluetooth
+                                                    error:&error];
+    if (!ok && outError) *outError = error;
+    return ok;
+}
+
+- (BOOL)applyGameAudioPolicy {
+    if (_dictationEnabled) {
+        NSError *error = nil;
+        if (![self applyDuplexForDictation:&error]) return NO;
+        return [AVAudioSession.sharedInstance setActive:YES error:&error];
+    }
+    return [self applyPlaybackForGame];
 }
 
 // The launcher's policy: what the session is when nothing is running.

@@ -28,12 +28,19 @@ extern OSStatus AudioHardwareGetProperty(UInt32, UInt32 *, void *);
 BOOL TKWolkaraForeverRequestGamePlayback(void) {
     AVAudioSession *session = AVAudioSession.sharedInstance;
     NSError *error = nil;
+    if ([session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord])
+        return [session setActive:YES error:&error];
     if (![session setCategory:AVAudioSessionCategoryPlayback error:&error]) return NO;
     return [session setActive:YES error:&error];
 }
 
 int main(void) { @autoreleasepool {
-    // The app asks before it plays; the adapter answers only once it has.
+    // A duplex host still has a real output route. The adapter must not disappear
+    // the game device merely because dictation has enabled microphone input.
+    AVAudioSession *session = AVAudioSession.sharedInstance;
+    assert([session setCategory:AVAudioSessionCategoryPlayAndRecord
+                           mode:AVAudioSessionModeDefault
+                        options:AVAudioSessionCategoryOptionMixWithOthers error:NULL]);
     assert(TKWolkaraForeverRequestGamePlayback());
     UInt32 legacy = 0, size = sizeof legacy;
     assert(!AudioHardwareGetProperty('dOut', &size, &legacy) && legacy);

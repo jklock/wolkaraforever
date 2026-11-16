@@ -84,8 +84,7 @@ static void AKConfigureRecognitionRequest(SFSpeechRecognitionRequest *request,
 }
 
 @implementation AKSpeechSession {
-    AVAudioRecorder *_recorder;
-    NSURL *_recording;
+    AVAudioEngine *_engine;
     BOOL _onDevice;
     NSArray<NSString *> *_words;
     SFSpeechRecognizer *_recognizer;
@@ -161,124 +160,54 @@ static void AKConfigureRecognitionRequest(SFSpeechRecognitionRequest *request,
         return;
     }
 
-    // Record to a file instead of tapping an AVAudioEngine.
-    //
-    // Measured on the device across four session configurations, the engine's tap fired at the right
-    // rate with well-formed standard float32 buffers and every sample was exactly 0.0, while the
-    // session was correct each time: permission granted, input available, routed to the built-in
-    // microphone, and the category read during the capture was a recording one. An AVAudioRecorder is
-    // a different implementation of the same session, which is the one thing that tells an engine
-    // receiving nothing apart from a microphone delivering nothing - and it leaves the audio on disk,
-    // so the peak reported at the end describes what the microphone delivered, not what a consumer of
-    // the stream did with it.
-    _recording = [NSURL fileURLWithPath:
-                  [NSTemporaryDirectory() stringByAppendingPathComponent:@"wolkaraforever-dictation.wav"]];
-    [[NSFileManager defaultManager] removeItemAtURL:_recording error:NULL];
-    // 16-bit integer LPCM, not 32-bit float.
-    //
-    // The float settings were mine, and they are the reason every recording this app has made is 4 KB:
-    // a header and no audio frames. `record` returns success and `currentTime` advances, so nothing
-    // looked wrong, but AVAudioRecorder does not reliably write float LPCM to a file on iOS. 16-bit
-    // integer is what every documented example uses, and a recorder that cannot write looks exactly
-    // like a microphone that cannot hear.
-    NSDictionary *settings = @{
-        AVFormatIDKey: @(kAudioFormatLinearPCM),
-        AVSampleRateKey: @(48000.0),
-        AVNumberOfChannelsKey: @(1),
-        AVLinearPCMBitDepthKey: @(16),
-        AVLinearPCMIsFloatKey: @NO,
-        AVLinearPCMIsBigEndianKey: @NO,
-    };
+    // One live Voice Processing I/O graph feeds recognition directly. There is no
+    // recorder/file fallback: every controller edge gates buffers into this graph.
+    SFSpeechAudioBufferRecognitionRequest *request = [SFSpeechAudioBufferRecognitionRequest new];
+    AKConfigureRecognitionRequest(request, _onDevice, _words);
+    _request = request;
+    __weak AKSpeechSession *weakSelf = self;
+    _task = [_recognizer recognitionTaskWithRequest:request resultHandler:^(SFSpeechRecognitionResult *result, NSError *error) {
+        AKSpeechSession *session = weakSelf;
+        if (!session || session->_finished) return;
+        if (result.isFinal || error) session->_finished = YES;
+        if (session->_handler) session->_handler(result.bestTranscription.formattedString ?: @"", result.isFinal, error);
+    }];
+    _engine = [AVAudioEngine new];
+    AVAudioInputNode *input = _engine.inputNode;
     NSError *error = nil;
-
-    // A controller press is gameplay time. Do not probe it by sleeping on the caller's
-    // thread, and do not change a mixed PlayAndRecord session into Record after the press:
-    // either action visibly interrupts the running guest. Start directly in the active mixed
-    // session and report a genuine recorder failure normally below.
-
-    _recorder = [[AVAudioRecorder alloc] initWithURL:_recording settings:settings error:&error];
-    if (!_recorder) {
+    AVAudioFormat *format = [input outputFormatForBus:0];
+    [input installTapOnBus:0 bufferSize:1024 format:format block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
+        (void)when;
+        [request appendAudioPCMBuffer:buffer];
+    }];
+    [_engine prepare];
+    if (![_engine startAndReturnError:&error]) {
+        [input removeTapOnBus:0];
         [self cancel];
         if (_handler) _handler(@"", NO, error);
         return;
     }
-    // So that the peak of the whole capture can be read from the recorder itself when it stops, rather
-    // than reconstructed from the file afterwards.
-    _recorder.meteringEnabled = YES;
-    if (![_recorder record]) {
-        NSError *refused = [NSError errorWithDomain:@"wolkaraforever.dictation" code:1 userInfo:@{
-            NSLocalizedDescriptionKey: @"The microphone did not start recording."}];
-        [self cancel];
-        if (_handler) _handler(@"", NO, refused);
-        return;
-    }
-    WKLog("voice", @"dictation: recorder started, %.0fHz %lu channel(s), %@; the session is %@; app %@",
-          _recorder.format.sampleRate, (unsigned long)_recorder.format.channelCount,
-          _recorder.format.isStandard ? @"standard float32" : @"NOT standard",
-          AVAudioSession.sharedInstance.category,
-          UIApplication.sharedApplication.applicationState == UIApplicationStateActive ? @"active"
-              : (UIApplication.sharedApplication.applicationState == UIApplicationStateInactive ? @"inactive" : @"background"));
+    WKLog("voice", @"dictation: streaming input started, %.0fHz %lu channel(s), session %@",
+          format.sampleRate, (unsigned long)format.channelCount, AVAudioSession.sharedInstance.category);
 }
 
 - (void)finish {
-    // Ending the capture is what produces the file the recogniser reads.
-    [self stopRecordingAndMeasure];
-    if (!_finished) [self recogniseRecording];
+    AVAudioInputNode *input = _engine.inputNode;
+    [input removeTapOnBus:0];
+    [_engine stop];
+    _engine = nil;
+    [(SFSpeechAudioBufferRecognitionRequest *)_request endAudio];
 }
 
 - (void)cancel {
-    // The measurement is taken even when the capture is abandoned. A diagnostic that only works on the
-    // happy path cannot diagnose the unhappy one, and "cancel" is what a failed press does.
-    [self stopRecordingAndMeasure];
+    [_engine.inputNode removeTapOnBus:0];
+    [_engine stop];
+    _engine = nil;
     _finished = YES;
     _handler = nil;
     [_task cancel];
     _task = nil;
     _request = nil;
-    if (_recording) [[NSFileManager defaultManager] removeItemAtURL:_recording error:NULL];
-    _recording = nil;
-}
-
-// Stop the recorder and say what it captured. Called by both finish and cancel, so the number exists
-// however the press ended.
-//
-// `updateMeters` refreshes the peak since the previous call, so one call at the end reports the loudest
-// moment of the whole recording. Silence is -160 dBFS and is reported as such; anything above it is a
-// real level, converted back to a linear peak so the rest of the app still has one number to look at.
-- (void)stopRecordingAndMeasure {
-    if (!_recorder) return;
-    [_recorder updateMeters];
-    float decibels = [_recorder peakPowerForChannel:0];
-    NSTimeInterval seconds = _recorder.currentTime;
-    [_recorder stop];
-    _recorder = nil;
-    AKLoudestDecibels = (double)decibels;
-    AKLoudestSoFar = (decibels <= -160.0f) ? 0.0 : pow(10.0, (double)decibels / 20.0);
-    // The file, as well as the microphone.
-    //
-    // These are different facts and only one of them was being measured: the meter reads what
-    // the *input* delivered, so a recorder that writes a header and no frames still meters
-    // real level - and then the recogniser is handed an empty file and answers "No speech
-    // detected", which reads exactly like a microphone that could not hear. One dictation on
-    // the device (2026-10-22) metered -24.8 dBFS and was refused by the recogniser 0.3s later;
-    // the byte count and the frame count are what tell those two apart.
-    NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:_recording.path error:NULL];
-    unsigned long long bytes = [attributes[NSFileSize] unsignedLongLongValue];
-    NSError *readError = nil;
-    AVAudioFile *written = [[AVAudioFile alloc] initForReading:_recording error:&readError];
-    WKLog("voice", @"dictation: recorded %.2fs, peak %.1f dBFS (%.5f linear), %llu bytes on disk, "
-                    @"%lld frames readable%@, session %@, other audio playing %d, app %@",
-          seconds, decibels, AKLoudestSoFar, bytes, written ? written.length : 0LL,
-          written ? @"" : [NSString stringWithFormat:@" (unreadable: %@)", readError.localizedDescription ?: @"no reason"],
-          AVAudioSession.sharedInstance.category,
-          (int)AVAudioSession.sharedInstance.isOtherAudioPlaying,
-          UIApplication.sharedApplication.applicationState == UIApplicationStateActive ? @"active"
-              : (UIApplication.sharedApplication.applicationState == UIApplicationStateInactive ? @"inactive" : @"background"));
-}
-
-- (void)recogniseRecording {
-    if (!_recording) return;
-    [self recogniseFile:_recording];
 }
 
 /// The recognition half on its own, for one file. Also the entry point the device self-test uses.
@@ -509,6 +438,7 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
 // synthesizes a key.
 - (void)settingsChanged:(NSNotification *)note {
     (void)note;
+    [AKAudioSessionCoordinator.shared setDictationEnabled:AKVoiceSettings.shared.enabled];
     AKVoiceSettings *settings = AKVoiceSettings.shared;
     if (!settings.enabled) {
         if (_state == AKDictationStateIdle) return;
