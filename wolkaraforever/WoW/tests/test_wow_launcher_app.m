@@ -32,6 +32,22 @@
 @end
 #import "wow_installation_fixture.h"
 
+// The verdict is ours, not the C library's. A failed assertion called abort(), which prints
+// "Assertion failed: …" and leaves simctl's console stream open after the process dies - so
+// the wrapper sat out its whole sixteen-minute verdict window on a run that had already
+// failed, and the failure only arrived when somebody killed it by hand. Printing one FAIL
+// line and exiting makes the answer immediate, and names the expression for the log.
+#undef assert
+#define assert(expression)                                                        \
+    do {                                                                          \
+        if (!(expression)) {                                                      \
+            fprintf(stderr, "WoW UIKit FAIL: %s at %s:%d\n", #expression,        \
+                    __FILE__, __LINE__);                                          \
+            fflush(stderr);                                                       \
+            _Exit(1);                                                             \
+        }                                                                         \
+    } while (0)
+
 @interface TKWoWViewController (Fixture)
 - (void)selectProduct:(NSDictionary *)product;
 - (UIAlertController *)settingsSheet;

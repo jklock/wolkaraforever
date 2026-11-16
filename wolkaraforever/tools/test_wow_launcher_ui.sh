@@ -180,23 +180,38 @@ while ! launch_fixture "$@"; do
     attempt=$((attempt + 1))
     sleep 2
 done
-# The fixture guards itself against a hang and prints its own verdict (PASS or TIMEOUT).
-# Wait longer than that guard, so the verdict this loop sees is always the fixture's and
-# never this wrapper killing a healthy run: the iPad matrix device legitimately needs
-# about a minute, and the guard is 180 seconds.
+# The fixture guards itself against a hang and prints its own verdict (PASS, TIMEOUT, or FAIL,
+# which it now prints itself when an assertion does not hold). Wait only until one of those
+# arrives. Before the fixture owned its failure the wrapper waited out this whole window on a
+# run that had already finished: abort() leaves simctl's console stream open, so nothing here
+# could tell "still running" from "died at line 2891".
+#
 # How long the runner waits for the fixture's answer. The fixture carries its own hang guard and
 # prints TIMEOUT when it fires, and this loop breaks on that too - so this only has to outlast the
 # guard by enough that a slow machine is never killed here and reported as a failure it did not
 # have. A false timeout costs more than a long run.
 VERDICT_TIMEOUT=${VERDICT_TIMEOUT:-960}
 for _ in $(seq 1 "$VERDICT_TIMEOUT"); do
-    if grep -qE 'WoW UIKit (PASS:|TIMEOUT)' "$LOG"; then break; fi
+    if grep -qE 'WoW UIKit (PASS:|TIMEOUT|FAIL:)' "$LOG"; then break; fi
     sleep 1
 done
 kill "$LAUNCH" 2>/dev/null || true
 wait "$LAUNCH" 2>/dev/null || true
-# simctl can report success even if an assertion terminated the fixture.
-grep -q 'WoW UIKit PASS:' "$LOG"
+# simctl can report success even if an assertion terminated the fixture, so the verdict decides.
+# Say which one it gave, so a failure is a sentence rather than an exit code.
+if grep -q 'WoW UIKit FAIL:' "$LOG"; then
+    grep -m1 'WoW UIKit FAIL:' "$LOG" >&2
+    exit 1
+fi
+if grep -q 'WoW UIKit TIMEOUT' "$LOG"; then
+    echo "the launcher fixture hit its own hang guard" >&2
+    exit 1
+fi
+if ! grep -q 'WoW UIKit PASS:' "$LOG"; then
+    echo "the launcher fixture gave no verdict within ${VERDICT_TIMEOUT}s; last lines:" >&2
+    tail -8 "$LOG" >&2
+    exit 1
+fi
 # The images the fixture drew are in its container, which is where anyone wanting to
 # look at the launcher's pages has to go looking.
 screenshots="$(xcrun simctl get_app_container "$SIM_ID" org.tolkara.tests.wow-launcher data)/Documents"
