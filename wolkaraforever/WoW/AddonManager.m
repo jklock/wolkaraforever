@@ -2986,6 +2986,11 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         TKAddonHubKeyIdentifier: handoff.projectSlug, TKAddonHubKeyAction: @"browser" });
     [self reloadAddons];
     [self checkForUpdates];
+    NSString *name = handoff.projectName.length ? handoff.projectName : handoff.projectSlug;
+    UIAlertController *notice = [UIAlertController alertControllerWithTitle:WKLocalized(@"addons.action.installed")
+        message:WKLocalizedFormat(@"addons.installedStatus", name) preferredStyle:UIAlertControllerStyleAlert];
+    [notice addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
+    [self presentAlert:notice];
 }
 
 // MARK: - Detail and linking

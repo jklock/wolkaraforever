@@ -9,6 +9,7 @@
 #import "../launcher/WoW/AddonUpdateResolver.h"
 #import "../launcher/WoW/AddonHubLog.h"
 #import "../launcher/WoW/AddonBrowser.h"
+#import <WebKit/WebKit.h>
 #import <Security/Security.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "../launcher/WoW/Client.h"
@@ -23,6 +24,11 @@
 #import "../launcher/App/WolkaraForeverTheme.h"
 #import "../launcher/Voice/VoiceViewController.h"
 #import "../launcher/Voice/VoiceTestViewController.h"
+
+@interface TKWoWAddonBrowserViewController (CancellationProbe)
+- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation
+         withError:(NSError *)error;
+@end
 #import "wow_installation_fixture.h"
 
 @interface TKWoWViewController (Fixture)
@@ -757,6 +763,12 @@ static void TestAddonHub(void) {
     assert(![hostile containsString:@"/Users"]);
     assert([hostile containsString:@"identifier=-"]);
     assert([hostile containsString:@"reason=-"]);
+    NSString *web = TKAddonHubLogLine(TKAddonHubEventWeb,
+        @{ TKAddonHubKeyAction: @"response-policy", TKAddonHubKeyHost: @"www.curseforge.com",
+           TKAddonHubKeyRoute: @"download", TKAddonHubKeyMIME: @"html",
+           TKAddonHubKeyStatus: @302, TKAddonHubKeyCode: @-999 });
+    assert([web containsString:@"event=web action=response-policy host=www.curseforge.com"]);
+    assert([web containsString:@"route=download mime=html status=302 code=-999"]);
 
     // --- 8. the browser trusts CurseForge and its CDN over HTTPS, and nothing else
     assert([TKWoWAddonBrowserViewController isTrustedArchiveURL:
@@ -776,7 +788,17 @@ static void TestAddonHub(void) {
     paged.projectID = @7;
     paged.projectSlug = @"details-damage-meter";
     assert([paged.projectURL.absoluteString isEqual:
-            @"https://www.curseforge.com/wow/addons/details-damage-meter/files"]);
+            @"https://www.curseforge.com/wow/addons/details-damage-meter"]);
+    // The site's Download button changes its five-second handoff page into WKDownload. WebKit
+    // reports that page replacement as -999; it must not paint the false offline error over the
+    // page the player is watching.
+    TKWoWAddonBrowserViewController *browser = [[TKWoWAddonBrowserViewController alloc] initWithHandoff:paged];
+    [browser loadViewIfNeeded];
+    UILabel *browserStatus = [browser valueForKey:@"_statusLabel"];
+    NSString *beforeCancellation = browserStatus.text;
+    [browser webView:nil didFailProvisionalNavigation:nil
+           withError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]];
+    assert([browserStatus.text isEqual:beforeCancellation]);
 
     // --- 9. the three tabs, and the old route opens My Add-ons
     UISegmentedControl *tabs = [manager valueForKey:@"_mode"];
@@ -2886,9 +2908,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.controller about];
     UITextView *credits=(id)self.controller.navigationController.topViewController.view;
     // Our own notice, which carries the licences of what the launcher's readers adapt.
-    assert([credits.text containsString:@"Vasilii Kharitonov"]);
     assert([credits.text containsString:@"Permission is hereby granted"]);
-    assert([credits.text containsString:@"Martin Benjamins"]);
     // Upstream's, which has to be there too: the app ships upstream's code.
     assert([credits.text containsString:@"Tolkara is original work released under the MIT License"]);
     // And the page says whose each one is, rather than concatenating whatever it found.

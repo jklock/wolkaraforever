@@ -5,6 +5,7 @@
 TKAddonHubEvent const TKAddonHubEventRecordMigration = @"record-migration";
 TKAddonHubEvent const TKAddonHubEventSource = @"source";
 TKAddonHubEvent const TKAddonHubEventHandoff = @"handoff";
+TKAddonHubEvent const TKAddonHubEventWeb = @"web";
 TKAddonHubEvent const TKAddonHubEventArchive = @"archive";
 TKAddonHubEvent const TKAddonHubEventUpdate = @"update";
 TKAddonHubEvent const TKAddonHubEventRow = @"row";
@@ -20,11 +21,18 @@ NSString *const TKAddonHubKeyState      = @"state";
 NSString *const TKAddonHubKeyAction     = @"action";
 NSString *const TKAddonHubKeyReason     = @"reason";
 NSString *const TKAddonHubKeyCount      = @"count";
+NSString *const TKAddonHubKeyHost       = @"host";
+NSString *const TKAddonHubKeyRoute      = @"route";
+NSString *const TKAddonHubKeyMIME       = @"mime";
+NSString *const TKAddonHubKeyStatus     = @"status";
+NSString *const TKAddonHubKeyCode       = @"code";
 
 // The order the keys are printed in, so two lines about the same event read the same way.
 static NSArray<NSString *> *TKAddonHubKeyOrder(void) {
     return @[TKAddonHubKeyOutcome, TKAddonHubKeyAction, TKAddonHubKeyState, TKAddonHubKeyProvider,
-             TKAddonHubKeyIdentifier, TKAddonHubKeyDigest, TKAddonHubKeyReason, TKAddonHubKeyCount];
+             TKAddonHubKeyIdentifier, TKAddonHubKeyDigest, TKAddonHubKeyReason, TKAddonHubKeyHost,
+             TKAddonHubKeyRoute, TKAddonHubKeyMIME, TKAddonHubKeyStatus, TKAddonHubKeyCode,
+             TKAddonHubKeyCount];
 }
 
 // A short, bounded token: letters, digits and the three separators the app's own identifiers use.
@@ -62,10 +70,15 @@ NSString *TKAddonHubLogLine(TKAddonHubEvent event, NSDictionary<NSString *, id> 
     for (NSString *key in TKAddonHubKeyOrder()) {
         id value = fields[key];
         if (!value) continue;
-        if ([key isEqual:TKAddonHubKeyCount]) {
+        if ([key isEqual:TKAddonHubKeyCode]) {
+            NSInteger code = [value isKindOfClass:NSNumber.class] ? [value integerValue] : NSIntegerMin;
+            if (code == NSIntegerMin) continue;
+            [line appendFormat:@" %@=%ld", key, (long)MAX(MIN(code, (NSInteger)999999), (NSInteger)-999999)];
+        } else if ([key isEqual:TKAddonHubKeyCount] || [key isEqual:TKAddonHubKeyStatus]) {
             NSInteger count = [value isKindOfClass:NSNumber.class] ? [value integerValue] : -1;
             if (count < 0) continue;
-            [line appendFormat:@" %@=%ld", key, (long)MIN(count, (NSInteger)100000)];
+            NSInteger ceiling = [key isEqual:TKAddonHubKeyCount] ? 100000 : 999999;
+            [line appendFormat:@" %@=%ld", key, (long)MIN(count, ceiling)];
         } else if ([key isEqual:TKAddonHubKeyProvider]) {
             [line appendFormat:@" %@=%@", key, TKAddonHubProvider(value)];
         } else if ([key isEqual:TKAddonHubKeyDigest]) {

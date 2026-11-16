@@ -174,16 +174,6 @@ static NSEvent *AKFixturePressKey(UIView *host, AKInputFixtureView *guest, unsig
     return guest.lastKeyEvent;
 }
 
-// The stand-in for the shell: publish which usages the user has taken, exactly as main.m
-// does, and let the adapter's own observer decide. The notification is dispatched to the main
-// queue, so it is drained before returning.
-static void AKFixtureOwnsUsages(NSArray<NSNumber *> *usages) {
-    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchOwnedKeyUsagesDidChangeNotification
-                                                     object:nil
-                                                   userInfo:@{AKTouchOwnedKeyUsagesKey: [NSSet setWithArray:usages]}];
-    AKDrainFixtureEvents();
-}
-
 static void AKFixtureInputSource(void *context) {
     (void)context;
     NSEvent *event = [NSEvent new]; event.type = NSEventTypeMouseMoved;
@@ -1147,33 +1137,6 @@ static void AKFixtureInputSource(void *context) {
                 assert(leave && [leave.accessibilityLabel isEqual:@"Leave the game"]);
                 NSLog(@"native: the toolbar carries Leave the game");
                 NSEvent *arrived = AKFixturePressKey(host, fixture, 0x04 /* 'a' */);
-                assert(arrived != nil && [fixture.text isEqual:@"a"]);
-                AKFixtureOwnsUsages(@[@0x04]);
-                [fixture.text setString:@""];
-                fixture.selection = NSMakeRange(0, 0);
-                arrived = AKFixturePressKey(host, fixture, 0x04);
-                assert(arrived == nil && !fixture.text.length);
-                NSLog(@"native: usage 0x04 is the user's; the guest's view never heard of it");
-                // The release goes with it, or the game is left holding a key down.
-                [host pressesEnded:[NSSet setWithObject:AKPressForUsage(0x04)] withEvent:nil];
-                AKDrainFixtureEvents();
-                assert(!fixture.text.length);
-                // A key the user has not taken is untouched.
-                fixture.selection = NSMakeRange(0, 0);
-                arrived = AKFixturePressKey(host, fixture, 0x05 /* 'b' */);
-                assert(arrived != nil && [fixture.text isEqual:@"b"]);
-                // Taking it back gives the key straight back to the game.
-                AKFixtureOwnsUsages(@[]);
-                [fixture.text setString:@""];
-                fixture.selection = NSMakeRange(0, 0);
-                arrived = AKFixturePressKey(host, fixture, 0x04);
-                assert(arrived != nil && [fixture.text isEqual:@"a"]);
-                // And with nothing published at all - what a build that never fills this in
-                // does - every key still goes through.
-                AKTouchKeyIsTakenForVoice = NULL;
-                [fixture.text setString:@""];
-                fixture.selection = NSMakeRange(0, 0);
-                arrived = AKFixturePressKey(host, fixture, 0x04);
                 assert(arrived != nil && [fixture.text isEqual:@"a"]);
                 [fixture.text setString:expected];
 

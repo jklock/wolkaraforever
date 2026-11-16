@@ -353,8 +353,9 @@ BOOL TKAddonHubLiveRun(UIWindow *window, void (^capture)(NSString *name)) {
             }
         }
 
-        // 7b. The in-app browser, live, with no key: a real public project page in WebKit, and a
-        //     real archive request from a host this app does not trust.
+        // 7b. The in-app browser is its own acquisition route. It must find an archive from the
+        //     public project page without an API credential, install it as managed, and return a
+        //     visible completion state in My Add-ons.
         {
             TKAddonBrowserHandoff *handoff = [TKAddonBrowserHandoff new];
             handoff.projectID = @61284;
@@ -369,23 +370,34 @@ BOOL TKAddonHubLiveRun(UIWindow *window, void (^capture)(NSString *name)) {
                 UIViewController *browser = ((UINavigationController *)top).topViewController;
                 if (![browser isKindOfClass:TKWoWAddonBrowserViewController.class]) return NO;
                 web = [browser valueForKey:@"_webView"];
-                return web != nil && web.URL != nil && !web.isLoading;
+                return web != nil && web.URL != nil && !web.isLoading && web.title.length > 0;
             });
-            LiveCheck(web != nil && [web.URL.host hasSuffix:@"curseforge.com"],
-                      @"the in-app browser navigates the real CurseForge project page");
-            // What the site served is recorded, not graded: a site is free to answer a WebKit
-            // client however it likes, and a run that called that a pass or a failure of ours
-            // would be claiming something about CurseForge instead of about this app.
+            LiveCheck(web != nil && [web.URL.host hasSuffix:@"curseforge.com"] && web.title.length > 0,
+                      @"the in-app browser renders the real CurseForge project page");
             if (web) {
-                __block NSString *probe = nil;
-                [web evaluateJavaScript:@"document.title + '|' + document.documentElement.outerHTML.length"
+                __block NSNumber *clickedDownload = nil;
+                // This is the visible Download control on the project's page, the exact route
+                // shown to the player. It is not an API or a guessed download URL.
+                [web evaluateJavaScript:@"(function(){var a=Array.from(document.querySelectorAll('a[href]')).find(function(x){return /\\/wow\\/addons\\/details(?:-damage-meter)?\\/download\\/[0-9]+(?:[?#]|$)/i.test(x.href);}); if(!a)return false; a.click(); return true;})()"
                       completionHandler:^(id value, NSError *error) {
-                    probe = error ? [NSString stringWithFormat:@"error %@", @(error.code)] : [value description];
+                    clickedDownload = error ? @NO : @([value boolValue]);
                 }];
-                LiveWait(6.0, ^BOOL { return probe != nil; });
-                LiveReport(@"INFO", [NSString stringWithFormat:@"site answered: %@ (host %@, title %@)",
-                                     probe ?: @"(no answer)", web.URL.host ?: @"(none)",
-                                     web.title.length ? web.title : @"(none)"]);
+                LiveWait(20.0, ^BOOL { return clickedDownload != nil; });
+                LiveCheck(clickedDownload.boolValue, @"the rendered project page exposes a clickable Download control");
+                if (clickedDownload.boolValue) {
+                        NSUInteger before = store.records.count;
+                        LiveWait(180.0, ^BOOL { return store.records.count > before; });
+                        TKAddonRecord *browserInstall = nil;
+                        for (TKAddonRecord *record in store.records)
+                            if ([record.provenance isEqual:TKAddonProvenanceBrowser]) browserInstall = record;
+                        LiveCheck(browserInstall != nil, @"the browser archive is installed into My Add-ons");
+                        LiveCheck(browserInstall.managed && browserInstall.linked,
+                                  @"the browser install is a managed, update-capable package");
+                        LiveCheck([browserInstall.provider[TKAddonProviderFileID] integerValue] > 0,
+                                  @"the browser install keeps the rendered file identity for updates");
+                        LiveCheck([page.presentedViewController isKindOfClass:UIAlertController.class],
+                                  @"the browser install presents a completion notification");
+                    }
                 // The document arrives before it is painted; the capture waits for the paint so
                 // the picture is the page rather than the ink behind it.
                 LivePump(3.0);

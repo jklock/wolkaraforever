@@ -622,7 +622,7 @@
 "voice.heading.button" = "Bouton";
 "voice.map" = "Associer un bouton…";
 "voice.mapping.hint" = "Touchez Associer, puis appuyez sur le bouton à utiliser.";
-"voice.mapping.collision" = "Le bouton associé continue d’arriver au jeu, sauf si vous le lui retirez ci-dessous. Rien ici ne le retire au jeu de soi-même : si vous choisissez un bouton que le jeu utilise déjà, il fera les deux à la fois.";
+"voice.mapping.collision" = "Le bouton associé continue d’arriver au jeu. Choisissez-en un qui n’est pas utilisé par les commandes du jeu.";
 "voice.takeButton" = "Cacher ce bouton au jeu";
 "voice.takeButton.note" = "Activé, une touche de clavier associée à la dictée n’arrive plus du tout au jeu. Un bouton de manette ne peut pas être retiré ainsi, car iOS nous décrit les boutons sous une forme impossible à faire correspondre aux commandes du jeu : pour une manette, choisissez un bouton que le jeu n’utilise pas.";
 "voice.heading.mode" = "Mode";

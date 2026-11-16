@@ -20,11 +20,18 @@ simulator_use "${SIMULATOR:-ipad}"
 # to start is honest; a bogus red lane is not.
 ui_lock="${TMPDIR:-/tmp}/wolkaraforever-ui-${SIM_ID}.lock"
 if ! mkdir "$ui_lock" 2>/dev/null; then
+    owner=$(cat "$ui_lock/pid" 2>/dev/null || true)
+    if [ -z "$owner" ] || ! kill -0 "$owner" 2>/dev/null; then
+        rm -rf "$ui_lock"
+        mkdir "$ui_lock"
+    else
     echo "test_wow_launcher_ui: another UI suite is using $SIM_NAME ($ui_lock)" >&2
     echo "test_wow_launcher_ui: remove the lock only if no suite is running" >&2
     exit 3
+    fi
 fi
-trap 'rmdir "$ui_lock" 2>/dev/null || true' EXIT INT TERM
+printf '%s\n' "$$" > "$ui_lock/pid"
+trap 'rm -rf "$ui_lock"' EXIT INT TERM
 xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/wow-launcher/WoWFixture.app
 mkdir -p "$APP"

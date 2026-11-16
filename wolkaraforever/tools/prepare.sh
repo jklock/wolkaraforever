@@ -23,6 +23,25 @@ fi
 dest=build/platform
 patches=$(ls wolkaraforever/patches/*.patch 2>/dev/null || true)
 
+# Every simulator wrapper prepares this same tree.  Without a lock, two otherwise valid
+# matrix jobs can interleave removal, patching and overlaying, leaving an old `add` target in
+# the tree and making the second job fail as if the overlay were incompatible with upstream.
+mkdir -p build
+lock=build/.prepare.lock
+waited=0
+until mkdir "$lock" 2>/dev/null; do
+    owner=$(cat "$lock/pid" 2>/dev/null || true)
+    if [ -z "$owner" ] || ! kill -0 "$owner" 2>/dev/null; then
+        rm -rf "$lock"
+        continue
+    fi
+    [ "$waited" -lt 120 ] || { echo "prepare: another preparation did not finish within 120s" >&2; exit 1; }
+    sleep 1
+    waited=$((waited + 1))
+done
+printf '%s\n' "$$" > "$lock/pid"
+trap 'rm -rf "$lock"' EXIT HUP INT TERM
+
 # Clearing the previous tree can lose a race with something writing into it - Spotlight,
 # or a build that has just finished and is still closing files - and `rm -rf` then fails
 # with "Directory not empty". That used to abort the whole install, which is a confusing

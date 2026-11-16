@@ -543,67 +543,11 @@ static void TestSettings(void) {
     CHECK((settings.customWords.count == 2), @"duplicates, blanks and overlong words are dropped, got %lu", (unsigned long)settings.customWords.count);
     CHECK(([settings.customWords containsObject:@"Thunderfury"] && [settings.customWords containsObject:@"Ragnaros"]), @"the real words stay");
 
-    // --- Keeping the game from seeing the key ---------------------------------
-    //
-    // The audit's "neither collision-free nor complete" finding. The product listens to a
-    // button; with this on, a key the user has taken for dictation does not reach the game
-    // either. Asked by element, because the adapter sees a key press rather than a device.
-    settings.takeButtonFromGame = NO;
-    [settings setLearnedElement:@"keyboard.key.70" forDevice:@"pad"];
-    CHECK((![settings ownsElement:@"keyboard.key.70"]), @"by default the mapping only listens: the game still gets the key");
-    settings.takeButtonFromGame = YES;
-    CHECK(([settings ownsElement:@"keyboard.key.70"]), @"with it on, the mapped key is the user's");
-    CHECK((![settings ownsElement:@"keyboard.key.71"]), @"and a key that is not mapped is untouched");
-    CHECK(([defaults boolForKey:@"AKVoiceTakeButtonFromGame"]), @"the choice is remembered");
-
-    // Switching the feature off gives the key straight back: nothing may be swallowed by a
-    // setting that is off.
-    settings.enabled = NO;
-    CHECK((![settings ownsElement:@"keyboard.key.70"]), @"switching voice off gives the key back");
-    settings.enabled = YES;
-
-    // A system signal can never be owned: there is no key event to swallow, and the layer
-    // releases the system gesture instead.
-    [settings setLearnedElement:@"system.screenshot" forDevice:@"pad"];
-    CHECK((![settings ownsElement:@"system.screenshot"]), @"a system signal cannot be taken from the game");
-    [settings setLearnedElement:@"keyboard.key.70" forDevice:@"pad"];
-
-    // A mapping stored against another device is still the user's key: the adapter cannot
-    // know which controller it came from, and the user means the key either way.
-    CHECK(([settings ownsElement:@"keyboard.key.70"]), @"a mapping made for one pad covers the key itself");
-
-    // A family mapping is not inert. It fires the trigger for every key in the family, so
-    // those keys are the user's too; only the exact form used to produce a usage, which made
-    // a family mapping that fired still let every key it covers through to the game.
-    [settings setLearnedElement:@"keyboard.key." forDevice:@"pad"];
-    CHECK(([[settings ownedKeyUsages] containsObject:@70]), @"a family mapping covers its keys");
-    CHECK(([[settings ownedKeyUsages] containsObject:@4]), @"including keys never mapped by hand");
-    CHECK(([settings ownedKeyUsages].count == 232), @"and every key the family names, got %lu", (unsigned long)[settings ownedKeyUsages].count);
-    [settings setLearnedElement:@"keyboard.key.70" forDevice:@"pad"];
-
     // "Any" is what a trigger that was never set holds, and the header says it is never
     // stored. A stored one used to be accepted, which is a mapping nobody chose - and with
     // the switch on it would have taken every key the user has.
     CHECK(([AKTrigger triggerFromStored:@{ @"element": AKTriggerAnyElement, @"pattern": @0 }] == nil),
           @"a stored \"any\" is not a mapping");
-
-    // The same answer in the form the shell publishes to the adapter, which sees usages and
-    // not elements. Nothing that is not a usage may get into that set.
-    CHECK(([[settings ownedKeyUsages] containsObject:@70]), @"the usage form names the key the adapter will see");
-    CHECK(([settings ownedKeyUsages].count == 1), @"and nothing else, got %@", [settings ownedKeyUsages]);
-    [defaults setObject:@{@"element": @"keyboard.key.notanumber", @"pattern": @0} forKey:@"AKInputTrigger.odd"];
-    CHECK((![[settings ownedKeyUsages] containsObject:@0] && [settings ownedKeyUsages].count == 1),
-          @"an id that is not a usage is not turned into one, got %@", [settings ownedKeyUsages]);
-    [defaults removeObjectForKey:@"AKInputTrigger.odd"];
-    settings.takeButtonFromGame = NO;
-    CHECK(([settings ownedKeyUsages].count == 0), @"and with the switch off, nothing is published at all");
-
-    // Both switches are off until the user asks for them. Read through a fresh instance with
-    // the two keys removed, because every check above has just written them.
-    [defaults removeObjectForKey:@"AKVoiceTakeButtonFromGame"];
-    [defaults removeObjectForKey:@"AKVoiceEnabled"];
-    CHECK((![[AKVoiceSettings new] takeButtonFromGame] && ![[AKVoiceSettings new] enabled]),
-          @"nothing is taken and nothing listens until the user asks for it");
 
     [settings clearMappingForDevice:@"pad"];
     [settings clearMappingForDevice:@"8bitdo.pro"];
@@ -726,6 +670,9 @@ static void TestTriggerPatterns(void) {
 static void TestAudioSessionCoordinator(void) {
     AKAudioSessionCoordinator *coordinator = AKAudioSessionCoordinator.shared;
     AVAudioSession *session = AVAudioSession.sharedInstance;
+    // The real bridge now activates asynchronously; drain a prior capture's completion before
+    // asserting this independent coordinator transition.
+    Pump(0.1);
 
     // Nothing is claimed at the start, and push to talk is not active.
     CHECK((!coordinator.pushToTalkActive), @"push to talk is not active before anything asks");
@@ -899,6 +846,7 @@ static void TestAudioSessionPolicy(void) {
     [AKDictation setGameTextTarget:[FakeGameTextView new]];
 
     [dictation begin];
+    Pump(0.5);
     CHECK((dictation.state == AKDictationStateListening), @"the real bridge starts a session");
     CHECK(([session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]),
           @"and records while the game stays audible, got %@", session.category);
@@ -1096,7 +1044,7 @@ static void TestDictation(void) {
     [NSNotificationCenter.defaultCenter postNotificationName:AVAudioSessionInterruptionNotification
                                                       object:nil
                                                     userInfo:@{AVAudioSessionInterruptionTypeKey: @(AVAudioSessionInterruptionTypeBegan)}];
-    Pump(0.3);
+    Pump(0.6);
     CHECK((dictation.state == AKDictationStateIdle), @"an interruption ends the session");
     CHECK((heard.count == 0), @"and delivers nothing");
     dictation.audio = seamThatWasThere;
@@ -1105,6 +1053,7 @@ static void TestDictation(void) {
     [heard removeAllObjects];
     NSUInteger startsBefore = speech.starts;
     [dictation begin];
+    Pump(0.5);
     [dictation begin];
     [dictation begin];
     CHECK((speech.starts == startsBefore + 1), @"three presses while it is open are one session");
@@ -1542,14 +1491,12 @@ static void TestKeyboardDictationRecord(void) {
 }
 
 // Every setting the user can change has to survive the file. This is the review outcome's Phase 3
-// inventory, and the list is the test's own on purpose: a setting that nobody adds here is a setting
-// that quietly stops persisting, which is what happened to the voice layer's button choice - it was
-// in the defaults database and in nothing else.
+// inventory, and the list is the test's own on purpose: a setting that nobody adds here quietly
+// stops persisting.
 static void TestEverySettingRoundTrips(void) {
     NSArray<NSString *> *userFacing = @[@"WoWProduct", @"WoWRegion", @"WoWLocale",
                                         @"AKVoiceEnabled", @"AKVoiceMode", @"AKVoiceAutoSubmit",
-                                        @"AKVoiceTrailingSpace", @"AKVoiceCustomWords",
-                                        @"AKVoiceTakeButtonFromGame", @"AKVoiceSpeechLanguage"];
+                                        @"AKVoiceTrailingSpace", @"AKVoiceCustomWords", @"AKVoiceSpeechLanguage"];
     TKWolkaraForeverConfig *config = TKWolkaraForeverConfig.shared;
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
 
@@ -1557,12 +1504,10 @@ static void TestEverySettingRoundTrips(void) {
         CHECK(([TKWolkaraForeverConfig ownsKey:key]), @"%@ is a key the config owns, so it can be written", key);
 
     id regionWas = [defaults objectForKey:@"WoWRegion"];
-    id buttonWas = [defaults objectForKey:@"AKVoiceTakeButtonFromGame"];
     id voiceWas = [defaults objectForKey:@"AKVoiceEnabled"];
     id languageWas = [defaults objectForKey:@"AKVoiceSpeechLanguage"];
 
     [defaults setObject:@"us" forKey:@"WoWRegion"];
-    [defaults setBool:NO forKey:@"AKVoiceTakeButtonFromGame"];
     [defaults setBool:NO forKey:@"AKVoiceEnabled"];
     [defaults setObject:@"de-DE" forKey:@"AKVoiceSpeechLanguage"];
     [config save];
@@ -1570,18 +1515,15 @@ static void TestEverySettingRoundTrips(void) {
     // Change them in the database only, then read the file back over them: what survives is what
     // the file holds, which is the only thing that crosses an export, an import or an update.
     [defaults setObject:@"eu" forKey:@"WoWRegion"];
-    [defaults setBool:YES forKey:@"AKVoiceTakeButtonFromGame"];
     [defaults setBool:YES forKey:@"AKVoiceEnabled"];
     [defaults setObject:@"fr-FR" forKey:@"AKVoiceSpeechLanguage"];
     [config reloadFromFile];
     CHECK(([[defaults stringForKey:@"WoWRegion"] isEqualToString:@"us"]), @"a choice is restored from the file");
-    CHECK((![defaults boolForKey:@"AKVoiceTakeButtonFromGame"]), @"the voice layer's button choice round-trips");
     CHECK((![defaults boolForKey:@"AKVoiceEnabled"]), @"and the voice switch round-trips");
     CHECK(([[defaults stringForKey:@"AKVoiceSpeechLanguage"] isEqualToString:@"de-DE"]),
           @"and the speech language round-trips, got %@", [defaults stringForKey:@"AKVoiceSpeechLanguage"]);
 
     if (regionWas) [defaults setObject:regionWas forKey:@"WoWRegion"]; else [defaults removeObjectForKey:@"WoWRegion"];
-    if (buttonWas) [defaults setObject:buttonWas forKey:@"AKVoiceTakeButtonFromGame"]; else [defaults removeObjectForKey:@"AKVoiceTakeButtonFromGame"];
     if (voiceWas) [defaults setObject:voiceWas forKey:@"AKVoiceEnabled"]; else [defaults removeObjectForKey:@"AKVoiceEnabled"];
     if (languageWas) [defaults setObject:languageWas forKey:@"AKVoiceSpeechLanguage"]; else [defaults removeObjectForKey:@"AKVoiceSpeechLanguage"];
     [config save];
@@ -1707,7 +1649,7 @@ static void TestVoiceScreens(UIWindow *window) {
     CHECK((Find(settings.view, @"voice.map") != nil), @"and it has the Map button");
     // Disabled options are not actionable, but they remain readable: otherwise the page
     // looks broken before the player has found the master switch.
-    for (NSString *key in @[@"mappingCard", @"takeButtonCard", @"modeCard", @"afterCard", @"wordsCard"]) {
+    for (NSString *key in @[@"mappingCard", @"modeCard", @"afterCard", @"wordsCard"]) {
         UIView *card = [settings valueForKey:key];
         CHECK((card.alpha >= 0.75 && !card.userInteractionEnabled),
               @"%@ stays readable while Voice is off", key);
@@ -1719,13 +1661,6 @@ static void TestVoiceScreens(UIWindow *window) {
     UILabel *collision = (id)Find(settings.view, @"voice.mapping.collision");
     CHECK((collision != nil), @"and it says the mapped button still reaches the game");
     CHECK(([collision.text containsString:@"still reaches the game"]), @"in those words, got: %@", collision.text);
-    // The other half of the same limit: a controller button cannot be taken at all. The page
-    // has to say which inputs that is, and what to do instead, rather than leaving the switch
-    // to imply it takes anything.
-    UILabel *padLimit = (id)Find(settings.view, @"voice.takebutton.note");
-    CHECK((padLimit != nil), @"and it says a controller button cannot be taken this way");
-    CHECK(([padLimit.text containsString:@"cannot be taken"]), @"in those words, got: %@", padLimit.text);
-    CHECK(([padLimit.text containsString:@"pick a button the game does not use"]), @"and what to do instead, got: %@", padLimit.text);
     // And it does not offer patterns it cannot honour: two modes, not the model's five.
     UISegmentedControl *mode = (id)Find(settings.view, @"voice.mode");
     CHECK((mode.numberOfSegments == 2), @"and offers two modes, not the model's five patterns");
@@ -1860,20 +1795,18 @@ static void TestPageLayout(UIWindow *window) {
     [window makeKeyAndVisible];
     [window layoutIfNeeded];
     AKVoiceSettings.shared.enabled = YES;
-    AKVoiceSettings.shared.takeButtonFromGame = NO;
-
     AKVoiceViewController *settings = [AKVoiceViewController new];
     [navigation pushViewController:settings animated:NO];
     Pump(0.3);
     [settings.view layoutIfNeeded];
     CheckLayout(settings.view, @"voice settings", @[@"voice.enabled", @"voice.mapping", @"voice.map",
-                                                    @"voice.clear", @"voice.takebutton", @"voice.mode",
-                                                    @"voice.words", @"voice.mapping.collision"]);
+                                                    @"voice.clear", @"voice.mode", @"voice.words",
+                                                    @"voice.mapping.collision"]);
     // Every switch, named and labelled: the row's text is a separate label, so a switch with
     // neither is one a screen reader cannot describe and a test cannot find. Two of them were
     // in exactly that state until this check existed.
     NSArray<UIView *> *toggles = AllSubviewsOfClass(settings.view, UISwitch.class);
-    CHECK((toggles.count == 4), @"the settings page has four switches, got %lu", (unsigned long)toggles.count);
+    CHECK((toggles.count == 3), @"the settings page has three switches, got %lu", (unsigned long)toggles.count);
     for (UISwitch *toggle in toggles) {
         CHECK((toggle.accessibilityIdentifier.length > 0),
               @"every switch can be found by name, got %@", toggle.accessibilityIdentifier);

@@ -11,7 +11,6 @@
 - **A first run without a provider key has a door.** Browse and Discover each offer **Set up access**, which opens the key sheet; with a key the Sort and Filter rows open the sheets they name.
 - **Backup Add-ons and Restore Add-ons**: the whole add-on folder as one ZIP under `WTF/Backups/`, restorable transactionally, and neither row reaches the network.
 - **The four Controller Layout decisions are four rows**: create, edit, restore and back up, the last through the system share sheet.
-- **A controller claim survives a config transfer**: `AKControllerClaims` is in the config export/import allowlist and in the schema.
 - **The in-app add-on browser no longer opens during a transition**, which removes UIKit's unbalanced begin/end appearance transitions.
 - A disabled Voice page stays readable while its controls remain off.
 

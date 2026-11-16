@@ -22,6 +22,8 @@ FOUNDATION_EXPORT TKAddonHubEvent const TKAddonHubEventRecordMigration;   // "re
 FOUNDATION_EXPORT TKAddonHubEvent const TKAddonHubEventSource;            // "source"
 // The in-app browser opened, returned, or refused a download.
 FOUNDATION_EXPORT TKAddonHubEvent const TKAddonHubEventHandoff;           // "handoff"
+// Every in-app browser delegate callback. URL query values and page contents are never logged.
+FOUNDATION_EXPORT TKAddonHubEvent const TKAddonHubEventWeb;               // "web"
 // An archive import or update transaction committed, or rolled back.
 FOUNDATION_EXPORT TKAddonHubEvent const TKAddonHubEventArchive;           // "archive"
 // An update check or queue moved.
@@ -44,6 +46,11 @@ FOUNDATION_EXPORT NSString *const TKAddonHubKeyState;      // "state"
 FOUNDATION_EXPORT NSString *const TKAddonHubKeyAction;     // "action"
 FOUNDATION_EXPORT NSString *const TKAddonHubKeyReason;     // "reason"
 FOUNDATION_EXPORT NSString *const TKAddonHubKeyCount;      // "count"
+FOUNDATION_EXPORT NSString *const TKAddonHubKeyHost;       // "host"
+FOUNDATION_EXPORT NSString *const TKAddonHubKeyRoute;      // "route"
+FOUNDATION_EXPORT NSString *const TKAddonHubKeyMIME;       // "mime"
+FOUNDATION_EXPORT NSString *const TKAddonHubKeyStatus;     // "status"
+FOUNDATION_EXPORT NSString *const TKAddonHubKeyCode;       // "code"
 
 /// Write one bounded line. `fields` is filtered against the whitelist above; a nil or empty
 /// message still records the event, because "it happened" is the part that matters.

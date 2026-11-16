@@ -46,12 +46,7 @@ typedef NS_ENUM(NSInteger, AKInputSource) {
 @property (nonatomic, copy, nullable) void (^onTriggerBegan)(AKTrigger *trigger, AKInputEvent *event);
 @property (nonatomic, copy, nullable) void (^onTriggerEnded)(AKTrigger *trigger, AKInputEvent *event);
 
-// Whether the guest must be kept from seeing this keyboard key is decided in the settings
-// and reaches the adapter as the set published by `AKVoiceSettings.ownedKeyUsages` - the
-// shell posts it, the adapter stores it, and the adapter's key path tests that set. There is
-// deliberately no method here for the adapter to ask: the adapter is compiled into a signed
-// dylib this app never links, so a call from it cannot exist, and the method that used to
-// sit here answered a question nothing asked.
+// Dictation observes mapped input but never prevents the guest from receiving it.
 
 // The device whose input should be remembered when learning finishes.
 - (void)beginLearning;// Disarm, without adopting anything. Learning takes the first event that arrives, so
