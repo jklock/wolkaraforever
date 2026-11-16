@@ -364,84 +364,6 @@ static void TestLatencies(void) {
     InstallSink();
 }
 
-#pragma mark - The claim
-
-// This build has no seam, and the answer is a property of the route rather than a guess.
-static void TestClaimAvailability(void) {    CHECK(!AKVoiceSettings.controllerClaimIsAvailable,
-          @"no controller-button claim is available in this build");
-    BOOL claimed = [AKVoiceSettings.shared claimElement:@"controller.button.share" device:AKTestDevice];
-    CHECK(!claimed, @"and asking for one is refused rather than stored");
-    CHECK(![AKVoiceSettings.shared isElement:@"controller.button.share" claimedForDevice:AKTestDevice],
-          @"so nothing is recorded for it");
-    CHECK(AKVoiceSettings.shared.claimedElements.count == 0, @"and nothing is held back");
-
-    // Not a controller button: refused for its own reason, even with a seam.
-    [AKVoiceSettings setControllerClaimSeamAvailableForTesting:YES];
-    CHECK(![AKVoiceSettings.shared claimElement:AKInputElementForKeyboardKey(36) device:AKTestDevice],
-          @"a keyboard key is not a controller button, so it is never claimed here");
-    CHECK(![AKVoiceSettings.shared claimElement:@"system.screenshot" device:AKTestDevice],
-          @"and neither is a system signal");
-    [AKVoiceSettings setControllerClaimSeamAvailableForTesting:NO];
-}
-
-// An installation from before this feature has no record at all. The answer is "not claimed", and
-// nothing is written merely by asking.
-static void TestClaimMigration(void) {
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    [defaults removeObjectForKey:@"AKControllerClaims"];
-    CHECK(![AKVoiceSettings.shared isElement:@"controller.button.share" claimedForDevice:AKTestDevice],
-          @"a missing record reads as not claimed");
-    CHECK(![AKVoiceSettings.shared isElement:@"controller.button.share" claimedForDevice:nil],
-          @"for a named controller and for any controller alike");
-    CHECK([defaults objectForKey:@"AKControllerClaims"] == nil,
-          @"and asking does not invent one");
-
-    // A record written by a build that could claim is read, not overwritten.
-    [defaults setObject:@{ AKTestDevice: @{ @"element": @"controller.button.share", @"claimed": @YES } }
-                 forKey:@"AKControllerClaims"];
-    CHECK([AKVoiceSettings.shared isElement:@"controller.button.share" claimedForDevice:AKTestDevice],
-          @"a stored record is read back");
-    CHECK(![AKVoiceSettings.shared isElement:@"controller.button.menu" claimedForDevice:AKTestDevice],
-          @"and only for the element it names");
-    CHECK(AKVoiceSettings.shared.claimedElements.count == 0,
-          @"but it is not in force in a build that cannot honour it");
-    [defaults removeObjectForKey:@"AKControllerClaims"];
-}
-
-// Every boundary the gate names, each with its own reason, proved with the seam forced on so the
-// paths are exercised now rather than written blind.
-static void TestClaimRestorePaths(void) {
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    [defaults removeObjectForKey:@"AKControllerClaims"];
-    [AKVoiceSettings setControllerClaimSeamAvailableForTesting:YES];
-
-    NSArray<NSString *> *reasons = @[@"disable", @"disconnect", @"background", @"route-failure", @"exit"];
-    for (NSString *reason in reasons) {
-        CHECK([AKVoiceSettings.shared claimElement:@"controller.button.share" device:AKTestDevice],
-              @"a claim can be made for a controller button (%@)", reason);
-        CHECK(AKVoiceSettings.shared.claimedElements.count == 1, @"and is in force (%@)", reason);
-        CHECK([AKVoiceSettings.shared isElement:@"controller.button.share" claimedForDevice:AKTestDevice],
-              @"and is stored (%@)", reason);
-        [AKVoiceSettings.shared releaseClaimsWithReason:reason];
-        CHECK(AKVoiceSettings.shared.claimedElements.count == 0,
-              @"%@ gives the button back, got %lu still held", reason,
-              (unsigned long)AKVoiceSettings.shared.claimedElements.count);
-        CHECK([AKVoiceSettings.shared isElement:@"controller.button.share" claimedForDevice:AKTestDevice],
-              @"and keeps the record for a later re-enable (%@)", reason);
-    }
-
-    // A release is idempotent: giving back something that is not held says nothing and changes
-    // nothing.
-    [AKVoiceSettings.shared releaseClaimsWithReason:@"background"];
-    CHECK(AKVoiceSettings.shared.claimedElements.count == 0, @"a second release is harmless");
-
-    [AKVoiceSettings.shared releaseClaimForElement:@"controller.button.share" device:AKTestDevice];
-    CHECK(![AKVoiceSettings.shared isElement:@"controller.button.share" claimedForDevice:AKTestDevice],
-          @"and an explicit release forgets the record");
-    [AKVoiceSettings setControllerClaimSeamAvailableForTesting:NO];
-    [defaults removeObjectForKey:@"AKControllerClaims"];
-}
-
 #pragma mark - The log contract
 
 // The lines this feature writes, and the ones it must never write.
@@ -480,11 +402,6 @@ static void TestTraceEvents(void) {
                                                           (unsigned long)index]
                                                    value:1 pressed:YES device:AKTestDevice rejection:NULL];
     Pump(0.3);
-    // And a claim event, with the seam forced on for this half of the test only.
-    [AKVoiceSettings setControllerClaimSeamAvailableForTesting:YES];
-    [AKVoiceSettings.shared claimElement:@"controller.button.share" device:AKTestDevice];
-    [AKVoiceSettings.shared releaseClaimsWithReason:@"disconnect"];
-    [AKVoiceSettings setControllerClaimSeamAvailableForTesting:NO];
     // The Composer's answer, from the entry point the adapter reports it on - and the same answer
     // from a toolbar press, which is not this feature's event and must not appear. The toolbar's
     // answer carries a word of its own, so the assertion cannot be satisfied by the controller's
@@ -502,11 +419,6 @@ static void TestTraceEvents(void) {
           @"a suppressed repeat says so");
     CHECK(AnyLineContains(lines, @"drop reason=overflow element=controller.button.o16"),
           @"an overflow names the edge that did not fit");
-    CHECK(AnyLineContains(lines, @"claim take element=controller.button.share"), @"a claim says which button");
-    CHECK(AnyLineContains(lines, @"claim restore element=controller.button.share reason=disconnect"),
-          @"and the restore says why it was given back");
-    CHECK(AnyLineContains(lines, @"claim refused reason=no-route element="),
-          @"a refusal in the shipping build says which reason applies");
     CHECK(AnyLineContains(lines, @"composer open outcome=opened ms="),
           @"the Composer's answer carries its outcome and its milliseconds");
     CHECK(!AnyLineContains(lines, @"not-a-mapped-button"),
@@ -538,7 +450,6 @@ static void TestTraceEvents(void) {
     CHECK(sawAdmissionAfterReset, @"a fresh budget produces lines again");
 
     [defaults setBool:NO forKey:AKTestDiagnosticsKey];
-    [defaults removeObjectForKey:@"AKControllerClaims"];
 }
 
 #pragma mark - Running them
@@ -579,9 +490,6 @@ static void TestTraceEvents(void) {
     TestNoRoute();
     TestCountersReset();
     TestLatencies();
-    TestClaimAvailability();
-    TestClaimMigration();
-    TestClaimRestorePaths();
     TestTraceEvents();
 
     if (failures == 0) {

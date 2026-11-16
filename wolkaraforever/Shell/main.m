@@ -57,9 +57,6 @@
 // AKTouchOwnedKeyUsagesDidChangeNotification and AKTouchOwnedKeyUsagesKey in
 // wolkaraforever/Touch/TouchControls.h, and the wording is part of the contract between the two -
 // the same arrangement as AKTouchGameTextInputDidAppear below.
-static NSString *const AKOwnedKeysNotification = @"AKTouchOwnedKeyUsagesDidChange";
-static NSString *const AKOwnedKeysUserInfoKey = @"usages";
-
 // The Chat Composer's two crossings, by name for the same reason. They are
 // AKChatComposerOpenNotification, AKChatComposerVoiceRequestNotification and
 // AKChatComposerVoiceEventNotification in wolkaraforever/Touch/TouchControls.h, together with
@@ -428,18 +425,6 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
 // What the adapter needs to know, and the only thing it can be told: which keys are the
 // user's, so the guest does not see them. Sent on every change to the settings - a mapping,
 // the switch, or voice going off - because each of those changes the answer.
-- (void)publishOwnedKeys:(NSNotification *)note {
-    (void)note;
-    NSSet<NSNumber *> *usages = [AKVoiceSettings.shared ownedKeyUsages];
-    [NSNotificationCenter.defaultCenter postNotificationName:AKOwnedKeysNotification
-                                                     object:nil
-                                                   userInfo:@{AKOwnedKeysUserInfoKey: usages}];
-    WKLog("voice", @"the user's keys: %lu published to the adapter", (unsigned long)usages.count);
-    // The composer's language control is refreshed on the same changes, so it cannot drift from
-    // what the recogniser will actually use.
-    [self publishSpeechLanguage];
-}
-
 // What the app's own audio session is set to, for the same reason the dictation flags are
 // printed: the keep-alive for a running game is an audio session set for playback, and what a
 // dictation session must never leave behind is a recording one. Nothing on this device proved
@@ -684,10 +669,10 @@ static NSString *AKAudioStateDescription(void) {
     // and switching voice off all change the answer. Published rather than asked because the
     // adapter is a dylib - it cannot call in here, and it must not have to.
     [NSNotificationCenter.defaultCenter addObserver:self
-                                           selector:@selector(publishOwnedKeys:)
+                                           selector:@selector(publishSpeechLanguage)
                                                name:AKVoiceSettingsDidChangeNotification
                                              object:nil];
-    [self publishOwnedKeys:nil];
+    [self publishSpeechLanguage];
     [AKInputRouter.shared begin];
     if([arguments containsObject:@"--inspect-controller"]) {
         [AKControllerInspector.shared showPanel:YES];
@@ -1934,14 +1919,6 @@ static void WKLanguageLogSink(NSString *tag, NSString *message) {
     UISceneConfiguration *c = [[UISceneConfiguration alloc] initWithName:@"Default" sessionRole:s.role];
     c.delegateClass = AKHostSceneDelegate.class;
     return c;
-}
-// A terminating app is still able to give a button back, and must: a claim that outlives the
-// process would be an input the player could not recover without relaunching, which is the one
-// state the gate forbids. `exit` is its own reason so the log distinguishes it from the background
-// case, which usually precedes it.
-- (void)applicationWillTerminate:(UIApplication *)application {
-    (void)application;
-    [AKVoiceSettings.shared releaseClaimsWithReason:@"exit"];
 }
 @end
 

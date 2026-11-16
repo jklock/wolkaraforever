@@ -60,6 +60,8 @@ extern NSNotificationName const AKAudioPushToTalkLeaseDidChangeNotification;
 /// Dictation asks to record. YES only when the session is recording afterwards. The category is
 /// PlayAndRecord with mixing, so the game keeps its sound while the user talks.
 - (BOOL)beginPushToTalk:(NSError **)error;
+/// Non-blocking variant for an input edge. The completion is called on the main queue.
+- (void)beginPushToTalkAsync:(void (^)(BOOL ok, NSError *_Nullable error))completion;
 /// The microphone delivered silence under PlayAndRecord, which is the one configuration measured
 /// silent on this device. Demotes this hold to Record alone - the game's audio pauses instead of
 /// the words being lost - and the next hold asks for PlayAndRecord again.

@@ -620,7 +620,7 @@
 "voice.heading.button" = "Taste";
 "voice.map" = "Taste belegen …";
 "voice.mapping.hint" = "Tippen Sie auf Belegen und drücken Sie dann die gewünschte Taste.";
-"voice.mapping.collision" = "Die belegte Taste erreicht das Spiel weiterhin, solange Sie sie nicht unten abnehmen. Nichts hier nimmt sie dem Spiel von selbst weg; wählen Sie eine Taste, die das Spiel bereits nutzt, tut sie beides zugleich.";
+"voice.mapping.collision" = "Die zugeordnete Taste erreicht weiterhin das Spiel. Wählen Sie eine Taste, die nicht für Spielsteuerungen verwendet wird.";
 "voice.takeButton" = "Das Spiel soll sie nicht sehen";
 "voice.takeButton.note" = "Ist dies an, erreicht eine für das Diktat belegte Tastaturtaste das Spiel überhaupt nicht. Eine Controller-Taste lässt sich so nicht abnehmen, weil iOS uns die Tasten des Pads in einer Form meldet, die wir nicht der Eingabe des Spiels zuordnen können – wählen Sie für ein Pad eine Taste, die das Spiel nicht nutzt.";
 "voice.heading.mode" = "Modus";

@@ -995,8 +995,25 @@ cmd_return() {
 cmd_selftest() {
     local name=${1:-}
     [ -n "$name" ] || die "which self-test? pilot.sh selftest <input|voice>"
-    step "state before touching anything"; verdict
-    require_safe_to_install ""
+    # A self-test never touches game files.  Listing a large app container just to decide
+    # whether an update is writing can take minutes over a network connection and used to
+    # prevent the test from starting at all.  Refuse a live guest using its small append-only
+    # log instead; when the app is not running, no updater can be writing.
+    step "checking that the app is stopped"
+    xcrun devicectl device info processes --device "$DEVICE" 2>/dev/null > "$PROCESSES" \
+        || die "the device process list could not be read; unlock the iPad and try again"
+    if [ -n "$(app_pid)" ]; then
+        die "the app is running, so a self-test will not replace it. Close the game or launcher, then try again."
+    fi
+    # `stop_app` and the post-test home-screen restoration use these facts. With no app process,
+    # there cannot be a live guest or a writer in its container.
+    cat > "$STATE" <<'STATE'
+app_running=0
+inspection_ok=1
+update_writing=0
+session_live=0
+session_unknown=0
+STATE
     stop_app ""
     log_launch_count > "$SESSION/log-launches-before"
     local offset; offset=$(log_line_count)

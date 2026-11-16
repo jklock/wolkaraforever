@@ -33,20 +33,11 @@ static NSArray<NSString *> *TKWolkaraForeverConfigKeys(void) {
              // spellings VoiceSettings accepts; anything else is refused here and migrates to
              // System, which is the behaviour before the choice existed.
              @"AKVoiceSpeechLanguage",
-             // The voice layer's choice about whether the game keeps the button. It lived only in
-             // the defaults database, so it did not survive an export and import - which is what
-             // the review outcome's Phase 3 is about: a setting the user can change belongs in the
-             // file, in the schema, and in the tests that prove it round-trips.
-             @"AKVoiceTakeButtonFromGame",
              // The Chat Composer: its flag, the delivery mode a message takes, and the player's
              // own destinations. A destination list is a choice that costs time to retype, so it
              // belongs in the file like the dictionary and the mapping do.
              @"AKChatComposerEnabled", @"AKChatDeliveryMode", @"AKChatDestinationsV1",
-             // The controller button a person is holding back from the game, per controller. It
-             // is a choice they made, so a config transfer that dropped it would silently undo
-             // it. The review of 2026-11-12 found exactly that: a key the voice layer writes and
-             // this allowlist did not know.
-             @"AKControllerClaims"];
+             ];
 }
 
 // One mapping per controller, so the key carries an identity we cannot know in advance.
@@ -123,7 +114,6 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
             @"AKVoiceAutoSubmit": @{@"kind": @"bool"},
             @"AKVoiceTrailingSpace": @{@"kind": @"bool"},
             @"AKVoiceCustomWords": @{@"kind": @"words"},
-            @"AKVoiceTakeButtonFromGame": @{@"kind": @"bool"},
             @"AKChatComposerEnabled": @{@"kind": @"bool"},
             // The two modes the Composer knows. An installation that predates the Composer is
             // migrated to classicDirect by the Composer itself; this is the stored spelling.
@@ -137,10 +127,6 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
             // controls would not accept.
             @"WolkaraForeverTouchLayoutV1": @{@"kind": @"arrangement"},
             @"WolkaraForeverProfilesV1": @{@"kind": @"arrangements"},
-            // Which controller button is held back from the game, per controller. Written
-            // by VoiceSettings and read back by it; here so it travels with the rest of
-            // the choices.
-            @"AKControllerClaims": @{@"kind": @"claims"},
         };
     });
     return schema;

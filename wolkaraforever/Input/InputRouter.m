@@ -241,20 +241,15 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
 - (void)padDisconnected:(NSNotification *)notification {
     AKIRLog(@"input: %@", notification.name);
     [self cancelLearning];
-    // A claimed button belongs to a connection, not to the app: when the pad goes, whatever was
-    // being held back goes with it, immediately, rather than waiting for a setting to change.
-    [AKVoiceSettings.shared releaseClaimsWithReason:@"disconnect"];
     [self applyMappings];
     [self refreshInterest];
 }
 
-// The app is going away. Nothing may be left held back, and nothing may be left listening: the
-// two facts the completion gate asks to be proved for the background boundary.
+// The app is going away. Stop learning; no input path is permitted to hold game input back.
 - (void)appDidBackground:(NSNotification *)notification {
     (void)notification;
     AKIRLog(@"input: %@", notification.name);
     [self cancelLearning];
-    [AKVoiceSettings.shared releaseClaimsWithReason:@"background"];
 }
 
 #pragma mark - Which system gestures are ours to hold
@@ -277,18 +272,6 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
         // Only a controller button can have a system gesture to give up. A keyboard
         // key or a mouse button needs nothing from us.
         if (![trigger.element hasPrefix:@"controller.button."]) continue;
-        // The claim the page cannot offer. A record written by a build that could claim is
-        // honoured here or it is not, and either way the log says which: refusing is not a
-        // failure of this build, it is the measurement in VoiceSettings.h said at the moment it
-        // applies. The record is kept, so a build with a seam restores the player's choice.
-        if ([AKVoiceSettings.shared isElement:trigger.element claimedForDevice:device]) {
-            if (AKVoiceSettings.controllerClaimIsAvailable) {
-                [AKVoiceSettings.shared claimElement:trigger.element device:device];
-            } else {
-                [AKControllerCommandIngress trace:@"claim restore element=%@ reason=route-failure",
-                                              trigger.element];
-            }
-        }
         [inspector releaseSystemGestureForElement:trigger.element device:device];
     }
 

@@ -31,8 +31,6 @@
 @property (nonatomic, strong) UILabel *mappingHint;
 @property (nonatomic, strong) UIButton *mapButton;
 @property (nonatomic, strong) UIButton *clearButton;
-@property (nonatomic, strong) UISwitch *takeButtonSwitch;
-@property (nonatomic, strong) UIView *takeButtonCard;
 @property (nonatomic, strong) UISegmentedControl *modeControl;
 @property (nonatomic, strong) UISwitch *autoSubmitSwitch;
 @property (nonatomic, strong) UISwitch *trailingSpaceSwitch;
@@ -84,34 +82,10 @@
     self.mapButton = [self filledButton:@"voice.map" title:WKLocalized(@"voice.map") action:@selector(beginMapping)];
     self.clearButton = [self borderedButton:@"voice.clear" title:WKLocalized(@"common.clear") action:@selector(clearMapping)];
     self.mappingHint = WKNote(WKLocalized(@"voice.mapping.hint"));
-    // The audit's finding, said where the mapping is made rather than in a document
-    // reads: by default this feature listens to a button and does not take it from the game.
-    // The switch below is how the user takes it, and it says which buttons that works for. It
-    // carries an identifier because the voice fixture asserts the warning is still on the
-    // page: a warning that can disappear without a test is the same as no warning.
     UILabel *collision = WKNote(WKLocalized(@"voice.mapping.collision"));
     collision.accessibilityIdentifier = @"voice.mapping.collision";
     self.mappingCard = [self card:@[self.mappingValue, self.mapButton, self.clearButton, self.mappingHint, collision]];
     [rows addArrangedSubview:self.mappingCard];
-
-    // Keep the game from seeing it: the user's explicit choice, off by default. With it on
-    // a keyboard key the user has taken for dictation does not reach the game at all, which
-    // is what "collision-free" means for the inputs this can be done for. The note says
-    // which those are, because a pad button cannot be taken - iPadOS gives us the pad's
-    // buttons as gamepad elements and the guest's key events cannot be traced back to them.
-    self.takeButtonSwitch = [self switchWithAction:@selector(takeButtonChanged)
-                                            title:WKLocalized(@"voice.takeButton")
-                                       identifier:@"voice.takebutton"];
-    self.takeButtonSwitch.on = AKVoiceSettings.shared.takeButtonFromGame;
-    // The sentence about what cannot be taken carries an identifier for the same reason the
-    // collision warning does: the fixture asserts it is still on the page. A limit that can
-    // disappear without a test is not a stated limit.
-    UILabel *padLimit = WKNote(WKLocalized(@"voice.takeButton.note"));
-    padLimit.accessibilityIdentifier = @"voice.takebutton.note";
-    self.takeButtonCard = [self card:@[[self switchRow:WKLocalized(@"voice.takeButton")
-                                              control:self.takeButtonSwitch],
-        padLimit]];
-    [rows addArrangedSubview:self.takeButtonCard];
 
     // --- How it behaves -----------------------------------------------------
     [rows addArrangedSubview:WKHeading(WKLocalized(@"voice.heading.mode"))];
@@ -214,14 +188,6 @@
 
 #pragma mark - On, or off
 
-- (void)takeButtonChanged {
-    AKVoiceSettings.shared.takeButtonFromGame = self.takeButtonSwitch.on;
-    // Said in the log as well as on the page: this is the one setting that changes what the
-    // game itself receives.
-    WKLog("voice", @"the game %s see a mapped keyboard key",
-          self.takeButtonSwitch.on ? "will not" : "will still");
-}
-
 - (void)enabledChanged {
     AKVoiceSettings.shared.enabled = self.enabledSwitch.on;
     if (!self.enabledSwitch.on) {
@@ -240,7 +206,7 @@
         ? (device ? WKLocalizedFormat(@"voice.enabled.on", device)
                   : WKLocalized(@"voice.enabled.on.none"))
         : WKLocalized(@"voice.enabled.off");
-    for (UIView *card in @[self.mappingCard, self.takeButtonCard, self.modeCard, self.afterCard, self.wordsCard]) {
+    for (UIView *card in @[self.mappingCard, self.modeCard, self.afterCard, self.wordsCard]) {
         // Disabled must still be readable.  At 0.4 the explanatory text looked like a
         // rendering failure on the iPad and hid the one thing a player needs to do next:
         // switch Voice on.  Interaction is still disabled below; this only preserves
@@ -251,7 +217,6 @@
     self.mapButton.enabled = on && !AKInputRouter.shared.learning;
     self.clearButton.enabled = on;
     self.modeControl.enabled = on;
-    self.takeButtonSwitch.enabled = on;
     self.autoSubmitSwitch.enabled = on;
     self.trailingSpaceSwitch.enabled = on;
     self.dictionaryField.enabled = on;

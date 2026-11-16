@@ -16,8 +16,7 @@ static NSString *const AKChatDeliveryReview = @"review";
 // is what makes an installation "existing" for the one-time migration below: a player who has
 // used dictation keeps exactly the behaviour those settings gave them.
 static NSArray<NSString *> *AKChatLegacyVoiceKeys(void) {
-    return @[@"AKVoiceEnabled", @"AKVoiceAutoSubmit", @"AKVoiceMode",
-             @"AKVoiceCustomWords", @"AKVoiceTakeButtonFromGame"];
+    return @[@"AKVoiceEnabled", @"AKVoiceAutoSubmit", @"AKVoiceMode", @"AKVoiceCustomWords"];
 }
 
 #pragma mark - Delivery mode

@@ -29,6 +29,7 @@ static char const AKAudioCoordinatorQueueKey;
     BOOL _gameWantsPlayback;
     NSString *_lastTransition;
     BOOL _observing;
+    NSUInteger _activationGeneration;
 }
 
 + (instancetype)shared {
@@ -198,6 +199,36 @@ static char const AKAudioCoordinatorQueueKey;
     return ok;
 }
 
+- (void)beginPushToTalkAsync:(void (^)(BOOL ok, NSError *_Nullable error))completion {
+    dispatch_async(_transitions, ^{
+        NSUInteger generation = ++self->_activationGeneration;
+        self->_lease = AKAudioLeasePushToTalk;
+        self->_pushToTalk = YES;
+        [self startObserving];
+        AVAudioSession *session = AVAudioSession.sharedInstance;
+        NSError *error = nil;
+        if (![session setCategory:AVAudioSessionCategoryPlayAndRecord mode:AVAudioSessionModeDefault
+                          options:AVAudioSessionCategoryOptionMixWithOthers | AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetooth error:&error]) {
+            self->_lease = AKAudioLeaseNone; self->_pushToTalk = NO;
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(NO, error); });
+            return;
+        }
+        if (@available(iOS 27.0, *)) {
+            [session activateWithOptions:0 completionHandler:^(BOOL activated, NSError *failure) {
+                dispatch_async(self->_transitions, ^{
+                    BOOL current = generation == self->_activationGeneration && self->_pushToTalk;
+                    if (activated && !current) [session deactivateWithOptions:0 completionHandler:^(BOOL deactivated, NSError *error) { (void)deactivated; (void)error; }];
+                    dispatch_async(dispatch_get_main_queue(), ^{ completion(activated && current, failure); });
+                });
+            }];
+        } else {
+            BOOL activated = [session setActive:YES error:&error];
+            if (activated) { self->_lease = AKAudioLeasePushToTalk; self->_pushToTalk = YES; [self startObserving]; }
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(activated, error); });
+        }
+    });
+}
+
 // Push to talk took PlayAndRecord so the game stayed audible, and the microphone turned out to
 // deliver silence under it. This demotes the session for the rest of *this* hold: a silent
 // microphone is worse than a quiet few seconds, and the earlier measurement on this device says
@@ -230,6 +261,7 @@ static char const AKAudioCoordinatorQueueKey;
     __block BOOL ok = NO;
     __block NSError *failure = nil;
     [self onTheQueue:^{
+        self->_activationGeneration++;
         if (!_pushToTalk) { ok = YES; return; }   // nothing to hand back, and no state claimed
         NSString *from = @"push-to-talk";
         _pushToTalk = NO;

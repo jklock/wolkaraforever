@@ -227,7 +227,10 @@ fi
 #    forked; everything we write, ship or read is covered here.
 otherGames='cyberpunk|hota|h3hota|heroes|homm|megabonk|witcher|diablo|starcraft|overwatch|hearthstone|skyrim|fallout|minecraft|elden|baldur|quake|doom'
 # This script is the one exemption: it has to spell the names to forbid them.
-named=$(git ls-files | grep -v -e '^platform/' -e '^wolkaraforever/tools/check_layers.sh$' | while IFS= read -r file; do
+# The generated platform catalog necessarily lists immutable upstream paths, including profiles
+# this product never reads or ships. It is an inventory of the exempt vendor mirror, not product
+# content, so it follows the platform exemption rather than creating a false gate failure.
+named=$(git ls-files | grep -v -e '^platform/' -e '^docs/agent/catalog/platform.md$' -e '^wolkaraforever/tools/check_layers.sh$' | while IFS= read -r file; do
             [ -f "$file" ] && grep -I -i -q -w -E "$otherGames" "$file" 2>/dev/null && echo "$file"
         done | head -5)
 if [ -z "$named" ]; then

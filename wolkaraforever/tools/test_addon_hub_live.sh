@@ -28,10 +28,28 @@ cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 . wolkaraforever/tools/simulators.sh
 root=$PWD
+
+# CoreSimulator has occasionally left container operations waiting forever. A live test must
+# produce a verdict, not strand the whole simulator matrix behind an uninstall or launch.
+simctl() {
+    /usr/bin/xcrun simctl "$@" &
+    local child=$! waited=0 limit=${WOLKAREFOREVER_SIMCTL_TIMEOUT:-45}
+    while kill -0 "$child" 2>/dev/null; do
+        if [ "$waited" -ge "$limit" ]; then
+            kill "$child" 2>/dev/null || true
+            echo "test_addon_hub_live: simctl $1 did not answer within ${limit}s" >&2
+            return 124
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    wait "$child"
+}
+
 wolkaraforever/tools/prepare.sh
 cd build/platform
 simulator_use "${SIMULATOR:-ipad}"
-xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
+simctl bootstatus "$SIM_ID" -b > /dev/null
 
 APP=build/addon-hub-live/AddonHubLive.app
 APP_ABS=$PWD/$APP
@@ -120,14 +138,14 @@ printf '## Title: Live Imported\n## Version: 3.0\n## Author: Nobody\n## Interfac
 printf -- '-- lua\n' > "$staging/Core.lua"
 ( cd build/addon-hub-live/staging && zip -qr "$APP_ABS/LiveAddon.zip" LiveImported )
 codesign --force --sign - "$APP" > /dev/null
-xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.addon-hub-live > /dev/null 2>&1 || true
-xcrun simctl install "$SIM_ID" "$APP"
+simctl uninstall "$SIM_ID" org.tolkara.tests.addon-hub-live > /dev/null 2>&1 || true
+simctl install "$SIM_ID" "$APP"
 # The page pulls in the launcher's voice source, which asks for the microphone at launch, and a
 # WolkaraForever build left by an earlier session can have its own permission alert on the spring
 # board. Both are cleared so the recording shows the page and not a system alert.
 for bundle in org.tolkara.tests.addon-hub-live local.wolkaraforever.johnklock local.tolkara.app; do
-    xcrun simctl privacy "$SIM_ID" grant microphone "$bundle" > /dev/null 2>&1 || true
-    xcrun simctl terminate "$SIM_ID" "$bundle" > /dev/null 2>&1 || true
+    simctl privacy "$SIM_ID" grant microphone "$bundle" > /dev/null 2>&1 || true
+    simctl terminate "$SIM_ID" "$bundle" > /dev/null 2>&1 || true
 done
 
 echo "add-on hub live: $(simulator_name "$SIM_ID")"
@@ -141,7 +159,7 @@ fi
 video=$OUT/live-run.mp4
 console=$OUT/console.log
 : > "$console"
-xcrun simctl io "$SIM_ID" recordVideo --codec h264 --force "$video" > /dev/null 2>&1 &
+simctl io "$SIM_ID" recordVideo --codec h264 --force "$video" > /dev/null 2>&1 &
 record_pid=$!
 sleep 2
 started=$(date +%s)
@@ -152,7 +170,7 @@ WK_LIVE_API_KEY="${WK_LIVE_API_KEY:-}" xcrun simctl launch --console-pty \
     --terminate-running-process "$SIM_ID" org.tolkara.tests.addon-hub-live --live-addons \
     > "$console" 2>&1 &
 launch_pid=$!
-documents="$(xcrun simctl get_app_container "$SIM_ID" org.tolkara.tests.addon-hub-live data)/Documents"
+documents="$(simctl get_app_container "$SIM_ID" org.tolkara.tests.addon-hub-live data)/Documents"
 browser_at=""
 for _ in $(seq 1 600); do
     if [ -z "$browser_at" ] && [ -f "$documents/browser-ready" ]; then

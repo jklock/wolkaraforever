@@ -77,7 +77,7 @@ static void AKResetCapture(void) { AKCaptureStarts = AKCaptureStops = 0; AKCaptu
 static void TestDeliveryModeMigration(void) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     for (NSString *key in @[@"AKChatDeliveryMode", @"AKVoiceEnabled", @"AKVoiceAutoSubmit",
-                            @"AKVoiceMode", @"AKVoiceCustomWords", @"AKVoiceTakeButtonFromGame"])
+                            @"AKVoiceMode", @"AKVoiceCustomWords"])
         [defaults removeObjectForKey:key];
     AKChatDeliveryModeResetCacheForTesting();
     // A fresh installation is the product's default: review then send.

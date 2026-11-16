@@ -114,13 +114,13 @@ static BOOL AKSelfTestIsRecordingCategory(NSString *category) {
 @implementation AKSelfTestSettings {
     NSArray<NSString *> *_keys;
     NSDictionary *_snapshot;
-    BOOL _enabled, _takeButtonFromGame;
+    BOOL _enabled;
     AKVoiceMode _mode;
 }
 + (NSArray<NSString *> *)keysToRestore {
     NSMutableArray<NSString *> *keys = [NSMutableArray arrayWithObjects:
         @"AKVoiceEnabled", @"AKVoiceMode", @"AKVoiceAutoSubmit", @"AKVoiceTrailingSpace",
-        @"AKVoiceCustomWords", @"AKVoiceTakeButtonFromGame", nil];
+        @"AKVoiceCustomWords", nil];
     for (NSString *key in NSUserDefaults.standardUserDefaults.dictionaryRepresentation.allKeys) {
         if ([key hasPrefix:@"AKInputTrigger."]) [keys addObject:key];
     }
@@ -146,7 +146,6 @@ static BOOL AKSelfTestIsRecordingCategory(NSString *category) {
         // The three settings the app caches are put back through their setters, so the
         // in-memory copy and the store agree and the adapter is told the answer again.
         _enabled = AKVoiceSettings.shared.enabled;
-        _takeButtonFromGame = AKVoiceSettings.shared.takeButtonFromGame;
         _mode = AKVoiceSettings.shared.mode;
     }
     return self;
@@ -158,7 +157,6 @@ static BOOL AKSelfTestIsRecordingCategory(NSString *category) {
     // The cached settings first: going through their setters is what tells the adapter and the
     // router that something changed.
     settings.enabled = _enabled;
-    settings.takeButtonFromGame = _takeButtonFromGame;
     settings.mode = _mode;
     // The exact bytes last, because setting the mode rewrites every stored mapping - including
     // dropping fields that no longer mean anything - and the promise here is that the user's
@@ -256,22 +254,6 @@ static void AKSelfTestRunInput(AKSelfTestRecorder *recorder) {
     [router reportElement:@"controller.button.a" value:0 pressed:NO device:AKSelfTestDevice source:AKInputSourceController];
     [recorder check:(fired == 1) _:@"and in the other mode it fires once, on the press"];
 
-    // --- What the adapter is told, for the switch the user can turn on ---
-    // The user may already have keys of their own taken, so the comparison is against the set
-    // that is published *with the switch on* before this test adds anything - not against an
-    // empty set, which was wrong the first time and on a device that had keys of its own it
-    // failed for the right reason.
-    voice.takeButtonFromGame = YES;
-    NSSet<NSNumber *> *theirs = voice.ownedKeyUsages;
-    [voice setLearnedElement:@"keyboard.key.70" forDevice:AKSelfTestDevice];
-    NSMutableSet<NSNumber *> *expected = [theirs mutableCopy];
-    [expected addObject:@70];
-    [recorder check:[voice.ownedKeyUsages isEqualToSet:expected] _:@"the key this test mapped joins exactly the keys the user had already taken"];
-    [recorder check:[voice ownsElement:@"keyboard.key.70"] _:@"and the ownership decision agrees"];
-    [recorder check:(![voice ownsElement:@"keyboard.key.71"]) _:@"a key the user has not taken is untouched"];
-    voice.takeButtonFromGame = NO;
-    [recorder check:(voice.ownedKeyUsages.count == 0) _:@"with the switch off nothing is published at all"];
-
     // --- The user's own settings, exactly as they were ---
     [settings restore];
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -291,10 +273,6 @@ static void AKSelfTestRunInput(AKSelfTestRecorder *recorder) {
     }
     [recorder check:(leftBehind == nil) _:[NSString stringWithFormat:@"including the mapping this test made, which is gone (key %@ = %@; stored mappings left: %@)",
         mappedKey, leftBehind ?: @"nothing", remaining.count ? [remaining componentsJoinedByString:@", "] : @"none"]];
-    // With the switch off, nothing is published at all, so what "back to what it was" means
-    // depends on the switch the user had - which is restored, and checked, above.
-    NSSet<NSNumber *> *expectedAfterRestore = voice.takeButtonFromGame ? theirs : [NSSet set];
-    [recorder check:[voice.ownedKeyUsages isEqualToSet:expectedAfterRestore] _:@"and the set published to the adapter is back to what the user's own switch allows"];
     // And the router no longer fires from it: the mapping is not merely absent from the store.
     NSUInteger quiet = fired;
     [router reportElement:@"controller.button.a" value:1 pressed:YES device:AKSelfTestDevice source:AKInputSourceController];

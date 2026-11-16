@@ -622,7 +622,7 @@
 "voice.heading.button" = "Button";
 "voice.map" = "Map a button…";
 "voice.mapping.hint" = "Tap Map, then press the button you want to use.";
-"voice.mapping.collision" = "The button you map still reaches the game unless you take it below. Nothing here takes it away from the game by itself, so choosing one the game already uses makes it do both things at once.";
+"voice.mapping.collision" = "The button you map still reaches the game. Choose one that is not used by your game controls.";
 "voice.takeButton" = "Keep the game from seeing it";
 "voice.takeButton.note" = "On, a keyboard key you have mapped for dictation does not reach the game at all. A controller button cannot be taken this way, because iOS tells us about the pad's buttons in a form we cannot match to the game's own input - so for a pad, pick a button the game does not use.";
 "voice.heading.mode" = "Mode";

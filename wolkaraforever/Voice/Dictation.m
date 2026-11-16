@@ -191,47 +191,10 @@ static void AKConfigureRecognitionRequest(SFSpeechRecognitionRequest *request,
     };
     NSError *error = nil;
 
-    // Warm the capture before the real one starts, and find out whether it can hear.
-    //
-    // The one time dictation produced words, the microphone was still open from the press before, so the
-    // capture began against a session that had already been running. Every attempt since has started
-    // cold and delivered nothing at all - not quiet audio, but no audio: the recording left on the device
-    // held zero audio bytes while this code reported "recorded 1.53s". So the microphone is opened and
-    // closed once, for a fraction of a second, and only then is the capture the user is speaking into
-    // started. That reproduces the only state this app has ever worked in.
-    //
-    // This probe also answers the question the audio session cannot: whether the microphone hears
-    // anything while the session is PlayAndRecord. That category keeps the game audible, and it is the
-    // one configuration measured delivering digital silence here, so the answer decides the category for
-    // the rest of the hold rather than being assumed either way.
-    NSURL *warmup = [NSURL fileURLWithPath:
-                     [NSTemporaryDirectory() stringByAppendingPathComponent:@"wolkaraforever-warmup.wav"]];
-    [[NSFileManager defaultManager] removeItemAtURL:warmup error:NULL];
-    AVAudioRecorder *warmer = [[AVAudioRecorder alloc] initWithURL:warmup settings:settings error:NULL];
-    BOOL heardSomething = NO;
-    if ([warmer record]) {
-        warmer.meteringEnabled = YES;
-        [NSThread sleepForTimeInterval:0.15];
-        [warmer updateMeters];
-        float warmPeak = [warmer peakPowerForChannel:0];
-        [warmer stop];
-        heardSomething = warmPeak > -60.0f;
-        WKLog("voice", @"dictation: warmed the capture for 150ms, peak %.1f dBFS under %@",
-              warmPeak, AVAudioSession.sharedInstance.category);
-    } else {
-        WKLog("voice", @"dictation: the warm-up capture would not start");
-    }
-    warmer = nil;
-    [[NSFileManager defaultManager] removeItemAtURL:warmup error:NULL];
-    if (!heardSomething && [AVAudioSession.sharedInstance.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]) {
-        NSError *demoteError = nil;
-        if ([[AKAudioSessionCoordinator shared] useRecordOnlyForPushToTalk:&demoteError]) {
-            WKLog("voice", @"dictation: recording with the game's audio paused for this hold, because the microphone was silent while it played");
-        } else {
-            WKLog("voice", @"dictation: could not drop to Record (%@); carrying on with PlayAndRecord",
-                  demoteError.localizedDescription ?: @"no reason given");
-        }
-    }
+    // A controller press is gameplay time. Do not probe it by sleeping on the caller's
+    // thread, and do not change a mixed PlayAndRecord session into Record after the press:
+    // either action visibly interrupts the running guest. Start directly in the active mixed
+    // session and report a genuine recorder failure normally below.
 
     _recorder = [[AVAudioRecorder alloc] initWithURL:_recording settings:settings error:&error];
     if (!_recorder) {
@@ -442,6 +405,7 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
 // Takes the session and gives it back the way it was found. The old code set record
 // mode and always left the app at playback, which is a change the game can hear.
 @interface AKAudioSessionBridge : NSObject <AKDictationAudio>
+- (void)beginRecordingAsync:(void (^)(BOOL ok, NSError *_Nullable error))completion;
 @end
 
 @implementation AKAudioSessionBridge
@@ -452,6 +416,9 @@ void AKRecogniseDictationFile(NSURL *file, void (^completion)(NSString *_Nullabl
 // is the one the old code reported while the microphone stayed held.
 - (BOOL)beginRecording:(NSError **)error {
     return [[AKAudioSessionCoordinator shared] beginPushToTalk:error];
+}
+- (void)beginRecordingAsync:(void (^)(BOOL ok, NSError *_Nullable error))completion {
+    [[AKAudioSessionCoordinator shared] beginPushToTalkAsync:completion];
 }
 
 - (BOOL)restore:(NSError **)error {
@@ -674,22 +641,29 @@ static __weak UIView *AKGameTextTarget = nil;
         return;
     }
 
-    NSError *error = nil;
-    if (![self.audio beginRecording:&error]) {
-        [self fail:[NSString stringWithFormat:@"The audio session would not start: %@", error.localizedDescription]
-            reason:@"audio"];
-        return;
-    }
+    id<AKDictationAudio> audio = self.audio;
     __weak AKDictation *weakSelf = self;
-    [self.speech startOnDevice:YES language:_startedLanguage words:AKVoiceSettings.shared.customWords
+    void (^started)(BOOL, NSError *) = ^(BOOL ok, NSError *error) {
+        AKDictation *self2 = weakSelf;
+        if (!self2 || self2->_session != session || self2->_state != AKDictationStateAuthorizing) {
+            // The button may have been released while AVAudioSession was activating. The
+            // bridge, not a potentially deallocated dictation object, owns that lease.
+            if (ok) [audio restore:NULL];
+            return;
+        }
+        if (!ok) { [self2 fail:[NSString stringWithFormat:@"The audio session would not start: %@", error.localizedDescription] reason:@"audio"]; return; }
+        [self2.speech startOnDevice:YES language:self2->_startedLanguage words:AKVoiceSettings.shared.customWords
                        handler:^(NSString *transcript, BOOL isFinal, NSError *error2) {
         [weakSelf speechReported:transcript isFinal:isFinal error:error2 session:session];
     }];
-    [self setState:AKDictationStateListening];
-    WKLog("voice", @"dictation: listening (on-device=1, language=%@)", _startedLanguage ?: @"system");
-    AKKDLog(@"recognizer.language=%@", _startedLanguage ?: @"system");
+    [self2 setState:AKDictationStateListening];
+    WKLog("voice", @"dictation: listening (on-device=1, language=%@)", self2->_startedLanguage ?: @"system");
+    AKKDLog(@"recognizer.language=%@", self2->_startedLanguage ?: @"system");
     AKKDLog(@"recognizer.session.start generation=%lu language=%@ ondevice=1",
-            (unsigned long)session, _startedLanguage ?: @"system");
+            (unsigned long)session, self2->_startedLanguage ?: @"system");
+    };
+    if ([self.audio isKindOfClass:AKAudioSessionBridge.class]) [(AKAudioSessionBridge *)self.audio beginRecordingAsync:started];
+    else { NSError *error = nil; started([self.audio beginRecording:&error], error); }
 }
 
 // Read once, so a recogniser that is unavailable right now is refused rather than
