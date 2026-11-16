@@ -617,6 +617,21 @@ static void TestAddonHub(void) {
     assert(navigationItems.count == 2);
     assert([navigationItems[0].accessibilityIdentifier isEqual:@"wow.addons.import"]);
     assert([navigationItems[1].accessibilityIdentifier isEqual:@"wow.addons.refresh"]);
+    // A saved API key must remain manageable. The keychain-less fixture cannot exercise these
+    // rows, but an entitled run verifies that Browse exposes both replacement and removal.
+    TKAddonCredentialStore *managedCredentials = [TKAddonCredentialStore new];
+    NSError *managedKeyError = nil;
+    if ([managedCredentials storeCurseForgeKey:@"test-key-for-management" error:&managedKeyError]) {
+        [manager setValue:@(TKAddonHubTabBrowse) forKey:@"_tab"];
+        NSArray<NSDictionary *> *browseSections = [manager valueForKey:@"sectionsForCurrentTab"];
+        assert([browseSections[0][@"rows"] count] == 4);
+        UITableViewCell *changeKey = [manager tableView:manager.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:2 inSection:0]];
+        UITableViewCell *removeKey = [manager tableView:manager.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:3 inSection:0]];
+        assert([changeKey.accessibilityIdentifier isEqual:@"wow.addons.changeKey"]);
+        assert([removeKey.accessibilityIdentifier isEqual:@"wow.addons.removeKey"]);
+        assert([managedCredentials removeCurseForgeKey:NULL]);
+        [manager setValue:@(TKAddonHubTabMyAddOns) forKey:@"_tab"];
+    } else assert(managedKeyError.code == errSecMissingEntitlement);
     // Search narrows the drawn records and nothing else.
     NSUInteger all = manager.visibleRecords.count;
     [manager setValue:@"From Files" forKey:@"_installedQuery"];

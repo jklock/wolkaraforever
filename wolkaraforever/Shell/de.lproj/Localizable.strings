@@ -556,6 +556,13 @@
 "addons.key.placeholder" = "API-Schlüssel";
 "addons.key.save" = "Sichern";
 "addons.key.errorTitle" = "Schlüssel konnte nicht gesichert werden";
+"addons.key.change" = "CurseForge-Schlüssel ändern…";
+"addons.key.change.detail" = "Den gespeicherten Core-API-Schlüssel ersetzen.";
+"addons.key.remove" = "Schlüssel entfernen";
+"addons.key.remove.detail" = "Den gespeicherten Core-API-Schlüssel von diesem Gerät löschen.";
+"addons.key.remove.title" = "CurseForge-Schlüssel entfernen?";
+"addons.key.remove.message" = "Durchsuchen und Entdecken benötigen einen neuen Schlüssel, bevor sie CurseForge nutzen können.";
+"addons.key.remove.errorTitle" = "Schlüssel konnte nicht entfernt werden";
 "addons.loadMore" = "Mehr laden …";
 "addons.count.one" = "%lu Add-on installiert";
 "addons.count.other" = "%lu Add-ons installiert";
