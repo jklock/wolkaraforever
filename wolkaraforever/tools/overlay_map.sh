@@ -121,7 +121,7 @@ intent() {
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
-    echo "# Input: any button, on any controller, in one stream (see docs/INPUT_TRIGGERS.md)"
+    echo "# Input: any button, on any controller, in one stream (diagnostic)"
     git ls-files wolkaraforever/Input | while read -r f; do
         case "$f" in
             wolkaraforever/Input/tests/*) dst=tests/${f#wolkaraforever/Input/tests/};;

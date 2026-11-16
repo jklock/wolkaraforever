@@ -161,7 +161,8 @@ from this Mac (`TOLKARA_SYSTEM_ROOTS=NO`). Your sideloading tool — or a JIT en
 signs the app with your own Apple ID and provides the memory that External JIT needs.
 
 `package_altstore_ipa.sh` refuses a dirty source tree and verifies the result before reporting
-success. A `v*` tag publishes the same artifact as `Tolkara-unsigned.ipa`. The bare
+success. A maintainer can publish the same artifact for an existing tag with the manual
+**Experimental IPA** workflow; nothing is built or published on a tag push. The bare
 `package_ipa.sh` writes into the prepared tree, which the next `prepare.sh` deletes; pass an
 output path under `build/ipa/` if you want to keep the result.
 

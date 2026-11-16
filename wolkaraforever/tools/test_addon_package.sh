@@ -27,8 +27,11 @@ xcrun swiftc -O -emit-library -emit-module -module-name ZIPFoundation \
 # 1. The committed artifacts are what the sources produce.
 python3 wolkaraforever/tools/package_addon_zip.py --check
 
-# 2. ...and the wrong packages the verifier has to refuse.
-rm -rf "$build/fixtures"
+# 2. ...and the wrong packages the verifier has to refuse. The output directory is cleared
+# first: the packager writes the release the TOC names and does not delete what an earlier
+# run left behind, so a stale manifest made the glob below expand to two releases and the
+# suite handed the verifier the wrong one - it failed on a tree whose sources were fine.
+rm -rf "$build/fixtures" "$build/package"
 python3 wolkaraforever/tools/package_addon_zip.py --output "$build/package" \
     --fixtures "$build/fixtures" > /dev/null
 release=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release"])' \

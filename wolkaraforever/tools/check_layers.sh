@@ -75,7 +75,7 @@ else
                   # line: a file that reaches the build no other way must be named there.
                   grep -q "$f" "$map" || echo "$f"
               done < <(git ls-files 'wolkaraforever/*' | grep -v -e '^wolkaraforever/patches/' -e '^wolkaraforever/tools/' \
-                                              -e '^wolkaraforever/README.md' -e '^wolkaraforever/overlay.map') | head -5)
+                                              -e '^wolkaraforever/overlay.map') | head -5)
     if [ -n "$orphans" ]; then
         bad "layer files that the overlay does not carry (regenerate wolkaraforever/tools/overlay_map.sh):"
         printf '     %s\n' $orphans

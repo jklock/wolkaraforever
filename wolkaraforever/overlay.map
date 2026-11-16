@@ -220,7 +220,7 @@ wolkaraforever/Voice/VoiceViewController.h launcher/Voice/VoiceViewController.h 
 wolkaraforever/Voice/VoiceViewController.m launcher/Voice/VoiceViewController.m add
 wolkaraforever/Voice/tests/test_voice_app.m tests/test_voice_app.m add
 #
-# Input: any button, on any controller, in one stream (see docs/INPUT_TRIGGERS.md)
+# Input: any button, on any controller, in one stream (diagnostic)
 wolkaraforever/Input/ControllerCommandIngress.h launcher/Input/ControllerCommandIngress.h add
 wolkaraforever/Input/ControllerCommandIngress.m launcher/Input/ControllerCommandIngress.m add
 wolkaraforever/Input/ControllerTouchpad.h launcher/Input/ControllerTouchpad.h add
