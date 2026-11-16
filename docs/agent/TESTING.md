@@ -4,6 +4,8 @@
 
 Run the narrowest owning test first. `check_layers.sh` validates layer assembly; `check_docs.sh` validates documentation; source tests validate source behavior; simulator tests validate the project's UIKit fixtures. None substitutes for physical-device behavior.
 
+`validate.sh` is the inventory, not a sample: every suite under `wolkaraforever/tools/` and `wolkaraforever/tools/tests/` has a row there, always or with `--full`, and a suite with no row is a file nothing runs. Three are unreferenced on purpose and say why in their own comments: the `test_emulation.sh` sweep, the `test_install.sh` dispatcher, and `test_launcher_matrix.sh`, which runs the same two lanes as `check_ui_policy.sh`. `test_emulation.sh` runs the platform's sanitizer suite and then every layer suite except the `*ui.sh` ones.
+
 Required simulator matrix: iPhone Duo and iPad Pro 13-inch (M5). The physical iPad Pro 12.9-inch (5th generation) is optional unless a specific claim requires it.
 
 Use `test_launcher_matrix.sh --check` for reviewed launcher images. `record_ui_baselines.sh` requires deliberate approval. Keep approved baselines and deterministic fixtures tracked; keep reports, captures, logs, and temporary support bundles ignored.
