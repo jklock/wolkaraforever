@@ -2,6 +2,11 @@
 # Test push_game.sh: it must use the prepared installer, pass arguments through,
 # include --device from local.env, and run the preflight without copying on --dry-run.
 set -uo pipefail
+# "refuses when DEVICE is not set" is a case here, and an exported DEVICE would make it
+# untrue; env.sh prefers the exported value over the file by design. Clear what the caller
+# may have exported so the fixture's own local.env is the only input.
+unset DEVICE TOLKARA_BUNDLE_ID TOLKARA_KEYCHAIN_GROUP TOLKARA_DISPLAY_NAME SIMULATOR
+unset DEVELOPMENT_TEAM GUEST_EXE TOLKARA_MODE NATIVE_GUEST_SHIMS SIGN_IDENTITY TOLKARA_CAPTURE
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/wf-push-game.XXXXXX")

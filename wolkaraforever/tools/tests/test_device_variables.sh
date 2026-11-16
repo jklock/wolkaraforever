@@ -2,6 +2,12 @@
 # Test device_variables.sh against synthetic devicectl JSON.
 # No device, no Xcode and no network are needed: a stub xcrun writes the fixture.
 set -uo pipefail
+# env.sh lets an exported value win over local.env, and validate.sh exports the real ones
+# before it runs this row - so every case below, which is about what the *file* decides,
+# was decided by the caller's environment instead. Measured: it passed by hand and failed
+# inside validate.sh for exactly this reason.
+unset DEVICE TOLKARA_BUNDLE_ID TOLKARA_KEYCHAIN_GROUP TOLKARA_DISPLAY_NAME SIMULATOR
+unset DEVELOPMENT_TEAM GUEST_EXE TOLKARA_MODE NATIVE_GUEST_SHIMS SIGN_IDENTITY TOLKARA_CAPTURE
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/wf-device-vars.XXXXXX")

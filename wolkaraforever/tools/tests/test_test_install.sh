@@ -1,5 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+# The stub tools log the identity they were handed, and the first assertion counts lines for
+# the *stable* bundle from the fixture's local.env. An exported TOLKARA_BUNDLE_ID - which
+# validate.sh has, because it sources local.env - silently replaced it, so the count was 0.
+unset DEVICE TOLKARA_BUNDLE_ID TOLKARA_KEYCHAIN_GROUP TOLKARA_DISPLAY_NAME SIMULATOR
+unset DEVELOPMENT_TEAM GUEST_EXE TOLKARA_MODE NATIVE_GUEST_SHIMS SIGN_IDENTITY TOLKARA_CAPTURE
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 work=$(mktemp -d -t test-install)
 trap 'rm -rf "$work"' EXIT
