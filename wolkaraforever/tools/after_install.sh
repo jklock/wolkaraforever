@@ -12,8 +12,8 @@
 # for the other two modes. Local signing signs page containers with the user's own
 # identity and never touches the service; External JIT is prepared by a JIT enabler at
 # launch and the runtime refuses to enter the guest while anything is attached. Doing
-# it anyway is unrelated work against a service the mode does not use. See
-# development/STABILITY_AUDIT_2026-10-16.md.
+# it anyway is unrelated work against a service the mode does not use. The rule for each
+# mode is in docs/BUILDING.md.
 #
 # usage: after_install.sh [developer-service|local-signing|external-jit|""]
 set -uo pipefail

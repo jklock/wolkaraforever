@@ -53,11 +53,19 @@ wolkaraforever/tools/preflight.sh                       # read-only: is Mac/devi
 wolkaraforever/tools/test_emulation.sh # sanitizer regression suite on the Mac, then ours
 wolkaraforever/tools/test_translation_sim.sh   # the UIKit-backed adapters' tests, run in the simulator
 wolkaraforever/tools/run.sh sim            # loader diagnostics in the simulator (TolkaraDiagnostics scheme)
+SIMULATOR=iphone wolkaraforever/tools/run.sh sim   # the same on the matrix iPhone
 TOLKARA_MODE=local-signing wolkaraforever/tools/run.sh sim   # Local signing: first initializer of testguest (or GUEST_EXE) from an ad-hoc page container
-wolkaraforever/tools/install.sh            # build, sign and install the app on the configured iPad
+wolkaraforever/tools/run.sh device         # the same build-install-launch-collect loop on the iPad
+wolkaraforever/tools/install.sh            # build, sign, install, take the mode's own post-install step, return to the launcher
+wolkaraforever/tools/install.sh --build-only   # compile and sign only; the device is untouched and no iPad is needed
+wolkaraforever/tools/launch.sh             # launch the launcher; refuses while a session is live (--restart stops it first)
+wolkaraforever/tools/pilot.sh state|cycle  # device state, and state -> install -> launch -> wait -> view
+wolkaraforever/tools/open_xcode.sh         # prepare, generate and open the disposable Xcode project
 wolkaraforever/tools/push_game.sh --source "/Applications/World of Warcraft"   # copy the Mac game to the iPad
 NATIVE_GUEST_SHIMS=GENERIC wolkaraforever/tools/install.sh   # build for no particular application: one adapter per translation/<Framework>/
-wolkaraforever/tools/package_ipa.sh        # unsigned generic TolkaraDiagnostics .ipa for External JIT (sideloaded, e.g. SideStore)
+wolkaraforever/tools/package_altstore_ipa.sh   # unsigned generic TolkaraDiagnostics .ipa for External JIT, verified (build/ipa/)
+wolkaraforever/tools/package_ipa.sh        # the same build through the platform's own packaging script
+wolkaraforever/tools/verify_ipa.sh <ipa>   # prove an .ipa is unsigned, External JIT and free of Mac trust roots before sideloading
 wolkaraforever/tools/make_wolkaraforever_icon.py  # redraw the app icon at every size and appearance (needs Google Chrome)
 
 # The platform's own tools, run inside the prepared tree after prepare.sh.
@@ -66,7 +74,9 @@ python3 build/platform/tools/probe_captured_shaders.py   # compile every shader 
 python3 build/platform/tools/build_signed_container.py   # build and sign the Local signing page container for GUEST_EXE
 ```
 
-Device installs replace the app under the same bundle ID and keep its data.
+Device installs replace the app under the same bundle ID and keep its data. `docs/BUILDING.md` is
+the human guide to this surface: the prepare model, which build offers which execution mode, and
+what each command does.
 
 ## Coding Style & Naming Conventions
 

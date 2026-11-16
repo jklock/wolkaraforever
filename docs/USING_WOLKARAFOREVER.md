@@ -1,6 +1,6 @@
 # Use WolkaraForever
 
-> Verified: 2026-11-13 · Source: `3c33543`
+> Verified: 2026-11-16 · Source: `9680e63`
 
 Use the launcher to prepare Forever, configure the interface, and recover safely when a setting or add-on causes a problem.
 
@@ -13,6 +13,10 @@ Use the launcher to prepare Forever, configure the interface, and recover safely
 3. Wait for the ready state before selecting **Play**.
 
 Changing game language can require additional files. App language and game language are separate settings.
+
+## Choose how a game starts
+
+The first time you start a game with no mode chosen, the launcher asks how to start it. **Developer service** is the supported route and is what [Install WolkaraForever](INSTALLATION.md) sets up; **Local signing** and **External JIT** need their own setup first. The choice cannot be skipped on that first start, it is remembered afterwards, and the **Execution Mode** button on the library screen changes it. [Build and run WolkaraForever](BUILDING.md) explains what each mode needs.
 
 ## Change app language or interface
 

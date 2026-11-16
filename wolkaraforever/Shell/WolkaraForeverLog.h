@@ -41,7 +41,7 @@ void WKLogFatal(const char *tag, NSString *message);
 /// have to stay because the app ships upstream's code too. One list, so the launch-time
 /// log line and the About page cannot come to different conclusions about what should be
 /// there - and so a build that is missing one says so, in the log and on the page, rather
-/// than quietly showing nothing. See development/NOTES.md for how that happened.
+/// than quietly showing nothing.
 ///
 /// The key rather than the heading: the About page shows these in the app's language, and
 /// a file name is not something a translation table may change.

@@ -226,7 +226,7 @@ static void TapBarItem(UIBarButtonItem *item) {
 //
 // The extractor it stands in for is `wolkaraforever/WoW/AddonArchive.swift`, which is ours and uses
 // ZIPFoundation. Testing it would mean building that package, so it is explicitly deferred
-// in development/AUDIT.md and exercised on the device instead (importing a real add-on).
+// and exercised on the device instead (importing a real add-on).
 @interface TKAddonArchive : NSObject
 + (BOOL)extractArchiveAtURL:(NSURL *)url toDirectoryURL:(NSURL *)destination error:(NSError **)error;
 @end

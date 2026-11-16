@@ -2,7 +2,7 @@
 
 # WolkaraForever
 
-> Verified: 2026-11-13 · Source: `3c33543`
+> Verified: 2026-11-16 · Source: `9680e63`
 
 Run World of Warcraft Forever locally on an iPad or iPhone with a source-built WolkaraForever installation. The app downloads and maintains your game data, then starts the unchanged client through Tolkara. It is not a streaming service and does not include game files.
 
@@ -22,7 +22,9 @@ wolkaraforever/tools/preflight.sh
 wolkaraforever/tools/install.sh
 ```
 
-Read [Install WolkaraForever](docs/INSTALLATION.md) before you begin.
+Read [Install WolkaraForever](docs/INSTALLATION.md) before you begin, and
+[Build and run WolkaraForever](docs/BUILDING.md) for the execution modes, the simulator runs, and
+the unsigned External JIT package.
 
 ## What you can do
 

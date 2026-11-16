@@ -579,12 +579,11 @@ static NSString *AKAudioStateDescription(void) {
     NSArray<NSString *> *arguments=NSProcessInfo.processInfo.arguments;
     // WolkaraForever: report what the controller has and what it does, so pad input is
     // measured rather than assumed. It reads only, and never consumes an input.
-    // See development/technical/CONTROLLER_INPUT.md.
     [AKControllerInspector.shared begin];
     // Any button, on any controller, starts and stops dictation - but only the button
     // the user mapped, and only while they have the feature switched on. The router
     // asks the settings for the trigger and gets nil unless both are true, so there is
-    // no path here that acts on an input nobody chose. See development/technical/INPUT_TRIGGERS.md.
+    // no path here that acts on an input nobody chose.
     AKInputRouter.shared.onTrigger = ^(AKTrigger *trigger, AKInputEvent *event) {
         (void)event;
         WKLog("voice", @"input trigger pressed: %@", [trigger summary]);

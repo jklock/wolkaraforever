@@ -1,8 +1,8 @@
 #!/bin/bash
 # Prove what was tested, and against exactly which commit.
 #
-# The audit's finding: development/VALIDATION.md was tied to an older commit than the
-# work it claimed to cover, and prepare.sh exports HEAD:platform while apply.sh copies
+# The finding: a validation record was tied to an older commit than the work it claimed
+# to cover, and prepare.sh exports HEAD:platform while apply.sh copies
 # overlay sources from the working tree - so a dirty checkout can build uncommitted code
 # while the evidence names a commit. Evidence that names a commit it did not test is
 # worse than no evidence.

@@ -26,6 +26,43 @@ SHARDS = {
     "wolkaraforever/": "wolkaraforever.md",
 }
 
+# The build and run mechanisms each have one owner, and the catalogue's job is to say which one.
+# Without this table every script in the directory carried the same sentence - including the two
+# whose whole point is to refuse - so "read the applicable catalog entry" told an agent nothing
+# about the tool it was about to change.
+TOOLS = {
+    "prepare.sh": ("Build assembly tool",
+                   "Exports platform/ as committed, applies the patches and the overlay, then generates the project"),
+    "apply.sh": ("Build assembly tool",
+                 "Applies the patches then the overlay to a tree; the one implementation prepare.sh and adopt.sh share"),
+    "overlay_map.sh": ("Build assembly generator",
+                       "Regenerates overlay.map, the layer-to-platform path mapping the overlay follows"),
+    "generate.sh": ("Build tool",
+                    "Prepares the tree and runs the platform's own project generator with local.env"),
+    "open_xcode.sh": ("Build tool",
+                      "Generates the disposable Xcode project and opens it"),
+    "install.sh": ("Build and install tool",
+                   "Guards a live session, prepares, builds and signs, runs the mode's post-install step, verifies, then returns to the launcher"),
+    "after_install.sh": ("Build tool",
+                         "Does the post-install step each execution mode requires, and none for a mode that needs none"),
+    "run.sh": ("Run tool",
+               "Prepares the tree then runs the platform's own run script in the simulator or on the device"),
+    "launch.sh": ("Run tool",
+                  "Launches only when no session is live, and records the client error baseline first"),
+    "pilot.sh": ("Run tool",
+                 "Device state, stop, install, launch, wait, view, crash, log and self-test - refusing when the device is not ready"),
+    "package_ipa.sh": ("Packaging tool",
+                       "Builds the unsigned generic TolkaraDiagnostics .ipa through the platform's own packaging script"),
+    "package_altstore_ipa.sh": ("Packaging tool",
+                                "Refuses a dirty tree, builds the unsigned External JIT .ipa and verifies it"),
+    "verify_ipa.sh": ("Packaging verification tool",
+                      "Proves an .ipa is unsigned, External-JIT, extension-free and free of this Mac's trust roots"),
+    "verify_external_jit.sh": ("Device verification tool",
+                               "Verifies an installed build and requires its External-JIT runtime evidence"),
+    "test_install.sh": ("Test harness",
+                        "Drives install.sh end to end with stubbed device tools and an isolated configuration"),
+}
+
 
 def shard(path: str) -> str:
     for prefix, name in SHARDS.items():
@@ -62,6 +99,10 @@ def describe(path: str, file_kind: str) -> tuple[str, str, str, str]:
     if path.startswith("docs/") and not path.startswith("docs/agent/"):
         return ("Standalone human documentation or public asset", "Explains a supported user task or illustrates it", "User-guide links and screenshots", "This document")
     if path.startswith("wolkaraforever/tools/"):
+        entry = TOOLS.get(Path(path).name)
+        if entry:
+            return (entry[0], entry[1], "platform/ export, wolkaraforever/patches, wolkaraforever/overlay.map, local.env",
+                    "docs/BUILDING.md when a command, execution mode, or safety guard changes")
         human = "docs/INSTALLATION.md or docs/USING_WOLKARAFOREVER.md when user-run behavior changes"
         return ("Project operation or verification tool", "Prepares, validates, operates, packages, or tests the product", "Source tree, prepared platform, or named suite", human)
     if path.startswith("wolkaraforever/WoW/"):
