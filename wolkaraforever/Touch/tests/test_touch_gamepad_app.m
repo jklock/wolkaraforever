@@ -1278,9 +1278,19 @@ static void TestTrackingPump(void) {
     CFRunLoopAddTimer(loop,trackingModeTimer,(__bridge CFStringRef)UITrackingRunLoopMode);
     AKPumpTouchEvents(NO);
     assert(!defaultTimer && !trackingTimer);
-    CFAbsoluteTime deadline=CFAbsoluteTimeGetCurrent()+.25;
+    // A budget, not a claim about speed: the timers are due in 10 ms, and 250 ms was enough
+    // on an idle machine and not enough inside validate.sh, where the simulator is busy and
+    // this suite follows the touch-controls one. It failed there on 2026-11-16 with both
+    // timers still unmoved, passed when run alone the minute before and after. What the
+    // assertion must prove is that the pump runs both modes' work at all; how long the
+    // machine needs to get to it is not the product's behaviour.
+    CFAbsoluteTime started=CFAbsoluteTimeGetCurrent();
+    CFAbsoluteTime deadline=started+2.0;
     while ((!defaultTimer || !trackingTimer) && CFAbsoluteTimeGetCurrent()<deadline)
         AKPumpTouchEvents(YES);
+    if (!(defaultTimer && trackingTimer))
+        fprintf(stderr, "TOUCH_TRACKING_PUMP_TIMEOUT: default=%d tracking=%d after %.3fs\n",
+                (int)defaultTimer, (int)trackingTimer, CFAbsoluteTimeGetCurrent()-started);
     assert(defaultTimer && trackingTimer);
     CFRunLoopTimerInvalidate(defaultModeTimer); CFRelease(defaultModeTimer);
     CFRunLoopTimerInvalidate(trackingModeTimer); CFRelease(trackingModeTimer);

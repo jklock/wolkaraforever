@@ -1464,20 +1464,18 @@ static const unsigned short AKKeyF12 = 111;
     _clearDraftButton.hidden = active;
     _speechLanguageButton.hidden = active;
 
-    if (active) {
-        if (_classicEditorTrailing.active) {
-            _classicEditorTrailing.active = NO;
-            _classicEditorBottom.active = NO;
-            _composerEditorTrailing.active = YES;
-            _composerEditorBottom.active = YES;
-        }        _composerHeight.constant = [self cardHeightForComposer:YES];
-    } else if (!_classicEditorTrailing.active) {
-        _composerEditorTrailing.active = NO;
-        _composerEditorBottom.active = NO;
-        _classicEditorTrailing.active = YES;
-        _classicEditorBottom.active = YES;
-        _composerHeight.constant = [self cardHeightForComposer:NO];
-    }
+    // The two geometries are a switch, not a toggle: set all four every time, so the state is
+    // idempotent and cannot be half-applied. The old code guarded the swap on one constraint's
+    // current state (and kept the card height inside that guard), so the trailing and bottom
+    // halves could disagree - the draft ended up pinned to the card's bottom and to the row's
+    // top at once, which squeezed the action row to zero height and let the editor take the
+    // difference. Measured 2026-11-16 through the touch fixture: card 130 (right), editor 96
+    // (should be 48), action row 0 (should be 44), with both bottom pins live.
+    _classicEditorTrailing.active = !active;
+    _classicEditorBottom.active = !active;
+    _composerEditorTrailing.active = active;
+    _composerEditorBottom.active = active;
+    _composerHeight.constant = [self cardHeightForComposer:active];
 
     NSString *stateText = nil;
     switch (composer.state) {
