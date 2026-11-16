@@ -670,9 +670,9 @@ static void TestTriggerPatterns(void) {
 static void TestAudioSessionCoordinator(void) {
     AKAudioSessionCoordinator *coordinator = AKAudioSessionCoordinator.shared;
     AVAudioSession *session = AVAudioSession.sharedInstance;
-    // The real bridge now activates asynchronously; drain a prior capture's completion before
-    // asserting this independent coordinator transition.
+    // Drain a prior capture's completion before asserting this independent coordinator transition.
     Pump(0.1);
+    [coordinator setDictationEnabled:NO];
 
     // Nothing is claimed at the start, and push to talk is not active.
     CHECK((!coordinator.pushToTalkActive), @"push to talk is not active before anything asks");
@@ -689,7 +689,7 @@ static void TestAudioSessionCoordinator(void) {
     CHECK(((session.categoryOptions & AVAudioSessionCategoryOptionMixWithOthers) != 0),
           @"and mixes rather than taking the output away, got options %lu", (unsigned long)session.categoryOptions);
     CHECK(([session.mode isEqualToString:AVAudioSessionModeDefault]),
-          @"dictation uses the unprocessed Default input mode, got %@", session.mode);
+          @"dictation uses the game's Default output mode, got %@", session.mode);
 
     // And the game asking for playback while it is held must not take the session away: this is the
     // fault that ended a running dictation, and the coordinator must refuse it rather than obey.
@@ -697,14 +697,9 @@ static void TestAudioSessionCoordinator(void) {
     CHECK(([session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]),
           @"but not by taking the session from push to talk, got %@", session.category);
 
-    // The microphone was silent under PlayAndRecord - the configuration measured silent on this
-    // device before - and the hold demotes itself rather than losing the words. The lease stays
-    // with push to talk, and the next hold asks for PlayAndRecord again.
-    CHECK(([coordinator useRecordOnlyForPushToTalk:&error]),
-          @"a silent duplex microphone demotes the hold: %@", error.localizedDescription);
-    CHECK(([session.category isEqualToString:AVAudioSessionCategoryRecord]),
-          @"which records without playing the game, got %@", session.category);
-    CHECK((coordinator.pushToTalkActive), @"and push to talk still holds the lease");
+    // There is no record-only fallback: it would deliberately silence the game.
+    CHECK(([session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]),
+          @"a held microphone never drops the game output route, got %@", session.category);
 
     // Handing it back with a game lease held restores the declared game policy - Playback - rather
     // than a guessed prior state.
@@ -728,6 +723,27 @@ static void TestAudioSessionCoordinator(void) {
     // leaving the category on PlayAndRecord is inactive but still categorised as recording.
     CHECK(([session.category isEqualToString:AVAudioSessionCategorySoloAmbient]),
           @"and the launcher's declared policy is restored, not a recording category, got %@", session.category);
+
+    [coordinator setDictationEnabled:YES];
+    CHECK(([coordinator requestGamePlayback:@"game output after dictation"]), @"the game regains its output lease");
+    CHECK(([session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord]),
+          @"dictation prepares duplex audio outside the controller edge, got %@", session.category);
+    NSString *transitionBeforeRepeatedGameRequest = coordinator.lastTransition;
+    CHECK(([coordinator requestGamePlayback:@"the CoreAudio adapter asked again"]),
+          @"a repeated game request is accepted");
+    CHECK(([coordinator.lastTransition isEqualToString:transitionBeforeRepeatedGameRequest]),
+          @"a repeated game request does not reset the audio session");
+    NSString *categoryBeforeHold = session.category;
+    CHECK(([coordinator beginPushToTalk:&error]), @"a hold takes a duplex session: %@", error.localizedDescription);
+    CHECK(([session.category isEqualToString:categoryBeforeHold]),
+          @"the controller edge does not change the audio category, got %@", session.category);
+    CHECK(([coordinator endPushToTalk:&error]), @"the duplex hold ends");
+    CHECK(([session.category isEqualToString:categoryBeforeHold]),
+          @"the release edge does not change the audio category, got %@", session.category);
+    [coordinator setDictationEnabled:NO];
+    CHECK(([session.category isEqualToString:AVAudioSessionCategoryPlayback]),
+          @"disabling dictation restores game playback, got %@", session.category);
+    [coordinator releaseGamePlayback];
 
     // When the system takes the session away, the lease goes and the owner of dictation is told. The
     // notification is the system's own, so this is the same path an interruption takes.

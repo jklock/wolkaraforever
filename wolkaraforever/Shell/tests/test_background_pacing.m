@@ -6,13 +6,10 @@
 // Inactive Metal submission, measured on the hook the guest's renderer goes
 // through.
 //
-// The product's answer to "the guest keeps rendering while another app is in
-// front" is a cap inside -[CAMetalLayer nextDrawable]: while the app is inactive
-// a frame is allowed every 200 ms, the wait is taken in 5 ms slices so a
-// foregrounding cannot be inherited as a hitch, and the first drawable after the
-// app is active again is reported. This fixture drives that same method, on a
-// real CAMetalLayer, with the same notifications the app receives, and measures
-// what the cap does rather than what it is written to do.
+// Backgrounding must not add a throttle to the guest's render loop. The game runs
+// timers and networking from that loop, so a draw-path sleep disconnects a live
+// session. This fixture drives a real CAMetalLayer through the lifecycle edge and
+// proves the adapter leaves it alone.
 //
 // What it can and cannot see: an off-screen layer may hand out no drawable at
 // all, so the fixture counts nils and reports them instead of pretending they are
@@ -63,9 +60,8 @@ int main(void) {
         layer.drawableSize = CGSizeMake(64, 64);
         layer.framebufferOnly = YES;
 
-        // The adapter installs the hook from its own constructor; installing it
-        // again must not wrap the method a second time, which would cap frames
-        // twice and slow the guest down while it is visible.
+        // The retained adapter entry point is deliberately inert. Calling it twice
+        // must not interpose or otherwise change drawable acquisition.
         AKInstallMetalBackgroundPacing();
         AKInstallMetalBackgroundPacing();
 
@@ -75,16 +71,12 @@ int main(void) {
         Require(active.worstMilliseconds < 100, @"an active acquisition waited like an inactive one");
 
         Post(UIApplicationWillResignActiveNotification);
-        Rate inactive = Measure(layer, 2.0);
+        Rate inactive = Measure(layer, 1.0);
         printf("inactive: %.1f acquisitions/s, slowest call %.1f ms, nil=%u\n", inactive.perSecond, inactive.worstMilliseconds, inactive.nils);
-        // 200 ms per frame is 5/s; allow the bounds a scheduling slice can move
-        // it by, and refuse both "not capped at all" and "no frame at all".
-        Require(inactive.perSecond <= 12, @"an inactive acquisition was not paced");
-        Require(inactive.calls >= 4, @"an inactive session acquired almost nothing");
-        Require(inactive.worstMilliseconds < 300, @"an inactive acquisition waited longer than its own interval");
+        Require(inactive.perSecond > 20, @"backgrounding installed a guest-loop frame cap");
+        Require(inactive.worstMilliseconds < 100, @"backgrounding inserted a drawable wait");
 
-        // The wait is taken in slices so this is not a 200 ms sleep the return to
-        // the foreground has to sit through.
+        // Foregrounding has no inherited draw-path wait.
         double before = Now();
         Post(UIApplicationDidBecomeActiveNotification);
         @autoreleasepool { (void)[layer nextDrawable]; }
@@ -96,9 +88,8 @@ int main(void) {
         printf("resumed: %.1f acquisitions/s, slowest call %.1f ms, nil=%u\n", resumed.perSecond, resumed.worstMilliseconds, resumed.nils);
         Require(resumed.perSecond > 20, @"acquisition did not return to the display's own rate");
 
-        printf("PASS: %u acquisitions at full rate, %u paced at %.1f/s with a slowest call of %.1f ms, "
-               "the first frame after foregrounding took %.1f ms, and %u nil drawables were counted rather than assumed\n",
-               active.calls, inactive.calls, inactive.perSecond, inactive.worstMilliseconds, firstFrame,
+        printf("PASS: %u active and %u background acquisitions stayed unpaced; the first frame after foregrounding took %.1f ms, and %u nil drawables were counted rather than assumed\n",
+               active.calls, inactive.calls, firstFrame,
                active.nils + inactive.nils + resumed.nils);
     }
     return 0;
