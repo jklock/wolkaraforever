@@ -4,6 +4,8 @@
 NSString *const AKControllerTouchpadPointerDefaultsKey = @"WolkaraForeverControllerTouchpadPointer";
 NSString *const AKControllerTouchpadSpeedDefaultsKey = @"WolkaraForeverControllerTouchpadSpeed";
 NSNotificationName const AKControllerTouchpadPointerNotification = @"AKControllerTouchpadPointer";
+NSNotificationName const AKControllerTouchpadActivityNotification = @"AKControllerTouchpadActivity";
+NSString *const AKControllerTouchpadActiveKey = @"active";
 NSString *const AKControllerTouchpadFingersKey = @"fingers";
 NSString *const AKControllerTouchpadXKey = @"x";
 NSString *const AKControllerTouchpadYKey = @"y";
@@ -44,6 +46,10 @@ static AKControllerTouchpadSpeed AKControllerTouchpadClampSpeed(NSInteger value)
     // movement before it is delivered with it, and anything after it starts a new one, so a
     // finger lifted after a click can never be delivered ahead of that click.
     NSUInteger _generation;
+    // The controller is actively using its touch surface (a contact or its physical click). This
+    // lets the AppKit host reject the duplicate GCMouse stream iPadOS may expose for that same
+    // surface without disabling a real mouse or trackpad after the controller finger lifts.
+    BOOL _clicked, _active;
     BOOL _enabled;
     AKControllerTouchpadSpeed _speed;
     NSUInteger _delivered, _coalesced;
@@ -87,18 +93,35 @@ static AKControllerTouchpadSpeed AKControllerTouchpadClampSpeed(NSInteger value)
 - (NSUInteger)coalescedCount { @synchronized (self) { return _coalesced; } }
 - (void)resetCounters { @synchronized (self) { _delivered = 0; _coalesced = 0; } }
 
+- (void)postActivity:(BOOL)active {
+    [NSNotificationCenter.defaultCenter postNotificationName:AKControllerTouchpadActivityNotification
+                                                      object:self userInfo:@{AKControllerTouchpadActiveKey: @(active)}];
+}
+
+- (BOOL)setActiveLocked {
+    BOOL active = _clicked || _down[0] || _down[1];
+    if (active == _active) return NO;
+    _active = active;
+    return YES;
+}
+
 - (void)touch:(NSUInteger)index down:(BOOL)down x:(double)x y:(double)y {
     if (index > 1) return;
     BOOL schedule;
+    BOOL activityChanged;
+    BOOL active;
     NSUInteger generation;
     @synchronized (self) {
         if (!_enabled) return;
         _down[index] = down;
         if (isfinite(x) && isfinite(y)) { _x[index] = x; _y[index] = y; }
+        activityChanged = [self setActiveLocked];
+        active = _active;
         schedule = !_pending;
         if (schedule) _pending = YES; else _coalesced += 1;
         generation = _generation;
     }
+    if (activityChanged) [self postActivity:active];
     if (!schedule) return;
     dispatch_async(dispatch_get_main_queue(), ^{ [self deliverTouchesOf:generation]; });
 }
@@ -142,13 +165,19 @@ static AKControllerTouchpadSpeed AKControllerTouchpadClampSpeed(NSInteger value)
 
 - (void)click:(BOOL)pressed {
     NSDictionary *movement = nil;
+    BOOL activityChanged;
+    BOOL active;
     @synchronized (self) {
         if (!_enabled) return;
         // Close the batch here, on the reporting thread, so the state the click is measured
         // against is the state when it happened.
         if (_pending) { movement = [self touchSnapshot]; _pending = NO; }
         _generation += 1;
+        _clicked = pressed;
+        activityChanged = [self setActiveLocked];
+        active = _active;
     }
+    if (activityChanged) [self postActivity:active];
     dispatch_async(dispatch_get_main_queue(), ^{
         @synchronized (self) {
             if (!self->_enabled) return;
@@ -165,12 +194,16 @@ static AKControllerTouchpadSpeed AKControllerTouchpadClampSpeed(NSInteger value)
 }
 
 - (void)deliverReset {
+    BOOL activityChanged;
     @synchronized (self) {
         // Nothing queued before the reset is worth delivering after it: every finger is lifted.
         _down[0] = _down[1] = NO;
+        _clicked = NO;
+        activityChanged = [self setActiveLocked];
         _pending = NO;
         _generation += 1;
     }
+    if (activityChanged) [self postActivity:NO];
     dispatch_async(dispatch_get_main_queue(), ^{
         @synchronized (self) { self->_delivered += 1; }
         [self post:@{AKControllerTouchpadResetKey: @YES}];

@@ -34,6 +34,11 @@ FOUNDATION_EXPORT NSString *const AKControllerTouchpadSpeedDefaultsKey;     // "
 //   "click"   (BOOL: the touchpad was pressed or released)
 //   "reset"   (YES: the controller went away or the switch was turned off; release everything)
 FOUNDATION_EXPORT NSNotificationName const AKControllerTouchpadPointerNotification; // "AKControllerTouchpadPointer"
+// App -> AppKit host. Posted only when a controller touch contact or click starts or ends. The
+// host ignores the controller's duplicate GCMouse stream while this is YES, but continues to
+// accept a separate physical mouse or trackpad as soon as the controller contact ends.
+FOUNDATION_EXPORT NSNotificationName const AKControllerTouchpadActivityNotification;
+FOUNDATION_EXPORT NSString *const AKControllerTouchpadActiveKey; // "active"
 FOUNDATION_EXPORT NSString *const AKControllerTouchpadFingersKey;  // "fingers"
 FOUNDATION_EXPORT NSString *const AKControllerTouchpadXKey;        // "x"
 FOUNDATION_EXPORT NSString *const AKControllerTouchpadYKey;        // "y"

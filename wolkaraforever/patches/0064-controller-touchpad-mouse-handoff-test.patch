@@ -1,0 +1,25 @@
+# WolkaraForever layer patch 0064 - tests: controller touchpad raw-mouse handoff
+#
+# Why: patch 0063 must leave the host's physical-mouse path enabled except while the controller
+# touch surface itself is active. This fixture posts the cross-library notification and proves the
+# host's gate changes exactly at those two edges.
+#
+# Applies after: 0063-controller-touchpad-mouse-handoff.patch
+# Applies to: tests/test_appkit_views.m
+# Upstream: product-specific.
+#
+--- a/tests/test_appkit_views.m
++++ b/tests/test_appkit_views.m
+@@ -196,6 +196,12 @@ int main(void) { @autoreleasepool {
+     [defaults setBool:YES forKey:AKTouchControlsDefaultsKey];
+     id host=[NSClassFromString(@"AKHostView") new];
+     [host setValue:window forKey:@"nsWindow"];
++    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerTouchpadActivity" object:nil
++        userInfo:@{@"active": @YES}];
++    assert([[host valueForKey:@"_controllerTouchpadActive"] boolValue]);
++    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerTouchpadActivity" object:nil
++        userInfo:@{@"active": @NO}];
++    assert(![[host valueForKey:@"_controllerTouchpadActive"] boolValue]);
+     FixtureKeyResponder *responder=[FixtureKeyResponder new];
+     assert([window makeFirstResponder:responder]);
+     NSApplication *app=[NSApplication sharedApplication];
