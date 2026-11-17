@@ -41,3 +41,9 @@ iPad and needs no computer.
 ## Safety and support
 
 No mode patches, re-signs, or redistributes game code. WolkaraForever does not automate gameplay, bypass integrity checks, or inspect a running game beyond loading and verification. Read [Compatibility](COMPATIBILITY.md) for support limits and [Security](SECURITY.md) to report a vulnerability.
+
+## Thank you
+
+Thank you to everyone who has opened a pull request, reported a problem, reviewed a change, or
+contributed to Wolkara, Tolkara, and WolkaraForever. The complete project attribution, including
+every pull-request author, is maintained in [Contributors](CONTRIBUTORS.md).
