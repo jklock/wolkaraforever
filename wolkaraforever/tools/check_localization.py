@@ -212,6 +212,7 @@ def main():
         "addons.bundled.detail": "Version and SHA-256 are the same words in both",
         "voice.language.system": "System is the German word for it too",
         "home.settings.touchpadSpeed.normal": "Normal is the German word for the middle speed",
+        "touchpad.speed.normal": "the same word as the menu entry above, and the German one",
     }
     same = [key for key in order["en"] if key in german and english[key] == german[key]
             and re.search(r"[A-Za-z]{4,}", english[key])
