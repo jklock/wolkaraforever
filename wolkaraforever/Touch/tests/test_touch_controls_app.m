@@ -461,16 +461,6 @@ static void AKFixtureInputSource(void *context) {
                     UIApplication.sharedApplication.preferredContentSizeCategory.UTF8String,
                     CGRectGetHeight(card.frame), CGRectGetHeight(row.frame),
                     CGRectGetHeight([input convertRect:input.bounds toView:host]));
-        {
-            NSLayoutConstraint *hc = [controls valueForKey:@"_composerRowHeight"];
-            fprintf(stderr, "PROBE_B rowBounds=%s frame=%s transform=%s hc=%p first=(%p) active=%d cardBounds=%s\n",
-                    NSStringFromCGSize(row.bounds.size).UTF8String,
-                    NSStringFromCGRect(row.frame).UTF8String,
-                    NSStringFromCGAffineTransform(row.transform).UTF8String,
-                    hc, hc.firstItem, (int)hc.active,
-                    NSStringFromCGSize(card.bounds.size).UTF8String);
-            fflush(stderr);
-        }
         CGRect editorInHost = [input convertRect:input.bounds toView:host];
         CGFloat cardHeight = CGRectGetHeight(card.frame), rowHeight = CGRectGetHeight(row.frame);
         if (accessibilityText) {
