@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+## v1.0.19
+
+- **Controller touchpad as mouse.** In **Input Manager**, configure and test an opt-in DualSense or DualShock touchpad pointer with saved speed, live coordinates, one-finger movement, two-finger scrolling, and physical-click buttons. DualSense and DualShock use iPadOS's controller profile touchpad path; DualSense Edge users whose Bluetooth connection omits touch reports can use USB-C.
+- **Input Manager organization.** Dictation is now under **Key / Controller Button Configuration**, and controller-touchpad setup has its own **Controller Touchpad Configuration** page.
+- **UI Manager cleanup.** Gamepad UI is first, retains its selected state while saving, Backup appears before Restore, and the reset action is named **Reset to Default Wow UI Configuration**.
+- **Add-on access controls.** CurseForge key controls moved to the top-bar menu and correctly save edited keys.
+- **Operational documentation.** Added a plain-language guide for sending logs and audited the build/run surface.
+
+## v1.0.18
+
 - Documentation now separates standalone user guidance from the agent-only operational catalog.
 - **My Add-ons no longer sits on "Updating…".** "Never asked" is its own state, **Not checked yet**, with a **Check** action that runs the check; *Checking…* appears only while a request is genuinely in flight, and a sweep with no key clears its own in-flight marks and says why. Opening **My Add-ons**, and **Refresh**, still ask the provider about every linked package.
 - **Update All settles.** The batch used to advance before each archive write committed and re-asked the packages it had just reported, so every row returned to **Not checked yet**. It now finishes on the archive transaction, keeps the settled answer, and ends with every row up to date.
