@@ -1,13 +1,13 @@
 # Docs catalog
 
-> Verified: 2026-11-16 · Source: `db5470a` · Proof: SHA-256 of each tracked file
+> Verified: 2026-11-16 · Source: `76c27a4` · Proof: SHA-256 of each tracked file
 
 | Path | Folder | Type | Purpose | Contents/function | Dependencies | Human-doc impact | Proof |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | docs/INSTALLATION.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:8a1783410041267ae084d5999fbf5d1d4c3dcf98c81e9690add763db0777a910`; `539c6de`; 2026-11-16 |
 | docs/IPHONE.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:2dfce5fc2be4bdf86a70392eb72e048c9cebce2affa19759a12d285beb7e02ae`; `539c6de`; 2026-11-16 |
 | docs/README.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:d62c540cd8b2f58694803a661c9d96e56c59240b2a9fb17a863528bc818d3802`; `539c6de`; 2026-11-16 |
-| docs/USING_WOLKARAFOREVER.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:cc8941f6553a81217fb994f06787567747e13e44dbc78352cac684b78735c610`; `db5470a`; 2026-11-16 |
+| docs/USING_WOLKARAFOREVER.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:8738808d32684689d50cb186ccc545410bafbd3eb33bead5a45c0d17bfeb69a2`; `76c27a4`; 2026-11-16 |
 | docs/agent/ARCHITECTURE.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:b6c0758e6be27ae1f812ede05b68a28432003b5e4a0ca0d5ec7bec3cdd3669d1`; `539c6de`; 2026-11-16 |
 | docs/agent/FILE_CATALOG.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:3a9a9746feb05c826e9da8726e0b22e4488949ce1dff265b22c299a96e67340e`; `539c6de`; 2026-11-16 |
 | docs/agent/HUMAN_DOCUMENTATION_MAP.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:c30625b977eab41c4c4d88ae514fcebde1dcb552cbecdc585774f62c8272f71d`; `539c6de`; 2026-11-16 |

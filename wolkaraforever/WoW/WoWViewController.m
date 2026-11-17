@@ -1273,25 +1273,25 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (_busy || _starting || _running || _sessionUsed || _browserSignInPresented) return;
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"login.title")
         message:WKLocalized(@"login.explanation") preferredStyle:UIAlertControllerStyleActionSheet];
-    if (!_busy && !_starting && !_sessionUsed && _installation.state==TKWoWInstallationReady &&
-        [_installation.app.profile isEqual:@"wow-forever"]) {
-        BOOL enabled=[NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"];
-        NSString *title=enabled?WKLocalized(@"login.disable"):WKLocalized(@"login.enable");
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-            [NSUserDefaults.standardUserDefaults setBool:!enabled forKey:@"WoWBrowserLogin"];
-            [TKBattleNetSession clear];
-        }]];
-        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.signOut") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-            self->_browserSignInPresented=YES;
-            [TKBattleNetBrowser clearSavedSignInWithCompletion:^{
-                self->_browserSignInPresented=NO;
-                [self presentMessage:WKLocalized(@"login.signedOut") message:WKLocalized(@"login.signedOutMessage")];
-            }];
-        }]];
-    }
+    BOOL enabled=[NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"];
+    NSString *title=enabled?WKLocalized(@"login.disable"):WKLocalized(@"login.enable");
+    [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [NSUserDefaults.standardUserDefaults setBool:!enabled forKey:@"WoWBrowserLogin"];
+        [TKBattleNetSession clear];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.signOut") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        self->_browserSignInPresented=YES;
+        [TKBattleNetBrowser clearSavedSignInWithCompletion:^{
+            self->_browserSignInPresented=NO;
+            [self presentMessage:WKLocalized(@"login.signedOut") message:WKLocalized(@"login.signedOutMessage")];
+        }];
+    }]];
     [self presentSheet:sheet anchor:nil];
 }
 - (void)browserSignIn {
+    // Settings may have opened while Play was checking for updates. Leave Play
+    // available to retry after that sheet closes instead of queuing a browser.
+    if (self.presentedViewController) return;
     if (_busy || _starting || _running || _sessionUsed || _browserSignInPresented || _installation.state!=TKWoWInstallationReady ||
         ![_installation.app.profile isEqual:@"wow-forever"]) return;
     _browserSignInPresented=YES;
@@ -1329,8 +1329,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             (void)a; [self repairInstallation];
         }]];
     }
-    if (!_busy && !_starting && !_sessionUsed && _installation.state==TKWoWInstallationReady &&
-        [_installation.app.profile isEqual:@"wow-forever"]) {
+    if (!_busy && !_starting && !_running && !_sessionUsed && !_browserSignInPresented) {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.title") style:UIAlertActionStyleDefault
             handler:^(__unused UIAlertAction *action) { [self browserSignInSettings]; }]];
     }

@@ -28,6 +28,9 @@ may reuse it on later launches or ask you to authenticate again. **Sign out of
 Battle.net** removes that saved session and the temporary launch ticket. **Disable
 browser sign-in** restores direct in-game login and clears the launch ticket; use
 Sign out as well if you want to remove the saved website session.
+These settings remain available while idle even if the game is missing or an
+update check fails. If you open another panel while Play checks for updates,
+close it and press Play again to sign in.
 
 Launch tickets are cleared on app restart and rejected after ten minutes. Never
 share tickets or callback URLs in issue reports. Passkeys are not supported in this

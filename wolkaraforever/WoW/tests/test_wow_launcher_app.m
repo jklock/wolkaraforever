@@ -1530,6 +1530,28 @@ static void TestPhoneDisplayDefaults(void) {
 - (void)checkOffline {
     PumpUntil(^{ return [self primary].enabled; }, 30.0);
     assert([self primary].enabled && self.launches==0);
+    // Clearing a saved login must not depend on fetching the game manifest.
+    assert([self.controller valueForKey:@"_installation"]==nil);
+    assert([TKBattleNetSession acceptTicket:@"US-0123456789abcdef0123456789abcdef-123456789" region:@"us" locale:@"enUS"]);
+    [self.controller settings];
+    UIAlertController *settings=WaitForSheetTitled(self.controller,@"Settings",20.0);
+    UIAlertAction *login=nil;
+    for (UIAlertAction *action in settings.actions)
+        if ([action.title isEqual:WKLocalized(@"login.title")]) login=action;
+    assert(login);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(login);
+    UIAlertController *sheet=WaitForSheetTitled(self.controller,WKLocalized(@"login.title"),20.0);
+    UIAlertAction *signOut=nil;
+    for (UIAlertAction *action in sheet.actions)
+        if ([action.title isEqual:WKLocalized(@"login.signOut")]) signOut=action;
+    assert(signOut);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(signOut);
+    assert(WaitForSheetTitled(self.controller,WKLocalized(@"login.signedOut"),20.0));
+    assert(![TKBattleNetSession isReady]);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    puts("BROWSER_OFFLINE_SIGN_OUT_PASS: saved login can be cleared without a ready installation");
     atomic_store(&failure,false); [self tap];
     [self performSelector:@selector(startThenBackground) withObject:nil afterDelay:0.3];
 }
@@ -1700,6 +1722,7 @@ static void TestPhoneDisplayDefaults(void) {
     RunAction(login);
     UIAlertController *preferences=WaitForSheetTitled(self.controller,WKLocalized(@"login.title"),20.0);
     assert(preferences && [preferences.message isEqual:WKLocalized(@"login.explanation")]);
+    Pump(0.5);
     [self capture:@"wow-browser-login-disabled.png"];
     UIAlertAction *enable=nil;
     for (UIAlertAction *action in preferences.actions)
@@ -1711,24 +1734,39 @@ static void TestPhoneDisplayDefaults(void) {
     assert([NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"]);
     [self.controller browserSignInSettings];
     assert(WaitForSheetTitled(self.controller,WKLocalized(@"login.title"),20.0));
+    Pump(0.5);
     [self capture:@"wow-browser-login-enabled.png"];
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     Pump(0.8);
     automaticBrowserOriginalLoad=method_setImplementation(
         class_getInstanceMethod(TKBattleNetBrowser.class,@selector(viewDidLoad)),(IMP)BrowserFixtureViewDidLoad);
+    atomic_store(&slow,true);
+    [self tap];
+    [self.controller settings];
+    settings=WaitForSheetTitled(self.controller,@"Settings",20.0);
+    assert(settings);
+    assert(PumpUntil(^{ return (BOOL)(![[self.controller valueForKey:@"_busy"] boolValue]); },10.0));
+    Pump(1.2); // Outlast the presentation helper's retry window.
+    assert(self.controller.presentedViewController==settings && self.launches==0);
+    assert(![[self.controller valueForKey:@"_browserSignInPresented"] boolValue]);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    assert(PumpUntil(^{ return (BOOL)(self.controller.presentedViewController==nil); },10.0));
+    atomic_store(&slow,false);
+    puts("BROWSER_SETTINGS_RACE_PASS: an open Settings sheet leaves Play available to retry");
     [self tap]; [self performSelector:@selector(checkAutomaticBrowserLogin) withObject:nil afterDelay:0.3];
 }
 - (void)checkAutomaticBrowserLogin {
     assert(PumpUntil(^{
         UINavigationController *frame=(id)self.controller.presentedViewController;
-        return (BOOL)([frame isKindOfClass:UINavigationController.class] && [frame.topViewController isKindOfClass:TKBattleNetBrowser.class] && frame.view.window);
+        return (BOOL)([frame isKindOfClass:UINavigationController.class] && [frame.topViewController isKindOfClass:TKBattleNetBrowser.class] && frame.view.window && !frame.isBeingPresented);
     },10.0));
     assert(self.launches==0);
     UINavigationController *frame=(id)self.controller.presentedViewController;
     [self tap];
     assert(self.controller.presentedViewController==frame && self.launches==0);
     [(TKBattleNetBrowser *)frame.topViewController cancel];
-    Pump(0.8);
+    assert(PumpUntil(^{ return (BOOL)(self.controller.presentedViewController==nil &&
+        ![[self.controller valueForKey:@"_browserSignInPresented"] boolValue]); },10.0));
     assert(!self.controller.presentedViewController && self.launches==0);
     [self tap];
     assert(PumpUntil(^{ return [self.controller.presentedViewController isKindOfClass:UINavigationController.class]; },10.0));
@@ -1794,7 +1832,9 @@ static void TestPhoneDisplayDefaults(void) {
     // lets them carry on as if nothing happened.
     CALayer *root=self.window.layer;
     CFTimeInterval savedSpeed=root.speed, savedOffset=root.timeOffset;
-    root.speed=0; root.timeOffset=0;
+    // Rewinding the sign-in sheet's persistent glass animations changes its material.
+    // Its background clock and spinners are already fixed above.
+    if (![name hasPrefix:@"wow-browser-login-"]) { root.speed=0; root.timeOffset=0; }
     [self.window layoutIfNeeded];
     UIGraphicsImageRenderer *renderer=[[UIGraphicsImageRenderer alloc] initWithBounds:self.window.bounds];
     UIImage *image=[renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
