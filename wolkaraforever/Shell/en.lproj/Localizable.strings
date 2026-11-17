@@ -558,6 +558,13 @@
 "addons.key.placeholder" = "API key";
 "addons.key.save" = "Save";
 "addons.key.errorTitle" = "Could not save key";
+"addons.key.change" = "Change CurseForge key…";
+"addons.key.change.detail" = "Replace the saved Core API key.";
+"addons.key.remove" = "Remove key";
+"addons.key.remove.detail" = "Delete the saved Core API key from this device.";
+"addons.key.remove.title" = "Remove CurseForge key?";
+"addons.key.remove.message" = "Browse and Discover will need a new key before they can use CurseForge.";
+"addons.key.remove.errorTitle" = "Could not remove key";
 "addons.loadMore" = "Load more…";
 "addons.count.one" = "%lu add-on installed";
 "addons.count.other" = "%lu add-ons installed";

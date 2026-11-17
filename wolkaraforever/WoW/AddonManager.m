@@ -2476,7 +2476,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             // Without a key there is one row to read and one thing to do; the sort and filter
             // controls would be two more copies of the same sentence, so they wait for a key.
             return @[
-                @{ @"kind": @"browseControls", @"rows": [self hasKey] ? @[ @0, @1 ] : @[ @0 ] },
+                @{ @"kind": @"browseControls", @"rows": [self hasKey] ? @[ @0, @1, @2, @3 ] : @[ @0 ] },
                 @{ @"kind": @"browseResults", @"rows": _results },
             ];
         case TKAddonHubTabMyAddOns:
@@ -2548,7 +2548,9 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
         }
         else if (indexPath.row==0) { cell.textLabel.text=WKLocalizedFormat(@"addons.sort.current",BrowseSortLabel(_sortField)); cell.detailTextLabel.text=WKLocalizedFormat(@"addons.sort.tapToChange",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")); }
-        else { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
+        else if (indexPath.row==1) { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
+        else if (indexPath.row==2) { cell.textLabel.text=WKLocalized(@"addons.key.change"); cell.detailTextLabel.text=WKLocalized(@"addons.key.change.detail"); cell.accessibilityIdentifier=@"wow.addons.changeKey"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; }
+        else { cell.textLabel.text=WKLocalized(@"addons.key.remove"); cell.detailTextLabel.text=WKLocalized(@"addons.key.remove.detail"); cell.accessibilityIdentifier=@"wow.addons.removeKey"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; }
     } else if ([kind isEqual:@"browseResults"] || [kind isEqual:@"discover"]) {
         NSArray<NSDictionary *> *projects=[kind isEqual:@"discover"] ? entry[@"rows"] : _results;
         if ([kind isEqual:@"browseResults"] && indexPath.row==(NSInteger)_results.count) {
@@ -2693,6 +2695,8 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         if ([kind isEqual:@"browseControls"] && self.tab==TKAddonHubTabBrowse) {
             if (indexPath.row==0) [self presentSortMenuFrom:indexPath];
             else if (indexPath.row==1) [self chooseCategoryFrom:indexPath];
+            else if (indexPath.row==2) [self setupKey];
+            else if (indexPath.row==3) [self confirmRemoveKey];
         }
         return;
     }
@@ -2764,6 +2768,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
 - (void)showProviderError:(NSError *)error { dispatch_async(dispatch_get_main_queue(),^{UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.error.providerTitle") message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:a];}); }
 - (void)mutate:(BOOL (^)(NSError **))operation { NSError *error=nil; if(!operation(&error)){UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.error.changeTitle") message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:a];} [self reloadAddons]; [self checkForUpdates]; }
 - (void)setupKey { UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.title") message:WKLocalized(@"addons.key.message") preferredStyle:UIAlertControllerStyleAlert];[a addTextFieldWithConfigurationHandler:^(UITextField *f){f.secureTextEntry=YES;f.autocorrectionType=UITextAutocorrectionTypeNo;f.autocapitalizationType=UITextAutocapitalizationTypeNone;f.placeholder=WKLocalized(@"addons.key.placeholder");}];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.key.save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){(void)x;NSError *e=nil;if(![self.credentials storeCurseForgeKey:a.textFields.firstObject.text error:&e]){UIAlertController *failure=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.errorTitle") message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[failure addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:failure];}else { [self.tableView reloadData]; if (self.tab==TKAddonHubTabBrowse) [self beginBrowse]; else [self checkForUpdates]; }}]];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];[self presentAlert:a]; }
+- (void)confirmRemoveKey { UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.remove.title") message:WKLocalized(@"addons.key.remove.message") preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.key.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x){(void)x;NSError *e=nil;if(![self.credentials removeCurseForgeKey:&e]){UIAlertController *failure=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.remove.errorTitle") message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[failure addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:failure];return;}self.browseStatus=WKLocalized(@"addons.enterKey.long");self.results=@[];self.totalCount=0;self.categories=nil;[self updateToolbar];[self.tableView reloadData];}]];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];[self presentAlert:a]; }
 
 #pragma mark - My Add-ons controls
 

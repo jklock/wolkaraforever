@@ -557,6 +557,13 @@
 "addons.key.placeholder" = "Clé d’API";
 "addons.key.save" = "Enregistrer";
 "addons.key.errorTitle" = "Impossible d’enregistrer la clé";
+"addons.key.change" = "Modifier la clé CurseForge…";
+"addons.key.change.detail" = "Remplacer la clé d’API Core enregistrée.";
+"addons.key.remove" = "Supprimer la clé";
+"addons.key.remove.detail" = "Supprimer la clé d’API Core enregistrée de cet appareil.";
+"addons.key.remove.title" = "Supprimer la clé CurseForge ?";
+"addons.key.remove.message" = "Parcourir et Découvrir auront besoin d’une nouvelle clé avant de pouvoir utiliser CurseForge.";
+"addons.key.remove.errorTitle" = "Impossible de supprimer la clé";
 "addons.loadMore" = "Charger plus…";
 "addons.count.one" = "%lu addon installé";
 "addons.count.other" = "%lu addons installés";
