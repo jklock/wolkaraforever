@@ -533,8 +533,11 @@ cmd_install() {
     # caller gets the state it found put back. See cmd_restore.
     [ "${2:-}" = "--no-restore" ] && restore=0
     step "state before touching anything"; verdict
-    step "stopping"
+    # The refusal comes before the announcement: printing "== stopping" and then dying with
+    # "a game session is live on the iPad right now" reads as though something had been stopped,
+    # and the test that guards this ("must not have touched the app") was right to object.
     require_safe_to_install "$force"
+    step "stopping"
     record_what_was_running
     stop_app "$force"
     step "building and installing"
