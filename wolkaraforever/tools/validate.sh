@@ -154,33 +154,10 @@ run_step() {
     "$@" >> "$log" 2>&1
     local rc=$?
     step_names+=("$name")
-    local known=""
-    if [ $rc -ne 0 ]; then
-        # A suite may fail on an assertion that is recorded in known_layer_failures.txt because
-        # the defect behind it is not what this run is about. The record names the command and a
-        # line that has to appear in the suite's own output, so it cannot excuse a different
-        # failure, and it is printed every run whichever way the step is counted.
-        local command_line; command_line=$(basename -- "${1:-}")
-        while IFS='|' read -r recorded marker why; do
-            case "$recorded" in ''|'#'*) continue;; esac
-            recorded=$(printf '%s' "$recorded" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-            marker=$(printf '%s' "$marker" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-            [ "$recorded" = "$command_line" ] || continue
-            grep -qF -- "$marker" "$log" || continue
-            known=$marker
-            break
-        done < wolkaraforever/tools/known_layer_failures.txt
-    fi
-    if [ $rc -eq 0 ]; then
-        step_results+=("PASS")
-    elif [ -n "$known" ]; then
-        step_results+=("PASS (known layer failure: $known)")
-    else
-        step_results+=("FAIL (exit $rc)")
-    fi
-    step_bodies+=("$( { printf 'Command: %s\n' "$*"; [ -n "$known" ] && grep -m1 -F -- "$known" "$log"; tail -25 "$log"; } | scrub)")
+    if [ $rc -eq 0 ]; then step_results+=("PASS"); else step_results+=("FAIL (exit $rc)"); fi
+    step_bodies+=("$( { printf 'Command: %s\n' "$*"; tail -25 "$log"; } | scrub)")
     printf '   %s\n' "${step_results[${#step_results[@]}-1]}"
-    [ $rc -eq 0 ] || [ -n "$known" ]
+    return $rc
 }
 
 # A platform suite, judged against the list of failures that are the platform's own.

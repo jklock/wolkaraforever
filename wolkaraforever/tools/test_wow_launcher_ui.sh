@@ -18,7 +18,6 @@ simulator_use "${SIMULATOR:-ipad}"
 # runs second reports failures it does not have. Refusing to start is honest; a bogus red lane is
 # not.
 simulator_ui_lock test_wow_launcher_ui
->>>>>>> 128db91 (fix(tools): one UI suite per simulator, enforced for every suite)
 xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/wow-launcher/WoWFixture.app
 mkdir -p "$APP"
