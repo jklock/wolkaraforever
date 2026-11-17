@@ -107,6 +107,7 @@ static void Reset(void) {
 // What the relay posted, in order, written as short words so a failure reads as a sequence.
 @interface TouchpadRecorder : NSObject
 @property (nonatomic, strong) NSMutableArray<NSString *> *events;
+@property (nonatomic, strong) NSMutableArray<NSString *> *activity;
 @property (nonatomic, strong) NSDictionary *lastTouch;
 @end
 
@@ -114,10 +115,16 @@ static void Reset(void) {
 - (instancetype)init {
     if ((self = [super init])) {
         _events = [NSMutableArray array];
+        _activity = [NSMutableArray array];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(posted:)
             name:AKControllerTouchpadPointerNotification object:nil];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(activityChanged:)
+            name:AKControllerTouchpadActivityNotification object:nil];
     }
     return self;
+}
+- (void)activityChanged:(NSNotification *)note {
+    [self.activity addObject:[note.userInfo[AKControllerTouchpadActiveKey] boolValue] ? @"active" : @"inactive"];
 }
 - (void)posted:(NSNotification *)note {
     NSDictionary *info = note.userInfo;
@@ -201,6 +208,18 @@ static void TestTouchpadPointer(void) {
     Pump(0.05);
     CHECK([recorder.events isEqualToArray:(@[@"touch2", @"click", @"touch0", @"release"])],
           @"the click is delivered after two fingers and before their lift, got %@", recorder);
+
+    // Some controller touchpads also appear to iPadOS as a GCMouse. The activity edges let the
+    // host suppress that duplicate stream only while this touchpad is in use, then immediately
+    // hand a real mouse or trackpad back its normal path.
+    [recorder.activity removeAllObjects];
+    [relay touch:0 down:YES x:0 y:0];
+    [relay click:YES];
+    [relay touch:0 down:NO x:0 y:0];
+    CHECK([recorder.activity isEqualToArray:@[@"active"]], @"a held touchpad click stays active, got %@", recorder.activity);
+    [relay click:NO];
+    CHECK(([recorder.activity isEqualToArray:@[@"active", @"inactive"]]), @"the controller releases the host handoff exactly once, got %@", recorder.activity);
+    Pump(0.05);
 
     // Out-of-range touch points are ignored rather than written past the end.
     [recorder.events removeAllObjects];
