@@ -15,6 +15,7 @@
 #import <GameController/GameController.h>
 
 #import "VoiceSettings.h"
+#import "VoiceTestViewController.h"
 #import "Trigger.h"
 #import "Dictation.h"
 #import "../Input/InputRouter.h"
@@ -31,6 +32,7 @@
 @property (nonatomic, strong) UILabel *mappingHint;
 @property (nonatomic, strong) UIButton *mapButton;
 @property (nonatomic, strong) UIButton *clearButton;
+@property (nonatomic, strong) UIButton *testButton;
 @property (nonatomic, strong) UISegmentedControl *modeControl;
 @property (nonatomic, strong) UISwitch *autoSubmitSwitch;
 @property (nonatomic, strong) UISwitch *trailingSpaceSwitch;
@@ -84,7 +86,8 @@
     self.mappingHint = WKNote(WKLocalized(@"voice.mapping.hint"));
     UILabel *collision = WKNote(WKLocalized(@"voice.mapping.collision"));
     collision.accessibilityIdentifier = @"voice.mapping.collision";
-    self.mappingCard = [self card:@[self.mappingValue, self.mapButton, self.clearButton, self.mappingHint, collision]];
+    self.testButton = [self borderedButton:@"voice.test" title:WKLocalized(@"voice.test.open") action:@selector(testVoice)];
+    self.mappingCard = [self card:@[self.mappingValue, self.mapButton, self.clearButton, self.testButton, self.mappingHint, collision]];
     [rows addArrangedSubview:self.mappingCard];
 
     // --- How it behaves -----------------------------------------------------
@@ -216,6 +219,7 @@
     }
     self.mapButton.enabled = on && !AKInputRouter.shared.learning;
     self.clearButton.enabled = on;
+    self.testButton.enabled = on;
     self.modeControl.enabled = on;
     self.autoSubmitSwitch.enabled = on;
     self.trailingSpaceSwitch.enabled = on;
@@ -236,6 +240,7 @@
     [self refreshMapping];
     self.mappingHint.text = WKLocalized(@"voice.mapping.cleared");
 }
+- (void)testVoice { [self.navigationController pushViewController:[AKVoiceTestViewController new] animated:YES]; }
 
 - (void)learningExpired:(NSNotification *)notification {
     (void)notification;

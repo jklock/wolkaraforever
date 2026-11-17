@@ -207,6 +207,8 @@ wolkaraforever/Controller/ControllerWindow.m launcher/Controller/ControllerWindo
 # Voice: what you say, turned into text in the game, and its tests
 wolkaraforever/Voice/AudioSessionCoordinator.h launcher/Voice/AudioSessionCoordinator.h add
 wolkaraforever/Voice/AudioSessionCoordinator.m launcher/Voice/AudioSessionCoordinator.m add
+wolkaraforever/Voice/ControllerTouchpadViewController.h launcher/Voice/ControllerTouchpadViewController.h add
+wolkaraforever/Voice/ControllerTouchpadViewController.m launcher/Voice/ControllerTouchpadViewController.m add
 wolkaraforever/Voice/Dictation.h launcher/Voice/Dictation.h add
 wolkaraforever/Voice/Dictation.m launcher/Voice/Dictation.m add
 wolkaraforever/Voice/KeyboardDictationEvents.h launcher/Voice/KeyboardDictationEvents.h add

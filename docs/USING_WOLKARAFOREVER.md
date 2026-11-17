@@ -28,13 +28,13 @@ A provider tab without a key shows one **Set up access** row; opening it asks fo
 
 ## Back up or recover your interface
 
-Use **UI Manager** before large interface changes. Create a backup, restore a selected backup if the interface becomes unusable, and use the graphics reset only for graphics and display settings. Recovery does not replace the game installation.
+Use **UI Manager** before large interface changes. **Gamepad UI** is first; its state is written to the active Forever `Config.wtf`. Create a backup before restoring a selected backup if the interface becomes unusable. **Reset to Default Wow UI Configuration** resets only graphics and display settings. Recovery does not replace the game installation.
 
 ## Configure controls and voice
 
 Use the touch toolbar, trackpad, keyboard, gamepad, physical keyboard, or controller that fits your device. For dictation, open voice configuration, grant permission, select a trigger and Hold or Toggle behavior, then use **Test Voice** before dictating into a text field. Enabling dictation establishes the game's duplex audio route before a controller hold; the hold and release themselves do not change the audio category or remove the game output route. Leaving the app stops an open dictation capture, but does not add a WolkaraForever frame cap to the running guest.
 
-A DualSense or DualShock 4 touchpad can move the game's pointer. In **Settings**, choose **Use controller touchpad as mouse**; it is off until you turn it on. One finger moves the pointer and two fingers scroll. Pressing the touchpad is the left mouse button, or the right button with two fingers on the pad, and pressing while you slide drags. Tapping without pressing does nothing, so a thumb resting on the pad does not click. While this is on, the touchpad click is the mouse button only and cannot be chosen as a dictation trigger. **Controller touchpad speed** offers Slow, Normal and Fast. Choose **Stop using controller touchpad as mouse** to return the click to an ordinary controller button.
+A DualSense or DualShock 4 touchpad can move the game's pointer. In **Input Manager**, open **Controller Touchpad Configuration**. It is off until you turn it on and is saved on the iPad. One finger moves the pointer and two fingers scroll. Pressing the touchpad is the left mouse button, or the right button with two fingers on the pad, and pressing while you slide drags. Tapping without pressing does nothing, so a thumb resting on the pad does not click. The page offers Slow, Normal and Fast speeds plus a live controller-touchpad test showing the reported finger count and coordinates. While this is on, the touchpad click is the mouse button only and cannot be chosen as a dictation trigger. The dictation test is inside **Key / Controller Button Configuration**.
 
 ![Voice configuration](screenshots/voice-configuration.jpg)
 

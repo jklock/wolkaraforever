@@ -34,7 +34,7 @@
 "home.edition.row" = "Spieledition: %@";
 "home.preferences.row" = "Region / Sprache: %@ %@";
 "home.box.addons" = "Add-on-Verwaltung";
-"home.box.voice" = "Diktatverwaltung (V2T)";
+"home.box.voice" = "Eingabeverwaltung";
 "home.box.profile" = "Leistungsverwaltung";
 "home.box.performance" = "Oberflächenverwaltung";
 "home.box.launcherManager" = "Startverwaltung";
@@ -108,11 +108,12 @@
 "home.addons.restore.failed.title" = "Die Add-ons konnten nicht wiederhergestellt werden";
 "home.addons.restore.failed.message" = "Der Add-on-Ordner blieb unverändert.";
 "addons.backup.noComponent" = "Diesem Build fehlt die Komponente für Add-on-Sicherungen.";
-"home.voice.keys" = "Tasten und Buttons belegen";
+"home.voice.keys" = "Tasten und Controller-Buttons belegen";
 "home.voice.test" = "Sprache & Diktat testen";
+"home.touchpad.configuration" = "Controller-Touchpad konfigurieren";
 "home.permissions" = "Berechtigungen (Mikrofon & Spracherkennung)";
 "home.performance.backup" = "WoW-Oberflächenkonfiguration sichern";
-"home.performance.reset" = "Auf Standardgrafik zurücksetzen";
+"home.performance.reset" = "WoW-Oberflächenkonfiguration zurücksetzen";
 "home.performance.restore" = "WoW-Oberflächenkonfiguration wiederherstellen";
 "home.performance.settingsFolder" = "Einstellungsordner öffnen";
 "home.performance.gamepad" = "Gamepad-Oberfläche";
@@ -624,8 +625,9 @@
 "addons.action.manage" = "Verwalten";
 "addons.manage.unmanaged" = "Dieses vorhandene Add-on wird von diesem Gerät entfernt.";
 /* ---- Voice and dictation ---- */
-"voice.title" = "Tasten und Buttons belegen";
+"voice.title" = "Tasten und Controller-Buttons belegen";
 "voice.test.title" = "Sprache testen";
+"voice.test.open" = "Diktat testen";
 "voice.intro" = "Nichts hier geschieht von selbst. Solange die Funktion nicht eingeschaltet und eine Taste belegt ist, wird das Mikrofon nie geöffnet und kein Controller verhält sich anders.";
 "voice.heading.voice" = "Sprache";
 "voice.enabled" = "Taste zum Sprechen verwenden";
@@ -674,6 +676,26 @@
 "voice.language.french" = "Französisch";
 "voice.language.spanish" = "Spanisch";
 "voice.language.unavailable" = "%@ kann auf diesem iPad nicht erkannt werden, daher wurde für diesen Durchgang System verwendet.";
+"touchpad.title" = "Controller-Touchpad konfigurieren";
+"touchpad.intro" = "Schalten Sie dies nur ein, wenn das Touchpad eines verbundenen Controllers den Zeiger steuern soll. Ein Finger bewegt, zwei Finger scrollen und der physische Touchpad-Klick ist die Maustaste.";
+"touchpad.heading.pointer" = "Zeiger";
+"touchpad.enabled" = "Controller-Touchpad als Maus verwenden";
+"touchpad.enabled.note" = "Diese Einstellung wird auf diesem iPad gespeichert. Beim Ausschalten werden gehaltene Zeigertasten losgelassen.";
+"touchpad.heading.speed" = "Zeigergeschwindigkeit";
+"touchpad.speed.slow" = "Langsam";
+"touchpad.speed.normal" = "Normal";
+"touchpad.speed.fast" = "Schnell";
+"touchpad.speed.note" = "Gilt sofort für den nächsten Touchpad-Bericht und wird auf diesem iPad gespeichert.";
+"touchpad.heading.test" = "Controller-Touchpad testen";
+"touchpad.test.note" = "Bei aktiviertem Zeiger das Controller-Touchpad berühren, um die von iPadOS gemeldeten Live-Koordinaten zu prüfen.";
+"touchpad.test.off" = "Aktivieren Sie den Zeiger, um Touchpad-Berichte zu empfangen.";
+"touchpad.test.waiting" = "Warte auf einen Touchpad-Bericht…";
+"touchpad.test.receiving" = "Touchpad-Berichte werden empfangen.";
+"touchpad.test.none" = "Noch keine Koordinaten gemeldet.";
+"touchpad.test.coordinates" = "%lu Finger — x %.1f, y %.1f";
+"touchpad.test.clickDown" = "Touchpad-Klick gedrückt.";
+"touchpad.test.clickUp" = "Touchpad-Klick losgelassen.";
+"touchpad.test.reset" = "Der Controller wurde getrennt oder der Zeiger ausgeschaltet.";
 "common.clear" = "Leeren";
 
 /* ---- The game's own files (Forever UI) ---- */

@@ -933,7 +933,7 @@ static const struct AKSelfTestControl AKSelfTestControlTable[] = {
     {@"wow.addons.manage",             AKSelfTestControlOpensPage,  @"the Add-On Manager row opens that page"},
     {@"wow.addons.macEver",            AKSelfTestControlOpensPage,  @"the recommended add-ons row opens the Add-On Manager"},
     {@"wow.voice",                     AKSelfTestControlOpensPage,  @"the dictation row opens its page"},
-    {@"wow.voice.test",                AKSelfTestControlOpensPage,  @"the voice trial row opens its page"},
+    {@"wow.touchpad",                  AKSelfTestControlOpensPage,  @"the controller touchpad row opens its configuration"},
     {@"wow.performance.deviceProfile", AKSelfTestControlOpensSheet, @"Device profile opens its sheet"},
     {@"wow.performance.renderProfile", AKSelfTestControlOpensSheet, @"Render profile opens its sheet"},
     {@"wow.launcher.interfaceMode",    AKSelfTestControlOpensSheet, @"Interface Mode opens its sheet"},

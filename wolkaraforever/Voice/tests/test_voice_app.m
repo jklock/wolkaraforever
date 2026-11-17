@@ -18,12 +18,14 @@
 #import <UIKit/UIKit.h>
 
 #import "../launcher/Input/InputElement.h"
+#import "../launcher/Input/ControllerTouchpad.h"
 #import "../launcher/Input/InputRouter.h"
 #import "../launcher/Input/Trigger.h"
 #import "../launcher/Voice/Dictation.h"
 #import "../launcher/Voice/VoiceSettings.h"
 #import "../launcher/Voice/VoiceViewController.h"
 #import "../launcher/Voice/VoiceTestViewController.h"
+#import "../launcher/Voice/ControllerTouchpadViewController.h"
 #import "../launcher/Controller/ControllerInspector.h"
 #import "../launcher/App/WolkaraForeverConfig.h"
 #import "../launcher/App/WKLocalization.h"
@@ -1663,6 +1665,7 @@ static void TestVoiceScreens(UIWindow *window) {
     UILabel *mapping = (id)Find(settings.view, @"voice.mapping");
     CHECK((mapping.text.length > 0), @"and it says what is mapped, got nothing");
     CHECK((Find(settings.view, @"voice.map") != nil), @"and it has the Map button");
+    CHECK((Find(settings.view, @"voice.test") != nil), @"and keeps the dictation test inside button configuration");
     // Disabled options are not actionable, but they remain readable: otherwise the page
     // looks broken before the player has found the master switch.
     for (NSString *key in @[@"mappingCard", @"modeCard", @"afterCard", @"wordsCard"]) {
@@ -1685,6 +1688,24 @@ static void TestVoiceScreens(UIWindow *window) {
     [navigation popViewControllerAnimated:NO];
     Pump(0.2);
     CHECK((!AKInputRouter.shared.learning), @"leaving the settings page disarms the mapper");
+
+    // --- the controller touchpad configuration and its live coordinate report
+    AKControllerTouchpadRelay.shared.enabled = NO;
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:AKControllerTouchpadPointerDefaultsKey];
+    AKControllerTouchpadViewController *touchpad = [AKControllerTouchpadViewController new];
+    [navigation pushViewController:touchpad animated:NO];
+    Pump(0.2);
+    UISwitch *pointer = (id)Find(touchpad.view, @"touchpad.enabled");
+    CHECK((pointer != nil && !pointer.on), @"the touchpad pointer starts off in its configuration page");
+    pointer.on = YES; [pointer sendActionsForControlEvents:UIControlEventValueChanged];
+    CHECK((AKControllerTouchpadRelay.shared.enabled), @"the touchpad page stores the explicit opt-in");
+    [AKControllerTouchpadRelay.shared touch:0 down:YES x:0.5 y:-0.5];
+    Pump(0.1);
+    UILabel *coordinates = (id)Find(touchpad.view, @"touchpad.test.coordinates");
+    CHECK(([coordinates.text containsString:@"x 200.0, y 100.0"]), @"the test page displays the reported coordinates, got %@", coordinates.text);
+    pointer.on = NO; [pointer sendActionsForControlEvents:UIControlEventValueChanged];
+    [navigation popViewControllerAnimated:NO];
+    Pump(0.1);
 
     // --- the test screen
     AKVoiceTestViewController *page = [AKVoiceTestViewController new];

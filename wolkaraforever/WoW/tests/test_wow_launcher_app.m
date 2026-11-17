@@ -40,7 +40,6 @@
 - (void)repairInstallation;
 - (void)manageAddons;
 - (void)manageVoice;
-- (void)testVoice;
 - (void)performGraphicsReset:(NSString *)directory;
 - (void)render;
 - (void)choosePreference:(BOOL)region;
@@ -1326,14 +1325,9 @@ static void TestPhoneDisplayDefaults(void) {
     assert(frame!=nil && [frame.topViewController isKindOfClass:AKVoiceViewController.class]);
     [self.window layoutIfNeeded];
     [self capture:@"voice-settings.png"];
-    [(AKVoiceViewController *)frame.topViewController done];
-    [self performSelector:@selector(checkVoiceTestPage) withObject:nil afterDelay:0.9];
-}
-- (void)checkVoiceTestPage {
-    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
-    assert(self.controller.presentedViewController==nil);
-    [[self row:@"wow.voice.test"] sendActionsForControlEvents:UIControlEventTouchUpInside];
-    assert(self.controller.presentedViewController!=nil);
+    UIButton *test=(id)Find(frame.topViewController.view,@"voice.test");
+    assert(test!=nil);
+    [test sendActionsForControlEvents:UIControlEventTouchUpInside];
     [self performSelector:@selector(captureVoiceTest) withObject:nil afterDelay:0.7];
 }
 - (void)captureVoiceTest {
@@ -1341,7 +1335,8 @@ static void TestPhoneDisplayDefaults(void) {
     assert(frame!=nil && [frame.topViewController isKindOfClass:AKVoiceTestViewController.class]);
     [self.window layoutIfNeeded];
     [self capture:@"voice-test.png"];
-    [(AKVoiceTestViewController *)frame.topViewController done];
+    [frame popViewControllerAnimated:NO];
+    [(AKVoiceViewController *)frame.topViewController done];
     [self performSelector:@selector(checkNoRecheck) withObject:nil afterDelay:0.9];
 }
 - (void)checkNoRecheck {
@@ -1735,17 +1730,16 @@ static void TestPhoneDisplayDefaults(void) {
         // plus the two whole-folder rows.
         @"wow.box.addons": @[@"wow.heading.addons", @"wow.addons.manage",
                              @"wow.addons.directory", @"wow.addons.backup", @"wow.addons.restore"],
-        @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.voice.test"],
+        @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.touchpad"],
         // The profile card: which device, which render scale, and the overlay. Nothing here
         // reads or writes the game's files, and there is no "restore defaults" row: the way
         // back is the Automatic choice in the device sheet, which is where the value lives.
         @"wow.box.profile": @[@"wow.heading.profile", @"wow.performance.deviceProfile",
                               @"wow.performance.renderProfile",
                               @"wow.performance.overlay"],
-        // The retained card, narrower and in the order someone with a broken UI needs it.
-        @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.backup",
-                                  @"wow.performance.restore", @"wow.performance.reset",
-                                  @"wow.performance.settingsFolder", @"wow.performance.gamepad"],
+        @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.gamepad",
+                                  @"wow.performance.backup", @"wow.performance.restore",
+                                  @"wow.performance.reset", @"wow.performance.settingsFolder"],
         // The sixth card: the interface this launcher drives, and the arrangement its controls
         // use. Two settings, two rows.
         @"wow.box.launcherManager": @[@"wow.heading.launcherManager", @"wow.launcher.interfaceMode",
@@ -1804,10 +1798,10 @@ static void TestPhoneDisplayDefaults(void) {
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Interface Mode: iPadOS"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.permissions") configuration].title isEqual:@"Toggle Permissions (Mic & Speech)"]);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.voice") configuration].title isEqual:@"Key / Button Configuration"]);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.voice.test") configuration].title isEqual:@"Test Voice & Dictation"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.voice") configuration].title isEqual:@"Key / Controller Button Configuration"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.touchpad") configuration].title isEqual:@"Controller Touchpad Configuration"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.backup") configuration].title isEqual:@"Backup WoW UI Configuration"]);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.reset") configuration].title isEqual:@"Reset to Default Graphical Settings"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.reset") configuration].title isEqual:@"Reset to Default Wow UI Configuration"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.restore") configuration].title isEqual:@"Restore WoW UI Configuration"]);
     // The two on/off settings are switches with fixed words: the control says the
     // state, the label never changes.
@@ -1818,7 +1812,7 @@ static void TestPhoneDisplayDefaults(void) {
     // --- enabled state on a ready, idle installation
     for (NSString *identifier in @[@"wow.performance.backup", @"wow.performance.reset",
                                    @"wow.performance.restore", @"wow.performance.settingsFolder",
-                                   @"wow.addons.manage", @"wow.voice", @"wow.voice.test",
+                                   @"wow.addons.manage", @"wow.voice", @"wow.touchpad",
                                    @"wow.permissions", @"wow.addons.macEver"])
         assert([self row:identifier].enabled);
     assert([self toggle:@"wow.performance.gamepad"].enabled);
@@ -2059,6 +2053,9 @@ static int backupsBeforePerformance;
     UISwitch *gamepad = [self toggle:@"wow.performance.gamepad"];
     assert(gamepad != nil);
     gamepad.on = YES; [gamepad sendActionsForControlEvents:UIControlEventValueChanged];
+    // The write happens off-main. The selected state must remain visible during that write;
+    // otherwise the tap looks like it failed even when Config.wtf is updated moments later.
+    assert(gamepad.on);
     [self performSelector:@selector(checkGamepad) withObject:nil afterDelay:0.5];
 }
 - (void)checkGamepad {
@@ -2559,15 +2556,13 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
     assert([page isKindOfClass:AKVoiceViewController.class]);
-    assert([page.title isEqual:@"TASTEN UND BUTTONS BELEGEN"]);
+    assert([page.title isEqual:@"TASTEN UND CONTROLLER-BUTTONS BELEGEN"]);
     [self.window layoutIfNeeded];
     [self assertGermanOnlyInView:page.view page:@"voice settings"];
     [self capture:@"wow-voice-de.png"];
-    [self.controller dismissViewControllerAnimated:NO completion:nil];
-    [self performSelector:@selector(openGermanVoiceTest) withObject:nil afterDelay:0.4];
-}
-- (void)openGermanVoiceTest {
-    [self.controller testVoice];
+    UIButton *test=(id)Find(page.view,@"voice.test");
+    assert(test!=nil);
+    [test sendActionsForControlEvents:UIControlEventTouchUpInside];
     [self performSelector:@selector(checkGermanVoiceTest) withObject:nil afterDelay:0.8];
 }
 - (void)checkGermanVoiceTest {
@@ -2579,6 +2574,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.window layoutIfNeeded];
     [self assertGermanOnlyInView:page.view page:@"voice test"];
     [self capture:@"wow-voice-test-de.png"];
+    [frame popViewControllerAnimated:NO];
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     [self performSelector:@selector(openGermanSettings) withObject:nil afterDelay:0.4];
 }
@@ -2795,21 +2791,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
         (@[@"Verify and repair game files", @"Diagnostics and logs",
-           @"Turn on input diagnostics", @"Use controller touchpad as mouse",
-           @"About and open-source licenses", @"Cancel"])]);
-    // The controller touchpad as the pointer: off until chosen, and the speed only once it is on.
-    assert(!AKControllerTouchpadRelay.shared.enabled);
-    UIAlertAction *touchpadAction = nil;
-    for (UIAlertAction *action in settings.actions)
-        if ([action.title isEqual:@"Use controller touchpad as mouse"]) touchpadAction = action;
-    RunAction(touchpadAction);
-    assert(AKControllerTouchpadRelay.shared.enabled);
-    UIAlertController *touchpadSettings = [self.controller settingsSheet];
-    NSArray *touchpadTitles = [touchpadSettings.actions valueForKey:@"title"];
-    assert([touchpadTitles containsObject:@"Stop using controller touchpad as mouse"]);
-    assert([touchpadTitles containsObject:@"Controller touchpad speed: Normal"]);
-    AKControllerTouchpadRelay.shared.enabled = NO;
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:AKControllerTouchpadPointerDefaultsKey];
+           @"Turn on input diagnostics", @"About and open-source licenses", @"Cancel"])]);
     assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
     __block NSInteger diagnostics = 0;
@@ -2844,7 +2826,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
                                    @"wow.launcher.interfaceMode",
                                    @"wow.launcher.layoutCreate", @"wow.launcher.layoutRestore",
                                    @"wow.launcher.layoutBackup",
-                                   @"wow.permissions", @"wow.voice", @"wow.voice.test",
+                                   @"wow.permissions", @"wow.voice", @"wow.touchpad",
                                    @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
                                    @"wow.performance.backup",
                                    @"wow.performance.reset", @"wow.performance.restore",
