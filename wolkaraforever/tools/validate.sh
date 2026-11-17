@@ -1,8 +1,8 @@
 #!/bin/bash
 # Prove what was tested, and against exactly which commit.
 #
-# The audit's finding: development/VALIDATION.md was tied to an older commit than the
-# work it claimed to cover, and prepare.sh exports HEAD:platform while apply.sh copies
+# The finding: a validation record was tied to an older commit than the work it claimed
+# to cover, and prepare.sh exports HEAD:platform while apply.sh copies
 # overlay sources from the working tree - so a dirty checkout can build uncommitted code
 # while the evidence names a commit. Evidence that names a commit it did not test is
 # worse than no evidence.
@@ -257,6 +257,20 @@ run_step "game file verification and repair (CASC)" wolkaraforever/tools/test_wo
 # Backup, restore, the CVar rules and the gamepad setting are the operations a user
 # cannot redo if they go wrong, and this suite was only ever run by hand.
 run_step "config, gamepad and UI backup/restore" wolkaraforever/tools/test_forever_ui.sh || failures=$((failures+1))
+# The unit suites under tools/tests/ and the two Mac-side add-on suites had no row here,
+# and nothing else ran them either: a suite nobody runs is a file, not coverage. Each one
+# puts a stub in front of the device, so they are cheap enough to belong in every run.
+run_step "device discovery and local.env parsing" wolkaraforever/tools/tests/test_device_variables.sh || failures=$((failures+1))
+run_step "the Mac prerequisites report" wolkaraforever/tools/tests/test_install_prerequisites.sh || failures=$((failures+1))
+run_step "preflight explains what is missing" wolkaraforever/tools/tests/test_preflight.sh || failures=$((failures+1))
+run_step "a game copy refuses an unsafe push" wolkaraforever/tools/tests/test_push_game.sh || failures=$((failures+1))
+run_step "a running app is recognised, not assumed" wolkaraforever/tools/tests/test_running_app.sh || failures=$((failures+1))
+run_step "the test-app dispatcher stays on the test app" wolkaraforever/tools/tests/test_test_install.sh || failures=$((failures+1))
+run_step "an .ipa is refused unless it is the External-JIT one" wolkaraforever/tools/tests/test_verify_ipa.sh || failures=$((failures+1))
+run_step "a silent device cannot hang a devicectl call" wolkaraforever/tools/tests/test_xcrun_device_timeout.sh || failures=$((failures+1))
+run_step "External-JIT log classification" wolkaraforever/tools/tests/test_classify_external_jit.sh || failures=$((failures+1))
+run_step "the bundled add-on is what its reviewed sources produce" wolkaraforever/tools/test_addon_package.sh || failures=$((failures+1))
+run_step "the mobile add-on's Lua, saves and game API" wolkaraforever/tools/test_mobile_addon.sh || failures=$((failures+1))
 if [ -n "${DEVELOPMENT_TEAM:-}" ]; then
     run_step "the signed app builds for the device" wolkaraforever/tools/install.sh --build-only || failures=$((failures+1))
 else
@@ -272,6 +286,14 @@ if [ "$full" = 1 ]; then
     # could misclassify a layer failure alongside the known platform failure.
     run_platform_suite "platform emulation suite" bash build/platform/tools/test_emulation.sh || failures=$((failures+1))
     run_platform_suite "translation adapters (simulator)" wolkaraforever/tools/test_translation_sim.sh || failures=$((failures+1))
+    # The simulator suites that had no row. `test_launcher_matrix.sh --check` is deliberately
+    # not listed: it runs test_wow_launcher_ui.sh on both matrix devices, which the
+    # `check_ui_policy.sh` row above already does, and a second identical lane only doubles
+    # the run. `test_emulation.sh` is the "run everything" wrapper and would re-run every row.
+    run_step "the add-on hub against the real page (simulator)" wolkaraforever/tools/test_addon_hub_live.sh || failures=$((failures+1))
+    run_step "content-view sizing for patch 0054 (simulator)" wolkaraforever/tools/test_appkit_content_view.sh || failures=$((failures+1))
+    run_step "inactive Metal submission (simulator)" wolkaraforever/tools/test_background_pacing_sim.sh || failures=$((failures+1))
+    run_step "the enrolment reference in the Keychain (simulator)" wolkaraforever/tools/test_enrollment_reference_sim.sh || failures=$((failures+1))
 else
     step_names+=("platform emulation suite (--full)")
     step_results+=("NOT RUN")

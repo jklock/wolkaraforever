@@ -7,7 +7,7 @@
 // element, through -releaseSystemGestureForElement:device:, which the input router
 // calls. Before 2026-10-16 it disabled Share's gesture at startup for every pad that
 // declared one, which changed how the controller behaved before the user had chosen
-// anything - see development/STABILITY_AUDIT_2026-10-16.md.
+// anything.
 //
 // Output goes to the platform's own log channel and to Documents/wolkaraforever.log.
 
@@ -25,8 +25,8 @@ FOUNDATION_EXPORT NSNotificationName const AKInputDiagnosticsDidChangeNotificati
 /// A controller's *model* identity: vendor and product category. This is what a mapping is
 /// remembered against, and it is deliberately not claimed to be per-device. GameController
 /// exposes no serial number, so two identical pads are indistinguishable to this app and
-/// share one mapping; the log says so when that happens, and `development/technical/INPUT_TRIGGERS.md` says
-/// so to the reader. It is never the display name (a mapping key should not be), and never
+/// share one mapping; the log says so when that happens. It is never the display name (a
+/// mapping key should not be), and never
 /// the player index, which moves as pads come and go.
 FOUNDATION_EXPORT NSString *AKControllerIdentity(GCController *pad);
 

@@ -36,7 +36,7 @@ index da4f8ad..47e3e59 100644
 +    // Replace" ended with the app quitting and the select-all was the only thing the
 +    // guest received differently. The crash was not that: it was
 +    // `insertDictationResult:`, a selector UITextView does not implement, sent to
-+    // super() the instant a dictation landed - see development/NOTES.md, 2026-10-15.
++    // super() the instant a dictation landed - measured 2026-10-15.
 +    // With that fixed, taking this out only made the button a liar: it was still
 +    // enabled for an empty draft and its hint still promised to replace the whole
 +    // field, while typing at the caret instead. docs/TOUCH_INPUT.md specifies this

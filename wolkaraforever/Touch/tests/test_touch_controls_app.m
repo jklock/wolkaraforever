@@ -8,6 +8,22 @@
 #import "AKHostLocalization.h"
 #include <assert.h>
 
+// Wait for the state an assertion needs, pumping the main run loop, instead of sleeping a fixed
+// time and hoping. Sleeping a second measured whatever this machine had managed by then: on a
+// busy simulator the Composer's card was read between the passes that size it and its action
+// row, and the same code passed a minute earlier (measured 2026-11-16: two of three runs failed
+// with card=130, row=0 where the assertions want row=44). The assertions themselves are
+// unchanged - only the moment they run is, and the timeout is a budget for a slow machine rather
+// than a claim about how long the product takes.
+static BOOL AKTouchFixtureWaitFor(NSTimeInterval timeout, BOOL (^ready)(void)) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout];
+    while (!ready()) {
+        if ([deadline timeIntervalSinceNow] <= 0) return NO;
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.02, true);
+    }
+    return YES;
+}
+
 // The keys the layer supplies when iPadOS has no software keyboard to give. The
 // controls keep it private; the fixture asks for it the way the controls do.
 @interface AKTouchControls (LayerKeyboardFixture)
@@ -429,10 +445,24 @@ static void AKFixtureInputSource(void *context) {
     {
         UIView *row = [controls valueForKey:@"_composerRow"];
         UILabel *stateLabel = (UILabel *)AKFindInputView(host, @"wolkaraforever.composer.state");
-        CGRect editorInHost = [input convertRect:input.bounds toView:host];
-        CGFloat cardHeight = CGRectGetHeight(card.frame), rowHeight = CGRectGetHeight(row.frame);
         BOOL accessibilityText = [UIApplication.sharedApplication.preferredContentSizeCategory
             containsString:@"Accessibility"];
+        // The card and its action row are sized by the same layout pass, so a read taken between
+        // two of them sees the old geometry. Wait for the height this category wants first.
+        CGFloat wantedCard = accessibilityText ? 130.5 : 130, wantedRow = accessibilityText ? 44.5 : 44;
+        BOOL settled = AKTouchFixtureWaitFor(5.0, ^{
+            [card setNeedsLayout];
+            [card layoutIfNeeded];
+            return (BOOL)(CGRectGetHeight(card.frame) >= wantedCard - 0.5 &&
+                           CGRectGetHeight(row.frame) >= wantedRow - 0.5);
+        });
+        if (!settled)
+            fprintf(stderr, "CHAT_COMPOSER_NOT_SETTLED: category=%s card=%.1f row=%.1f editor=%.1f\n",
+                    UIApplication.sharedApplication.preferredContentSizeCategory.UTF8String,
+                    CGRectGetHeight(card.frame), CGRectGetHeight(row.frame),
+                    CGRectGetHeight([input convertRect:input.bounds toView:host]));
+        CGRect editorInHost = [input convertRect:input.bounds toView:host];
+        CGFloat cardHeight = CGRectGetHeight(card.frame), rowHeight = CGRectGetHeight(row.frame);
         if (accessibilityText) {
             if (!(cardHeight > 130.5 && rowHeight > 44.5)) {
                 fprintf(stderr, "CHAT_COMPOSER_DYNAMIC_TYPE: category=%s card=%.1f row=%.1f\n",
@@ -767,6 +797,20 @@ static void AKFixtureInputSource(void *context) {
             [NSTimer scheduledTimerWithTimeInterval:1 repeats:NO block:^(NSTimer *timer) {
                 (void)timer;
                 [host layoutIfNeeded];
+                // The keyboard appears asynchronously, and the guide that reports it is laid out
+                // with it. Wait for both rather than trusting one second to have covered it.
+                BOOL keyboardReady = AKTouchFixtureWaitFor(10.0, ^{
+                    [host layoutIfNeeded];
+                    return (BOOL)(controls.keyboardVisible &&
+                                  host.keyboardLayoutGuide.layoutFrame.size.height > 100 &&
+                                  CGSizeEqualToSize(originalSize, host.bounds.size));
+                });
+                if (!keyboardReady)
+                    fprintf(stderr, "TOUCH_UI_KEYBOARD_NOT_SETTLED: visible=%d guide=%.0f bounds=%s original=%s\n",
+                            (int)controls.keyboardVisible,
+                            host.keyboardLayoutGuide.layoutFrame.size.height,
+                            NSStringFromCGSize(host.bounds.size).UTF8String,
+                            NSStringFromCGSize(originalSize).UTF8String);
                 assert(controls.keyboardVisible && CGSizeEqualToSize(originalSize, host.bounds.size));
                 assert(host.keyboardLayoutGuide.layoutFrame.size.height > 100);
                 assert(CGRectGetMaxY(controls.frame) <= CGRectGetMinY(host.keyboardLayoutGuide.layoutFrame));

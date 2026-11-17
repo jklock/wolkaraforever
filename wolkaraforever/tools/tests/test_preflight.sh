@@ -2,6 +2,11 @@
 # Test preflight.sh with stubbed device and app data: ready, missing DEVICE, and
 # a missing --source each produce the documented result.
 set -uo pipefail
+# The cases include "DEVICE is missing", which an exported DEVICE from local.env would make
+# untrue; env.sh prefers the exported value over the file by design. Clear what the caller
+# may have exported so the fixture's own local.env is the only input.
+unset DEVICE TOLKARA_BUNDLE_ID TOLKARA_KEYCHAIN_GROUP TOLKARA_DISPLAY_NAME SIMULATOR
+unset DEVELOPMENT_TEAM GUEST_EXE TOLKARA_MODE NATIVE_GUEST_SHIMS SIGN_IDENTITY TOLKARA_CAPTURE
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/wf-preflight.XXXXXX")

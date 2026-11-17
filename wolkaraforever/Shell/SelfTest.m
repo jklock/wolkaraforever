@@ -1577,8 +1577,8 @@ static void AKSelfTestRunLanguage(AKSelfTestRecorder *recorder, NSInteger attemp
     // The strings this change added or renamed, read the way the app reads them.
     [recorder check:[WKLocalized(@"home.box.edition") isEqual:@"Spielverwaltung"]
                     _:@"the Game Settings Manager heading is German"];
-    [recorder check:[WKLocalized(@"home.box.voice") isEqual:@"Diktatverwaltung (V2T)"]
-                    _:@"the Dictation (V2T) Manager heading is German"];
+    [recorder check:[WKLocalized(@"home.box.voice") isEqual:@"Eingabeverwaltung"]
+                    _:@"the Input Manager heading is German"];
     [recorder check:[WKLocalized(@"addons.action.install") isEqual:@"Installieren"]
                     _:@"the row's Install action is German"];
     [recorder check:[WKLocalized(@"addons.select.all") isEqual:@"Alle auswählen"]

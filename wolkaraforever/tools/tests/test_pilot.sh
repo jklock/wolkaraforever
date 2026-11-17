@@ -267,14 +267,17 @@ run_pilot "$work/sessions/live" install
 check $? "install must refuse while a game session is live"
 grep -q "game session is live" "$work/out.txt"
 check $? "and must say that is why"
-if grep -qE "launching|stopped" "$work/out.txt"; then
+# The guard is anchored on pilot's own action steps, not on the words: the selftest
+# prints "== checking that the app is stopped" before it refuses, and the earlier
+# pattern matched that title and reported the refusal as having touched the app.
+if grep -qE "^== (stopping|launching|installing)" "$work/out.txt"; then
     check 1 "and must not have touched the app"
     echo "--- install printed: ---"; sed 's/^/    /' "$work/out.txt"; echo "--- end ---"
 fi
 run_pilot "$work/sessions/live" stop
 [ $? -ne 0 ]
 check $? "stop must refuse while a game session is live"
-if grep -qE "launching|stopped" "$work/out.txt"; then
+if grep -qE "^== (stopping|launching|installing)" "$work/out.txt"; then
     check 1 "and must not have touched the app"
     echo "--- stop printed: ---"; sed 's/^/    /' "$work/out.txt"; echo "--- end ---"
 fi
@@ -288,14 +291,14 @@ check $? "the live-session refusal must name the explicit override"
 run_pilot "$work/sessions/live" cycle
 [ $? -ne 0 ]
 check $? "cycle must refuse while a game session is live"
-if grep -qE "launching|stopped" "$work/out.txt"; then
+if grep -qE "^== (stopping|launching|installing)" "$work/out.txt"; then
     check 1 "and must not have touched the app"
     echo "--- cycle printed: ---"; sed 's/^/    /' "$work/out.txt"; echo "--- end ---"
 fi
 run_pilot "$work/sessions/live" selftest voice
 [ $? -ne 0 ]
 check $? "selftest must refuse while a game session is live"
-if grep -qE "launching|stopped" "$work/out.txt"; then
+if grep -qE "^== (stopping|launching|installing)" "$work/out.txt"; then
     check 1 "and must not have touched the app"
     echo "--- selftest printed: ---"; sed 's/^/    /' "$work/out.txt"; echo "--- end ---"
 fi
@@ -337,7 +340,7 @@ export WOLKAREFOREVER_FAKE_GUESTLOG=""
 check $? "install must refuse when the guest log cannot be read"
 grep -q "could not be read" "$work/out.txt"
 check $? "and must say that is why"
-if grep -qE "launching|stopped" "$work/out.txt"; then
+if grep -qE "^== (stopping|launching|installing)" "$work/out.txt"; then
     check 1 "and must not have touched the app"
     echo "--- blind guest install printed: ---"; sed 's/^/    /' "$work/out.txt"; echo "--- end ---"
 fi

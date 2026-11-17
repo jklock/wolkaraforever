@@ -13,10 +13,9 @@
 # screen in seconds. `simctl bootstatus -b` then hangs too, so the fault reads
 # as "a slow boot" rather than as the layout. Proven on 2026-11-06 by booting a
 # throwaway device in a device set on the boot disk and comparing the two.
-# See development/guides/BUILDING.md.
+# See docs/BUILDING.md.
 #
-# The test matrix is three devices and no others (see
-# development/architecture/DEVICE_CONTRACT.md). The two simulators are the
+# The test matrix is three devices and no others. The two simulators are the
 # requirement; the physical iPad is nice to have and no simulator is involved:
 #
 #   1. iPhone Duo                    - simulator, required, ensured here

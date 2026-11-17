@@ -75,7 +75,7 @@ else
                   # line: a file that reaches the build no other way must be named there.
                   grep -q "$f" "$map" || echo "$f"
               done < <(git ls-files 'wolkaraforever/*' | grep -v -e '^wolkaraforever/patches/' -e '^wolkaraforever/tools/' \
-                                              -e '^wolkaraforever/README.md' -e '^wolkaraforever/overlay.map') | head -5)
+                                              -e '^wolkaraforever/overlay.map') | head -5)
     if [ -n "$orphans" ]; then
         bad "layer files that the overlay does not carry (regenerate wolkaraforever/tools/overlay_map.sh):"
         printf '     %s\n' $orphans
@@ -153,7 +153,7 @@ reach=$(grep -REl '#(import|include) +[<"](CASC|Client|Updater|Addon|Manifest|In
 # 7. The root does not duplicate the platform any more. Documents, profiles and the
 #    layer itself are ours; anything else outside platform/ must have nothing to do
 #    with the platform's paths.
-dupes=$(git ls-files | grep -v -e '^platform/' -e '^wolkaraforever/' -e '^development/' -e '^docs/' -e '^profiles/' -e '^\.github/' \
+dupes=$(git ls-files | grep -v -e '^platform/' -e '^wolkaraforever/' -e '^docs/' -e '^profiles/' -e '^\.github/' \
                           | grep '/' | while read -r f; do
             [ -e "platform/$f" ] && echo "$f"
         done | head -5)
@@ -244,7 +244,7 @@ fi
 #    every key the source asks for must exist in both. This is the check no compiler makes: a
 #    label whose German string was never written still builds, still runs, and shows English.
 #    The script is also runnable on its own by anyone changing a string; see
-#    development/guides/LOCALIZATION.md.
+#    docs/agent/LOCALIZATION_AND_ACCESSIBILITY.md.
 if [ -f wolkaraforever/tools/check_localization.py ]; then
     strings=$(mktemp)
     if python3 wolkaraforever/tools/check_localization.py > "$strings" 2>&1; then

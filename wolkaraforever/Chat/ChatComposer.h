@@ -19,7 +19,7 @@
 // Placement: this file is compiled into translation/AppKit, the signed compatibility library
 // the app loads by name (see wolkaraforever/overlay.map). It has to be there - the draft
 // editor, the card and the guest's key path are all in that binary, and a Composer in the app
-// would have to drive a panel it cannot link. See development/technical/CHAT_COMPOSER.md.
+// would have to drive a panel it cannot link.
 
 #import <Foundation/Foundation.h>
 

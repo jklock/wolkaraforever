@@ -9,6 +9,7 @@ wolkaraforever/tools/prepare.sh
 cd build/platform
 # The matrix iPad, or the matrix iPhone with `SIMULATOR=iphone`; anything else is refused.
 simulator_use "${SIMULATOR:-ipad}"
+simulator_ui_lock test_touch_controls_ui
 xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/touch-controls-fixture/TouchControls.app
 mkdir -p "$APP"

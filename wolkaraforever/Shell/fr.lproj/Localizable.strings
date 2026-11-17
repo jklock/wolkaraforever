@@ -269,7 +269,7 @@
 "about.document.platformNotices" = "Tolkara : mentions";
 
 /* ---- Coquille de l'app : lancement, session et page de fermeture ---- */
-"shell.localSigning.needs" = "La signature locale a besoin du conteneur de pages de cette app dans %@ (visible dans Fichiers > Sur mon iPhone ou Sur mon iPad > %@ > LocalSigning). Construisez-le sur un Mac avec tools/build_signed_container.py (tools/install.sh le fait) puis copiez-le à cet endroit ; voir development/guides/BUILDING.md.";
+"shell.localSigning.needs" = "La signature locale a besoin du conteneur de pages de cette app dans %@ (visible dans Fichiers > Sur mon iPhone ou Sur mon iPad > %@ > LocalSigning). Le script d'installation de WolkaraForever le construit et le copie quand vous compilez avec la signature locale ; voir docs/BUILDING.md.";
 "shell.leaving" = "Sortie du jeu";
 "shell.closing.instructions" = "WolkaraForever se ferme à la fin du compte à rebours ; en le rouvrant, vous retrouvez cette page avec Jouer prêt.";
 "shell.reopen.title" = "Rouvrez l’app";

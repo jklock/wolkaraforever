@@ -4,10 +4,9 @@
 
 // The table. One place, plain data, and no device is in it because it ought to exist: a record
 // carries the `hw.machine` values Apple actually ships, and anything not in here resolves to
-// the fallback instead of being guessed at. See the plan in
-// development/uichanges/LAUNCHER_REORGANIZATION_PLAN.md for the coverage the matrix is meant to
-// reach; the rows for hardware nobody has confirmed are deliberately absent rather than
-// invented, and the fallback is what an unconfirmed device gets.
+// the fallback instead of being guessed at. The rows for hardware nobody has confirmed are
+// deliberately absent rather than invented, and the fallback is what an unconfirmed device
+// gets.
 
 @interface TKDeviceProfile ()
 @property (nonatomic, copy, readwrite) NSString *identifier;
@@ -79,7 +78,7 @@
                    notes:@"Model confirmed on device and in Xcode. Uses the current window, including fold and orientation changes. Performance is not benchmarked."
                   models:@[@"iPhone19,4"]],
             // Measured on this project: the 12.9-inch M1 is "Dadpad", the device every
-            // performance figure in development/technical/PERFORMANCE_THERMAL.md was taken on.
+            // performance figure in this project was taken on.
             // Native-size rendering is what those sessions measured missing the frame budget,
             // so Quality is offered here - a person may prefer it - and is not the default.
             //

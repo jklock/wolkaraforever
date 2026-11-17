@@ -1,8 +1,8 @@
 # Install WolkaraForever
 
-> Verified: 2026-11-13 · Source: `3c33543`
+> Verified: 2026-11-16 · Source: `9680e63`
 
-Install WolkaraForever from source on an iPad or iPhone. This guide uses the supported Developer-service route.
+Install WolkaraForever from source on an iPad or iPhone. This guide uses the supported Developer-service route; [Build and run WolkaraForever](BUILDING.md) covers the other execution modes and the build itself.
 
 ## Requirements
 
@@ -42,6 +42,8 @@ wolkaraforever/tools/install.sh
 The installer builds, signs, installs, and launches the app through project safety checks. It refuses to replace a running game unless you request that action. Do not use raw device-file commands to install or copy game data.
 
 On first launch, choose Forever, a region, and a game language. Download the required data and select **Play** only after the launcher reports that it is ready.
+
+The first time you start a game, the launcher asks how to start it. Choose **Developer service**, the route this guide sets up; the choice cannot be skipped, and you can change it later with the **Execution Mode** button on the library screen. The other two modes need their own setup first — see [Build and run WolkaraForever](BUILDING.md).
 
 ## Update or recover
 

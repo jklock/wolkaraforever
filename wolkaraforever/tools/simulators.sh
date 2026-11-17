@@ -91,3 +91,34 @@ simulator_use() {
     SIM_NAME=$(simulator_name "$SIM_ID")
     printf '%s: %s (%s)\n' "$(basename "${BASH_SOURCE[1]:-script}" .sh)" "$SIM_NAME" "$SIM_ID" >&2
 }
+
+# One UI suite per simulator, enforced. Two suites on the same device install over each other's
+# app, take the foreground from each other and interleave their sheets; whatever runs second then
+# reports failures it does not have. Measured twice: on 2026-11-13 a touch-controls suite launched
+# on the iPad while the launcher suite was mid-run and its fixture was pulled out from under it,
+# and on 2026-11-16 a touch suite's window was in front when the launcher suite drew one baseline,
+# which moved 908 pixels of it. Refusing to start is honest; a bogus red lane is not.
+#
+# simulator_ui_lock <owner>   takes it or exits 3. Released on exit; a lock whose owner is gone is
+# taken over, so a killed run cannot wedge the device for every run after it.
+simulator_ui_lock() {
+    local owner=${1:-$(basename "${BASH_SOURCE[1]:-suite}" .sh)}
+    # A global, because the trap that releases it runs after this function has returned: a local
+    # name is out of scope by then and the release failed with "unbound variable".
+    SIM_UI_LOCK="${TMPDIR:-/tmp}/wolkaraforever-ui-${SIM_ID}.lock"
+    if ! mkdir "$SIM_UI_LOCK" 2>/dev/null; then
+        local holder
+        holder=$(cat "$SIM_UI_LOCK/pid" 2>/dev/null || true)
+        if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+            echo "$owner: taking over a stale UI lock (pid $holder is gone)" >&2
+            rm -rf "$SIM_UI_LOCK"
+            mkdir "$SIM_UI_LOCK" 2>/dev/null || { echo "$owner: cannot take $SIM_UI_LOCK" >&2; exit 3; }
+        else
+            echo "$owner: another UI suite is using $SIM_NAME ($SIM_UI_LOCK${holder:+, pid $holder})" >&2
+            echo "$owner: remove the lock only if no suite is running" >&2
+            exit 3
+        fi
+    fi
+    printf '%s\n' "$$" > "$SIM_UI_LOCK/pid"
+    trap 'rm -rf "$SIM_UI_LOCK"' EXIT INT TERM
+}

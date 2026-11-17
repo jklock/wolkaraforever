@@ -5,8 +5,8 @@
 # needs - 1024 square, opaque, non-empty, and a catalog that names exactly the files that are
 # present - so a bad regeneration cannot ship quietly.
 #
-# It does not look at the picture. Whether the artwork is the right artwork is a judgement and
-# is recorded in development/ICON.md; this is the part a script can hold.
+# It does not look at the picture. Whether the artwork is the right artwork is a judgement;
+# this is the part a script can hold.
 set -euo pipefail
 cd "$(dirname "$0")/../.." || exit 2
 
