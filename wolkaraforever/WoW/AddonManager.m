@@ -832,6 +832,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 // -reloadAddons, which reloads the filesystem and nothing else: in Browse it left the results,
 // the categories and the count showing whatever the provider had said at the last keystroke.
 @property(nonatomic) UIBarButtonItem *refreshItem;
+@property(nonatomic) UIBarButtonItem *keyItem;
 // Bumped by every browse request. A reply that arrives with a generation behind the current one
 // is dropped, so a slow page cannot overwrite a newer search.
 @property(nonatomic) NSUInteger browseGeneration;
@@ -937,6 +938,10 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     self.navigationItem.leftBarButtonItem.tintColor=WKGold();
     _refreshItem=[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh target:self action:@selector(refreshMetadata)];
     _refreshItem.accessibilityIdentifier=@"wow.addons.refresh";
+    _keyItem=[[UIBarButtonItem alloc] initWithTitle:@"⚙️" style:UIBarButtonItemStylePlain target:nil action:nil];
+    _keyItem.menu=[self keyMenu];
+    _keyItem.accessibilityIdentifier=@"wow.addons.key";
+    _keyItem.accessibilityLabel=WKLocalized(@"addons.key.menu");
     self.navigationItem.rightBarButtonItems=@[
         [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(importAddon)],
         _refreshItem
@@ -1117,6 +1122,8 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _installedSortButton.hidden=!myAddOns; _installedFilterButton.hidden=!myAddOns; _createGroupButton.hidden=!myAddOns;
     _selectionLabel.hidden=!myAddOns; _selectAllButton.hidden=!myAddOns; _clearSelectionButton.hidden=!myAddOns;
     _updateSelectedButton.hidden=!myAddOns; _updateAllButton.hidden=!myAddOns;
+    UIBarButtonItem *import=self.navigationItem.rightBarButtonItems.firstObject;
+    self.navigationItem.rightBarButtonItems=[self hasKey] ? @[import,_refreshItem,_keyItem] : @[import,_refreshItem];
     self.navigationItem.rightBarButtonItems[0].enabled=!self.bulkUpdating;
     _refreshItem.enabled=!_refreshing && !self.bulkUpdating && !_discoverLoading;
     if (_tab==TKAddonHubTabDiscover) { _selectionLabel.hidden=YES; return; }
@@ -1176,6 +1183,18 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _columnsButton.menu=[self columnsMenu];
     BOOL ready=[self hasKey] && !_refreshing;
     _sortButton.enabled=ready; _filterButton.enabled=ready; _columnsButton.enabled=ready;
+}
+
+- (UIMenu *)keyMenu {
+    __weak TKWoWAddonManagerViewController *weakSelf=self;
+    UIAction *change=[UIAction actionWithTitle:WKLocalized(@"addons.key.change") image:nil identifier:nil handler:^(UIAction *action) {
+        (void)action; [weakSelf setupKey];
+    }];
+    UIAction *remove=[UIAction actionWithTitle:WKLocalized(@"addons.key.remove") image:nil identifier:nil handler:^(UIAction *action) {
+        (void)action; [weakSelf confirmRemoveKey];
+    }];
+    remove.attributes=UIMenuElementAttributesDestructive;
+    return [UIMenu menuWithTitle:WKLocalized(@"addons.key.menu") children:@[change,remove]];
 }
 
 // The refresh control's own action, which is deliberately not -reloadAddons.
@@ -2476,7 +2495,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             // Without a key there is one row to read and one thing to do; the sort and filter
             // controls would be two more copies of the same sentence, so they wait for a key.
             return @[
-                @{ @"kind": @"browseControls", @"rows": [self hasKey] ? @[ @0, @1, @2, @3 ] : @[ @0 ] },
+                @{ @"kind": @"browseControls", @"rows": [self hasKey] ? @[ @0, @1 ] : @[ @0 ] },
                 @{ @"kind": @"browseResults", @"rows": _results },
             ];
         case TKAddonHubTabMyAddOns:
@@ -2548,9 +2567,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
         }
         else if (indexPath.row==0) { cell.textLabel.text=WKLocalizedFormat(@"addons.sort.current",BrowseSortLabel(_sortField)); cell.detailTextLabel.text=WKLocalizedFormat(@"addons.sort.tapToChange",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")); }
-        else if (indexPath.row==1) { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
-        else if (indexPath.row==2) { cell.textLabel.text=WKLocalized(@"addons.key.change"); cell.detailTextLabel.text=WKLocalized(@"addons.key.change.detail"); cell.accessibilityIdentifier=@"wow.addons.changeKey"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; }
-        else { cell.textLabel.text=WKLocalized(@"addons.key.remove"); cell.detailTextLabel.text=WKLocalized(@"addons.key.remove.detail"); cell.accessibilityIdentifier=@"wow.addons.removeKey"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; }
+        else { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
     } else if ([kind isEqual:@"browseResults"] || [kind isEqual:@"discover"]) {
         NSArray<NSDictionary *> *projects=[kind isEqual:@"discover"] ? entry[@"rows"] : _results;
         if ([kind isEqual:@"browseResults"] && indexPath.row==(NSInteger)_results.count) {
@@ -2695,8 +2712,6 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         if ([kind isEqual:@"browseControls"] && self.tab==TKAddonHubTabBrowse) {
             if (indexPath.row==0) [self presentSortMenuFrom:indexPath];
             else if (indexPath.row==1) [self chooseCategoryFrom:indexPath];
-            else if (indexPath.row==2) [self setupKey];
-            else if (indexPath.row==3) [self confirmRemoveKey];
         }
         return;
     }
@@ -2767,7 +2782,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
 }
 - (void)showProviderError:(NSError *)error { dispatch_async(dispatch_get_main_queue(),^{UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.error.providerTitle") message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:a];}); }
 - (void)mutate:(BOOL (^)(NSError **))operation { NSError *error=nil; if(!operation(&error)){UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.error.changeTitle") message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:a];} [self reloadAddons]; [self checkForUpdates]; }
-- (void)setupKey { UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.title") message:WKLocalized(@"addons.key.message") preferredStyle:UIAlertControllerStyleAlert];[a addTextFieldWithConfigurationHandler:^(UITextField *f){f.secureTextEntry=YES;f.autocorrectionType=UITextAutocorrectionTypeNo;f.autocapitalizationType=UITextAutocapitalizationTypeNone;f.placeholder=WKLocalized(@"addons.key.placeholder");}];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.key.save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){(void)x;NSError *e=nil;if(![self.credentials storeCurseForgeKey:a.textFields.firstObject.text error:&e]){UIAlertController *failure=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.errorTitle") message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[failure addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:failure];}else { [self.tableView reloadData]; if (self.tab==TKAddonHubTabBrowse) [self beginBrowse]; else [self checkForUpdates]; }}]];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];[self presentAlert:a]; }
+- (void)setupKey { UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.title") message:WKLocalized(@"addons.key.message") preferredStyle:UIAlertControllerStyleAlert];[a addTextFieldWithConfigurationHandler:^(UITextField *f){f.secureTextEntry=YES;f.autocorrectionType=UITextAutocorrectionTypeNo;f.autocapitalizationType=UITextAutocapitalizationTypeNone;f.placeholder=WKLocalized(@"addons.key.placeholder");}];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.key.save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){(void)x;NSError *e=nil;if(![self.credentials storeCurseForgeKey:a.textFields.firstObject.text error:&e]){UIAlertController *failure=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.errorTitle") message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[failure addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:failure];}else { [self updateToolbar]; [self.tableView reloadData]; if (self.tab==TKAddonHubTabBrowse) [self beginBrowse]; else [self checkForUpdates]; }}]];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];[self presentAlert:a]; }
 - (void)confirmRemoveKey { UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.remove.title") message:WKLocalized(@"addons.key.remove.message") preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.key.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x){(void)x;NSError *e=nil;if(![self.credentials removeCurseForgeKey:&e]){UIAlertController *failure=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.remove.errorTitle") message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[failure addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:failure];return;}self.browseStatus=WKLocalized(@"addons.enterKey.long");self.results=@[];self.totalCount=0;self.categories=nil;[self updateToolbar];[self.tableView reloadData];}]];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];[self presentAlert:a]; }
 
 #pragma mark - My Add-ons controls

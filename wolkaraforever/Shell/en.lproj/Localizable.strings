@@ -558,6 +558,7 @@
 "addons.key.placeholder" = "API key";
 "addons.key.save" = "Save";
 "addons.key.errorTitle" = "Could not save key";
+"addons.key.menu" = "CurseForge key options";
 "addons.key.change" = "Change CurseForge key…";
 "addons.key.change.detail" = "Replace the saved Core API key.";
 "addons.key.remove" = "Remove key";
