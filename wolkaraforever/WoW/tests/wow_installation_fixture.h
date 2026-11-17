@@ -6,6 +6,7 @@
 @interface TKFixtureApp : NSObject
 @property(nonatomic) TKAppSource source;
 @property(nonatomic, copy) NSString *workingDirectory;
+@property(nonatomic, copy) NSString *profile;
 @end
 @implementation TKFixtureApp
 @end
@@ -32,6 +33,7 @@
     _bytes=[@"our own synthetic executable fixture" dataUsingEncoding:NSUTF8StringEncoding];
     assert([_bytes writeToFile:_executable atomically:YES]);
     TKFixtureApp *app=[TKFixtureApp new]; app.source=TKAppSourceDocuments; app.workingDirectory=@"_forever_";
+    app.profile=@"wow-forever";
     _apps=@[app]; [self writeMetadata:0 duplicate:NO]; return self;
 }
 - (NSArray *)discover { return @[]; }

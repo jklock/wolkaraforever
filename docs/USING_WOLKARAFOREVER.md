@@ -14,6 +14,29 @@ Use the launcher to prepare Forever, configure the interface, and recover safely
 
 Changing game language can require additional files. App language and game language are separate settings.
 
+## Optional Battle.net browser sign-in
+
+If in-game login disconnects after verification, open **Settings → Battle.net sign-in** and choose
+**Enable browser sign-in (experimental)**. This setting is off by default. Press
+**Play**: after checking the game files, the launcher opens Battle.net's official
+sign-in page and continues into WoW after successful sign-in. Cancel returns to the
+launcher without starting the game. Your password and authenticator stay in
+Battle.net's website; the launcher does not store your password.
+
+The website session is saved in a separate browser store inside this app. Battle.net
+may reuse it on later launches or ask you to authenticate again. **Sign out of
+Battle.net** removes that saved session and the temporary launch ticket. **Disable
+browser sign-in** restores direct in-game login and clears the launch ticket; use
+Sign out as well if you want to remove the saved website session.
+
+Launch tickets are cleared on app restart and rejected after ten minutes. Never
+share tickets or callback URLs in issue reports. Passkeys are not supported in this
+embedded window; use another sign-in method offered by Battle.net. This optional
+handoff is adapted from [Waypoint](https://github.com/wowlocal/waypoint-launcher)
+and leaves the game executable unchanged.
+
+![Battle.net sign-in settings](../wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-browser-login-disabled.png)
+
 ## Change app language or interface
 
 Open **Settings** to choose an app language. Open **Launcher Manager** to choose **iPadOS** or **iOS on Duo**. Interface selection changes the arrangement only; it does not change game data or add-ons.

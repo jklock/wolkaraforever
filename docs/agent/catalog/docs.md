@@ -1,13 +1,13 @@
 # Docs catalog
 
-> Verified: 2026-11-16 · Source: `539c6de` · Proof: SHA-256 of each tracked file
+> Verified: 2026-11-16 · Source: `db5470a` · Proof: SHA-256 of each tracked file
 
 | Path | Folder | Type | Purpose | Contents/function | Dependencies | Human-doc impact | Proof |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | docs/INSTALLATION.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:8a1783410041267ae084d5999fbf5d1d4c3dcf98c81e9690add763db0777a910`; `539c6de`; 2026-11-16 |
 | docs/IPHONE.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:2dfce5fc2be4bdf86a70392eb72e048c9cebce2affa19759a12d285beb7e02ae`; `539c6de`; 2026-11-16 |
 | docs/README.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:d62c540cd8b2f58694803a661c9d96e56c59240b2a9fb17a863528bc818d3802`; `539c6de`; 2026-11-16 |
-| docs/USING_WOLKARAFOREVER.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:9a11e2f1fb95ee3563704668dfdffb52c2a6dfe3396625a03106dcabc2c92de1`; `539c6de`; 2026-11-16 |
+| docs/USING_WOLKARAFOREVER.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:cc8941f6553a81217fb994f06787567747e13e44dbc78352cac684b78735c610`; `db5470a`; 2026-11-16 |
 | docs/agent/ARCHITECTURE.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:b6c0758e6be27ae1f812ede05b68a28432003b5e4a0ca0d5ec7bec3cdd3669d1`; `539c6de`; 2026-11-16 |
 | docs/agent/FILE_CATALOG.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:3a9a9746feb05c826e9da8726e0b22e4488949ce1dff265b22c299a96e67340e`; `539c6de`; 2026-11-16 |
 | docs/agent/HUMAN_DOCUMENTATION_MAP.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:c30625b977eab41c4c4d88ae514fcebde1dcb552cbecdc585774f62c8272f71d`; `539c6de`; 2026-11-16 |
@@ -17,7 +17,7 @@
 | docs/agent/README.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:94b400c1b8c20a775bcde240405654dd99b9e4c1427abc636bf5f977311c71e5`; `539c6de`; 2026-11-16 |
 | docs/agent/REPOSITORY_MAP.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:82c202681074911f82e3e0bc042a7c8a3ee9525f9870f8f712be45ffc6524160`; `539c6de`; 2026-11-16 |
 | docs/agent/ROADMAP.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:375608f2422837fa9f34a44aeaa6ebc61761a786694f6e3a54384b58b10fe46d`; `539c6de`; 2026-11-16 |
-| docs/agent/SECURITY_AND_POLICY.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:1e35d8b1a7abd2f6c129e8c3fe39b00e9e04c6546f7e10606c115b11b987e3fd`; `539c6de`; 2026-11-16 |
+| docs/agent/SECURITY_AND_POLICY.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:f2b5dd06ec0dd41d0efd9599410723928f449fb2df6990518bf0c626e8392a05`; `db5470a`; 2026-11-16 |
 | docs/agent/STATUS.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:8d14e4a2a97bc33a644e6ad1af363f344a7bdf1afbff4cbb3ed2495384ab71c4`; `539c6de`; 2026-11-16 |
 | docs/agent/TESTING.md | docs/agent | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent | None | `sha256:52acdf5ea55d16a9437628029496c090db703fda38f4dc27819e09d25011218a`; `539c6de`; 2026-11-16 |
 | docs/agent/roadmap/README.md | docs/agent/roadmap | documentation | Repository-level file | Documentation supporting repository operation or policy | docs/agent/roadmap | None | `sha256:e0f59c3331e165e8f5aaa1265f19732371a8ecf66b949dc4a6756a01735f4b16`; `539c6de`; 2026-11-16 |

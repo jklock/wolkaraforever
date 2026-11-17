@@ -811,3 +811,13 @@
 "chat.composer.settings.done" = "Done";
 "chat.composer.destination.title" = "Name";
 "chat.composer.destination.command" = "Command, for example /say";
+
+/* Optional Battle.net browser sign-in. */
+"login.enable" = "Enable browser sign-in (experimental)";
+"login.disable" = "Disable browser sign-in";
+"login.signOut" = "Sign out of Battle.net";
+"login.signedOut" = "Signed out";
+"login.signedOutMessage" = "The saved Battle.net session was removed from this app. Browser sign-in will ask you to sign in again.";
+"login.title" = "Battle.net sign-in";
+"login.failed" = "Sign-in did not finish. Cancel and try again.";
+"login.explanation" = "In-game sign-in is the default. Enable browser sign-in if it does not work for your account. Play will open Battle.net’s website and remember its session on this device. Your authenticator stays enabled. Passkeys are not supported in this window.";

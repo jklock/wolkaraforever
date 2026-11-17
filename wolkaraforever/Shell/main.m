@@ -25,6 +25,7 @@
 #import "../Voice/KeyboardDictationEvents.h"
 #import "../WoW/CASC.h"
 #import "../WoW/WoWViewController.h"
+#import "../WoW/BattleNetSession.h"
 #import "LaunchProgressView.h"
 #import "NativeGuest.h"
 #import "SignedFileProbe.h"
@@ -1530,6 +1531,7 @@ static NSString *AKAudioStateDescription(void) {
         fprintf(log,"[host] environment %s=%s\n",name.UTF8String,TKHomeDisplayPath(value,NSHomeDirectory()).UTF8String);
     }
     NSMutableArray<NSString *> *launchArguments=[app.arguments mutableCopy];
+    [launchArguments addObjectsFromArray:[TKBattleNetSession argumentsForProfile:app.profile]];
     for (NSString *argument in arguments) if ([argument hasPrefix:@"--guest-arguments="]) {
         // Development launches may replace the profile's arguments (tab-separated).
         [launchArguments setArray:[[argument substringFromIndex:18] componentsSeparatedByString:@"\t"]];
@@ -1932,5 +1934,8 @@ int main(int argc, char *argv[]) {
     // free of the log and the Mac-side suites can link it. Installed here, before any screen or
     // setting asks for a string.
     WKLocalizationSetLogger(WKLanguageLogSink);
-    @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(AKHostAppDelegate.class)); }
+    @autoreleasepool {
+        [TKBattleNetSession beginProcess];
+        return UIApplicationMain(argc, argv, nil, NSStringFromClass(AKHostAppDelegate.class));
+    }
 }

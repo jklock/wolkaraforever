@@ -811,3 +811,13 @@
 "chat.composer.settings.done" = "Terminé";
 "chat.composer.destination.title" = "Nom";
 "chat.composer.destination.command" = "Commande, par exemple /say";
+
+/* Optional Battle.net browser sign-in. */
+"login.enable" = "Activer la connexion par navigateur (expérimental)";
+"login.disable" = "Désactiver la connexion par navigateur";
+"login.signOut" = "Se déconnecter de Battle.net";
+"login.signedOut" = "Déconnexion effectuée";
+"login.signedOutMessage" = "La session Battle.net enregistrée a été supprimée de cette application. La prochaine connexion par navigateur vous demandera de vous reconnecter.";
+"login.title" = "Connexion Battle.net";
+"login.failed" = "La connexion a échoué. Annulez et réessayez.";
+"login.explanation" = "La connexion se fait par défaut dans le jeu. Activez la connexion par navigateur si elle ne fonctionne pas pour votre compte. Jouer ouvrira le site Battle.net et conservera sa session sur cet appareil. Votre Authenticator reste activé. Les clés d’accès ne sont pas prises en charge dans cette fenêtre.";

@@ -7,3 +7,8 @@ WolkaraForever continues Wolkara by fJavierLasso and uses the Tolkara runtime by
 The project uses Apple public SDK frameworks, system zlib, and Python standard-library components. It does not include game files, Apple operating-system components, certificates, signing material, or extracted system assets.
 
 The Forever manifest and archive readers were informed by public format references, including TACTSharp. See the source headers and license files for exact attribution obligations.
+
+The experimental browser sign-in callback validation and macOS launch-ticket encoding
+are adapted from [Waypoint](https://github.com/wowlocal/waypoint-launcher), distributed
+under the Zero-Clause BSD license (0BSD). Only the handoff implementation is used;
+the game executable is unchanged.

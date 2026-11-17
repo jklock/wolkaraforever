@@ -1,5 +1,7 @@
 #import "WoWViewController.h"
 #import "Client.h"
+#import "BattleNetBrowser.h"
+#import "BattleNetSession.h"
 #import "AddonManager.h"
 #import "../Voice/VoiceViewController.h"
 #import "../Voice/VoiceTestViewController.h"
@@ -241,6 +243,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSDate *_checkedAt;
     NSUInteger _generation;
     BOOL _busy, _updating, _updateError, _starting, _running;
+    BOOL _browserSignInPresented;
     // A Forever UI file operation is running (backup, reset, restore, gamepad).
     // The rows are disabled while it runs and every handler rechecks it.
     BOOL _uiOperation;
@@ -803,13 +806,24 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             // Returning from the background or changing edition invalidates this request.
             if (launch && self->_launchWhenReady && [self inFront] &&
                 !error && !client.cancelled && installation.state==TKWoWInstallationReady && installation.app && !self->_sessionUsed &&
-                self.view.window && self.navigationController.topViewController==self && self.startApp) self.startApp(installation.app);
+                self.view.window && self.navigationController.topViewController==self && self.startApp) [self launchReadyApp:installation.app];
         });
     });
 }
+- (void)launchReadyApp:(TKApp *)app {
+    if (_busy || _starting || _running || _sessionUsed || _browserSignInPresented || ![self inFront]) return;
+    // Obtain a fresh ticket after update verification, so a large update cannot
+    // consume the ticket's short lifetime before the game is ready to start.
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"] &&
+        [app.profile isEqual:@"wow-forever"] && ![TKBattleNetSession isReady]) {
+        [self browserSignIn];
+        return;
+    }
+    if (self.startApp) self.startApp(app);
+}
 - (void)primaryAction {
     // Starting and running own the button; nothing else may close or start.
-    if (_starting || _running) return;
+    if (_starting || _running || _browserSignInPresented) return;
     // After a session the only useful action is to leave: this process cannot
     // start a second guest, and the user must be able to close it from here.
     if (_sessionUsed) { [self closeApp]; return; }
@@ -1255,6 +1269,58 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.preferences.language") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:NO]; }]];
     [self presentSheet:sheet anchor:_preferencesButton];
 }
+- (void)browserSignInSettings {
+    if (_busy || _starting || _running || _sessionUsed || _browserSignInPresented) return;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"login.title")
+        message:WKLocalized(@"login.explanation") preferredStyle:UIAlertControllerStyleActionSheet];
+    if (!_busy && !_starting && !_sessionUsed && _installation.state==TKWoWInstallationReady &&
+        [_installation.app.profile isEqual:@"wow-forever"]) {
+        BOOL enabled=[NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"];
+        NSString *title=enabled?WKLocalized(@"login.disable"):WKLocalized(@"login.enable");
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [NSUserDefaults.standardUserDefaults setBool:!enabled forKey:@"WoWBrowserLogin"];
+            [TKBattleNetSession clear];
+        }]];
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.signOut") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            self->_browserSignInPresented=YES;
+            [TKBattleNetBrowser clearSavedSignInWithCompletion:^{
+                self->_browserSignInPresented=NO;
+                [self presentMessage:WKLocalized(@"login.signedOut") message:WKLocalized(@"login.signedOutMessage")];
+            }];
+        }]];
+    }
+    [self presentSheet:sheet anchor:nil];
+}
+- (void)browserSignIn {
+    if (_busy || _starting || _running || _sessionUsed || _browserSignInPresented || _installation.state!=TKWoWInstallationReady ||
+        ![_installation.app.profile isEqual:@"wow-forever"]) return;
+    _browserSignInPresented=YES;
+    [TKBattleNetSession clear];
+    NSString *region=_region;
+    NSString *directory=[_library workingDirectoryForApp:_installation.app error:nil];
+    NSString *config=[directory stringByAppendingPathComponent:@"WTF/Config.wtf"];
+    NSString *text=[NSString stringWithContentsOfFile:config encoding:NSUTF8StringEncoding error:nil];
+    for (NSString *line in [text componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
+        if (![line hasPrefix:@"SET portal "]) continue;
+        NSArray *parts=[line componentsSeparatedByString:@"\""];
+        if (parts.count>=2 && [@[@"us",@"eu",@"kr",@"tw"] containsObject:[parts[1] lowercaseString]])
+            region=[parts[1] lowercaseString];
+    }
+    NSUInteger generation=_generation;
+    TKBattleNetBrowser *browser=[[TKBattleNetBrowser alloc] initWithRegion:region locale:_locale];
+    __weak typeof(self) weakSelf=self;
+    browser.completion=^(BOOL received) {
+        typeof(self) strongSelf=weakSelf;
+        if (!strongSelf) return;
+        strongSelf->_browserSignInPresented=NO;
+        if (received && generation==strongSelf->_generation && [strongSelf inFront] &&
+            strongSelf.view.window && strongSelf.navigationController.topViewController==strongSelf)
+            [strongSelf primaryAction];
+    };
+    UINavigationController *navigation=[[UINavigationController alloc] initWithRootViewController:browser];
+    navigation.modalInPresentation=YES;
+    WKPresentWhenFree(self, ^{ [self presentViewController:navigation animated:YES completion:nil]; });
+}
 - (UIAlertController *)settingsSheet {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.title")
         message:WKLocalized(@"home.settings.message") preferredStyle:UIAlertControllerStyleActionSheet];
@@ -1262,6 +1328,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.repair") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             (void)a; [self repairInstallation];
         }]];
+    }
+    if (!_busy && !_starting && !_sessionUsed && _installation.state==TKWoWInstallationReady &&
+        [_installation.app.profile isEqual:@"wow-forever"]) {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.title") style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) { [self browserSignInSettings]; }]];
     }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.diagnostics") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a; [self diagnostics];

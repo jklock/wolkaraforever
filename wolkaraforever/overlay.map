@@ -62,6 +62,10 @@ wolkaraforever/WoW/AddonStore.h launcher/WoW/AddonStore.h add
 wolkaraforever/WoW/AddonStore.m launcher/WoW/AddonStore.m add
 wolkaraforever/WoW/AddonUpdateResolver.h launcher/WoW/AddonUpdateResolver.h add
 wolkaraforever/WoW/AddonUpdateResolver.m launcher/WoW/AddonUpdateResolver.m add
+wolkaraforever/WoW/BattleNetBrowser.h launcher/WoW/BattleNetBrowser.h add
+wolkaraforever/WoW/BattleNetBrowser.m launcher/WoW/BattleNetBrowser.m add
+wolkaraforever/WoW/BattleNetSession.h launcher/WoW/BattleNetSession.h add
+wolkaraforever/WoW/BattleNetSession.m launcher/WoW/BattleNetSession.m add
 wolkaraforever/WoW/CASC.h launcher/WoW/CASC.h add
 wolkaraforever/WoW/CASC.m launcher/WoW/CASC.m add
 wolkaraforever/WoW/Client.h launcher/WoW/Client.h add
@@ -92,6 +96,7 @@ wolkaraforever/WoW/tests/test_addon_archive.swift tests/test_addon_archive.swift
 wolkaraforever/WoW/tests/test_addon_import.m tests/test_addon_import.m add
 wolkaraforever/WoW/tests/test_addon_package.swift tests/test_addon_package.swift add
 wolkaraforever/WoW/tests/test_addon_resolver.m tests/test_addon_resolver.m add
+wolkaraforever/WoW/tests/test_battlenet_session.m tests/test_battlenet_session.m add
 wolkaraforever/WoW/tests/test_curseforge.m tests/test_curseforge.m add
 wolkaraforever/WoW/tests/test_device_profile.m tests/test_device_profile.m add
 wolkaraforever/WoW/tests/test_forever_config.m tests/test_forever_config.m add
@@ -108,6 +113,8 @@ wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/voice-settings.png
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/voice-test.png tests/ui-baselines/launcher/ipad-pro-13-m5/voice-test.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-de.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-recommended-wolkararoue.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-addons-recommended-wolkararoue.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-browser-login-disabled.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-browser-login-disabled.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-browser-login-enabled.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-browser-login-enabled.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-downloading.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-downloading.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de-large-text.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de-large-text.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home-de.png add
@@ -125,6 +132,8 @@ wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/voice-settings.png tes
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/voice-test.png tests/ui-baselines/launcher/iphone-duo/voice-test.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-addons-de.png tests/ui-baselines/launcher/iphone-duo/wow-addons-de.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-addons-recommended-wolkararoue.png tests/ui-baselines/launcher/iphone-duo/wow-addons-recommended-wolkararoue.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-browser-login-disabled.png tests/ui-baselines/launcher/iphone-duo/wow-browser-login-disabled.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-browser-login-enabled.png tests/ui-baselines/launcher/iphone-duo/wow-browser-login-enabled.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-downloading.png tests/ui-baselines/launcher/iphone-duo/wow-downloading.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home-de-large-text.png tests/ui-baselines/launcher/iphone-duo/wow-home-de-large-text.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home-de.png tests/ui-baselines/launcher/iphone-duo/wow-home-de.png add
