@@ -1692,7 +1692,7 @@ static void TestPhoneDisplayDefaults(void) {
     // --- headings, in the order the page is read
     NSArray *headings = @[@[@"wow.heading.edition", @"GAME SETTINGS MANAGER"],
                           @[@"wow.heading.addons", @"ADD-ON MANAGER"],
-                          @[@"wow.heading.voice", @"DICTATION (V2T) MANAGER"],
+                          @[@"wow.heading.voice", @"INPUT MANAGER"],
                           @[@"wow.heading.profile", @"PERFORMANCE MANAGER"],
                           @[@"wow.heading.performance", @"UI MANAGER"],
                           @[@"wow.heading.launcherManager", @"LAUNCHER MANAGER"]];
