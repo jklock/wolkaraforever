@@ -197,6 +197,13 @@
 "home.settings.diagnostics" = "Diagnostics et journaux";
 "home.settings.inputDiagnosticsOn" = "Activer les diagnostics d’entrée";
 "home.settings.inputDiagnosticsOff" = "Désactiver les diagnostics d’entrée";
+"home.settings.touchpadPointerOn" = "Utiliser le pavé tactile de la manette comme souris";
+"home.settings.touchpadPointerOff" = "Ne plus utiliser le pavé tactile de la manette comme souris";
+"home.settings.touchpadSpeed" = "Vitesse du pavé tactile de la manette : %@";
+"home.settings.touchpadSpeed.title" = "Vitesse du pavé tactile de la manette";
+"home.settings.touchpadSpeed.slow" = "Lente";
+"home.settings.touchpadSpeed.normal" = "Normale";
+"home.settings.touchpadSpeed.fast" = "Rapide";
 "home.settings.about" = "À propos et licences open source";
 "home.settings.technical" = "Détails techniques";
 "home.settings.details.title" = "Détails";

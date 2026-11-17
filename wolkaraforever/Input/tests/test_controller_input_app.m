@@ -13,6 +13,8 @@
 //   5. the claim - the record is read but never invented, this build refuses to claim because
 //      there is no seam, and every restore path gives a held button back with its own reason.
 //
+// And the controller touchpad as the pointer: off by default, coalesced, ordered, and released.
+//
 // Plus the log contract itself: the `controller-input` lines carry element ids, sequence numbers,
 // counts and milliseconds, and never a device identity.
 //
@@ -21,6 +23,7 @@
 #import <UIKit/UIKit.h>
 
 #import "../launcher/Input/ControllerCommandIngress.h"
+#import "../launcher/Input/ControllerTouchpad.h"
 #import "../launcher/Input/InputElement.h"
 #import "../launcher/Input/InputRouter.h"
 #import "../launcher/Input/Trigger.h"
@@ -97,6 +100,135 @@ static void Reset(void) {
     [AKControllerCommandIngress.shared resetCounters];
     [AKControllerCommandIngress resetTrace];
     InstallSink();
+}
+
+#pragma mark - The controller touchpad as the pointer
+
+// What the relay posted, in order, written as short words so a failure reads as a sequence.
+@interface TouchpadRecorder : NSObject
+@property (nonatomic, strong) NSMutableArray<NSString *> *events;
+@property (nonatomic, strong) NSDictionary *lastTouch;
+@end
+
+@implementation TouchpadRecorder
+- (instancetype)init {
+    if ((self = [super init])) {
+        _events = [NSMutableArray array];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(posted:)
+            name:AKControllerTouchpadPointerNotification object:nil];
+    }
+    return self;
+}
+- (void)posted:(NSNotification *)note {
+    NSDictionary *info = note.userInfo;
+    if (info[AKControllerTouchpadResetKey]) [self.events addObject:@"reset"];
+    else if (info[AKControllerTouchpadClickKey])
+        [self.events addObject:[info[AKControllerTouchpadClickKey] boolValue] ? @"click" : @"release"];
+    else {
+        self.lastTouch = info;
+        [self.events addObject:[NSString stringWithFormat:@"touch%@", info[AKControllerTouchpadFingersKey]]];
+    }
+}
+- (void)stop { [NSNotificationCenter.defaultCenter removeObserver:self]; }
+- (NSString *)description { return [self.events componentsJoinedByString:@","]; }
+@end
+
+static void TestTouchpadPointer(void) {
+    AKControllerTouchpadRelay *relay = AKControllerTouchpadRelay.shared;
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:AKControllerTouchpadPointerDefaultsKey];
+    [defaults removeObjectForKey:AKControllerTouchpadSpeedDefaultsKey];
+    AKControllerTouchpadRelay *fresh = [AKControllerTouchpadRelay new];
+    CHECK(!fresh.enabled, @"the touchpad pointer is off until the user turns it on");
+    CHECK(fresh.speed == AKControllerTouchpadSpeedNormal, @"at normal speed");
+
+    // The conversion: y up becomes y down, the short axis is halved, the speed scales both.
+    CGPoint right = AKControllerTouchpadPoint(1, 0, AKControllerTouchpadSpeedNormal);
+    CGPoint up = AKControllerTouchpadPoint(0, 1, AKControllerTouchpadSpeedNormal);
+    CHECK(right.x == 400 && right.y == 0, @"a touch at the right edge is 400 points right, got %@",
+          NSStringFromCGPoint(right));
+    CHECK(up.x == 0 && up.y == -200, @"a touch at the top edge is 200 points up (y down), got %@",
+          NSStringFromCGPoint(up));
+    CHECK(AKControllerTouchpadPoint(1, 0, AKControllerTouchpadSpeedSlow).x <
+              AKControllerTouchpadPoint(1, 0, AKControllerTouchpadSpeedFast).x,
+          @"slow moves less than fast");
+    CHECK(isnan(AKControllerTouchpadPoint(NAN, 0, AKControllerTouchpadSpeedNormal).x),
+          @"a non-finite report stays non-finite, for the state machine to refuse");
+
+    TouchpadRecorder *recorder = [TouchpadRecorder new];
+    relay.enabled = NO;
+    Pump(0.05);
+    [recorder.events removeAllObjects];
+    [relay touch:0 down:YES x:0 y:0];
+    [relay click:YES];
+    Pump(0.05);
+    CHECK(recorder.events.count == 0, @"with the switch off nothing is posted, got %@", recorder);
+
+    relay.enabled = YES;
+    CHECK([defaults boolForKey:AKControllerTouchpadPointerDefaultsKey], @"the switch is stored");
+    [relay resetCounters];
+    // A burst from GameController's thread: one delivery for the batch, carrying the latest state.
+    dispatch_sync(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
+        for (int step = 0; step <= 20; step++) [relay touch:0 down:YES x:step / 20.0 y:0];
+        [relay touch:1 down:YES x:1 y:0];
+    });
+    Pump(0.05);
+    CHECK([recorder.events isEqualToArray:@[@"touch2"]], @"twenty-two reports are one delivery of two fingers, got %@",
+          recorder);
+    CHECK(relay.coalescedCount == 21, @"twenty-one of them folded into it, got %lu",
+          (unsigned long)relay.coalescedCount);
+    CHECK([recorder.lastTouch[AKControllerTouchpadXKey] doubleValue] == 400,
+          @"at the two fingers' centre, got %@", recorder.lastTouch);
+    CHECK([recorder.lastTouch[AKControllerTouchpadTimeKey] doubleValue] > 0, @"with a time");
+
+    // A click is never ahead of the movement before it, and a lift reaches the pointer.
+    [recorder.events removeAllObjects];
+    [relay touch:1 down:NO x:1 y:0];
+    [relay click:YES];
+    [relay click:NO];
+    [relay touch:0 down:NO x:1 y:0];
+    Pump(0.05);
+    CHECK([recorder.events isEqualToArray:(@[@"touch1", @"click", @"release", @"touch0"])],
+          @"lift, click, release, lift arrive in that order, got %@", recorder);
+    // A two-finger click lifted quickly: the click must still see both fingers.
+    [recorder.events removeAllObjects];
+    [relay touch:0 down:YES x:0 y:0];
+    [relay touch:1 down:YES x:0 y:0];
+    [relay click:YES];
+    [relay touch:1 down:NO x:0 y:0];
+    [relay touch:0 down:NO x:0 y:0];
+    [relay click:NO];
+    Pump(0.05);
+    CHECK([recorder.events isEqualToArray:(@[@"touch2", @"click", @"touch0", @"release"])],
+          @"the click is delivered after two fingers and before their lift, got %@", recorder);
+
+    // Out-of-range touch points are ignored rather than written past the end.
+    [recorder.events removeAllObjects];
+    [relay touch:2 down:YES x:0 y:0];
+    Pump(0.05);
+    CHECK(recorder.events.count == 0, @"a third touch point is ignored, got %@", recorder);
+
+    // A controller that leaves, and a switch turned off, both release what is held.
+    [recorder.events removeAllObjects];
+    [relay touch:0 down:YES x:0 y:0];
+    [relay reset];
+    Pump(0.05);
+    CHECK([recorder.events isEqualToArray:@[@"reset"]], @"a reset replaces what was queued before it, got %@", recorder);
+    [recorder.events removeAllObjects];
+    relay.enabled = NO;
+    Pump(0.05);
+    CHECK([recorder.events isEqualToArray:@[@"reset"]], @"turning the switch off releases once, got %@", recorder);
+    CHECK(![defaults boolForKey:AKControllerTouchpadPointerDefaultsKey], @"and is stored off");
+
+    relay.speed = AKControllerTouchpadSpeedFast;
+    CHECK([defaults integerForKey:AKControllerTouchpadSpeedDefaultsKey] == AKControllerTouchpadSpeedFast,
+          @"the speed is stored");
+    relay.speed = (AKControllerTouchpadSpeed)7;
+    CHECK(relay.speed == AKControllerTouchpadSpeedNormal, @"an unknown speed is normal");
+
+    [recorder stop];
+    [defaults removeObjectForKey:AKControllerTouchpadPointerDefaultsKey];
+    [defaults removeObjectForKey:AKControllerTouchpadSpeedDefaultsKey];
 }
 
 #pragma mark - Ordering
@@ -491,6 +623,7 @@ static void TestTraceEvents(void) {
     TestCountersReset();
     TestLatencies();
     TestTraceEvents();
+    TestTouchpadPointer();
 
     if (failures == 0) {
         printf("CONTROLLER-INPUT PASS: %lu checks\n", (unsigned long)checks);
