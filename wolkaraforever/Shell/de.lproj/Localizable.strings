@@ -196,6 +196,13 @@
 "home.settings.diagnostics" = "Diagnose und Protokolle";
 "home.settings.inputDiagnosticsOn" = "Eingabediagnose einschalten";
 "home.settings.inputDiagnosticsOff" = "Eingabediagnose ausschalten";
+"home.settings.touchpadPointerOn" = "Controller-Touchpad als Maus verwenden";
+"home.settings.touchpadPointerOff" = "Controller-Touchpad nicht mehr als Maus verwenden";
+"home.settings.touchpadSpeed" = "Controller-Touchpad-Geschwindigkeit: %@";
+"home.settings.touchpadSpeed.title" = "Controller-Touchpad-Geschwindigkeit";
+"home.settings.touchpadSpeed.slow" = "Langsam";
+"home.settings.touchpadSpeed.normal" = "Normal";
+"home.settings.touchpadSpeed.fast" = "Schnell";
 "home.settings.about" = "Über diese App und Open-Source-Lizenzen";
 "home.settings.technical" = "Technische Angaben";
 "home.settings.details.title" = "Angaben";

@@ -198,6 +198,13 @@
 "home.settings.diagnostics" = "Diagnostics and logs";
 "home.settings.inputDiagnosticsOn" = "Turn on input diagnostics";
 "home.settings.inputDiagnosticsOff" = "Turn off input diagnostics";
+"home.settings.touchpadPointerOn" = "Use controller touchpad as mouse";
+"home.settings.touchpadPointerOff" = "Stop using controller touchpad as mouse";
+"home.settings.touchpadSpeed" = "Controller touchpad speed: %@";
+"home.settings.touchpadSpeed.title" = "Controller touchpad speed";
+"home.settings.touchpadSpeed.slow" = "Slow";
+"home.settings.touchpadSpeed.normal" = "Normal";
+"home.settings.touchpadSpeed.fast" = "Fast";
 "home.settings.about" = "About and open-source licenses";
 "home.settings.technical" = "Technical details";
 "home.settings.details.title" = "Details";

@@ -4,6 +4,7 @@
 #import "InterfaceMode.h"
 #import "TouchTrackpad.h"
 #import "TouchCamera.h"
+#import "ControllerPointer.h"
 #import "TouchControllerLog.h"
 #import "TouchGamepadLayout.h"
 #import "TouchGamepad.h"
@@ -617,6 +618,8 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     // way out of it, and a centroid jump treated as a new gesture rather than a drag.
     AKTouchCameraGesture _camera;
     CGSize _cameraSurface;
+    // A controller's touchpad as the pointer, when the user switched that on in the launcher.
+    AKControllerPointer _controllerPointer;
     AKTouchHaptics *_haptics;
     AKTouchGamepad *_gamepad;
     BOOL _tookOwnPlace;
@@ -741,6 +744,10 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(suspendInput:) name:UIApplicationWillResignActiveNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(backgroundInput:) name:UIApplicationDidEnterBackgroundNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowResigned:) name:UIWindowDidResignKeyNotification object:nil];
+        // The app's relay, by name (launcher/Input/ControllerTouchpad.h): that code is not linked
+        // from here. Posted on the main queue only, and only while the user's switch is on.
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controllerTouchpad:)
+            name:@"AKControllerTouchpadPointer" object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controlAppearanceChanged:)
             name:AKGamepadLayoutDidChangeNotification object:NSUserDefaults.standardUserDefaults];
         // The card follows the player's text size, including a change made while the game runs.
@@ -1971,6 +1978,23 @@ static const unsigned short AKKeyF12 = 111;
 - (void)cancelTouches {
     [self cancelCameraGesture:@"cancelled"];
 }
+// The controller's touchpad, relayed by the app. Motion and scrolling go through the same
+// delegate calls a finger on the screen uses; the click is the pointer's button.
+- (void)controllerTouchpad:(NSNotification *)notification {
+    NSDictionary *info = notification.userInfo;
+    void *context = (__bridge void *)self;
+    if ([info[@"reset"] boolValue]) { AKControllerPointerReset(&_controllerPointer, AKEmitTouch, context); return; }
+    NSNumber *click = info[@"click"];
+    if ([click isKindOfClass:NSNumber.class]) {
+        AKControllerPointerClick(&_controllerPointer, click.boolValue, AKEmitTouch, context);
+        return;
+    }
+    NSNumber *fingers = info[@"fingers"], *x = info[@"x"], *y = info[@"y"], *time = info[@"time"];
+    if (![fingers isKindOfClass:NSNumber.class] || ![x isKindOfClass:NSNumber.class] ||
+        ![y isKindOfClass:NSNumber.class] || ![time isKindOfClass:NSNumber.class]) return;
+    AKControllerPointerUpdate(&_controllerPointer, fingers.unsignedIntValue, x.doubleValue, y.doubleValue,
+                              time.doubleValue, AKEmitTouch, context);
+}
 // The line this app has always written when input is taken away. Kept in one place so the
 // background path and the resign path cannot drift apart again.
 - (void)logInputSuspended {
@@ -1983,6 +2007,8 @@ static const unsigned short AKKeyF12 = 111;
     // Losing focus takes the camera gesture away: the touch that was steering is no longer
     // ours, and leaving it half-open is how the camera used to answer nothing afterwards.
     [self cancelCameraGesture:@"resign"];
+    // The same for the controller's touchpad: a click held as focus goes is released, once.
+    AKControllerPointerReset(&_controllerPointer, AKEmitTouch, (__bridge void *)self);
     [self logInputSuspended];
 }
 - (void)systemKeyboardShown:(NSNotification *)notification {
@@ -2030,6 +2056,7 @@ static const unsigned short AKKeyF12 = 111;
     [_holdTimer invalidate];
     // Nothing to tell at teardown (the delegate may be gone), and nothing left behind either.
     AKTouchCameraReset(&_camera, @"teardown", NULL, NULL);
+    AKControllerPointerReset(&_controllerPointer, NULL, NULL);
     [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 @end

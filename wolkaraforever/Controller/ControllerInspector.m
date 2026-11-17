@@ -31,6 +31,7 @@ NSNotificationName const AKInputDiagnosticsDidChangeNotification = @"AKInputDiag
 
 #import "../Input/InputElement.h"
 #import "../Input/ControllerCommandIngress.h"
+#import "../Input/ControllerTouchpad.h"
 
 // How many events the on-screen panel keeps. The log itself is not limited.
 static NSUInteger const AKCIHistoryLimit = 12;
@@ -350,6 +351,8 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
         NSString *identity = pad ? AKControllerIdentity(pad) : nil;
         if (identity) [_releasedGestures removeObjectForKey:identity];
         else [_releasedGestures removeAllObjects];
+        // A touchpad finger or click held by the pad that left must not stay held in the game.
+        [AKControllerTouchpadRelay.shared reset];
     }
     [self attachEverything];
     [self logInventories];
@@ -564,8 +567,15 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
     for (NSString *name in profile.buttons) {
         GCControllerButtonInput *button = profile.buttons[name];
         NSString *element = AKInputElementForControllerButton(name);
+        // DualShock 4 and DualSense both name their touchpad's click this.
+        BOOL touchpadClick = [name isEqualToString:GCInputDualShockTouchpadButton];
         button.pressedChangedHandler = ^(GCControllerButtonInput *input, float value, BOOL pressed) {
             (void)input;
+            // With "Controller touchpad as mouse" on, the click is the pointer's button and
+            // nothing else: not a trigger, not something to learn. With it off, it is an
+            // ordinary button exactly as before.
+            AKControllerTouchpadRelay *relay = AKControllerTouchpadRelay.shared;
+            if (touchpadClick && relay.enabled) { [relay click:pressed]; return; }
             AKCIButton(weakSelf, device, deviceName, element, value, pressed);
         };
     }
@@ -589,23 +599,32 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
                        [NSString stringWithFormat:@"x=%.2f y=%.2f", x, y]);
         };
     }
+    // Which touch point each touchpad is, for the pointer: "Touchpad 1" before "Touchpad 2".
+    NSArray<NSString *> *touchpadNames = [profile.touchpads.allKeys sortedArrayUsingSelector:@selector(compare:)];
     for (NSString *name in profile.touchpads) {
         GCControllerTouchpad *touchpad = profile.touchpads[name];
         NSString *down = AKInputElementForTouchpad(name, @"down");
         NSString *up = AKInputElementForTouchpad(name, @"up");
         NSString *moved = AKInputElementForTouchpad(name, @"moved");
+        NSUInteger point = [touchpadNames indexOfObject:name];
+        // The pointer is fed before the interest gate: the gate decides what the diagnostics and
+        // the router see, and touchpad movement is never theirs outside diagnostic mode. The
+        // relay's own switch, read under its lock, is the only thing that decides this.
         touchpad.touchDown = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
             (void)input; (void)buttonValue;
+            [AKControllerTouchpadRelay.shared touch:point down:YES x:x y:y];
             AKCIReport(weakSelf, device, deviceName, @"touchpad", down, 1, YES,
                        [NSString stringWithFormat:@"x=%.2f y=%.2f button=%d", x, y, buttonPressed]);
         };
         touchpad.touchUp = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
             (void)input; (void)buttonValue;
+            [AKControllerTouchpadRelay.shared touch:point down:NO x:x y:y];
             AKCIReport(weakSelf, device, deviceName, @"touchpad", up, 0, NO,
                        [NSString stringWithFormat:@"x=%.2f y=%.2f button=%d", x, y, buttonPressed]);
         };
         touchpad.touchMoved = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
             (void)input; (void)buttonValue; (void)buttonPressed;
+            [AKControllerTouchpadRelay.shared touch:point down:YES x:x y:y];
             AKCIReport(weakSelf, device, deviceName, @"touchpad", moved, 0, NO,
                        [NSString stringWithFormat:@"x=%.2f y=%.2f", x, y]);
         };

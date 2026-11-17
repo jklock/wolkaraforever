@@ -14,6 +14,7 @@
 #import "../App/LaunchProgressView.h"
 #import "../Controller/ControllerInspector.h"
 #import "../Input/InputRouter.h"
+#import "../Input/ControllerTouchpad.h"
 // The interface-mode rule, from its one definition: the overlay puts this same source in this
 // target, so the launcher and the guest cannot disagree about what "auto" means.
 #import "InterfaceMode.h"
@@ -1278,6 +1279,26 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [AKInputRouter.shared refreshInterest];
         [AKControllerInspector.shared showPanel:!inputDiagnostics];
     }]];
+    // A DualSense or DualShock 4 touchpad as the game's pointer. Off unless the user turns it on:
+    // with it on, the touchpad's click is the mouse button and can no longer be learned as a
+    // trigger, which is a change nobody should get without asking for it.
+    AKControllerTouchpadRelay *touchpad=AKControllerTouchpadRelay.shared;
+    BOOL touchpadPointer=touchpad.enabled;
+    UIAlertAction *touchpadAction=[UIAlertAction actionWithTitle:(touchpadPointer?WKLocalized(@"home.settings.touchpadPointerOff"):WKLocalized(@"home.settings.touchpadPointerOn"))
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        (void)a;
+        touchpad.enabled=!touchpadPointer;
+    }];
+    touchpadAction.accessibilityIdentifier=@"wow.settings.touchpadPointer";
+    [sheet addAction:touchpadAction];
+    if (touchpadPointer) {
+        UIAlertAction *speedAction=[UIAlertAction actionWithTitle:WKLocalizedFormat(@"home.settings.touchpadSpeed",[self touchpadSpeedName:touchpad.speed])
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            (void)a; [self chooseTouchpadSpeed];
+        }];
+        speedAction.accessibilityIdentifier=@"wow.settings.touchpadSpeed";
+        [sheet addAction:speedAction];
+    }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.about") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a; [self about];
     }]];
@@ -1292,6 +1313,29 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)settings {
     [self presentSheet:[self settingsSheet] anchor:nil];
+}
+- (NSString *)touchpadSpeedName:(AKControllerTouchpadSpeed)speed {
+    switch (speed) {
+        case AKControllerTouchpadSpeedSlow: return WKLocalized(@"home.settings.touchpadSpeed.slow");
+        case AKControllerTouchpadSpeedFast: return WKLocalized(@"home.settings.touchpadSpeed.fast");
+        case AKControllerTouchpadSpeedNormal: break;
+    }
+    return WKLocalized(@"home.settings.touchpadSpeed.normal");
+}
+- (void)chooseTouchpadSpeed {
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.touchpadSpeed.title")
+        message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    AKControllerTouchpadSpeed current=AKControllerTouchpadRelay.shared.speed;
+    for (NSNumber *value in @[@(AKControllerTouchpadSpeedSlow),@(AKControllerTouchpadSpeedNormal),@(AKControllerTouchpadSpeedFast)]) {
+        AKControllerTouchpadSpeed speed=(AKControllerTouchpadSpeed)value.integerValue;
+        NSString *name=[self touchpadSpeedName:speed];
+        [sheet addAction:[UIAlertAction actionWithTitle:(speed==current?[@"✓ " stringByAppendingString:name]:name)
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            (void)a; AKControllerTouchpadRelay.shared.speed=speed;
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [self presentSheet:sheet anchor:nil];
 }
 // Everything about dictation lives on its own screen: the button, the mode, and
 // what happens to the words afterwards.

@@ -34,6 +34,8 @@ Use **UI Manager** before large interface changes. Create a backup, restore a se
 
 Use the touch toolbar, trackpad, keyboard, gamepad, physical keyboard, or controller that fits your device. For dictation, open voice configuration, grant permission, select a trigger and Hold or Toggle behavior, then use **Test Voice** before dictating into a text field. Enabling dictation establishes the game's duplex audio route before a controller hold; the hold and release themselves do not change the audio category or remove the game output route. Leaving the app stops an open dictation capture, but does not add a WolkaraForever frame cap to the running guest.
 
+A DualSense or DualShock 4 touchpad can move the game's pointer. In **Settings**, choose **Use controller touchpad as mouse**; it is off until you turn it on. One finger moves the pointer and two fingers scroll. Pressing the touchpad is the left mouse button, or the right button with two fingers on the pad, and pressing while you slide drags. Tapping without pressing does nothing, so a thumb resting on the pad does not click. While this is on, the touchpad click is the mouse button only and cannot be chosen as a dictation trigger. **Controller touchpad speed** offers Slow, Normal and Fast. Choose **Stop using controller touchpad as mouse** to return the click to an ordinary controller button.
+
 ![Voice configuration](screenshots/voice-configuration.jpg)
 
 ## Get help safely

@@ -5,6 +5,7 @@
 #import "../translation/AppKit/TouchGamepad.h"
 #import "../translation/AppKit/TouchGamepadLayout.h"
 #import "../translation/AppKit/TouchCamera.h"
+#import "../translation/AppKit/ControllerPointer.h"
 #import "../translation/AppKit/TouchControllerLog.h"
 #import "../translation/AppKit/TouchHaptics.h"
 #include <assert.h>
@@ -635,6 +636,67 @@ static void TestDirectCamera(void) {
     AKFixtureEndLog();
     puts("TOUCH_CAMERA_LIFECYCLE_PASS: a tap clicks once, a hold drags, a centroid jump is rebased with one release and the next movement still turns the camera, every exit the app causes releases once and leaves nothing behind, and a cancelled touch releases once and then stays suppressed until the finger lifts, as it always has.");
 }
+// --- the controller touchpad as the pointer ------------------------------------
+// The relay's deliveries, as the in-game layer receives them. Motion is the platform's own
+// trackpad; a tap never clicks; the click under the pad is the button, released exactly once.
+static void TestControllerPointer(void) {
+    AKControllerPointer pointer = {0};
+    NSMutableArray<NSString *> *events = [NSMutableArray new];
+    void *context = (__bridge void *)events;
+    // One finger moves, and a quick tap with no travel is not a click.
+    AKControllerPointerUpdate(&pointer,1,0,0,1,AKFixtureCameraEmit,context);
+    AKControllerPointerUpdate(&pointer,1,12,-6,1.02,AKFixtureCameraEmit,context);
+    AKControllerPointerUpdate(&pointer,0,0,0,1.04,AKFixtureCameraEmit,context);
+    assert(([events isEqual:@[@"move12.0,-6.0"]]));
+    [events removeAllObjects];
+    AKControllerPointerUpdate(&pointer,1,50,50,2,AKFixtureCameraEmit,context);
+    AKControllerPointerUpdate(&pointer,0,0,0,2.05,AKFixtureCameraEmit,context);
+    assert(events.count == 0);
+    AKControllerPointerUpdate(&pointer,2,50,50,3,AKFixtureCameraEmit,context);
+    AKControllerPointerUpdate(&pointer,0,0,0,3.05,AKFixtureCameraEmit,context);
+    assert(events.count == 0);
+    // Two fingers scroll, in whole lines, as on the glass.
+    AKControllerPointerUpdate(&pointer,2,0,0,4,AKFixtureCameraEmit,context);
+    AKControllerPointerUpdate(&pointer,2,0,36,4.1,AKFixtureCameraEmit,context);
+    assert(([events isEqual:@[@"scroll0.0,3.0"]]));
+    AKControllerPointerUpdate(&pointer,0,0,0,4.2,AKFixtureCameraEmit,context);
+    // The click with one finger is the left button, held while the finger slides: a drag.
+    [events removeAllObjects];
+    AKControllerPointerUpdate(&pointer,1,0,0,5,AKFixtureCameraEmit,context);
+    AKControllerPointerClick(&pointer,true,AKFixtureCameraEmit,context);
+    AKControllerPointerClick(&pointer,true,AKFixtureCameraEmit,context);   // a repeated edge
+    AKControllerPointerUpdate(&pointer,1,20,0,5.1,AKFixtureCameraEmit,context);
+    AKControllerPointerClick(&pointer,false,AKFixtureCameraEmit,context);
+    AKControllerPointerClick(&pointer,false,AKFixtureCameraEmit,context);
+    AKControllerPointerUpdate(&pointer,0,0,0,5.15,AKFixtureCameraEmit,context);
+    assert(([events isEqual:@[@"down0",@"move20.0,0.0",@"up0"]]));
+    // With two fingers down it is the right button, and the release names the button the press
+    // did even if a finger lifted in between.
+    [events removeAllObjects];
+    AKControllerPointerUpdate(&pointer,2,0,0,6,AKFixtureCameraEmit,context);
+    AKControllerPointerClick(&pointer,true,AKFixtureCameraEmit,context);
+    AKControllerPointerUpdate(&pointer,1,0,0,6.1,AKFixtureCameraEmit,context);
+    AKControllerPointerClick(&pointer,false,AKFixtureCameraEmit,context);
+    AKControllerPointerUpdate(&pointer,0,0,0,6.2,AKFixtureCameraEmit,context);
+    assert(([events isEqual:@[@"down1",@"up1"]]));
+    // A controller that leaves mid-click releases the button once, and leaves nothing behind.
+    [events removeAllObjects];
+    AKControllerPointerUpdate(&pointer,1,0,0,7,AKFixtureCameraEmit,context);
+    AKControllerPointerClick(&pointer,true,AKFixtureCameraEmit,context);
+    AKControllerPointerReset(&pointer,AKFixtureCameraEmit,context);
+    AKControllerPointerReset(&pointer,AKFixtureCameraEmit,context);
+    assert(([events isEqual:@[@"down0",@"up0"]]));
+    assert(!pointer.clicked && !pointer.pad.fingers);
+    AKControllerPointerUpdate(&pointer,1,0,0,8,AKFixtureCameraEmit,context);
+    AKControllerPointerUpdate(&pointer,1,4,2,8.1,AKFixtureCameraEmit,context);
+    assert([events.lastObject isEqual:@"move4.0,2.0"]);
+    // Teardown forgets without telling anyone.
+    AKControllerPointerClick(&pointer,true,AKFixtureCameraEmit,context);
+    NSUInteger before = events.count;
+    AKControllerPointerReset(&pointer,NULL,NULL);
+    assert(events.count == before && !pointer.clicked);
+    puts("CONTROLLER_TOUCHPAD_POINTER_PASS: one finger moves, two fingers scroll, a tap never clicks, the click is the left button (right with two fingers) held for a drag and released exactly once, and a reset releases what is held.");
+}
 // --- the arrangement, the stick buttons and the zones, through the real controls ---
 // A control by name, drawn or not: the identifier the gamepad gives its own controls, without
 // the helper that insists a control is visible.
@@ -1236,6 +1298,7 @@ static void TestLifecycle(UIView *host) {
     TestTouchControllerLog();
     TestLayoutSchema();
     TestDirectCamera();
+    TestControllerPointer();
     AKFixtureGamepad *pad=[[AKFixtureGamepad alloc] initWithHostView:host];
     // The fixture asserts the controller lifecycle, not the device's foreground phase.
     // A simulator launched by simctl reports the app Inactive, which would gate every
