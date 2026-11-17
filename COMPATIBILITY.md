@@ -14,4 +14,4 @@ WolkaraForever does not promise universal device, iOS-version, controller, netwo
 
 ## Report a problem
 
-Start with [Install WolkaraForever](docs/INSTALLATION.md) and [Use WolkaraForever](docs/USING_WOLKARAFOREVER.md). Include the exact Technical details message and a redacted log only when requested. Do not include credentials, signing material, pairing records, account information, or device identifiers.
+Start with [Install WolkaraForever](docs/INSTALLATION.md) and [Use WolkaraForever](docs/USING_WOLKARAFOREVER.md). When you report a problem, follow [Send us a log](docs/SENDING_LOGS.md) and include the exact Technical details message if one was shown. Do not include credentials, signing material, pairing records, account information, or device identifiers.

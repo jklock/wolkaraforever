@@ -38,4 +38,11 @@ Use the touch toolbar, trackpad, keyboard, gamepad, physical keyboard, or contro
 
 ## Get help safely
 
-Open **Settings > Technical details** and record the exact message. Share only a redacted log when requested. Do not share credentials, pairing data, signing information, account information, or device identifiers. Do not delete the app as a first troubleshooting step.
+When something fails, send a log — it is three taps and needs no computer:
+[Send us a log](SENDING_LOGS.md) shows where **Settings → Diagnostics and logs → Logs and
+reports** is, which file to pick, and how to share it.
+
+If a failure offers **Technical details** in the Settings sheet, copy that message too: it is
+the exact reason, and it matches a line in the log. Do not share credentials, pairing data,
+signing information, account information, or device identifiers, and do not delete the app
+as a first troubleshooting step — the log you need goes with it.
