@@ -18,4 +18,7 @@ Keep enough free storage for the game and updates. Use a reliable network for th
 
 ## Troubleshoot safely
 
-Use **Settings > Technical details** for the exact error message. Do not delete the app to solve a configuration problem. Read [Compatibility](../COMPATIBILITY.md) before relying on a device-specific workflow.
+Use **Settings → Diagnostics and logs** for the exact error message and for the log itself:
+[Send us a log](SENDING_LOGS.md) has the three steps. Do not delete the app to solve a
+configuration problem. Read [Compatibility](../COMPATIBILITY.md) before relying on a
+device-specific workflow.

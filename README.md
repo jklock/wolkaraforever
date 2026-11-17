@@ -33,6 +33,8 @@ Read [Install WolkaraForever](docs/INSTALLATION.md) before you begin.
 - Use touch, keyboard, controller, and optional dictation input.
 
 Read [Use WolkaraForever](docs/USING_WOLKARAFOREVER.md) and [iPhone use](docs/IPHONE.md) for procedures.
+When something breaks, [Send us a log](docs/SENDING_LOGS.md) — it takes three taps on the
+iPad and needs no computer.
 
 ## Safety and support
 
