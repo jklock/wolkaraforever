@@ -557,6 +557,7 @@
 "addons.key.placeholder" = "Clé d’API";
 "addons.key.save" = "Enregistrer";
 "addons.key.errorTitle" = "Impossible d’enregistrer la clé";
+"addons.key.menu" = "Options de clé CurseForge";
 "addons.key.change" = "Modifier la clé CurseForge…";
 "addons.key.change.detail" = "Remplacer la clé d’API Core enregistrée.";
 "addons.key.remove" = "Supprimer la clé";

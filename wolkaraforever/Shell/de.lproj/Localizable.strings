@@ -556,6 +556,7 @@
 "addons.key.placeholder" = "API-Schlüssel";
 "addons.key.save" = "Sichern";
 "addons.key.errorTitle" = "Schlüssel konnte nicht gesichert werden";
+"addons.key.menu" = "CurseForge-Schlüsseloptionen";
 "addons.key.change" = "CurseForge-Schlüssel ändern…";
 "addons.key.change.detail" = "Den gespeicherten Core-API-Schlüssel ersetzen.";
 "addons.key.remove" = "Schlüssel entfernen";

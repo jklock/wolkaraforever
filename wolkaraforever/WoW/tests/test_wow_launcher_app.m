@@ -54,6 +54,7 @@
 @interface TKWoWAddonManagerViewController (Fixture)
 - (void)done;
 - (void)changeMode:(UISegmentedControl *)sender;
+- (void)updateToolbar;
 @end
 @interface AKVoiceViewController (Fixture)
 - (void)done;
@@ -611,7 +612,7 @@ static void TestAddonHub(void) {
                                    @"wow.addons.updateSelected", @"wow.addons.updateAll"]) {
         assert(Find(manager.view, identifier) != nil);
     }
-    // The two navigation items are bar buttons, not views: they are named here the way the page
+    // The navigation items are bar buttons, not views: they are named here the way the page
     // names them, because a control the page draws and nobody can press is not a control.
     NSArray<UIBarButtonItem *> *navigationItems = manager.navigationItem.rightBarButtonItems;
     assert(navigationItems.count == 2);
@@ -624,11 +625,12 @@ static void TestAddonHub(void) {
     if ([managedCredentials storeCurseForgeKey:@"test-key-for-management" error:&managedKeyError]) {
         [manager setValue:@(TKAddonHubTabBrowse) forKey:@"_tab"];
         NSArray<NSDictionary *> *browseSections = [manager valueForKey:@"sectionsForCurrentTab"];
-        assert([browseSections[0][@"rows"] count] == 4);
-        UITableViewCell *changeKey = [manager tableView:manager.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:2 inSection:0]];
-        UITableViewCell *removeKey = [manager tableView:manager.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:3 inSection:0]];
-        assert([changeKey.accessibilityIdentifier isEqual:@"wow.addons.changeKey"]);
-        assert([removeKey.accessibilityIdentifier isEqual:@"wow.addons.removeKey"]);
+        [manager updateToolbar];
+        assert([browseSections[0][@"rows"] count] == 2);
+        assert(manager.navigationItem.rightBarButtonItems.count == 3);
+        UIBarButtonItem *keyItem = manager.navigationItem.rightBarButtonItems[2];
+        assert([keyItem.accessibilityIdentifier isEqual:@"wow.addons.key"]);
+        assert(keyItem.menu.children.count == 2);
         assert([managedCredentials removeCurseForgeKey:NULL]);
         [manager setValue:@(TKAddonHubTabMyAddOns) forKey:@"_tab"];
     } else assert(managedKeyError.code == errSecMissingEntitlement);
