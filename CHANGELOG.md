@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- **A dropped connection no longer stalls the game download.** The retry wait now always has a real scheduler, so it cannot spin while holding the download lock and block transfers or Cancel.
+
 ## v1.0.19
 
 - **Controller touchpad as mouse.** In **Input Manager**, configure and test an opt-in DualSense or DualShock touchpad pointer with saved speed, live coordinates, one-finger movement, two-finger scrolling, and physical-click buttons. DualSense and DualShock use iPadOS's controller profile touchpad path; DualSense Edge users whose Bluetooth connection omits touch reports can use USB-C.
