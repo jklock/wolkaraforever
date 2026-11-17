@@ -20,6 +20,8 @@
 // The arrangement the on-screen controls read, as data: the same functions the adapter uses, so
 // a choice made here is what the next guest starts with.
 #import "LayoutStore.h"
+// The game's sound without iOS's HAL: the switch's key, from the one header both audio adapters read it with.
+#import "AKAudioModel.h"
 #import <GameController/GameController.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -275,7 +277,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
-    TKWoWSwitchRow *_gamepadRow, *_overlayRow;
+    TKWoWSwitchRow *_gamepadRow, *_overlayRow, *_soundRow;
     UIButton *_interfaceSetupButton;
     // Set while the layout-import picker is up, so a document chosen there is read as a layout
     // backup and never mistaken for the UI restore's snapshot.
@@ -458,6 +460,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         target:self action:@selector(overlayChanged:)];
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
+    // Battery-saving sound (patch 0065): the game's sound without iOS's HAL, whose Bluetooth plug-in took a quarter of a
+    // core on the iPad. On by default; off is the old path, for audio problems. Both audio adapters read it at the game's
+    // first sound call (AKAudioModel.h).
+    _soundRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.audioAvoidHAL"
+        target:self action:@selector(soundPathChanged:)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
     // The interface this launcher drives. One setting, one row: it writes the single key the
     // guest reads and never touches an installed package.
@@ -483,7 +490,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
         rows:@[_permissionsButton,_voiceButton,_touchpadButton]];
     UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
-        rows:@[_deviceProfileButton,_renderProfileButton,_overlayRow]];
+        rows:@[_deviceProfileButton,_renderProfileButton,_soundRow,_overlayRow]];
     // The gamepad switch is the first decision in the UI card: it changes whether the game
     // exposes its controller interface. Backup precedes Restore because restore replaces data.
     UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
@@ -873,6 +880,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _headings[@"wow.box.launcherManager"].text=WKLocalized(@"home.box.launcherManager").uppercaseString;
     [_gamepadRow applyTitle:WKLocalized(@"home.performance.gamepad")];
     [_overlayRow applyTitle:WKLocalized(@"home.performance.overlay")];
+    [_soundRow applyTitle:WKLocalized(@"home.performance.audioAvoidHAL")];
     [_diagnosticsButton setTitle:WKLocalized(@"home.diagnostics") forState:UIControlStateNormal];
     _updatesLabel.text=WKLocalized(@"home.updates.note");
     // A VoiceOver reader is told the language of the words it is about to read, so a German
@@ -1059,6 +1067,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_renderProfileButton title:WKLocalizedFormat(@"home.performance.renderProfile",[self renderProfileDescription]) filled:NO];
     _renderProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _renderProfileButton.enabled=preferencesIdle;
+    _soundRow.enabled=preferencesIdle;
+    _soundRow.toggle.on=AKAudioAvoidHALIn(NSUserDefaults.standardUserDefaults);
     _editionButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _preferencesButton.enabled=_editionButton.enabled;
     _languageButton.enabled=_editionButton.enabled;
@@ -1571,6 +1581,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [defaults setObject:layout forKey:TKForeverLayoutKey];
     [NSNotificationCenter.defaultCenter postNotificationName:TKForeverLayoutDidChange object:defaults];
     WKLog("ui", @"performance overlay: %@", enabled?@"enabled":@"disabled");
+    [self render];
+}
+// Battery-saving sound: one key, YES or NO, read by both audio adapters at the next game's first sound call.
+- (void)soundPathChanged:(UISwitch *)sender {
+    if (_busy || _starting || _running || _sessionUsed) { sender.on=AKAudioAvoidHALIn(NSUserDefaults.standardUserDefaults); return; }
+    [NSUserDefaults.standardUserDefaults setBool:sender.on forKey:AKAudioAvoidHALDefaultsKey];
+    WKLog("ui", @"battery-saving sound: %@", sender.on?@"on (the HAL avoided)":@"off (iOS's HAL, the old path)");
     [self render];
 }
 // This is selected before starting Forever. The guest backing scale is fixed

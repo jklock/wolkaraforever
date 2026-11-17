@@ -119,6 +119,7 @@
 "home.performance.gamepad" = "Gamepad UI";
 "home.performance.overlay" = "Performance Overlay";
 "home.performance.renderProfile" = "Render profile: %@";
+"home.performance.audioAvoidHAL" = "Battery-saving sound";
 "home.performance.deviceProfile" = "Device profile: %@";
 "home.render.performance" = "Performance";
 "home.render.balanced" = "Balanced";

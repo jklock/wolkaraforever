@@ -240,6 +240,9 @@ run_step "app language resolution, tables and formatting" wolkaraforever/tools/t
 # mode), so they belong here.
 run_step "on-screen controls and the game text field (simulator fixture)" wolkaraforever/tools/test_touch_controls_ui.sh --self-test || failures=$((failures+1))
 run_step "the on-screen gamepad (simulator fixture)" wolkaraforever/tools/test_touch_gamepad_ui.sh --self-test || failures=$((failures+1))
+# The game's sound with and without iOS's HAL (patch 0065): the game's HAL calls and a test tone through both audio
+# adapters, with the switch on (0 calls reach iOS's HAL) and off (the old path).
+run_step "the game's sound without iOS's HAL (patch 0065, simulator)" wolkaraforever/tools/test_audio_sim.sh || failures=$((failures+1))
 # And these two were run by nothing either, for the same kind of reason: they were only ever
 # reached through the loop at the end of test_emulation.sh, and that loop never ran, because
 # the platform's suite exits 1 on its one known failure and `set -e` stopped the script

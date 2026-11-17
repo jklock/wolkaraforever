@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- **The game's sound no longer runs iOS's whole audio device layer in the game.** The game asks for its output the macOS way, and the CoreAudio and AudioToolbox adapters passed those questions to iOS, which then loaded its audio device layer and all of its plug-ins (Bluetooth, AirPlay, built-in and others) into the game's process. On an iPad the Bluetooth plug-in alone kept about a quarter of a CPU core busy for the whole game, with no Bluetooth device connected and even with all game sound off. The adapters now answer those questions themselves, from the iPad's current audio route, and the sound plays through RemoteIO as before. A new **Battery-saving sound** switch in **Performance Manager** (on by default) turns this off for the old path if the sound misbehaves; it applies from the next game start. Every interface mode.
 - **A dropped connection no longer stalls the game download.** The retry wait now always has a real scheduler, so it cannot spin while holding the download lock and block transfers or Cancel.
 
 ## v1.0.19

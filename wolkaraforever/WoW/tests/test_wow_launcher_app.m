@@ -1751,7 +1751,7 @@ static void TestPhoneDisplayDefaults(void) {
         // reads or writes the game's files, and there is no "restore defaults" row: the way
         // back is the Automatic choice in the device sheet, which is where the value lives.
         @"wow.box.profile": @[@"wow.heading.profile", @"wow.performance.deviceProfile",
-                              @"wow.performance.renderProfile",
+                              @"wow.performance.renderProfile", @"wow.performance.audioAvoidHAL",
                               @"wow.performance.overlay"],
         @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.gamepad",
                                   @"wow.performance.backup", @"wow.performance.restore",
@@ -2283,9 +2283,36 @@ static int backupsBeforePerformance;
     assert(stubBackups == backupsBeforePerformance);
     assert([[self configText] isEqual:configBeforePerformance]);
     assert(Find(self.controller.view, @"wow.performance.restoreDefaults") == nil);
+    [self checkSoundPathRow];
+    assert([[self configText] isEqual:configBeforePerformance]);
     // Finally the app's own language: the setting, the German page, the one-time offer to put
     // the game into German too, and the switch back.
     [self performSelector:@selector(startLanguageTests) withObject:nil afterDelay:0.3];
+}
+
+#pragma mark - Battery-saving sound
+
+// The sound path row (patch 0065): a switch, on by default - the game's sound without iOS's HAL, whose
+// Bluetooth plug-in took a quarter of a core on the iPad. It stores YES or NO in the one key both audio adapters read at
+// the game's first sound call (AKAudioModel.h), and nothing else; off is the old path, for audio problems on the iPad.
+- (void)checkSoundPathRow {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:@"WolkaraForeverAudioAvoidHAL"];
+    [self.controller render];
+    UISwitch *sound = [self toggle:@"wow.performance.audioAvoidHAL"];
+    assert(sound.on && sound.enabled && sound.allTargets.count > 0);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.performance.audioAvoidHAL.label") text] isEqual:@"Battery-saving sound"]);
+    sound.on = NO; [sound sendActionsForControlEvents:UIControlEventValueChanged];
+    assert([defaults objectForKey:@"WolkaraForeverAudioAvoidHAL"] != nil && ![defaults boolForKey:@"WolkaraForeverAudioAvoidHAL"]);
+    assert(![self toggle:@"wow.performance.audioAvoidHAL"].on);
+    sound.on = YES; [sound sendActionsForControlEvents:UIControlEventValueChanged];
+    assert([defaults boolForKey:@"WolkaraForeverAudioAvoidHAL"] && [self toggle:@"wow.performance.audioAvoidHAL"].on);
+    // A stored value that is not the row's (a string) reads as on, as the adapters read it.
+    [defaults setObject:@"no" forKey:@"WolkaraForeverAudioAvoidHAL"];
+    [self.controller render];
+    assert([self toggle:@"wow.performance.audioAvoidHAL"].on);
+    [defaults removeObjectForKey:@"WolkaraForeverAudioAvoidHAL"];
+    [self.controller render];
 }
 
 #pragma mark - The app's language, and the game's
@@ -2893,6 +2920,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(![self row:@"wow.permissions"].enabled);
     assert(![self toggle:@"wow.performance.gamepad"].enabled);
     assert(![self toggle:@"wow.performance.overlay"].enabled);
+    assert(![self toggle:@"wow.performance.audioAvoidHAL"].enabled);
     // ...and their labels are the same grey as the rows beside them, rather than
     // keeping the white they use when they are usable.
     assert(CGColorEqualToColor([(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") textColor].CGColor,

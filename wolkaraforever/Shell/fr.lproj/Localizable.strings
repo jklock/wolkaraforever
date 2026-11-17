@@ -116,6 +116,7 @@
 "home.performance.gamepad" = "Interface manette";
 "home.performance.overlay" = "Affichage des performances";
 "home.performance.renderProfile" = "Profil de rendu : %@";
+"home.performance.audioAvoidHAL" = "Son économe en batterie";
 "home.performance.deviceProfile" = "Profil de l’appareil : %@";
 "home.render.performance" = "Performances";
 "home.render.balanced" = "Équilibré";
