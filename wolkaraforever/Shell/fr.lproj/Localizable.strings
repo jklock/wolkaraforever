@@ -31,7 +31,7 @@
 "home.refresh" = "Rechercher des mises à jour";
 "home.box.edition" = "Édition du jeu";
 "home.box.addons" = "Gestionnaire d’addons";
-"home.box.voice" = "Voix et commandes";
+"home.box.voice" = "Gestionnaire des entrées";
 "home.box.profile" = "Performances";
 "home.box.performance" = "Interface du jeu";
 "home.box.launcherManager" = "Gestionnaire du lanceur";
@@ -105,11 +105,12 @@
 "home.addons.restore.failed.title" = "Impossible de restaurer les addons";
 "home.addons.restore.failed.message" = "Le dossier des addons est resté tel quel.";
 "addons.backup.noComponent" = "Cette version n’a pas le composant de sauvegarde des addons.";
-"home.voice.keys" = "Configuration des touches et boutons";
+"home.voice.keys" = "Configuration des touches et boutons de manette";
 "home.voice.test" = "Tester la voix et la dictée";
+"home.touchpad.configuration" = "Configuration du pavé tactile de la manette";
 "home.permissions" = "Autorisations (micro et reconnaissance vocale)";
 "home.performance.backup" = "Sauvegarder l’interface de WoW";
-"home.performance.reset" = "Revenir aux réglages graphiques par défaut";
+"home.performance.reset" = "Réinitialiser la configuration de l’interface WoW";
 "home.performance.restore" = "Restaurer l’interface de WoW";
 "home.performance.settingsFolder" = "Ouvrir le dossier des réglages";
 "home.performance.gamepad" = "Interface manette";
@@ -197,6 +198,13 @@
 "home.settings.diagnostics" = "Diagnostics et journaux";
 "home.settings.inputDiagnosticsOn" = "Activer les diagnostics d’entrée";
 "home.settings.inputDiagnosticsOff" = "Désactiver les diagnostics d’entrée";
+"home.settings.touchpadPointerOn" = "Utiliser le pavé tactile de la manette comme souris";
+"home.settings.touchpadPointerOff" = "Ne plus utiliser le pavé tactile de la manette comme souris";
+"home.settings.touchpadSpeed" = "Vitesse du pavé tactile de la manette : %@";
+"home.settings.touchpadSpeed.title" = "Vitesse du pavé tactile de la manette";
+"home.settings.touchpadSpeed.slow" = "Lente";
+"home.settings.touchpadSpeed.normal" = "Normale";
+"home.settings.touchpadSpeed.fast" = "Rapide";
 "home.settings.about" = "À propos et licences open source";
 "home.settings.technical" = "Détails techniques";
 "home.settings.details.title" = "Détails";
@@ -619,8 +627,9 @@
 "addons.remove" = "Retirer de l’appareil";
 
 /* ---- Voix et dictée ---- */
-"voice.title" = "Configuration des touches et boutons";
+"voice.title" = "Configuration des touches et boutons de manette";
 "voice.test.title" = "Tester la voix";
+"voice.test.open" = "Tester la dictée";
 "voice.intro" = "Rien ne se déclenche tout seul ici. Tant que ce réglage n’est pas activé et qu’aucun bouton n’est choisi, le micro n’est jamais ouvert et aucune manette ne change de comportement.";
 "voice.heading.voice" = "Voix";
 "voice.enabled" = "Parler avec un bouton";
@@ -670,6 +679,26 @@
 "voice.language.french" = "Français";
 "voice.language.spanish" = "Espagnol";
 "voice.language.unavailable" = "%@ ne peut pas être reconnu sur cet iPad ; Système a donc été utilisé pour cette prise.";
+"touchpad.title" = "Configuration du pavé tactile de la manette";
+"touchpad.intro" = "Activez cette option seulement si vous voulez que le pavé tactile d’une manette connectée contrôle le pointeur. Un doigt déplace, deux doigts font défiler et le clic physique agit comme un bouton de souris.";
+"touchpad.heading.pointer" = "Pointeur";
+"touchpad.enabled" = "Utiliser le pavé tactile comme souris";
+"touchpad.enabled.note" = "Ce réglage est enregistré sur cet iPad. Le désactiver relâche tout bouton de pointeur maintenu.";
+"touchpad.heading.speed" = "Vitesse du pointeur";
+"touchpad.speed.slow" = "Lente";
+"touchpad.speed.normal" = "Normale";
+"touchpad.speed.fast" = "Rapide";
+"touchpad.speed.note" = "S’applique immédiatement au prochain rapport du pavé tactile et est enregistré sur cet iPad.";
+"touchpad.heading.test" = "Test du pavé tactile";
+"touchpad.test.note" = "Avec le pointeur activé, touchez le pavé tactile de la manette pour vérifier les coordonnées en direct signalées par iPadOS.";
+"touchpad.test.off" = "Activez le pointeur pour recevoir les rapports du pavé tactile.";
+"touchpad.test.waiting" = "En attente d’un rapport du pavé tactile…";
+"touchpad.test.receiving" = "Réception des rapports du pavé tactile.";
+"touchpad.test.none" = "Aucune coordonnée signalée.";
+"touchpad.test.coordinates" = "%lu doigt(s) — x %.1f, y %.1f";
+"touchpad.test.clickDown" = "Clic du pavé tactile enfoncé.";
+"touchpad.test.clickUp" = "Clic du pavé tactile relâché.";
+"touchpad.test.reset" = "La manette a été déconnectée ou le pointeur a été désactivé.";
 "common.clear" = "Effacer";
 
 /* ---- Les fichiers du jeu (interface Forever) ---- */

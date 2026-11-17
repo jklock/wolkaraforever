@@ -146,6 +146,8 @@ wolkaraforever/Touch/AKHostLocalization.m translation/AppKit/AKHostLocalization.
 wolkaraforever/Touch/AKPerformanceOverlay.h translation/AppKit/AKPerformanceOverlay.h add
 wolkaraforever/Touch/AKPerformanceOverlay.m translation/AppKit/AKPerformanceOverlay.m add
 wolkaraforever/Touch/AKTouchEventPump.h translation/AppKit/AKTouchEventPump.h add
+wolkaraforever/Touch/ControllerPointer.h translation/AppKit/ControllerPointer.h add
+wolkaraforever/Touch/ControllerPointer.m translation/AppKit/ControllerPointer.m add
 wolkaraforever/Touch/Fonts.h translation/AppKit/Fonts.h add
 wolkaraforever/Touch/Fonts.m translation/AppKit/Fonts.m add
 wolkaraforever/Touch/InterfaceMode.h translation/AppKit/InterfaceMode.h add
@@ -205,6 +207,8 @@ wolkaraforever/Controller/ControllerWindow.m launcher/Controller/ControllerWindo
 # Voice: what you say, turned into text in the game, and its tests
 wolkaraforever/Voice/AudioSessionCoordinator.h launcher/Voice/AudioSessionCoordinator.h add
 wolkaraforever/Voice/AudioSessionCoordinator.m launcher/Voice/AudioSessionCoordinator.m add
+wolkaraforever/Voice/ControllerTouchpadViewController.h launcher/Voice/ControllerTouchpadViewController.h add
+wolkaraforever/Voice/ControllerTouchpadViewController.m launcher/Voice/ControllerTouchpadViewController.m add
 wolkaraforever/Voice/Dictation.h launcher/Voice/Dictation.h add
 wolkaraforever/Voice/Dictation.m launcher/Voice/Dictation.m add
 wolkaraforever/Voice/KeyboardDictationEvents.h launcher/Voice/KeyboardDictationEvents.h add
@@ -219,6 +223,8 @@ wolkaraforever/Voice/tests/test_voice_app.m tests/test_voice_app.m add
 # Input: any button, on any controller, in one stream (see docs/INPUT_TRIGGERS.md)
 wolkaraforever/Input/ControllerCommandIngress.h launcher/Input/ControllerCommandIngress.h add
 wolkaraforever/Input/ControllerCommandIngress.m launcher/Input/ControllerCommandIngress.m add
+wolkaraforever/Input/ControllerTouchpad.h launcher/Input/ControllerTouchpad.h add
+wolkaraforever/Input/ControllerTouchpad.m launcher/Input/ControllerTouchpad.m add
 wolkaraforever/Input/InputElement.h launcher/Input/InputElement.h add
 wolkaraforever/Input/InputElement.m launcher/Input/InputElement.m add
 wolkaraforever/Input/InputInterest.h launcher/Input/InputInterest.h add

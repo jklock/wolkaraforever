@@ -2,7 +2,7 @@
 #import "Client.h"
 #import "AddonManager.h"
 #import "../Voice/VoiceViewController.h"
-#import "../Voice/VoiceTestViewController.h"
+#import "../Voice/ControllerTouchpadViewController.h"
 #import "../App/WolkaraForeverLog.h"
 #import "../App/WolkaraForeverTheme.h"
 #import "../App/WKLocalization.h"
@@ -243,7 +243,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     BOOL _busy, _updating, _updateError, _starting, _running;
     // A Forever UI file operation is running (backup, reset, restore, gamepad).
     // The rows are disabled while it runs and every handler rechecks it.
-    BOOL _uiOperation;
+    BOOL _uiOperation, _gamepadChangePending;
     BOOL _gamepadEnabled, _overlayEnabled;
     // The game files are read once, when the launcher first appears. Not on every
     // appearance: leaving a popup used to send us straight back to the network.
@@ -267,7 +267,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIStackView *_gridRow1, *_gridRow2, *_gridRow3, *_topRow;
     UILabel *_stateLabel, *_detailLabel, *_versionLabel;
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
-        *_voiceButton, *_voiceTestButton, *_permissionsButton, *_primaryButton,
+        *_voiceButton, *_touchpadButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
         *_renderProfileButton, *_deviceProfileButton, *_interfaceModeButton,
         *_addonsBackupButton, *_addonsRestoreButton,
@@ -448,7 +448,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // action - and it is the only place those switches can be changed.
     _permissionsButton=[self button:@"wow.permissions" action:@selector(openPermissions)];
     _voiceButton=[self button:@"wow.voice" action:@selector(manageVoice)];
-    _voiceTestButton=[self button:@"wow.voice.test" action:@selector(testVoice)];
+    _touchpadButton=[self button:@"wow.touchpad" action:@selector(configureTouchpad)];
     _backupButton=[self button:@"wow.performance.backup" action:@selector(backupUI)];
     _resetButton=[self button:@"wow.performance.reset" action:@selector(resetGraphics)];
     _restoreButton=[self button:@"wow.performance.restore" action:@selector(restoreUI)];
@@ -481,13 +481,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
         rows:@[_addonsButton,_addonsDirectoryButton,_addonsBackupButton,_addonsRestoreButton]];
     UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
-        rows:@[_permissionsButton,_voiceButton,_voiceTestButton]];
+        rows:@[_permissionsButton,_voiceButton,_touchpadButton]];
     UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
         rows:@[_deviceProfileButton,_renderProfileButton,_overlayRow]];
-    // The retained card, narrower: Backup, Restore, Reset, Settings Folder, Gamepad - in the
-    // order a person needs them when something has gone wrong.
+    // The gamepad switch is the first decision in the UI card: it changes whether the game
+    // exposes its controller interface. Backup precedes Restore because restore replaces data.
     UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
-        rows:@[_backupButton,_restoreButton,_resetButton,_settingsFolderButton,_gamepadRow]];
+        rows:@[_gamepadRow,_backupButton,_restoreButton,_resetButton,_settingsFolderButton]];
     // The sixth card, in the cell that used to be the grid's spacer: the interface mode, and
     // the one place the recommendation row's own card sends a person to install it. It sits
     // beside UI Manager on a wide page and after it on a narrow one, and it changes no other
@@ -988,9 +988,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _voiceButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     // Available before the game is installed: it is a setting, not a game action.
     _voiceButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
-    [self configureButton:_voiceTestButton title:WKLocalized(@"home.voice.test") filled:NO];
-    _voiceTestButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _voiceTestButton.enabled=_voiceButton.enabled;
+    [self configureButton:_touchpadButton title:WKLocalized(@"home.touchpad.configuration") filled:NO];
+    _touchpadButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _touchpadButton.enabled=_voiceButton.enabled;
     [self configureButton:_permissionsButton title:WKLocalized(@"home.permissions") filled:NO];
     _permissionsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     // Navigation to Settings is available whenever the page is usable; a
@@ -1003,7 +1003,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // WolkaraForever runtime feature and follows the launcher's non-busy rule.
     NSString *foreverDirectory=[self foreverWorkingDirectory];
     BOOL foreverReady=foreverDirectory && !_busy && !_starting && !_running && !_sessionUsed && !_uiOperation;
-    _gamepadEnabled=foreverDirectory?[TKForeverUI gamepadEnabledInWorkingDirectory:foreverDirectory]:NO;
+    // Do not redraw the switch back to its old Config.wtf value while its write is in flight.
+    // That made a successful tap visibly undo itself, despite the later write succeeding.
+    if (!_gamepadChangePending)
+        _gamepadEnabled=foreverDirectory?[TKForeverUI gamepadEnabledInWorkingDirectory:foreverDirectory]:NO;
     NSDictionary *layout=[NSUserDefaults.standardUserDefaults objectForKey:TKForeverLayoutKey];
     _overlayEnabled=[layout isKindOfClass:NSDictionary.class] && [layout[@"performanceOverlayEnabled"] boolValue];
     for (UIButton *button in @[_backupButton,_resetButton,_restoreButton,_settingsFolderButton]) {
@@ -1169,7 +1172,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _refreshItem.enabled=!_busy && !_sessionUsed && !_starting && !_running;
     for (UIButton *button in @[_editionButton,_preferencesButton,_addonsButton,_macEverButton,_addonsDirectoryButton,
                                 _addonsBackupButton,_addonsRestoreButton,
-                                _permissionsButton,_voiceButton,_voiceTestButton,_backupButton,_resetButton,
+                                _permissionsButton,_voiceButton,_touchpadButton,_backupButton,_resetButton,
                                 _restoreButton,_settingsFolderButton,_interfaceModeButton,
                                 _layoutCreateButton,_interfaceSetupButton,_layoutRestoreButton,_layoutBackupButton])
         [self stylePlainButton:button];
@@ -1293,16 +1296,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (void)settings {
     [self presentSheet:[self settingsSheet] anchor:nil];
 }
-// Everything about dictation lives on its own screen: the button, the mode, and
-// what happens to the words afterwards.
+// Everything about dictation lives on its own screen: the button, the mode, its
+// test page, and what happens to the words afterwards.
 - (void)manageVoice {
     [self presentPage:[AKVoiceViewController new]];
 }
-
-// The same settings, exercised: a box the transcript lands in, driven by the
-// button the user mapped, so it can be tried without starting the game.
-- (void)testVoice {
-    [self presentPage:[AKVoiceTestViewController new]];
+- (void)configureTouchpad {
+    [self presentPage:[AKControllerTouchpadViewController new]];
 }
 
 // This app's own page in Settings: the Microphone and Speech Recognition switches for WolkaraForever.
@@ -1534,6 +1534,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSString *directory=[self foreverWorkingDirectory];
     if (!directory) { sender.on=!_gamepadEnabled; return; }
     BOOL want=sender.on;
+    _gamepadEnabled=want;
+    _gamepadChangePending=YES;
     _uiOperation=YES; [self render];
     __weak TKWoWViewController *weakSelf=self;
     dispatch_async(TKForeverUIQueue(), ^{
@@ -1541,6 +1543,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         BOOL stored=[TKForeverUI setGamepad:want inWorkingDirectory:directory error:&error];
         dispatch_async(dispatch_get_main_queue(), ^{
             TKWoWViewController *self=weakSelf; if(!self) return;
+            self->_gamepadChangePending=NO;
+            if (!stored) self->_gamepadEnabled=!want;
             self->_uiOperation=NO; [self render];
             if (stored) {
                 WKLog("ui", @"gamepad UI: %@", want?@"enabled":@"disabled");

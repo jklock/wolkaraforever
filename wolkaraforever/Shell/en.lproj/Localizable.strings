@@ -34,7 +34,7 @@
 "home.edition.row" = "Game Edition: %@";
 "home.preferences.row" = "Region / Locale: %@ %@";
 "home.box.addons" = "Add-On Manager";
-"home.box.voice" = "Dictation (V2T) Manager";
+"home.box.voice" = "Input Manager";
 "home.box.profile" = "Performance Manager";
 "home.box.performance" = "UI Manager";
 "home.box.launcherManager" = "Launcher Manager";
@@ -108,11 +108,12 @@
 "home.addons.restore.failed.title" = "Could not restore the add-ons";
 "home.addons.restore.failed.message" = "The add-on folder was left as it was.";
 "addons.backup.noComponent" = "This build is missing the add-on backup component.";
-"home.voice.keys" = "Key / Button Configuration";
+"home.voice.keys" = "Key / Controller Button Configuration";
 "home.voice.test" = "Test Voice & Dictation";
+"home.touchpad.configuration" = "Controller Touchpad Configuration";
 "home.permissions" = "Toggle Permissions (Mic & Speech)";
 "home.performance.backup" = "Backup WoW UI Configuration";
-"home.performance.reset" = "Reset to Default Graphical Settings";
+"home.performance.reset" = "Reset to Default Wow UI Configuration";
 "home.performance.restore" = "Restore WoW UI Configuration";
 "home.performance.settingsFolder" = "Open Settings Folder";
 "home.performance.gamepad" = "Gamepad UI";
@@ -198,6 +199,13 @@
 "home.settings.diagnostics" = "Diagnostics and logs";
 "home.settings.inputDiagnosticsOn" = "Turn on input diagnostics";
 "home.settings.inputDiagnosticsOff" = "Turn off input diagnostics";
+"home.settings.touchpadPointerOn" = "Use controller touchpad as mouse";
+"home.settings.touchpadPointerOff" = "Stop using controller touchpad as mouse";
+"home.settings.touchpadSpeed" = "Controller touchpad speed: %@";
+"home.settings.touchpadSpeed.title" = "Controller touchpad speed";
+"home.settings.touchpadSpeed.slow" = "Slow";
+"home.settings.touchpadSpeed.normal" = "Normal";
+"home.settings.touchpadSpeed.fast" = "Fast";
 "home.settings.about" = "About and open-source licenses";
 "home.settings.technical" = "Technical details";
 "home.settings.details.title" = "Details";
@@ -619,8 +627,9 @@
 "addons.action.manage" = "Manage";
 "addons.manage.unmanaged" = "This existing add-on will be removed from this device.";
 /* ---- Voice and dictation ---- */
-"voice.title" = "Key / Button Configuration";
+"voice.title" = "Key / Controller Button Configuration";
 "voice.test.title" = "Test Voice";
+"voice.test.open" = "Test Dictation";
 "voice.intro" = "Nothing here happens on its own. Until this is switched on and a button is set, the microphone is never opened and no controller behaves any differently.";
 "voice.heading.voice" = "Voice";
 "voice.enabled" = "Use a button to talk";
@@ -670,6 +679,26 @@
 "voice.language.french" = "French";
 "voice.language.spanish" = "Spanish";
 "voice.language.unavailable" = "%@ cannot be recognised on this iPad, so System was used for that hold.";
+"touchpad.title" = "Controller Touchpad Configuration";
+"touchpad.intro" = "Turn this on only when you want a connected controller’s touchpad to control the pointer. One finger moves, two fingers scroll, and the physical touchpad click is the mouse button.";
+"touchpad.heading.pointer" = "Pointer";
+"touchpad.enabled" = "Use controller touchpad as mouse";
+"touchpad.enabled.note" = "This setting is saved on this iPad. Turning it off releases any held pointer button.";
+"touchpad.heading.speed" = "Pointer speed";
+"touchpad.speed.slow" = "Slow";
+"touchpad.speed.normal" = "Normal";
+"touchpad.speed.fast" = "Fast";
+"touchpad.speed.note" = "Applies to the next touchpad report immediately and is saved on this iPad.";
+"touchpad.heading.test" = "Controller touchpad test";
+"touchpad.test.note" = "With the pointer enabled, touch the controller touchpad to verify the live coordinates reported by iPadOS.";
+"touchpad.test.off" = "Turn on the pointer to receive touchpad reports.";
+"touchpad.test.waiting" = "Waiting for a controller touchpad report…";
+"touchpad.test.receiving" = "Receiving touchpad reports.";
+"touchpad.test.none" = "No coordinates reported yet.";
+"touchpad.test.coordinates" = "%lu finger(s) — x %.1f, y %.1f";
+"touchpad.test.clickDown" = "Touchpad click pressed.";
+"touchpad.test.clickUp" = "Touchpad click released.";
+"touchpad.test.reset" = "The controller disconnected or the pointer was turned off.";
 "common.clear" = "Clear";
 
 /* ---- The game's own files (Forever UI) ---- */

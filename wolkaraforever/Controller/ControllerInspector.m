@@ -13,6 +13,9 @@
 
 #import "ControllerInspector.h"
 
+#include <float.h>
+#include <math.h>
+
 #import "../App/WolkaraForeverLog.h"
 
 // One sink, not two.
@@ -31,6 +34,7 @@ NSNotificationName const AKInputDiagnosticsDidChangeNotification = @"AKInputDiag
 
 #import "../Input/InputElement.h"
 #import "../Input/ControllerCommandIngress.h"
+#import "../Input/ControllerTouchpad.h"
 
 // How many events the on-screen panel keeps. The log itself is not limited.
 static NSUInteger const AKCIHistoryLimit = 12;
@@ -350,6 +354,8 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
         NSString *identity = pad ? AKControllerIdentity(pad) : nil;
         if (identity) [_releasedGestures removeObjectForKey:identity];
         else [_releasedGestures removeAllObjects];
+        // A touchpad finger or click held by the pad that left must not stay held in the game.
+        [AKControllerTouchpadRelay.shared reset];
     }
     [self attachEverything];
     [self logInventories];
@@ -515,6 +521,9 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
             (unsigned long)profile.buttons.count, (unsigned long)profile.allButtons.count,
             (unsigned long)profile.axes.count, (unsigned long)profile.allAxes.count,
             (unsigned long)profile.dpads.count, (unsigned long)profile.allDpads.count);
+    AKCILog(@"inspector: touchpads=%lu (all=%lu) remapped=%@",
+            (unsigned long)profile.touchpads.count, (unsigned long)profile.allTouchpads.count,
+            profile.hasRemappedElements ? @"yes" : @"no");
 
     // The two buttons in question, by name and by profile property.
     GCControllerButtonInput *share = profile.buttons[GCInputButtonShare];
@@ -564,8 +573,15 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
     for (NSString *name in profile.buttons) {
         GCControllerButtonInput *button = profile.buttons[name];
         NSString *element = AKInputElementForControllerButton(name);
+        // DualShock 4 and DualSense both name their touchpad's click this.
+        BOOL touchpadClick = [name isEqualToString:GCInputDualShockTouchpadButton];
         button.pressedChangedHandler = ^(GCControllerButtonInput *input, float value, BOOL pressed) {
             (void)input;
+            // With "Controller touchpad as mouse" on, the click is the pointer's button and
+            // nothing else: not a trigger, not something to learn. With it off, it is an
+            // ordinary button exactly as before.
+            AKControllerTouchpadRelay *relay = AKControllerTouchpadRelay.shared;
+            if (touchpadClick && relay.enabled) { [relay click:pressed]; return; }
             AKCIButton(weakSelf, device, deviceName, element, value, pressed);
         };
     }
@@ -589,26 +605,79 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
                        [NSString stringWithFormat:@"x=%.2f y=%.2f", x, y]);
         };
     }
-    for (NSString *name in profile.touchpads) {
-        GCControllerTouchpad *touchpad = profile.touchpads[name];
-        NSString *down = AKInputElementForTouchpad(name, @"down");
-        NSString *up = AKInputElementForTouchpad(name, @"up");
-        NSString *moved = AKInputElementForTouchpad(name, @"moved");
-        touchpad.touchDown = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
-            (void)input; (void)buttonValue;
-            AKCIReport(weakSelf, device, deviceName, @"touchpad", down, 1, YES,
-                       [NSString stringWithFormat:@"x=%.2f y=%.2f button=%d", x, y, buttonPressed]);
+    // DualSense and DualShock have a profile-level, two-finger touchpad API. iPadOS can expose
+    // those two direction pads without adding a GCControllerTouchpad to the generic collection;
+    // that is exactly how the attached DualSense identified itself. Prefer this documented profile
+    // contract for Sony pads, then retain the generic API for every other controller.
+    GCControllerDirectionPad *primary = nil, *secondary = nil;
+    GCControllerButtonInput *sonyTouchpadButton = nil;
+    if ([profile isKindOfClass:GCDualSenseGamepad.class]) {
+        GCDualSenseGamepad *dualSense = (GCDualSenseGamepad *)profile;
+        primary = dualSense.touchpadPrimary; secondary = dualSense.touchpadSecondary;
+        sonyTouchpadButton = dualSense.touchpadButton;
+    } else if ([profile isKindOfClass:GCDualShockGamepad.class]) {
+        GCDualShockGamepad *dualShock = (GCDualShockGamepad *)profile;
+        primary = dualShock.touchpadPrimary; secondary = dualShock.touchpadSecondary;
+        sonyTouchpadButton = dualShock.touchpadButton;
+    }
+    if (primary && secondary && sonyTouchpadButton) {
+        NSArray<GCControllerDirectionPad *> *points = @[primary, secondary];
+        NSArray<NSString *> *names = @[@"primary", @"secondary"];
+        for (NSUInteger point = 0; point < points.count; point++) {
+            GCControllerDirectionPad *touch = points[point];
+            NSString *name = names[point];
+            touch.valueChangedHandler = ^(GCControllerDirectionPad *input, float x, float y) {
+                (void)input;
+                // The profile API returns its resting, released finger as (0, 0). This is the
+                // only contact signal it provides; an actual touch beginning exactly at centre
+                // simply has no movement to send until the finger moves.
+                BOOL down = fabsf(x) > FLT_EPSILON || fabsf(y) > FLT_EPSILON;
+                [AKControllerTouchpadRelay.shared touch:point down:down x:x y:y];
+                AKCIReport(weakSelf, device, deviceName, @"touchpad",
+                           AKInputElementForTouchpad(name, down ? @"moved" : @"up"),
+                           down ? 1 : 0, down,
+                           [NSString stringWithFormat:@"x=%.2f y=%.2f", x, y]);
+            };
+        }
+        sonyTouchpadButton.pressedChangedHandler = ^(GCControllerButtonInput *input, float value, BOOL pressed) {
+            (void)input; (void)value;
+            AKControllerTouchpadRelay *relay = AKControllerTouchpadRelay.shared;
+            if (relay.enabled) { [relay click:pressed]; return; }
+            AKCIButton(weakSelf, device, deviceName,
+                       AKInputElementForControllerButton(GCInputDualShockTouchpadButton), value, pressed);
         };
-        touchpad.touchUp = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
-            (void)input; (void)buttonValue;
-            AKCIReport(weakSelf, device, deviceName, @"touchpad", up, 0, NO,
-                       [NSString stringWithFormat:@"x=%.2f y=%.2f button=%d", x, y, buttonPressed]);
-        };
-        touchpad.touchMoved = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
-            (void)input; (void)buttonValue; (void)buttonPressed;
-            AKCIReport(weakSelf, device, deviceName, @"touchpad", moved, 0, NO,
-                       [NSString stringWithFormat:@"x=%.2f y=%.2f", x, y]);
-        };
+        AKCILog(@"inspector: %@ touchpad source=Sony profile (two direction pads)", deviceName);
+    } else {
+        // Which touch point each generic touchpad is: "Touchpad 1" before "Touchpad 2".
+        NSArray<NSString *> *touchpadNames = [profile.touchpads.allKeys sortedArrayUsingSelector:@selector(compare:)];
+        for (NSString *name in profile.touchpads) {
+            GCControllerTouchpad *touchpad = profile.touchpads[name];
+            NSString *down = AKInputElementForTouchpad(name, @"down");
+            NSString *up = AKInputElementForTouchpad(name, @"up");
+            NSString *moved = AKInputElementForTouchpad(name, @"moved");
+            NSUInteger point = [touchpadNames indexOfObject:name];
+            // The pointer is fed before the interest gate: the gate decides what the diagnostics and
+            // the router see, and touchpad movement is never theirs outside diagnostic mode. The
+            // relay's own switch, read under its lock, is the only thing that decides this.
+            touchpad.touchDown = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
+                (void)input; (void)buttonValue;
+                [AKControllerTouchpadRelay.shared touch:point down:YES x:x y:y];
+                AKCIReport(weakSelf, device, deviceName, @"touchpad", down, 1, YES,
+                           [NSString stringWithFormat:@"x=%.2f y=%.2f button=%d", x, y, buttonPressed]);
+            };
+            touchpad.touchUp = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
+                (void)input; (void)buttonValue;
+                [AKControllerTouchpadRelay.shared touch:point down:NO x:x y:y];
+                AKCIReport(weakSelf, device, deviceName, @"touchpad", up, 0, NO,
+                           [NSString stringWithFormat:@"x=%.2f y=%.2f button=%d", x, y, buttonPressed]);
+            };
+            touchpad.touchMoved = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
+                (void)input; (void)buttonValue; (void)buttonPressed;
+                [AKControllerTouchpadRelay.shared touch:point down:YES x:x y:y];
+                AKCIReport(weakSelf, device, deviceName, @"touchpad", moved, 0, NO,
+                           [NSString stringWithFormat:@"x=%.2f y=%.2f", x, y]);
+            };
+        }
     }
 
     // The inventory is read-only. This used to disable Share's system gesture here,
