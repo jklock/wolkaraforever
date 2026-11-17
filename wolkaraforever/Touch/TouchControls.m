@@ -608,7 +608,7 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     NSLayoutConstraint *_composerHeight;
     // The label's and the action row's own heights, and the values they currently carry: the card
     // is these plus its fixed parts, so a larger text size grows the card and never the editor.
-    NSLayoutConstraint *_composerLabelHeight, *_composerRowHeight;
+    NSLayoutConstraint *_composerLabelHeight;
     CGFloat _composerLabelRowHeight, _composerActionRowHeight;
     BOOL _applyingComposerDraft;
     AKTouchKeyboardView *_layerKeyboard;
@@ -888,6 +888,18 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         _cameraSurface = surface;
     }
     if (self.superview) [self placeToolbarInHost:self.superview];
+    // The Composer's action row is positioned here, not by constraints. Its own height and floor
+    // constraints were missing from the layout engine's set for it - they read active, carried the
+    // right values and were installed on the row, and constraintsAffectingLayoutForAxis: never
+    // returned them - so the row measured 0 and the draft editor took its 44 points (measured
+    // 2026-11-16 with lldb, on both matrix simulators). A frame set in the layout pass is not
+    // something the engine can lose, and the row's own children are still laid out against it.
+    if (_composerRow.superview && !_composerRow.hidden) {
+        CGFloat card = CGRectGetHeight(_composer.bounds);
+        CGFloat box = MIN(_composerActionRowHeight, card / 2);
+        _composerRow.frame = CGRectMake(8, card - 8 - box,
+                                        MAX(0, CGRectGetWidth(_composer.bounds) - 16), MAX(0, box));
+    }
     _trackpadButton.frame = CGRectMake(0, 0, 44, 44);
     _keyboardButton.frame = _toolbarCollapsed ? CGRectMake(0, 0, 44, 34) : CGRectMake(52, 0, 44, 44);
     _keyboardButton.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
@@ -1432,7 +1444,6 @@ static const unsigned short AKKeyF12 = 111;
     _composerLabelRowHeight = AKComposerLabelBox(_composerLabel.font);
     _composerActionRowHeight = AKComposerActionBox(action);
     _composerLabelHeight.constant = _composerLabelRowHeight;
-    _composerRowHeight.constant = _composerActionRowHeight;
     BOOL active = [self composerActive];
     _composerHeight.constant = [self cardHeightForComposer:active];
     AKLog(@"toolbar: draft card text size %s (label=%.0f row=%.0f)",
@@ -1460,6 +1471,7 @@ static const unsigned short AKKeyF12 = 111;
     BOOL active = [self composerActive];
     _composer.hidden = !(self.keyboardVisible || active || composer.state == AKChatComposerStateFailed);
     _composerRow.hidden = !active;
+    if (_composer.superview) [self setNeedsLayout];
     _insertDraftButton.hidden = active;
     _clearDraftButton.hidden = active;
     _speechLanguageButton.hidden = active;
@@ -1849,10 +1861,12 @@ static const unsigned short AKKeyF12 = 111;
     language.accessibilityHint = AKHostLocalized(@"voice.language.hint");
     language.titleLabel.font = [UIFont systemFontOfSize:13];
     language.showsMenuAsPrimaryAction = YES;
-    for (UIView *view in @[label, _keyboardInput, language, clear, insert, row]) {
+    // The action row is the one view in the card not laid out by constraints: see -layoutSubviews.
+    for (UIView *view in @[label, _keyboardInput, language, clear, insert]) {
         view.translatesAutoresizingMaskIntoConstraints = NO;
         [_composer addSubview:view];
     }
+    [_composer addSubview:row];
     // The classic geometry, unchanged from every release through v1.0.10: the draft beside the
     // clear button and Replace, in a card 82 points tall.
     _classicEditorTrailing = [_keyboardInput.trailingAnchor constraintEqualToAnchor:language.leadingAnchor];
@@ -1864,9 +1878,8 @@ static const unsigned short AKKeyF12 = 111;
     for (NSLayoutConstraint *constraint in @[_composerEditorTrailing, _composerEditorBottom]) constraint.active = NO;
     _composerHeight = [_composer.heightAnchor constraintEqualToConstant:AKComposerCardHeightClassic];
     _composerLabelHeight = [label.heightAnchor constraintEqualToConstant:AKComposerLabelBox(label.font)];
-    _composerRowHeight = [row.heightAnchor constraintEqualToConstant:AKComposerActionBox(_composerSendButton.titleLabel.font)];
     _composerLabelRowHeight = _composerLabelHeight.constant;
-    _composerActionRowHeight = _composerRowHeight.constant;
+    _composerActionRowHeight = AKComposerActionBox(_composerSendButton.titleLabel.font);
     [NSLayoutConstraint activateConstraints:@[
         [label.leadingAnchor constraintEqualToAnchor:_composer.leadingAnchor constant:12],
         [label.topAnchor constraintEqualToAnchor:_composer.topAnchor constant:6],
@@ -1890,10 +1903,6 @@ static const unsigned short AKKeyF12 = 111;
         [insert.heightAnchor constraintEqualToConstant:44],
         [insert.centerYAnchor constraintEqualToAnchor:_keyboardInput.centerYAnchor],
         [insert.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-8],
-        [row.leadingAnchor constraintEqualToAnchor:_composer.leadingAnchor constant:8],
-        [row.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-8],
-        [row.bottomAnchor constraintEqualToAnchor:_composer.bottomAnchor constant:-8],
-        _composerRowHeight,
         _classicEditorTrailing, _classicEditorBottom, _composerHeight,
     ]];
     [self refreshSpeechLanguageButton];
