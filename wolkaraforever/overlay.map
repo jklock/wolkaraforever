@@ -237,8 +237,13 @@ wolkaraforever/Input/tests/test_controller_input_app.m tests/test_controller_inp
 #
 # CoreAudio: the audio adapter's test, which has to supply the host that asks
 # for the game's playback lease. Patch 0005 stopped the adapter taking the
-# session itself, so a bare test process has no route to report.
+# session itself, so a bare test process has no route to report. AKAudioModel.h
+# (patch 0065, the game's sound without iOS's HAL) is one source for three images:
+# both audio adapters (through AKSupport's include path) and the launcher's switch.
+wolkaraforever/CoreAudio/AKAudioModel.h translation/AKSupport/AKAudioModel.h add
+wolkaraforever/CoreAudio/AKAudioModel.h launcher/WoW/AKAudioModel.h add
 wolkaraforever/CoreAudio/tests/test_audio_hardware.m tests/test_audio_hardware.m replace
+wolkaraforever/CoreAudio/tests/test_audio_tone.m tests/test_audio_tone.m add
 #
 # Addons: the bundled Interface mobile add-on package - one versioned ZIP of the
 # reviewed Lua in addons/WolkaraRoue, and the manifest that binds it to its release

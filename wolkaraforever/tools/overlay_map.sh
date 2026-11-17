@@ -132,10 +132,16 @@ intent() {
     echo "#"
     echo "# CoreAudio: the audio adapter's test, which has to supply the host that asks"
     echo "# for the game's playback lease. Patch 0005 stopped the adapter taking the"
-    echo "# session itself, so a bare test process has no route to report."
+    echo "# session itself, so a bare test process has no route to report. AKAudioModel.h"
+    echo "# (patch 0065, the game's sound without iOS's HAL) is one source for three images:"
+    echo "# both audio adapters (through AKSupport's include path) and the launcher's switch."
     git ls-files wolkaraforever/CoreAudio | while read -r f; do
         case "$f" in
             wolkaraforever/CoreAudio/tests/*) dst=tests/${f#wolkaraforever/CoreAudio/tests/};;
+            wolkaraforever/CoreAudio/AKAudioModel.h)
+                dst=translation/AKSupport/AKAudioModel.h
+                echo "$f $dst $(intent "$dst")"
+                dst=launcher/WoW/AKAudioModel.h;;
             *) echo "# not overlaid yet (source of a pending patch): $f"; continue;;
         esac
         echo "$f $dst $(intent "$dst")"
