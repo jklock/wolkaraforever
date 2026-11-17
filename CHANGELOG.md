@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- **Frame limit and AFK saver for longer sessions on battery.** Two new rows in **Performance Manager**, in every interface mode. **Frame limit** is Automatic, 30 or 60 frames a second: Automatic is 30 on battery and 60 plugged in, and switches the moment the charger is connected or removed. Low Power Mode, or an iPad at thermal state Serious or above, lowers any choice to 30 until that clears. The limit is applied at the frame's present, so frames stay on the panel's refreshes and nothing is dropped; the game's own settings are not changed. **AFK saver** (Off, 2, 5 or 10 minutes; 5 by default) dims the game and drops it to 10 frames a second after that long with no touch, key, pointer or controller input; the game stays connected, the screen still never locks, and the first touch only wakes it. Both apply from the next game start.
 - **A dropped connection no longer stalls the game download.** The retry wait now always has a real scheduler, so it cannot spin while holding the download lock and block transfers or Cancel.
 
 ## v1.0.19

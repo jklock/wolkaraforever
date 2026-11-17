@@ -20,6 +20,8 @@
 // The arrangement the on-screen controls read, as data: the same functions the adapter uses, so
 // a choice made here is what the next guest starts with.
 #import "LayoutStore.h"
+// The battery settings (frame limit, AFK saver), from the one header the adapters read them with.
+#import "BatterySettings.h"
 #import <GameController/GameController.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -271,7 +273,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
         *_renderProfileButton, *_deviceProfileButton, *_interfaceModeButton,
         *_addonsBackupButton, *_addonsRestoreButton,
-        *_layoutCreateButton, *_layoutRestoreButton, *_layoutBackupButton;
+        *_layoutCreateButton, *_layoutRestoreButton, *_layoutBackupButton, *_frameLimitButton, *_afkSaverButton;
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
@@ -458,6 +460,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         target:self action:@selector(overlayChanged:)];
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
+    // How many frames a second the game is shown at: battery, not picture. The Metal adapter reads it at the
+    // next game start, and lowers it on its own in Low Power Mode or when the iPad gets hot.
+    _frameLimitButton=[self button:@"wow.performance.frameLimit" action:@selector(chooseFrameLimit)];
+    // The AFK saver: after this many minutes with nothing touched during a game, the screen dims and the frames drop
+    // to 10 a second; the session stays. The AppKit adapter reads it at the next game start.
+    _afkSaverButton=[self button:@"wow.performance.afkSaver" action:@selector(chooseAFKSaver)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
     // The interface this launcher drives. One setting, one row: it writes the single key the
     // guest reads and never touches an installed package.
@@ -483,7 +491,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
         rows:@[_permissionsButton,_voiceButton,_touchpadButton]];
     UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
-        rows:@[_deviceProfileButton,_renderProfileButton,_overlayRow]];
+        rows:@[_deviceProfileButton,_renderProfileButton,_frameLimitButton,_afkSaverButton,_overlayRow]];
     // The gamepad switch is the first decision in the UI card: it changes whether the game
     // exposes its controller interface. Backup precedes Restore because restore replaces data.
     UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
@@ -1059,6 +1067,14 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self configureButton:_renderProfileButton title:WKLocalizedFormat(@"home.performance.renderProfile",[self renderProfileDescription]) filled:NO];
     _renderProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _renderProfileButton.enabled=preferencesIdle;
+    [self configureButton:_frameLimitButton
+        title:WKLocalizedFormat(@"home.performance.frameLimit",FrameLimitLabel(AKFrameLimitChoice(NSUserDefaults.standardUserDefaults))) filled:NO];
+    _frameLimitButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _frameLimitButton.enabled=preferencesIdle;
+    [self configureButton:_afkSaverButton
+        title:WKLocalizedFormat(@"home.performance.afkSaver",AFKSaverLabel(AKAFKSaverMinutes(NSUserDefaults.standardUserDefaults))) filled:NO];
+    _afkSaverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _afkSaverButton.enabled=preferencesIdle;
     _editionButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _preferencesButton.enabled=_editionButton.enabled;
     _languageButton.enabled=_editionButton.enabled;
@@ -1790,6 +1806,56 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     picker.allowsMultipleSelection=NO;
     picker.delegate=self;
     [self presentViewController:picker animated:YES completion:nil];
+}
+// Automatic names its two rates (30 on battery, 60 plugged in; the Metal adapter follows the charger live). 120 is not
+// offered: on the iPad it showed no more frames than 60 for 43 % more CPU.
+static NSString *FrameLimitLabel(NSInteger choice) {
+    if (choice==AKFrameLimitAutomatic) return WKLocalized(@"home.frameLimit.automatic");
+    return WKLocalizedFormat(@"home.frameLimit.rate",(long)choice);
+}
+// The frame limit: Automatic (30 on battery, 60 plugged in) first, then the rates that divide the 120 Hz panel evenly (30, 60).
+// One key and nothing else - the game's own settings are not touched - and Automatic is no key, so it follows the default.
+- (void)chooseFrameLimit {
+    if (_busy || _starting || _running || _sessionUsed) return;
+    NSInteger current=AKFrameLimitChoice(NSUserDefaults.standardUserDefaults);
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.frameLimit.title")
+        message:WKLocalized(@"home.frameLimit.message") preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSNumber *each in AKFrameLimitChoices()) {
+        NSInteger choice=each.integerValue;
+        NSString *title=FrameLimitLabel(choice);
+        if (choice==current) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            if (choice==AKFrameLimitAutomatic) [NSUserDefaults.standardUserDefaults removeObjectForKey:AKFrameLimitDefaultsKey];
+            else [NSUserDefaults.standardUserDefaults setInteger:choice forKey:AKFrameLimitDefaultsKey];
+            WKLog("ui", @"frame limit: %@", choice==AKFrameLimitAutomatic ? @"Automatic (30 on battery, 60 plugged in)" : @(choice).stringValue);
+            [self render];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_frameLimitButton];
+}
+static NSString *AFKSaverLabel(NSInteger minutes) {
+    if (minutes<=0) return WKLocalized(@"home.afkSaver.off");
+    return WKLocalizedFormat(@"home.afkSaver.minutes",(long)minutes);
+}
+// The AFK saver: Off, 2, 5 (the default) or 10 minutes. One key, read by the AppKit adapter at the next game start.
+- (void)chooseAFKSaver {
+    if (_busy || _starting || _running || _sessionUsed) return;
+    NSInteger current=AKAFKSaverMinutes(NSUserDefaults.standardUserDefaults);
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.afkSaver.title")
+        message:WKLocalized(@"home.afkSaver.message") preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSNumber *each in AKAFKSaverChoices()) {
+        NSInteger minutes=each.integerValue;
+        NSString *title=AFKSaverLabel(minutes);
+        if (minutes==current) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            [NSUserDefaults.standardUserDefaults setInteger:minutes forKey:AKAFKSaverDefaultsKey];
+            WKLog("ui", @"AFK saver: %@", minutes ? [NSString stringWithFormat:@"%ld min",(long)minutes] : @"off");
+            [self render];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_afkSaverButton];
 }
 static NSString *InterfaceModeLabel(NSString *name) {    if ([name isEqual:AKInterfaceModeIPadOS]) return WKLocalized(@"home.launcher.interfaceMode.ipados");
     if ([name isEqual:AKInterfaceModeIOSDuo]) return WKLocalized(@"home.launcher.interfaceMode.iosduo");

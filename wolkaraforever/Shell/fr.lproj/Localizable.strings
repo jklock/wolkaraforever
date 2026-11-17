@@ -116,6 +116,8 @@
 "home.performance.gamepad" = "Interface manette";
 "home.performance.overlay" = "Affichage des performances";
 "home.performance.renderProfile" = "Profil de rendu : %@";
+"home.performance.frameLimit" = "Limite d’images : %@";
+"home.performance.afkSaver" = "Économie AFK : %@";
 "home.performance.deviceProfile" = "Profil de l’appareil : %@";
 "home.render.performance" = "Performances";
 "home.render.balanced" = "Équilibré";
@@ -241,6 +243,14 @@
 "home.gamepad.unchanged.reason" = "Le réglage n’a pas pu être enregistré : %@";
 "home.render.title" = "Profil de rendu";
 "home.render.message" = "S’applique au prochain démarrage de Forever. C’est l’échelle de rendu propre à Forever sur %@ ; les réglages du jeu ne sont pas modifiés.";
+"home.frameLimit.title" = "Limite d’images";
+"home.frameLimit.message" = "S’applique au prochain démarrage du jeu. Le nombre d’images par seconde affichées par le jeu : moins économise la batterie et garde l’iPad plus frais. Automatique suit le chargeur pendant la partie : 30 sur batterie, 60 sur secteur. En mode économie d’énergie, ou tant que l’iPad est chaud, la limite est de 30 jusqu’à ce que cela passe.";
+"home.frameLimit.automatic" = "Automatique (30 sur batterie, 60 sur secteur)";
+"home.frameLimit.rate" = "%ld FPS";
+"home.afkSaver.title" = "Économie AFK";
+"home.afkSaver.message" = "S’applique au prochain démarrage du jeu. Après ce délai sans toucher, touche ni manette pendant une partie, l’écran s’assombrit et le jeu passe à 10 images par seconde ; il reste connecté. Le toucher suivant le réveille et ne fait rien d’autre.";
+"home.afkSaver.off" = "Désactivée";
+"home.afkSaver.minutes" = "%ld min";
 "home.render.ready.title" = "Profil de rendu prêt";
 "home.render.ready.message" = "%@ s’appliquera au prochain démarrage de Forever. Aucun réglage du jeu n’a été modifié.";
 "home.render.confirm.title" = "Au-delà de la recommandation";
@@ -426,6 +436,7 @@
 "touch.gamepad.rightStick" = "Stick droit de la manette";
 "touch.gamepad.jump" = "Saut";
 "touch.autorun" = "Course automatique";
+"touch.afk.wake" = "Touchez pour continuer";
 "touch.gamepad.doneEditing" = "Terminer la modification";
 "touch.gamepad.dragHint" = "Faites glisser les commandes pour les déplacer";
 "touch.settings" = "Réglages des commandes tactiles";

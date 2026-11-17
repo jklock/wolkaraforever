@@ -119,6 +119,8 @@
 "home.performance.gamepad" = "Gamepad-Oberfläche";
 "home.performance.overlay" = "Leistungsanzeige";
 "home.performance.renderProfile" = "Renderprofil: %@";
+"home.performance.frameLimit" = "Bildrate-Limit: %@";
+"home.performance.afkSaver" = "AFK-Sparmodus: %@";
 "home.performance.deviceProfile" = "Geräteprofil: %@";
 "home.render.performance" = "Leistung";
 "home.render.balanced" = "Ausgewogen";
@@ -240,6 +242,14 @@
 "home.gamepad.unchanged.reason" = "Die Einstellung konnte nicht gespeichert werden: %@";
 "home.render.title" = "Renderprofil";
 "home.render.message" = "Gilt beim nächsten Start von Forever. Das ist Forevers eigener Renderfaktor auf %@; die eigenen Einstellungen des Spiels werden nicht verändert.";
+"home.frameLimit.title" = "Bildrate-Limit";
+"home.frameLimit.message" = "Gilt beim nächsten Start des Spiels. Wie viele Bilder pro Sekunde das Spiel zeigt: weniger spart Akku und hält das iPad kühler. Automatisch folgt beim Spielen dem Ladekabel: 30 im Akkubetrieb, 60 am Strom. Im Stromsparmodus oder solange das iPad heiß ist, sind es 30, bis das vorbei ist.";
+"home.frameLimit.automatic" = "Automatisch (30 im Akkubetrieb, 60 am Strom)";
+"home.frameLimit.rate" = "%ld FPS";
+"home.afkSaver.title" = "AFK-Sparmodus";
+"home.afkSaver.message" = "Gilt beim nächsten Start des Spiels. Nach so langer Zeit ohne Berührung, Taste oder Controller während des Spiels wird der Bildschirm abgedunkelt und das Spiel zeigt 10 Bilder pro Sekunde; die Verbindung bleibt bestehen. Die nächste Berührung weckt es und bewirkt sonst nichts.";
+"home.afkSaver.off" = "Aus";
+"home.afkSaver.minutes" = "%ld Min.";
 "home.render.confirm.title" = "Über der Empfehlung";
 "home.render.confirm.message" = "%1$@ rendert auf %3$@ mit %2$@, also mehr, als dieses Profil empfiehlt. Dort wurde gemessen, dass das Frame-Budget nicht gehalten wird.";
 "home.render.confirm.yes" = "%@ verwenden";
@@ -425,6 +435,7 @@
 "touch.gamepad.rightStick" = "Controller, rechter Stick";
 "touch.gamepad.jump" = "Springen";
 "touch.autorun" = "Automatisch laufen";
+"touch.afk.wake" = "Zum Fortfahren tippen";
 "touch.gamepad.doneEditing" = "Bearbeiten beenden";
 "touch.gamepad.dragHint" = "Elemente zum Verschieben ziehen";
 "touch.settings" = "Einstellungen der Bedienelemente";

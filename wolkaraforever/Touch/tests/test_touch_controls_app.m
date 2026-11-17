@@ -6,6 +6,7 @@
 #import "TouchGamepad.h"
 #import "TouchGamepadLayout.h"
 #import "AKHostLocalization.h"
+#import "IdleSaver.h"
 #include <assert.h>
 
 // Wait for the state an assertion needs, pumping the main run loop, instead of sleeping a fixed
@@ -188,6 +189,48 @@ static NSEvent *AKFixturePressKey(UIView *host, AKInputFixtureView *guest, unsig
     [host pressesBegan:[NSSet setWithObject:AKPressForUsage(usage)] withEvent:nil];
     AKDrainFixtureEvents();
     return guest.lastKeyEvent;
+}
+
+// The AFK saver in a real application (its own test, test_idle_saver.m, has the rules): made at the adapter's load in
+// every interface, the application's events pass through it, its layer is a window over the game's, and the screen
+// never locks because of it.
+@interface AKFixtureHoverEvent : UIEvent
+@end
+@implementation AKFixtureHoverEvent
+- (UIEventType)type { return UIEventTypeHover; }
+- (NSSet<UITouch *> *)allTouches { return [NSSet set]; }
+@end
+static void AKFixtureCheckAFKSaver(UIView *host) {
+    AKIdleSaver *saver = AKIdleSaver.shared;
+    assert(saver && saver.minutes == 5);   // the fixture's defaults have no row choice: 5 minutes
+    UIApplication *application = UIApplication.sharedApplication;
+    BOOL idleTimerWas = application.idleTimerDisabled;
+    application.idleTimerDisabled = YES;   // as Shell/main.m sets it for a game
+    __block NSTimeInterval now = 90000;
+    NSMutableArray<NSNumber *> *caps = [NSMutableArray array];
+    saver.clock = ^NSTimeInterval { return now; };
+    saver.controllerStamp = ^double { return 0; };
+    saver.capSender = ^(BOOL idle) { [caps addObject:@(idle)]; };
+    // An earlier case posts a synthetic UIApplicationWillResignActiveNotification (the keyboard's background check)
+    // with no DidBecomeActive after it, so the saver still believes the app is away. The application is active.
+    assert(application.applicationState == UIApplicationStateActive);
+    saver.appActive = YES;
+    [saver begin];
+    now += 301; [saver tick];
+    assert(saver.dimmed && [caps isEqual:@[@YES]]);
+    UIWindow *dimWindow = saver.dimView.window;
+    assert(dimWindow && !dimWindow.hidden && !saver.dimView.hidden && dimWindow.windowLevel > host.window.windowLevel);
+    assert(dimWindow.windowScene == host.window.windowScene && !dimWindow.isKeyWindow && !dimWindow.userInteractionEnabled);
+    assert(CGRectEqualToRect(saver.dimView.frame, dimWindow.bounds));
+    assert(application.idleTimerDisabled);
+    // An event the application dispatches reaches the saver first: this one wakes it and goes no further.
+    [application sendEvent:[AKFixtureHoverEvent new]];
+    assert(!saver.dimmed && dimWindow.hidden && [caps isEqual:(@[@YES, @NO])]);
+    assert(application.idleTimerDisabled);
+    NSLog(@"afk saver: dimmed over the game in its own window, woken through the application's sendEvent:, the idle timer left off");
+    application.idleTimerDisabled = idleTimerWas;
+    saver.clock = nil; saver.controllerStamp = nil; saver.capSender = nil;
+    [saver begin];
 }
 
 static void AKFixtureInputSource(void *context) {
@@ -1188,6 +1231,7 @@ static void AKFixtureInputSource(void *context) {
                     (void)timer;
                     assert([fixture.text isEqual:expected]);
                     assert(!controls.keyboardVisible && host.isFirstResponder);
+                    AKFixtureCheckAFKSaver(host);
                     NSLog(@"TOUCH_UI_SELF_TEST_PASS: whole-field replacement, empty clearing, duplicate suppression, draft editing, dictation, cancellation and fixed toolbar");
                     exit(EXIT_SUCCESS);
                 }];

@@ -100,10 +100,18 @@ intent() {
             # compile authorization/Storage, and the reference is nothing more
             # than a second item in that same protected store.
             wolkaraforever/Bridge/EnrollmentReference.swift) dst=authorization/Storage/EnrollmentReference.swift;;
+            wolkaraforever/Bridge/FramePacing.*|wolkaraforever/Bridge/BatterySettings.h) dst=translation/Metal/${f#wolkaraforever/Bridge/};;
             wolkaraforever/Bridge/LocalServiceRetry.*|wolkaraforever/Bridge/AuthorizationBlockedState.*) dst=authorization/App/${f#wolkaraforever/Bridge/};;
             *) echo "# not overlaid yet (source of a pending patch): $f"; continue;;
         esac
         echo "$f $dst $(intent "$dst")"
+        # The battery settings are read by the launcher (its rows) and the AppKit adapter (the AFK saver) too,
+        # and neither links the Metal adapter: one header-only source in all three, so a choice means one thing.
+        if [ "$f" = wolkaraforever/Bridge/BatterySettings.h ]; then
+            for dst in launcher/WoW/BatterySettings.h translation/AppKit/BatterySettings.h; do
+                echo "$f $dst $(intent "$dst")"
+            done
+        fi
     done
     echo "#"
     echo "# Controller: what the pad reports, and every change to it (diagnostic)"

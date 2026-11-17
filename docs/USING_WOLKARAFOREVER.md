@@ -42,6 +42,13 @@ A DualSense or DualShock 4 touchpad can move the game's pointer. In **Input Mana
 
 ![Voice configuration](screenshots/voice-configuration.jpg)
 
+## Save battery during long sessions
+
+The **Performance Manager** card has two rows for this. Both apply from the next game start, in every interface mode, and neither changes the game's own settings.
+
+- **Frame limit**: **Automatic**, **30 FPS** or **60 FPS**. Automatic is 30 frames a second on battery and 60 when the iPad is plugged in, and it changes as soon as you plug in or unplug. In Low Power Mode, or while the iPad is hot, any choice drops to 30 until that passes. Fewer frames use less battery and keep the iPad cooler.
+- **AFK saver**: **Off**, **2**, **5** or **10 min** (5 by default). After that long with no touch, key, pointer or controller input during a game, the screen dims and the game drops to 10 frames a second. The game stays connected and the screen does not lock. The next touch only wakes it; it does not reach the game.
+
 ## Get help safely
 
 When something fails, send a log — it is three taps and needs no computer:

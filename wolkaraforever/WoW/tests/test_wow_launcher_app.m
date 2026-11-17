@@ -1750,9 +1750,10 @@ static void TestPhoneDisplayDefaults(void) {
         // The profile card: which device, which render scale, and the overlay. Nothing here
         // reads or writes the game's files, and there is no "restore defaults" row: the way
         // back is the Automatic choice in the device sheet, which is where the value lives.
+        // The frame limit is this app's own too: it paces the frames, it writes no game setting.
         @"wow.box.profile": @[@"wow.heading.profile", @"wow.performance.deviceProfile",
-                              @"wow.performance.renderProfile",
-                              @"wow.performance.overlay"],
+                              @"wow.performance.renderProfile", @"wow.performance.frameLimit",
+                              @"wow.performance.afkSaver", @"wow.performance.overlay"],
         @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.gamepad",
                                   @"wow.performance.backup", @"wow.performance.restore",
                                   @"wow.performance.reset", @"wow.performance.settingsFolder"],
@@ -2283,9 +2284,107 @@ static int backupsBeforePerformance;
     assert(stubBackups == backupsBeforePerformance);
     assert([[self configText] isEqual:configBeforePerformance]);
     assert(Find(self.controller.view, @"wow.performance.restoreDefaults") == nil);
+    [self checkFrameLimitRow];
+    [self checkAFKSaverRow];
+    assert([[self configText] isEqual:configBeforePerformance]);
     // Finally the app's own language: the setting, the German page, the one-time offer to put
     // the game into German too, and the switch back.
     [self performSelector:@selector(startLanguageTests) withObject:nil afterDelay:0.3];
+}
+
+#pragma mark - The frame limit
+
+// The frame limit row: Automatic (30 on battery, 60 plugged in), 30 or 60 frames a second, one key the Metal adapter
+// reads at the next game start. Automatic is no key at all, so a later default can change it. 40 and 120 are not
+// offered (the iPad showed them at 30 and 60): a stored 40 reads as 30 and a stored 120 as 60.
+- (UIAlertController *)openSheetFromRow:(NSString *)identifier {
+    [[self row:identifier] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
+    return (id)self.controller.presentedViewController;
+}
+- (void)chooseAction:(NSString *)title inSheet:(UIAlertController *)sheet {
+    UIAlertAction *chosen = nil;
+    for (UIAlertAction *action in sheet.actions) if ([action.title isEqual:title]) chosen = action;
+    assert(chosen != nil);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(chosen);
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+}
+- (void)checkFrameLimitRow {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:@"WolkaraForeverFrameLimitV1"];
+    [self.controller render];
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.frameLimit") configuration].title
+            isEqual:@"Frame limit: Automatic (30 on battery, 60 plugged in)"]);
+    assert([self row:@"wow.performance.frameLimit"].enabled);
+    UIAlertController *sheet = [self openSheetFromRow:@"wow.performance.frameLimit"];
+    assert([sheet.title isEqual:@"Frame Limit"]);
+    assert([sheet.message containsString:@"Low Power Mode"]);
+    assert([sheet.message containsString:@"30 on battery, 60 plugged in"]);
+    assert(CancelActions(sheet) == 1);
+    assert([[sheet.actions valueForKey:@"title"] isEqualToArray:(@[@"✓ Automatic (30 on battery, 60 plugged in)", @"30 FPS", @"60 FPS", @"Cancel"])]);
+    [self chooseAction:@"30 FPS" inSheet:sheet];
+    assert([defaults integerForKey:@"WolkaraForeverFrameLimitV1"] == 30);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.frameLimit") configuration].title isEqual:@"Frame limit: 30 FPS"]);
+    sheet = [self openSheetFromRow:@"wow.performance.frameLimit"];
+    assert([[sheet.actions valueForKey:@"title"] isEqualToArray:(@[@"Automatic (30 on battery, 60 plugged in)", @"✓ 30 FPS", @"60 FPS", @"Cancel"])]);
+    for (UIAlertAction *action in sheet.actions) assert(![action.title containsString:@"120"] && ![action.title containsString:@"more battery"]);
+    [self chooseAction:@"60 FPS" inSheet:sheet];
+    assert([defaults integerForKey:@"WolkaraForeverFrameLimitV1"] == 60);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.frameLimit") configuration].title isEqual:@"Frame limit: 60 FPS"]);
+    // A stored 120 reads as 60, what the iPad really presented for it.
+    [defaults setInteger:120 forKey:@"WolkaraForeverFrameLimitV1"];
+    [self.controller render];
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.frameLimit") configuration].title isEqual:@"Frame limit: 60 FPS"]);
+    sheet = [self openSheetFromRow:@"wow.performance.frameLimit"];
+    assert([[sheet.actions valueForKey:@"title"] isEqualToArray:(@[@"Automatic (30 on battery, 60 plugged in)", @"30 FPS", @"✓ 60 FPS", @"Cancel"])]);
+    assert(CancelActions(sheet) == 1);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+    // A stored 40 reads as 30, what the iPad really showed for it.
+    [defaults setInteger:40 forKey:@"WolkaraForeverFrameLimitV1"];
+    [self.controller render];
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.frameLimit") configuration].title isEqual:@"Frame limit: 30 FPS"]);
+    // A value no build offers reads as Automatic, never as uncapped.
+    [defaults setInteger:45 forKey:@"WolkaraForeverFrameLimitV1"];
+    [self.controller render];
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.frameLimit") configuration].title
+            isEqual:@"Frame limit: Automatic (30 on battery, 60 plugged in)"]);
+    sheet = [self openSheetFromRow:@"wow.performance.frameLimit"];
+    [self chooseAction:@"✓ Automatic (30 on battery, 60 plugged in)" inSheet:sheet];
+    assert([defaults objectForKey:@"WolkaraForeverFrameLimitV1"] == nil);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.frameLimit") configuration].title
+            isEqual:@"Frame limit: Automatic (30 on battery, 60 plugged in)"]);
+    Pump(0.3);
+}
+
+// The AFK saver row: Off, 2, 5 (the default) or 10 minutes, one key the AppKit adapter reads at the next game start.
+- (void)checkAFKSaverRow {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:@"WolkaraForeverAFKSaverMinutesV1"];
+    [self.controller render];
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.afkSaver") configuration].title isEqual:@"AFK saver: 5 min"]);
+    assert([self row:@"wow.performance.afkSaver"].enabled);
+    UIAlertController *sheet = [self openSheetFromRow:@"wow.performance.afkSaver"];
+    assert([sheet.title isEqual:@"AFK Saver"]);
+    assert([sheet.message containsString:@"10 frames a second"] && [sheet.message containsString:@"stays connected"]);
+    assert(CancelActions(sheet) == 1);
+    assert([[sheet.actions valueForKey:@"title"] isEqualToArray:(@[@"Off", @"2 min", @"✓ 5 min", @"10 min", @"Cancel"])]);
+    [self chooseAction:@"Off" inSheet:sheet];
+    assert([defaults objectForKey:@"WolkaraForeverAFKSaverMinutesV1"] != nil && [defaults integerForKey:@"WolkaraForeverAFKSaverMinutesV1"] == 0);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.afkSaver") configuration].title isEqual:@"AFK saver: Off"]);
+    sheet = [self openSheetFromRow:@"wow.performance.afkSaver"];
+    assert([[sheet.actions valueForKey:@"title"] isEqualToArray:(@[@"✓ Off", @"2 min", @"5 min", @"10 min", @"Cancel"])]);
+    [self chooseAction:@"10 min" inSheet:sheet];
+    assert([defaults integerForKey:@"WolkaraForeverAFKSaverMinutesV1"] == 10);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.afkSaver") configuration].title isEqual:@"AFK saver: 10 min"]);
+    // Minutes no build offers read as the default.
+    [defaults setInteger:7 forKey:@"WolkaraForeverAFKSaverMinutesV1"];
+    [self.controller render];
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.afkSaver") configuration].title isEqual:@"AFK saver: 5 min"]);
+    [defaults removeObjectForKey:@"WolkaraForeverAFKSaverMinutesV1"];
+    [self.controller render];
+    Pump(0.3);
 }
 
 #pragma mark - The app's language, and the game's
@@ -2844,6 +2943,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
                                    @"wow.launcher.layoutBackup",
                                    @"wow.permissions", @"wow.voice", @"wow.touchpad",
                                    @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
+                                   @"wow.performance.frameLimit", @"wow.performance.afkSaver",
                                    @"wow.performance.backup",
                                    @"wow.performance.reset", @"wow.performance.restore",
                                    @"wow.performance.settingsFolder", @"wow.primary", @"wow.diagnostics"])
@@ -2885,7 +2985,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // handler rechecks the same guard.
     for (NSString *identifier in @[@"wow.performance.backup", @"wow.performance.reset",
                                    @"wow.performance.restore", @"wow.performance.settingsFolder",
-                                   @"wow.performance.deviceProfile", @"wow.performance.renderProfile"])
+                                   @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
+                                   @"wow.performance.frameLimit", @"wow.performance.afkSaver"])
         assert(![self row:identifier].enabled);
     // All text is grey while starting, including the two navigation rows that
     // used to stay gold.

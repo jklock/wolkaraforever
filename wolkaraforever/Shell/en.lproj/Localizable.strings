@@ -119,6 +119,8 @@
 "home.performance.gamepad" = "Gamepad UI";
 "home.performance.overlay" = "Performance Overlay";
 "home.performance.renderProfile" = "Render profile: %@";
+"home.performance.frameLimit" = "Frame limit: %@";
+"home.performance.afkSaver" = "AFK saver: %@";
 "home.performance.deviceProfile" = "Device profile: %@";
 "home.render.performance" = "Performance";
 "home.render.balanced" = "Balanced";
@@ -242,6 +244,14 @@
 "home.gamepad.unchanged.reason" = "The setting could not be stored: %@";
 "home.render.title" = "Render profile";
 "home.render.message" = "Applies the next time Forever starts. This is Forever's own render scale on %@; the game's own settings are not changed.";
+"home.frameLimit.title" = "Frame Limit";
+"home.frameLimit.message" = "Applies the next time the game starts. How many frames a second the game is shown at: fewer saves battery and keeps the iPad cooler. Automatic follows the charger while you play: 30 on battery, 60 plugged in. In Low Power Mode, or while the iPad is hot, it is 30 until that passes.";
+"home.frameLimit.automatic" = "Automatic (30 on battery, 60 plugged in)";
+"home.frameLimit.rate" = "%ld FPS";
+"home.afkSaver.title" = "AFK Saver";
+"home.afkSaver.message" = "Applies the next time the game starts. After this long with no touch, key or controller during a game, the screen dims and the game drops to 10 frames a second; it stays connected. The next touch wakes it and does nothing else.";
+"home.afkSaver.off" = "Off";
+"home.afkSaver.minutes" = "%ld min";
 "home.render.ready.title" = "Render profile ready";
 "home.render.ready.message" = "%@ takes effect when Forever next starts. Nothing in the game's own settings was changed.";
 "home.render.confirm.title" = "Above the recommendation";
@@ -427,6 +437,7 @@
 "touch.gamepad.rightStick" = "Controller right stick";
 "touch.gamepad.jump" = "Jump";
 "touch.autorun" = "Auto-run";
+"touch.afk.wake" = "Tap to continue";
 "touch.gamepad.doneEditing" = "Done editing";
 "touch.gamepad.dragHint" = "Drag controls to move them";
 "touch.settings" = "Touch control settings";

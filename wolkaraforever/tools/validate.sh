@@ -240,6 +240,7 @@ run_step "app language resolution, tables and formatting" wolkaraforever/tools/t
 # mode), so they belong here.
 run_step "on-screen controls and the game text field (simulator fixture)" wolkaraforever/tools/test_touch_controls_ui.sh --self-test || failures=$((failures+1))
 run_step "the on-screen gamepad (simulator fixture)" wolkaraforever/tools/test_touch_gamepad_ui.sh --self-test || failures=$((failures+1))
+run_step "frame limit and AFK saver (simulator fixture)" wolkaraforever/tools/test_battery_ui.sh || failures=$((failures+1))
 # And these two were run by nothing either, for the same kind of reason: they were only ever
 # reached through the loop at the end of test_emulation.sh, and that loop never ran, because
 # the platform's suite exits 1 on its one known failure and `set -e` stopped the script
