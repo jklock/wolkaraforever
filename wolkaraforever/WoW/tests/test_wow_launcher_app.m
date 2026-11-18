@@ -1995,6 +1995,9 @@ static void TestPhoneDisplayDefaults(void) {
     assert(batterySaver != nil);
     assert([batterySaver.message containsString:@"next time you start the game"]);
     assert([[batterySaver.actions valueForKey:@"title"] isEqualToArray:(@[@"Frame limit: Off", @"AFK saver: Off", @"Cancel"])]);
+    // A picture for the guide only. This sheet is not a reviewed baseline: its translucent
+    // backdrop carries a frozen picture of the page behind it, and the page's wall clock is not
+    // the thing being checked here - the title, message and action list above are.
     [self capture:@"battery-saver.png"];
     UIAlertAction *frameLimitAction = batterySaver.actions[0];
     [self dismissPresented];
