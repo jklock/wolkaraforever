@@ -26,8 +26,8 @@ mkdir -p "$APP"
 # launcher fixtures; pulling them in would drag the theme along for nothing.
 xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-deprecated-declarations \
-    -Ilauncher/Input -Ilauncher/Voice -Ilauncher/Controller -Ilauncher/App -Itests \
-    launcher/Input/*.m launcher/Voice/VoiceSettings.m \
+    -Ilauncher/Input -Ilauncher/Voice -Ilauncher/Controller -Ilauncher/App -Ilauncher/WoW -Itests \
+    launcher/Input/*.m launcher/Voice/VoiceSettings.m launcher/WoW/BatterySaverPolicy.m \
     launcher/Controller/ControllerInspector.m launcher/App/WolkaraForeverLog.m \
     tests/test_controller_input_app.m \
     -framework Foundation -framework UIKit -framework QuartzCore -framework GameController \
