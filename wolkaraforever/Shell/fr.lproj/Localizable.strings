@@ -430,6 +430,7 @@
 "touch.gamepad.rightStick" = "Stick droit de la manette";
 "touch.gamepad.jump" = "Saut";
 "touch.autorun" = "Course automatique";
+"touch.walkStick" = "Stick de déplacement";
 "touch.gamepad.doneEditing" = "Terminer la modification";
 "touch.gamepad.dragHint" = "Faites glisser les commandes pour les déplacer";
 "touch.settings" = "Réglages des commandes tactiles";

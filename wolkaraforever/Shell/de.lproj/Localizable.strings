@@ -429,6 +429,7 @@
 "touch.gamepad.rightStick" = "Controller, rechter Stick";
 "touch.gamepad.jump" = "Springen";
 "touch.autorun" = "Automatisch laufen";
+"touch.walkStick" = "Laufstick";
 "touch.gamepad.doneEditing" = "Bearbeiten beenden";
 "touch.gamepad.dragHint" = "Elemente zum Verschieben ziehen";
 "touch.settings" = "Einstellungen der Bedienelemente";

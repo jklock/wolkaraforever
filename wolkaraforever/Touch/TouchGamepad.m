@@ -6,6 +6,8 @@
 #import "TouchControllerLog.h"
 #import "TouchHaptics.h"
 #import "TouchControls.h"
+#import "TouchContract.h"
+#import "TouchAreas.h"
 #include <math.h>
 // The guest log in the app; a plain [ak] line where the fixture builds this file alone.
 #if __has_include("AKSupport.h")
@@ -105,8 +107,19 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 // of a double tap. Nothing about movement changes: this is measured after the finger is gone,
 // and a tap that travelled is not reported at all.
 @property(nonatomic, copy, nullable) void (^tapRecognized)(NSTimeInterval time);
+@property(nonatomic, readonly) BOOL autoRunning;
 - (void)pollAutoRun:(NSTimeInterval)now;
 - (void)reset;
+// iPad touch's walk stick (mockup 10, "Walk stick (app)"): the same ring and knob, drawn in the game's
+// gold - a 175 pt ring (ruling A34: 25% larger than the mockup's 140), a 70 pt knob that travels to the ring's edge -
+// and moved by its overlay rather than by its own tracking. Glowing: pushed to the edge (full speed) or running on;
+// locked: running on.
+@property(nonatomic) BOOL walk;
+@property(nonatomic) BOOL glowing, locked;
+// The auto-run lock (ruling A34): a round plate above the ring with the lock in it. lockFill is how full the lock is,
+// 0-1, while the thumb holds it; below 0 the plate is not shown (unless locked, which is a full lock).
+@property(nonatomic) CGFloat lockFill;
+- (void)walkTo:(CGPoint)position;
 @end
 // The tap a stick button is recognised from: the same distance the trackpad calls a tap, and a
 // finger that is not dragged in between. The window is short enough that two deliberate taps
@@ -119,11 +132,16 @@ static const NSTimeInterval AKStickDoubleTapInterval = 0.32;
 static const NSTimeInterval AKStickButtonHold = 0.12;
 static const NSTimeInterval AKAutoRunHold = 2;
 static const CGFloat AKAutoRunArm = 60;
+// The walk stick's auto-run lock plate (ruling A34): its size and its gap above the ring. The gap keeps it out of reach
+// of a thumb that overshoots the ring's edge while running (its target starts 36 pt past the ring, see AKWalkLockBelow).
+static const CGFloat AKWalkLockSize = 48, AKWalkLockGap = 28;
 @implementation AKGamepadStick {
-    UIView *_knob;
+    UIView *_knob, *_lockPlate;
+    UIImageView *_lock, *_lockFull;
+    CALayer *_lockMask;
     NSTimeInterval _forwardSince;
     NSInteger _autoStage;
-    BOOL _autoRunning, _stoppedRun;
+    BOOL _stoppedRun;
     // The tap in progress, in the units a tap is judged by: where it started, when, and how far
     // it has travelled since.
     NSTimeInterval _tapStarted;
@@ -131,6 +149,69 @@ static const CGFloat AKAutoRunArm = 60;
     CGFloat _tapTravel;
     BOOL _tapMoved;
 }
+- (void)setWalk:(BOOL)walk {
+    _walk = walk;
+    if (!walk) return;
+    self.userInteractionEnabled = NO;
+    self.backgroundColor = [UIColor colorWithRed:0.04 green:0.03 blue:0.02 alpha:0.42];
+    self.layer.borderWidth = 2.5;
+    self.layer.borderColor = [UIColor colorWithRed:0.79 green:0.64 blue:0.33 alpha:0.95].CGColor;
+    self.layer.shadowColor = [UIColor colorWithRed:1 green:0xe2/255.0 blue:0x8c/255.0 alpha:1].CGColor;
+    self.layer.shadowOffset = CGSizeZero; self.layer.shadowRadius = 14; self.layer.shadowOpacity = 0;
+    _knob.backgroundColor = [UIColor colorWithRed:0.42 green:0.33 blue:0.16 alpha:0.95];
+    _knob.layer.borderWidth = 2;
+    _knob.layer.borderColor = [UIColor colorWithRed:0.90 green:0.74 blue:0.38 alpha:1].CGColor;
+    _knob.accessibilityIdentifier = @"wolkaraforever.touch.walkStick.knob";
+    if (!_lock) {
+        // The plate above the ring (ruling A34): the thumb slides up onto it to lock an auto-run, and a tap on it stops one.
+        _lockPlate = [UIView new];
+        _lockPlate.userInteractionEnabled = NO; _lockPlate.hidden = YES;
+        _lockPlate.backgroundColor = [UIColor colorWithRed:0.04 green:0.03 blue:0.02 alpha:0.62];
+        _lockPlate.layer.borderWidth = 2;
+        _lockPlate.layer.borderColor = [UIColor colorWithRed:0.79 green:0.64 blue:0.33 alpha:0.95].CGColor;
+        _lockPlate.layer.cornerRadius = AKWalkLockSize / 2;
+        _lockPlate.accessibilityIdentifier = @"wolkaraforever.touch.walkStick.lockPlate";
+        [self addSubview:_lockPlate];
+        _lock = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"lock"]];
+        _lock.tintColor = [UIColor colorWithRed:1 green:0xe2/255.0 blue:0x8c/255.0 alpha:1];
+        _lock.contentMode = UIViewContentModeScaleAspectFit; _lock.hidden = YES;
+        _lock.accessibilityIdentifier = @"wolkaraforever.touch.walkStick.lock";
+        [_lockPlate addSubview:_lock];
+        // The filled lock over the outline, shown from the bottom up as the hold fills (rulings A28, A34).
+        _lockFull = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"lock.fill"]];
+        _lockFull.tintColor = _lock.tintColor;
+        _lockFull.contentMode = UIViewContentModeScaleAspectFit; _lockFull.hidden = YES;
+        _lockFull.accessibilityIdentifier = @"wolkaraforever.touch.walkStick.lockFill";
+        _lockMask = [CALayer layer]; _lockMask.backgroundColor = UIColor.blackColor.CGColor;
+        _lockFull.layer.mask = _lockMask;
+        [_lockPlate addSubview:_lockFull];
+        _lockFill = -1;
+    }
+    [self placeLock];
+    [self setNeedsLayout];
+}
+// Centred above the ring, AKWalkLockGap clear of it; the lock fills most of the plate.
+- (void)placeLock {
+    CGFloat inset = AKWalkLockSize * 0.24;
+    _lockPlate.frame = CGRectMake(self.bounds.size.width / 2 - AKWalkLockSize / 2, -AKWalkLockGap - AKWalkLockSize, AKWalkLockSize, AKWalkLockSize);
+    _lock.frame = CGRectMake(inset, inset, AKWalkLockSize - 2 * inset, AKWalkLockSize - 2 * inset);
+    _lockFull.frame = _lock.frame;
+}
+- (void)showLock {
+    CGFloat fill = _locked ? 1 : _lockFill;
+    _lockPlate.hidden = fill < 0;
+    _lock.hidden = fill < 0;
+    _lockFull.hidden = fill <= 0;
+    CGRect bounds = _lockFull.bounds;
+    CGFloat height = bounds.size.height * MAX(0, MIN(1, fill));
+    [CATransaction begin]; [CATransaction setDisableActions:YES];
+    _lockMask.frame = CGRectMake(0, bounds.size.height - height, bounds.size.width, height);
+    [CATransaction commit];
+}
+- (void)setLockFill:(CGFloat)fill { _lockFill = fill; [self showLock]; }
+- (void)setGlowing:(BOOL)glowing { _glowing = glowing; self.layer.shadowOpacity = glowing ? 0.9 : 0; }
+- (void)setLocked:(BOOL)locked { _locked = locked; [self showLock]; }
+- (void)walkTo:(CGPoint)position { [self updatePosition:position]; [self layoutIfNeeded]; }
 - (void)setAutoStage:(NSInteger)stage {
     if (_autoStage == stage) return;
     _autoStage = stage;
@@ -166,6 +247,21 @@ static const CGFloat AKAutoRunArm = 60;
 - (void)layoutSubviews {
     [super layoutSubviews]; CGFloat diameter = MIN(self.bounds.size.width,self.bounds.size.height);
     self.layer.cornerRadius = diameter/2;
+    if (_walk) {
+        // 140 and 56 in the mockup (175 and 70 since ruling A34): the knob is 0.4 of the ring and its centre reaches the
+        // ring's edge.
+        CGFloat knob = diameter * 0.4;
+        _knob.bounds = CGRectMake(0,0,knob,knob); _knob.layer.cornerRadius = knob/2;
+        _knob.center = CGPointMake(self.bounds.size.width/2 + _position.x*diameter*0.5,
+                                   self.bounds.size.height/2 - _position.y*diameter*0.5);
+        [self placeLock];
+        [self showLock];
+        // The glow is the rim's (mockup 10): a ring-shaped shadow, so the dark inside stays dark.
+        UIBezierPath *rim = [UIBezierPath bezierPathWithOvalInRect:CGRectInset(self.bounds, -1, -1)];
+        [rim appendPath:[[UIBezierPath bezierPathWithOvalInRect:CGRectInset(self.bounds, 5, 5)] bezierPathByReversingPath]];
+        self.layer.shadowPath = rim.CGPath;
+        return;
+    }
     _knob.bounds = CGRectMake(0,0,diameter*0.42,diameter*0.42); _knob.layer.cornerRadius = diameter*0.21;
     _knob.center = CGPointMake(self.bounds.size.width/2 + _position.x*diameter*0.27,
                                self.bounds.size.height/2 - _position.y*diameter*0.27);
@@ -1195,8 +1291,491 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
 }
 @end
 
+#pragma mark - The walk stick (iPad touch)
+
+// The walk area: the outer third of the view away from the contract's hand (hand R - the left third; hand L - the right
+// third), from 460 layout units down (the lower 55 %, one unit = height / 1024; the add-on's stick box starts at 470), out
+// of the 20 pt edge zone. The contract's buttons are carved out per point by the areas. It was the whole hand-away half
+// from 330 units down until 17 Nov 2026 (on the iPad: "pinch zoom in the middle of the screen grabs the walk stick more often
+// than it zooms"): the middle of the screen is never the stick's now.
+// The ring is 175 pt (ruling A34, 17 Nov 2026: "maybe it's too small"; 140 before).
+static const CGFloat AKWalkEdgeZone = 20, AKWalkZoneTop = 460, AKWalkRingSize = 175;
+CGRect AKTouchWalkArea(CGSize size, BOOL leftHanded) {
+    if (!isfinite(size.width) || !isfinite(size.height) || size.width <= 0 || size.height <= 0) return CGRectNull;
+    CGFloat third = size.width / 3, top = MAX(AKWalkZoneTop * size.height / 1024, AKWalkEdgeZone);
+    CGFloat minX = leftHanded ? size.width - third : AKWalkEdgeZone, maxX = leftHanded ? size.width - AKWalkEdgeZone : third;
+    CGFloat maxY = size.height - AKWalkEdgeZone;
+    if (maxX <= minX || maxY <= top) return CGRectNull;
+    return CGRectMake(minX, top, maxX - minX, maxY - top);
+}
+// The rest ring (ruling A34): drawn where the stick usually is - the add-on's stick box, the lower part (from 470 layout
+// units, InfoCard.STICK_TOP) of the third of the screen away from the hand, which TouchPlay keeps its info card off. Its
+// centre is the box's middle when the whole 175 pt ring fits there 8 pt clear of every button; otherwise the nearest
+// centre in the box where it fits, and where it fits nowhere the largest ring that does (never under 80 pt).
+static const CGFloat AKWalkStickBoxTop = 470, AKWalkRestClear = 8, AKWalkRestMinRadius = 40, AKWalkRestStep = 6;
+static CGFloat AKWalkRestRadius(CGPoint c, CGRect zone, NSArray<NSValue *> *rects) {
+    CGFloat r = MIN(AKWalkRingSize / 2, MIN(MIN(c.x - CGRectGetMinX(zone), CGRectGetMaxX(zone) - c.x),
+                                            MIN(c.y - CGRectGetMinY(zone), CGRectGetMaxY(zone) - c.y)));
+    for (NSValue *value in rects) {
+        CGRect rect = value.CGRectValue;
+        if (CGRectIsNull(rect) || CGRectIsEmpty(rect)) continue;
+        CGFloat dx = MAX(MAX(CGRectGetMinX(rect) - c.x, 0), c.x - CGRectGetMaxX(rect));
+        CGFloat dy = MAX(MAX(CGRectGetMinY(rect) - c.y, 0), c.y - CGRectGetMaxY(rect));
+        r = MIN(r, hypot(dx, dy) - AKWalkRestClear);
+    }
+    return r;
+}
+CGRect AKTouchWalkRestRing(CGSize size, BOOL leftHanded, NSArray<NSValue *> *areaRects) {
+    CGRect zone = AKTouchWalkArea(size, leftHanded);
+    if (CGRectIsNull(zone)) return CGRectNull;
+    CGFloat third = size.width / 3, unit = size.height / 1024;
+    CGRect box = CGRectMake(leftHanded ? size.width - third : 0, AKWalkStickBoxTop * unit, third, size.height - AKWalkStickBoxTop * unit);
+    box = CGRectIntersection(box, zone);
+    if (CGRectIsNull(box) || CGRectIsEmpty(box)) return CGRectNull;
+    CGPoint want = CGPointMake(CGRectGetMidX(box), CGRectGetMidY(box));
+    CGPoint best = want;
+    CGFloat bestRadius = AKWalkRestRadius(want, zone, areaRects), bestDistance = 0;
+    if (bestRadius < AKWalkRingSize / 2) {
+        for (CGFloat y = CGRectGetMinY(box); y <= CGRectGetMaxY(box); y += AKWalkRestStep) {
+            for (CGFloat x = CGRectGetMinX(box); x <= CGRectGetMaxX(box); x += AKWalkRestStep) {
+                CGPoint c = CGPointMake(x, y);
+                CGFloat r = MIN(AKWalkRestRadius(c, zone, areaRects), AKWalkRingSize / 2), d = hypot(x - want.x, y - want.y);
+                if (r > bestRadius + 0.01 || (fabs(r - bestRadius) <= 0.01 && d < bestDistance)) { best = c; bestRadius = r; bestDistance = d; }
+            }
+        }
+    }
+    if (bestRadius < AKWalkRestMinRadius) return CGRectNull;
+    return CGRectMake(best.x - bestRadius, best.y - bestRadius, 2 * bestRadius, 2 * bestRadius);
+}
+// Movement is the game's own movement keys, through the host's key path (the add-on's buttons use the
+// same path with ALT-CTRL-SHIFT; these go bare). Not the virtual controller: attaching a gamepad puts the
+// game into its gamepad mode (its controller bar, cursor and targeting). W and S are forward and back in
+// both of the game's turn/strafe presets; A and D strafe in the Enhanced preset and turn in the Classic
+// one, so sideways always does something (Q and E strafe in Classic but may be unbound in Enhanced).
+// Each key's sector is 67.5 degrees either side of its direction, so the eight directions are 45 degrees each
+// and a diagonal holds two keys - with 8 degrees of hysteresis (ruling A34): a key goes down only 8 degrees inside its
+// sector (59.5) and comes up only 8 degrees outside it (75.5), so W, W+D, D... never flicker at a border.
+// Never Q and E: the add-on's chords use those letters (ruling A22 moved its keys off W, A, S and D).
+static const struct { uint16_t code; CGFloat x, y; } AKWalkKeys[] = {
+    {AKTouchWalkKeyA, -1, 0},
+    {AKTouchWalkKeyD, 1, 0},
+    {AKTouchWalkKeyW, 0, 1},
+    {AKTouchWalkKeyS, 0, -1},
+};
+static const NSUInteger AKWalkKeyCount = sizeof(AKWalkKeys) / sizeof(AKWalkKeys[0]);
+// cos(59.5 degrees) and cos(75.5 degrees): a key's way on and way off (67.5 -/+ 8).
+static const CGFloat AKWalkKeyOn = 0.50753836296070, AKWalkKeyOff = 0.25037000405130;
+// The dead zone is 12% of the radius (ruling A34; it was 10% for the vector plus a quarter of the rest for the keys).
+static const CGFloat AKWalkDeadZone = 0.12, AKWalkFullPush = 0.95;
+static NSUInteger AKWalkKeyMask(CGPoint v, NSUInteger held) {
+    CGFloat length = hypot(v.x, v.y);
+    if (!isfinite(length) || length <= 0) return 0;
+    NSUInteger mask = 0;
+    for (NSUInteger i = 0; i < AKWalkKeyCount; i++) {
+        CGFloat along = (v.x * AKWalkKeys[i].x + v.y * AKWalkKeys[i].y) / length;
+        if (along > ((held & (1u << i)) ? AKWalkKeyOff : AKWalkKeyOn)) mask |= 1u << i;
+    }
+    return mask;
+}
+
+// The walk stick's own layer over the game, below the app's toolbar. It takes a touch only where the
+// walk area is and no TouchPlay button is, in iPad touch with TouchPlay's buttons (the contract) on screen or a game
+// window open over them (ruling A34): there the ring appears under the thumb and the thumb walks. At rest a faint ring
+// shows where the stick usually is. Everywhere else it returns nil, so the touch is the host's (the buttons, the world,
+// the edge; with a window open, the plain touches of ruling A33) exactly as without it.
+@interface AKWalkStickOverlay : UIView
+@property(nonatomic, readonly) AKGamepadStick *stick;
+@property(nonatomic, readonly) CGPoint vector;
+@property(nonatomic, readonly) BOOL autoRunning;
+@property(nonatomic) BOOL keyboardVisible;
+// The auto-run lock (ruling A34): armed once the thumb has held the lock above the ring for AKWalkLockHold.
+@property(nonatomic, readonly) BOOL armed;
+// The clock (seconds). The default is the system uptime; tests give their own.
+@property(nonatomic, copy, null_resettable) NSTimeInterval (^clock)(void);
+// Advances the lock's fill to the clock's now. A timer calls it while the lock fills; tests call it after moving their clock.
+- (void)tick;
+- (void)releaseWalking;
+@end
+// Ruling A34 (17 Nov 2026, replacing A28's 0.6 s hold at the edge): pushing to the edge is how everyone runs, so
+// the edge never locks. The thumb slides up past the top of the ring onto the lock and stays there this long (the lock
+// fills, a light tap), then lifts. Sliding off the lock before lifting cancels.
+static const NSTimeInterval AKWalkLockHold = 0.25;
+// The lock's target round the plate: a thumb is on it within this much either side of the plate's centre, from this far
+// below its centre (36 pt past the ring's top: a full push that overshoots the edge is not on it) to this far above it.
+static const CGFloat AKWalkLockReach = 44, AKWalkLockBelow = 16, AKWalkLockAbove = 56;
+// The faint ring at rest.
+static const CGFloat AKWalkRestAlpha = 0.4;
+@implementation AKWalkStickOverlay {
+    UILabel *_badge;
+    UIView *_rest;
+    UITouch *_finger;
+    CGPoint _origin;
+    NSUInteger _held;
+    BOOL _edgeRun, _onLock;
+    CGSize _laidOut;
+    NSTimeInterval _lockSince;
+    NSTimer *_armTimer;
+    // The rest ring's place for this size and these buttons (the search runs once per pair).
+    CGSize _restSize;
+    AKTouchContract *_restContract;
+    CGRect _restRing;
+    BOOL _restLeft;
+    // Two fingers are a pinch (AKWalkStickPinchOffer): when the thumb landed, whether it has walked past the dead zone,
+    // and whether the last second finger came soon enough (or before the thumb walked) to make a pinch.
+    NSTimeInterval _fingerBegan;
+    BOOL _walked, _secondPinches;
+}
+@synthesize clock = _clock;
+- (void)setClock:(NSTimeInterval (^)(void))clock {
+    _clock = clock ?: ^NSTimeInterval { return NSProcessInfo.processInfo.systemUptime; };
+}
+- (instancetype)initWithFrame:(CGRect)frame {
+    if ((self = [super initWithFrame:frame])) {
+        self.multipleTouchEnabled = YES;
+        self.backgroundColor = UIColor.clearColor;
+        self.accessibilityIdentifier = @"wolkaraforever.touch.walkArea";
+        self.clock = nil;
+        // Drawn above the game and the buttons' glow, below the cursor and the toolbar.
+        self.layer.zPosition = 99999;
+        // The rest ring: the walk stick's ring and knob, faint, never touched (the overlay takes the touch).
+        _rest = [[UIView alloc] initWithFrame:CGRectMake(0, 0, AKWalkRingSize, AKWalkRingSize)];
+        _rest.userInteractionEnabled = NO;
+        _rest.backgroundColor = [UIColor colorWithRed:0.04 green:0.03 blue:0.02 alpha:0.42];
+        _rest.layer.borderWidth = 2.5;
+        _rest.layer.borderColor = [UIColor colorWithRed:0.79 green:0.64 blue:0.33 alpha:0.95].CGColor;
+        _rest.alpha = AKWalkRestAlpha;
+        _rest.hidden = YES;
+        _rest.accessibilityIdentifier = @"wolkaraforever.touch.walkStick.rest";
+        UIView *restKnob = [UIView new];
+        restKnob.userInteractionEnabled = NO;
+        restKnob.backgroundColor = [UIColor colorWithRed:0.42 green:0.33 blue:0.16 alpha:0.95];
+        restKnob.layer.borderWidth = 2;
+        restKnob.layer.borderColor = [UIColor colorWithRed:0.90 green:0.74 blue:0.38 alpha:1].CGColor;
+        restKnob.tag = 1;
+        [_rest addSubview:restKnob];
+        [self addSubview:_rest];
+        _stick = [[AKGamepadStick alloc] initWithFrame:CGRectMake(0, 0, AKWalkRingSize, AKWalkRingSize)];
+        _stick.walk = YES;
+        _stick.hidden = YES;
+        _stick.accessibilityIdentifier = @"wolkaraforever.touch.walkStick";
+        _stick.accessibilityLabel = AKHostLocalized(@"touch.walkStick");
+        [self addSubview:_stick];
+        _badge = [UILabel new];
+        _badge.text = AKHostLocalized(@"touch.autorun");
+        _badge.accessibilityIdentifier = @"wolkaraforever.touch.autorun";
+        _badge.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+        _badge.textColor = [UIColor colorWithRed:1 green:0xe2/255.0 blue:0x8c/255.0 alpha:1];
+        _badge.shadowColor = [UIColor colorWithWhite:0 alpha:0.8]; _badge.shadowOffset = CGSizeMake(0, 1);
+        _badge.textAlignment = NSTextAlignmentCenter;
+        _badge.userInteractionEnabled = NO; _badge.hidden = YES;
+        [self addSubview:_badge];
+        NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+        // New buttons (a reload), the app put away or a call: let go of everything.
+        for (NSString *name in @[AKTouchContractDidChangeNotification, UIApplicationWillResignActiveNotification,
+                                 UIApplicationDidEnterBackgroundNotification])
+            [center addObserver:self selector:@selector(letGo:) name:name object:nil];
+        // Out of the world (ruling A24): everything lets go, so W never runs on into the login screen. A window open in the
+        // world (ruling A34, which replaces A32's "the stick stops") changes nothing: the stick stays live.
+        [center addObserver:self selector:@selector(liveChanged:) name:AKTouchAreasLiveDidChangeNotification object:nil];
+    }
+    return self;
+}
+- (void)dealloc { [_armTimer invalidate]; [NSNotificationCenter.defaultCenter removeObserver:self]; }
+// The lock's centre and its target, in this view, from the ring as it is drawn now.
+- (CGPoint)lockCentre {
+    CGRect ring = _stick.frame;
+    return CGPointMake(CGRectGetMidX(ring), CGRectGetMinY(ring) - AKWalkLockGap - AKWalkLockSize / 2);
+}
+- (BOOL)lockTargetContains:(CGPoint)p {
+    CGPoint c = [self lockCentre];
+    return fabs(p.x - c.x) <= AKWalkLockReach && p.y >= c.y - AKWalkLockAbove && p.y <= c.y + AKWalkLockBelow;
+}
+// The lock (ruling A34): from the moment the walking thumb is on it, with the add-on's edgeRun (its auto-run switch) on,
+// it fills over AKWalkLockHold; full is armed. Off it, it is an empty target again.
+- (void)updateArming {
+    BOOL held = _finger && _edgeRun;
+    if (!held || !_onLock) {
+        _lockSince = 0;
+        if (_armed) AKGamepadLog(@"touch walk: auto-run disarmed (off the lock)");
+        _armed = NO;
+        [self stopArmTimer];
+        if (!_autoRunning) _stick.lockFill = held ? 0 : -1;
+        return;
+    }
+    NSTimeInterval now = self.clock();
+    if (_lockSince == 0) _lockSince = now;
+    CGFloat fill = MIN(1, MAX(0, (now - _lockSince) / AKWalkLockHold));
+    _stick.lockFill = fill;
+    if (fill >= 1 && !_armed) {
+        _armed = YES;
+        AKGamepadLog(@"touch walk: auto-run armed (on the lock %.2f s)", now - _lockSince);
+        [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight] impactOccurred];
+    }
+    if (_armed) [self stopArmTimer];
+    else if (!_armTimer) {
+        __weak AKWalkStickOverlay *weakSelf = self;
+        _armTimer = [NSTimer timerWithTimeInterval:1.0 / 30 repeats:YES block:^(NSTimer *timer) { (void)timer; [weakSelf tick]; }];
+        // The guest's own loop runs the default mode; common modes include it.
+        [NSRunLoop.mainRunLoop addTimer:_armTimer forMode:NSRunLoopCommonModes];
+    }
+}
+- (void)stopArmTimer { [_armTimer invalidate]; _armTimer = nil; }
+- (void)tick { [self updateArming]; }
+- (void)letGo:(NSNotification *)note {
+    (void)note;
+    [self releaseWalking];
+    // New buttons: the rest ring moves off them once the areas have read them.
+    dispatch_async(dispatch_get_main_queue(), ^{ [self showRest]; });
+}
+- (void)liveChanged:(NSNotification *)note {
+    AKTouchAreas *areas = self.areas;
+    if (note.object != areas) return;
+    // In the world, or a window open in it (ruling A34): the stick stays as it is - a walking thumb walks on, an auto-run
+    // runs on and can be stopped from the stick. Only leaving the world (two pulses) lets go.
+    if (!areas.live && !areas.windowOpen) [self releaseWalking];
+    [self showRest];
+}
+- (AKTouchAreas *)areas { return [AKTouchAreas areasForView:self.superview]; }
+// The contract when the stick may take a touch now: iPad touch, TouchPlay's buttons loaded, the player in the world - the
+// buttons on screen (live, ruling A24) or a window open over them (ruling A34) - and no keyboard.
+- (AKTouchContract *)activeContract {
+    if (!AKInterfaceModeIsTouchPlay() || _keyboardVisible || !self.superview) return nil;
+    AKTouchAreas *areas = self.areas;
+    return (areas.live || areas.windowOpen) ? areas.contract : nil;
+}
+// Whether one of TouchPlay's buttons is at `p` (this view's coordinates). Live, the areas answer; with a window open they
+// claim nothing (every touch there is plain), but their places are still not the stick's (the chat strip, the quest list).
+- (BOOL)buttonAt:(CGPoint)p contract:(AKTouchContract *)contract {
+    AKTouchAreas *areas = self.areas;
+    CGPoint q = [self convertPoint:p toView:self.superview];
+    if (areas.live) return [areas claimsPoint:q];
+    CGSize size = self.superview.bounds.size;
+    for (AKTouchArea *area in contract.areas)
+        if (CGRectContainsPoint(AKTouchAreaRect(area, size), q)) return YES;
+    return NO;
+}
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (event && event.type != UIEventTypeTouches) return nil;
+    // A trackpad or mouse click, or the Pencil: the game's click, not the stick's (the touch being hit-tested
+    // is the event's new one, which has no view yet).
+    for (UITouch *touch in event.allTouches)
+        if (touch.phase == UITouchPhaseBegan && !touch.view && touch.type != UITouchTypeDirect) return nil;
+    AKTouchContract *contract = [self activeContract];
+    if (!contract) return nil;
+    // Running: the lock above the ring takes a tap wherever it is drawn (ruling A34), even over the top band or a button.
+    if (_autoRunning && [self lockTargetContains:point]) return self;
+    if (self.areas.live) {
+        if (!CGRectContainsPoint(AKTouchWalkArea(self.bounds.size, contract.leftHanded), point)) return nil;
+    } else if (![self stickBoxContains:point contract:contract]) {
+        // A window open (ruling A34b): the game's character pane, spellbook, quest log and talents open on this half, so
+        // only the stick box is the stick's; everywhere else a touch is the plain one (A33).
+        return nil;
+    }
+    // A TouchPlay button in the walk half (the quest list, the chat strip) stays the button's.
+    if ([self buttonAt:point contract:contract]) return nil;
+    // Here every touch is the stick's - a second thumb while one walks is held quietly, never the world's.
+    return self;
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    // A new size (rotation, Stage Manager) moves the walk area: let go, as the buttons do.
+    if (!CGSizeEqualToSize(self.bounds.size, _laidOut)) {
+        if (!CGSizeEqualToSize(_laidOut, CGSizeZero)) [self releaseWalking];
+        _laidOut = self.bounds.size;
+    }
+    [self placeBadge];
+    [self showRest];
+}
+- (void)didMoveToSuperview { [super didMoveToSuperview]; [self showRest]; }
+// Where the rest ring goes for `contract` at this size (searched once per pair).
+- (CGRect)restRingFor:(AKTouchContract *)contract {
+    CGSize size = self.bounds.size;
+    if (contract != _restContract || contract.leftHanded != _restLeft || !CGSizeEqualToSize(size, _restSize)) {
+        NSMutableArray<NSValue *> *rects = [NSMutableArray arrayWithCapacity:contract.areas.count];
+        for (AKTouchArea *area in contract.areas) [rects addObject:[NSValue valueWithCGRect:AKTouchAreaRect(area, size)]];
+        _restRing = AKTouchWalkRestRing(size, contract.leftHanded, rects);
+        _restContract = contract; _restSize = size; _restLeft = contract.leftHanded;
+    }
+    return _restRing;
+}
+// The stick box (ruling A34b), the stick's whole zone while a window is open: the rest ring's square, and the lock target
+// above it (where a thumb that lands in the ring slides to lock).
+- (BOOL)stickBoxContains:(CGPoint)p contract:(AKTouchContract *)contract {
+    CGRect ring = [self restRingFor:contract];
+    if (CGRectIsNull(ring)) return NO;
+    if (CGRectContainsPoint(ring, p)) return YES;
+    CGPoint lock = CGPointMake(CGRectGetMidX(ring), CGRectGetMinY(ring) - AKWalkLockGap - AKWalkLockSize / 2);
+    return fabs(p.x - lock.x) <= AKWalkLockReach && p.y >= lock.y - AKWalkLockAbove && p.y < CGRectGetMinY(ring);
+}
+// The faint rest ring: shown while the stick could take a thumb and none is on it (and no run is drawn), off the buttons.
+// With a window open it is also the stick box, the only place the stick takes a new thumb (ruling A34b).
+- (void)showRest {
+    AKTouchContract *contract = [self activeContract];
+    CGRect ring = CGRectNull;
+    if (contract && !_finger && !_autoRunning) ring = [self restRingFor:contract];
+    _rest.hidden = CGRectIsNull(ring);
+    if (_rest.hidden) return;
+    _rest.frame = ring;
+    _rest.layer.cornerRadius = ring.size.width / 2;
+    UIView *knob = [_rest viewWithTag:1];
+    CGFloat k = ring.size.width * 0.4;
+    knob.frame = CGRectMake((ring.size.width - k) / 2, (ring.size.height - k) / 2, k, k);
+    knob.layer.cornerRadius = k / 2;
+}
+- (void)placeBadge {
+    CGRect ring = _stick.frame;
+    _badge.bounds = CGRectMake(0, 0, MAX(120, ring.size.width + 40), 22);
+    // Above the lock plate, which sits above the ring (ruling A34).
+    _badge.center = CGPointMake(CGRectGetMidX(ring), CGRectGetMinY(ring) - AKWalkLockGap - AKWalkLockSize - 4 - 11);
+}
+- (void)setKeyboardVisible:(BOOL)visible {
+    _keyboardVisible = visible;
+    // Typing is not walking: the keys go up before the keyboard takes them.
+    if (visible) [self releaseWalking];
+    [self showRest];
+}
+// The push is measured from where the thumb landed, so the touch itself walks nowhere. Toward an edge
+// nearer than the ring's radius, the way to the screen's edge is a full push, so a thumb near an edge
+// still reaches full speed in every direction (the ring itself is moved in to stay whole on screen).
+- (CGPoint)vectorAt:(CGPoint)p {
+    CGFloat r = AKWalkRingSize / 2;
+    CGSize size = self.bounds.size;
+    CGFloat dx = p.x - _origin.x, dy = _origin.y - p.y;   // up positive
+    CGFloat reachX = dx < 0 ? MIN(r, _origin.x) : MIN(r, size.width - _origin.x);
+    CGFloat reachY = dy > 0 ? MIN(r, _origin.y) : MIN(r, size.height - _origin.y);
+    CGFloat x = dx / MAX(reachX, 1), y = dy / MAX(reachY, 1);
+    // The dead zone (12% of the radius, ruling A34), then the rest of the way to the ring's edge, clamped to it.
+    CGFloat length = hypot(x, y);
+    if (!isfinite(length) || length < AKWalkDeadZone) return CGPointZero;
+    CGFloat scale = MIN(1, (length - AKWalkDeadZone) / (1 - AKWalkDeadZone)) / length;
+    return CGPointMake(x * scale, y * scale);
+}
+// Where the thumb is now: on the lock it walks straight forward (the knob points at the lock), else the push.
+- (void)followThumb {
+    CGPoint p = [_finger locationInView:self];
+    _onLock = _edgeRun && [self lockTargetContains:p];
+    [self setVector:_onLock ? CGPointMake(0, 1) : [self vectorAt:p]];
+    if (_vector.x != 0 || _vector.y != 0) _walked = YES;
+    [self updateArming];
+}
+- (void)setVector:(CGPoint)vector {
+    _vector = vector;
+    [_stick walkTo:vector];
+    _stick.glowing = _autoRunning || hypot(vector.x, vector.y) >= AKWalkFullPush;
+    NSUInteger wanted = AKWalkKeyMask(vector, _held);
+    // Up before down, so a turn from one direction to another never holds three keys.
+    for (NSUInteger i = 0; i < AKWalkKeyCount; i++)
+        if ((_held & (1u << i)) && !(wanted & (1u << i))) AKTouchSendWalkKey(AKWalkKeys[i].code, NO);
+    for (NSUInteger i = 0; i < AKWalkKeyCount; i++)
+        if (!(_held & (1u << i)) && (wanted & (1u << i))) AKTouchSendWalkKey(AKWalkKeys[i].code, YES);
+    _held = wanted;
+}
+- (void)showRun:(BOOL)running {
+    _autoRunning = running;
+    _stick.locked = running;
+    _badge.hidden = !running;
+    _stick.glowing = running || hypot(_vector.x, _vector.y) >= AKWalkFullPush;
+    [self placeBadge];
+    [self showRest];
+}
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    // A stick finger that is no longer among the event's touches was lost without an end: let it go,
+    // and say so once, so a stuck walk shows in a device log rather than as a character that runs on.
+    if (_finger && event && ![event.allTouches containsObject:_finger]) {
+        AKGamepadLog(@"touch walk: the stick's finger was lost without an end; released");
+        [self releaseWalking];
+    }
+    for (UITouch *touch in touches) {
+        if (touch.type != UITouchTypeDirect) continue;
+        AKTouchContract *contract = [self activeContract];
+        if (!contract) continue;
+        // A tap on the lock stops a run (ruling A34), and is no new stick: its slide and lift do nothing.
+        if (_autoRunning && [self lockTargetContains:[touch locationInView:self]]) {
+            AKGamepadLog(@"touch walk: auto-run off (the lock)");
+            [self releaseWalking];
+            continue;
+        }
+        if (_finger) continue;   // a second thumb: held quietly
+        // A new thumb stops a run, and is a new stick under it.
+        if (_autoRunning) { [self showRun:NO]; AKGamepadLog(@"touch walk: auto-run off (a new thumb)"); }
+        _finger = touch;
+        _fingerBegan = self.clock(); _walked = NO; _secondPinches = NO;
+        _edgeRun = contract.edgeRun;
+        _onLock = NO;
+        _origin = [touch locationInView:self];
+        // A floating stick (ruling A34): centred where the thumb landed, the whole ring on screen (moved in from an edge
+        // nearer than its radius).
+        CGFloat r = AKWalkRingSize / 2;
+        CGSize size = self.bounds.size;
+        _stick.center = CGPointMake(MAX(r, MIN(size.width - r, _origin.x)), MAX(r, MIN(size.height - r, _origin.y)));
+        _stick.hidden = NO;
+        [self setVector:CGPointZero];
+        [self updateArming];
+        [self placeBadge];
+        [self showRest];
+    }
+}
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    (void)event;
+    if (_finger && [touches containsObject:_finger]) [self followThumb];
+}
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    (void)event;
+    if (!_finger || ![touches containsObject:_finger]) return;
+    [self followThumb];
+    BOOL armed = _armed && _onLock, onLock = _onLock;
+    _finger = nil;
+    _armed = NO; _lockSince = 0; _onLock = NO;
+    [self stopArmTimer];
+    // Held on the lock until it was full, then let go there: runs on, straight forward, with the lock full above the ring
+    // and "Auto-run" (ruling A34). Let go anywhere else, it just stops - the edge too.
+    if (armed) {
+        [self showRun:YES];
+        AKGamepadLog(@"touch walk: auto-run on (%.2f, %.2f)", _vector.x, _vector.y);
+        return;
+    }
+    if (onLock) AKGamepadLog(@"touch walk: let go on the lock before it was full; stopped");
+    [self releaseWalking];
+}
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    (void)event;
+    if (_finger && [touches containsObject:_finger]) [self releaseWalking];
+}
+// The host's pinch (AKWalkStickPinchOffer): every touch it is offered while a thumb is on the stick is a second finger -
+// soon after the thumb (0.15 s) or before the thumb walked, a pinch's.
+static const NSTimeInterval AKWalkPinchWindow = 0.15;
+- (NSInteger)pinchOffer:(UITouch *)touch {
+    if (_finger && touch != _finger) _secondPinches = self.clock() - _fingerBegan <= AKWalkPinchWindow || !_walked;
+    if (touch.view != self) return -1;
+    if (!_finger || touch == _finger) return 1;
+    return _secondPinches ? 1 : 0;
+}
+- (BOOL)pinchMayBegin {
+    if (!_finger) return YES;
+    if (!_secondPinches) return NO;
+    // A pinch: the stick lets go - every walk key up - and its fingers are left alone until they lift (no finger is its
+    // thumb any more, so their moves and lifts do nothing).
+    AKGamepadLog(@"touch walk: two fingers are a pinch; the stick lets go");
+    [self releaseWalking];
+    return YES;
+}
+- (void)releaseWalking {
+    if (_autoRunning) AKGamepadLog(@"touch walk: auto-run off");
+    _finger = nil; _secondPinches = NO;
+    _armed = NO; _lockSince = 0; _onLock = NO;
+    [self stopArmTimer];
+    [self showRun:NO];
+    _stick.lockFill = -1;
+    [self setVector:CGPointZero];
+    _stick.hidden = YES;
+    [self showRest];
+}
+@end
+
 @implementation AKTouchGamepad {
     __weak UIView *_host;
+    // iPad touch: only the walk stick; no overlay, no virtual controller, no lifecycle.
+    AKWalkStickOverlay *_walk;
     GCVirtualController *_virtualController;
     AKGamepadOverlay *_overlay;
     AKTouchHaptics *_haptics;
@@ -1246,6 +1825,24 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     }
     return self;
 }
+- (instancetype)initWalkStickWithHostView:(UIView *)host below:(UIView *)sibling {
+    if ((self = [super init])) {
+        _host = host; _enabled = YES;
+        _walk = [[AKWalkStickOverlay alloc] initWithFrame:host.bounds];
+        _walk.autoresizingMask = UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+        if (sibling && sibling.superview == host) [host insertSubview:_walk belowSubview:sibling];
+        else [host addSubview:_walk];
+    }
+    return self;
+}
+- (void)releaseWalking { [_walk releaseWalking]; }
+- (CGPoint)leftStickVector { return _walk ? _walk.vector : _overlay.leftStick.position; }
+- (BOOL)leftStickVisible {
+    if (_walk) return !_walk.stick.hidden;
+    UIView *ring = _overlay.leftStick.superview;
+    return _visible && ring && !ring.hidden && ring.alpha > AKFloatIdleAlpha + 0.01;
+}
+- (BOOL)autoRunning { return _walk ? _walk.autoRunning : _overlay.leftStick.autoRunning; }
 - (NSArray<GCController *> *)connectedControllers { return GCController.controllers; }
 - (AKTouchHaptics *)makeHaptics { return [AKTouchHaptics new]; }
 - (void)updateHaptics { _haptics.enabled = _visible && !_overlay.configuring && _overlay.preferences.hapticsEnabled; }
@@ -1458,6 +2055,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
 }
 - (void)refresh {
     NSAssert(NSThread.isMainThread, @"Touch controller lifecycle belongs on the main thread");
+    if (_walk) return;   // the walk stick has no controller to connect
     // A physical controller hides the on-screen gamepad, so a settings or layout
     // surface that is open has nothing left to configure and must close. Close it
     // when a controller actually connects: keyboard, window and application
@@ -1515,11 +2113,12 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     _enabled = enabled; _failed = NO; [self refresh];
 }
 - (void)setKeyboardVisible:(BOOL)visible {
-    _keyboardVisible = visible; [self refresh];
+    _keyboardVisible = visible; _walk.keyboardVisible = visible; [self refresh];
 }
 - (BOOL)configuring { return _overlay.configuring; }
 - (void)toggleSettings { [_overlay toggleSettings]; }
 - (void)invalidate {
+    [_walk releaseWalking]; [_walk removeFromSuperview];
     [_overlay finishConfiguration];
     _invalidated = YES;
     [NSNotificationCenter.defaultCenter removeObserver:self];
@@ -1532,3 +2131,16 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [_virtualController disconnect];
 }
 @end
+
+static AKWalkStickOverlay *AKWalkStickOn(UIView *host) {
+    for (UIView *view in host.subviews) if ([view isKindOfClass:AKWalkStickOverlay.class]) return (AKWalkStickOverlay *)view;
+    return nil;
+}
+NSInteger AKWalkStickPinchOffer(UIView *host, UITouch *touch) {
+    AKWalkStickOverlay *stick = AKWalkStickOn(host);
+    return stick ? [stick pinchOffer:touch] : -1;
+}
+BOOL AKWalkStickPinchMayBegin(UIView *host) {
+    AKWalkStickOverlay *stick = AKWalkStickOn(host);
+    return stick ? [stick pinchMayBegin] : YES;
+}

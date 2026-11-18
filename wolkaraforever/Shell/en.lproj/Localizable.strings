@@ -431,6 +431,7 @@
 "touch.gamepad.rightStick" = "Controller right stick";
 "touch.gamepad.jump" = "Jump";
 "touch.autorun" = "Auto-run";
+"touch.walkStick" = "Walk stick";
 "touch.gamepad.doneEditing" = "Done editing";
 "touch.gamepad.dragHint" = "Drag controls to move them";
 "touch.settings" = "Touch control settings";
