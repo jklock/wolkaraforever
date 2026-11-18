@@ -1,0 +1,463 @@
+# WolkaraForever layer patch 0065 - Battery Saver: presentation pacing and the AFK dim
+#
+# Why: the launcher's Battery Saver submenu stores a frame limit and an AFK timeout, and
+# something has to enforce them. Both are applied at boundaries the adapters already own:
+# the guest's own presentation call, and the host view that receives every input.
+#
+# Metal. Apple documents three kinds of presentation on a command buffer - immediate, timed
+# and minimum-duration, the last of which "holds the previous drawable for at least the
+# specified duration" (MTLCommandBuffer). A cap is therefore expressible in the guest's own
+# calls, which is why there is no second swizzle and no separate render loop here:
+#
+#   immediate          -> presentDrawable:afterMinimumDuration: with the cap's interval
+#   minimum-duration   -> the guest's duration, or the cap's, whichever is longer
+#   timed (atTime:)    -> the guest's time, or no-earlier-than the previous frame for this
+#                         layer plus the interval, whichever is later
+#
+# With the cap Off nothing is installed at all: the presentation path is the one it had
+# before this feature existed. The environment - charger, Low Power Mode, thermal state - is
+# re-resolved at most once a second on the render path, and the AFK dim's 10 FPS applies
+# immediately through its notification.
+#
+# Two accuracy fixes come with it. The simulator SDK has no presented timestamp, and the
+# acquisition time was being fed to AKRecordMetalFramePresented as if it were one: that
+# labelled the drawable acquisition rate as presented FPS, which is the number the HUD must
+# not invent. It is no longer recorded, so the published rates stay 0 and the HUD says it has
+# no measurement. On the runtime without minimum-duration presentation (the simulator's
+# Metal does not implement it; the device's does) the immediate path falls back to timed
+# presentation with the same no-earlier-than target.
+#
+# AppKit. One idle coordinator lives on the host view. After the timeout it dims a black
+# layer above the game surface and below the pointer, and the first input afterwards wakes
+# it and is consumed instead of delivered. Activity arrives from every source the host
+# already sees - direct touch, presses, hover, clicks, the on-screen trackpad - plus the two
+# it cannot see, which the app reports through one notification: a controller button, and the
+# controller touchpad relay. Nothing here hooks UIApplication sendEvent:, changes brightness,
+# idleTimerDisabled, the session, game memory or game settings.
+#
+# Applies after: 0064-controller-touchpad-mouse-handoff-test.patch
+# Applies to: translation/Metal/Presentation.m, translation/AppKit/AppKit.m
+# Upstream: product-specific.
+#
+--- a/translation/Metal/Presentation.m
++++ b/translation/Metal/Presentation.m
+@@ -5,6 +5,7 @@
+ #import <ImageIO/ImageIO.h>
+ #import <objc/runtime.h>
+ #import "AKSupport.h"
++#import "BatterySaverPolicy.h"
+ #include <stdatomic.h>
+ #include <dlfcn.h>
+ #include <os/lock.h>
+@@ -137,6 +138,112 @@
+ __attribute__((visibility("default"))) void AKEnableMetalFrameStatistics(void) { atomic_store(&s_recordFrames, true); }
+ __attribute__((visibility("default"))) void AKDisableMetalFrameStatistics(void) { atomic_store(&s_recordFrames, false); }
+ 
++// Battery Saver: a frame cap applied at the presentation call the guest itself makes.
++//
++// Apple documents three kinds of presentation on a command buffer: immediate
++// (presentDrawable:), timed (presentDrawable:atTime:) and minimum-duration
++// (presentDrawable:afterMinimumDuration:), the last of which "holds the previous drawable
++// for at least the specified duration" (MTLCommandBuffer). A cap is therefore expressible
++// in the guest's own presentation calls - no second swizzle, no separate render loop and no
++// touch on what the guest draws:
++//
++//   immediate          -> presentDrawable:afterMinimumDuration: with the cap's interval
++//   minimum-duration   -> the game's duration, or the cap's, whichever is longer
++//   timed (atTime:)    -> the game's time, or no-earlier-than the previous frame for this
++//                         layer plus the interval, whichever is later
++//
++// Off is transparent: the original call is made, with the original arguments, and nothing
++// here computes anything. A game that presents through several layers paces each of them
++// on its own, because the target time is kept on the drawable's layer.
++//
++// What this cannot do is change how often the guest renders: it is a presentation cap, so a
++// capped session presents fewer frames and saves the GPU work those frames would have done.
++// The measurement that matters is therefore presented frames per second, which is what
++// AKMetalCurrentFPS already reports from CAMetalDrawable.presentedTime - not the rate at
++// which drawables are acquired.
++static os_unfair_lock s_paceLock = OS_UNFAIR_LOCK_INIT;
++static double s_paceInterval = 0.0;        // cached, seconds; 0 = no cap
++static double s_paceNextRefresh = 0.0;     // when the cache above must be re-resolved
++static atomic_bool s_paceWanted = false;   // this guest was started with a cap or an AFK timer
++static atomic_bool s_paceDimmed = false;   // the AppKit adapter's idle coordinator is dimming
++static char paceMarker;                    // per-layer target time of the next presentation
++
++// Counts of what the pacing path did, for the fixture and for a session log. Each one is one
++// relaxed atomic increment in a path that only runs while a cap is in force.
++static atomic_uint_fast64_t s_paceImmediate, s_paceExtended, s_paceRaised, s_paceKept, s_paceBypassed;
++
++__attribute__((visibility("default"))) void AKMetalBatterySaverPacingCounts(uint64_t *immediate,
++                                                                           uint64_t *extended,
++                                                                           uint64_t *raised,
++                                                                           uint64_t *kept,
++                                                                           uint64_t *bypassed) {
++    if (immediate) *immediate = atomic_load(&s_paceImmediate);
++    if (extended) *extended = atomic_load(&s_paceExtended);
++    if (raised) *raised = atomic_load(&s_paceRaised);
++    if (kept) *kept = atomic_load(&s_paceKept);
++    if (bypassed) *bypassed = atomic_load(&s_paceBypassed);
++}
++
++// The interval the next presentation is held for, in seconds; 0 when nothing caps it.
++//
++// The environment - charger, Low Power Mode, thermal state - can change during a session,
++// and a thermal state is exactly what a cap is for. Reading it is resolved at most once a
++// second rather than per frame: a device query on the render path would cost more than the
++// frames it saves. The dim is applied immediately through its notification instead.
++static double AKBatterySaverPaceInterval(void) {
++    if (!atomic_load(&s_paceWanted)) return 0.0;
++    double now = CACurrentMediaTime();
++    os_unfair_lock_lock(&s_paceLock);
++    if (now < s_paceNextRefresh) {
++        double interval = s_paceInterval;
++        os_unfair_lock_unlock(&s_paceLock);
++        return interval;
++    }
++    s_paceNextRefresh = now + 1.0;
++    os_unfair_lock_unlock(&s_paceLock);
++    AKBatterySaverFramePolicy policy = AKBatterySaverResolvedPolicy(atomic_load(&s_paceDimmed));
++    double interval = AKBatterySaverFramePolicyInterval(policy);
++    os_unfair_lock_lock(&s_paceLock);
++    s_paceInterval = interval;
++    os_unfair_lock_unlock(&s_paceLock);
++    return interval;
++}
++
++// The earliest host time this drawable's layer may present at, after this frame.
++//
++// Kept on the layer rather than in a global: a game that presents through two layers would
++// otherwise make them pace against each other, and one that opens a second window would
++// inherit a target time belonging to the first.
++static CFTimeInterval AKBatterySaverPaceTarget(id<MTLDrawable> drawable, CFTimeInterval interval) {
++    CALayer *layer = nil;
++    if ([drawable isKindOfClass:NSObject.class] && [(NSObject *)drawable respondsToSelector:@selector(layer)])
++        layer = [(id<CAMetalDrawable>)drawable layer];
++    if (!layer) return 0.0;   // no layer to remember: the game keeps its own timing
++    CFTimeInterval now = CACurrentMediaTime();
++    NSNumber *previous = objc_getAssociatedObject(layer, &paceMarker);
++    // A layer that has not presented recently starts from now: an old target is not credit
++    // that may be spent as a burst of frames.
++    CFTimeInterval floor = previous ? previous.doubleValue : now;
++    if (floor < now - 1.0) floor = now;
++    CFTimeInterval target = floor + interval;
++    objc_setAssociatedObject(layer, &paceMarker, @(target), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++    return target;
++}
++
++// Watches the one state that must apply immediately: the AFK dim's fixed 10 FPS.
++static void AKBatterySaverObserveDim(void) {
++    [NSNotificationCenter.defaultCenter addObserverForName:AKBatterySaverDimDidChangeNotification
++                                                    object:nil queue:nil
++                                                usingBlock:^(NSNotification *note) {
++        BOOL dimmed = [note.userInfo[AKBatterySaverDimmedKey] boolValue];
++        atomic_store(&s_paceDimmed, dimmed);
++        // Re-resolve at the next presentation rather than one second later.
++        os_unfair_lock_lock(&s_paceLock);
++        s_paceNextRefresh = 0.0;
++        os_unfair_lock_unlock(&s_paceLock);
++    }];
++}
++
+ // Development-only presentation evidence. All normal execution stays native.
+ // The sample flag also saves one GPU readback after rendering, before present.
+ static id<CAMetalDrawable> (*originalNextDrawable)(id,SEL);
+@@ -280,7 +387,10 @@
+             if(count==1 || count==60 || count==600 || count==1800) AKLog(@"Metal frame %llu presented at %.6f",(unsigned long long)count,frame.presentedTime);
+         }];
+ #else
+-        AKRecordMetalFramePresented(CACurrentMediaTime());
++        // The simulator SDK exposes no presented timestamp. Acquiring a drawable is not a
++        // presentation, and recording it here would label the acquisition rate as presented
++        // FPS - the one number the HUD must not invent. Nothing is recorded, the published
++        // rates stay 0, and the HUD says it has no measurement.
+         (void)timing;
+ #endif
+     }
+@@ -306,9 +416,45 @@
+ static void notePresented(id command) {
+     if(atomic_load(&s_recordFrames)) objc_setAssociatedObject(command,&frameMarker,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+ }
+-static void observedPresent(id command,SEL selector,id<MTLDrawable> drawable) { markCapture(command,drawable); notePresented(command); originalPresent(command,selector,drawable); }
+-static void observedPresentAt(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) { markCapture(command,drawable); notePresented(command); originalPresentAt(command,selector,drawable,time); }
+-static void observedPresentAfter(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) { markCapture(command,drawable); notePresented(command); originalPresentAfter(command,selector,drawable,time); }
++static void observedPresent(id command,SEL selector,id<MTLDrawable> drawable) {
++    markCapture(command,drawable); notePresented(command);
++    double interval=AKBatterySaverPaceInterval();
++    // Off, or nothing capped: the guest's own call with the guest's own arguments. A guest
++    // started without Battery Saver does not even reach the counter below: its presentation
++    // path is the one it had before this feature existed.
++    if(interval<=0.0) { if(atomic_load(&s_paceWanted)) atomic_fetch_add(&s_paceBypassed,1); originalPresent(command,selector,drawable); return; }
++    // Immediate presentation has no duration to lengthen, so it becomes a minimum-duration
++    // presentation: the previous drawable is held for the cap's interval instead of being
++    // replaced as soon as the next one is ready.
++    if(originalPresentAfter) { atomic_fetch_add(&s_paceImmediate,1); originalPresentAfter(command,selector,drawable,interval); return; }
++    // This runtime has no minimum-duration presentation (the simulator's Metal does not
++    // implement it; the device's does). Timed presentation is Apple's other documented way
++    // to say "not before", so the same cap is applied there: the guest asked for "as soon as
++    // possible", and the cap says when that is.
++    CFTimeInterval target=AKBatterySaverPaceTarget(drawable,interval);
++    if(target<=0.0) target=CACurrentMediaTime()+interval;
++    atomic_fetch_add(&s_paceImmediate,1);
++    originalPresentAt(command,selector,drawable,target);
++}
++static void observedPresentAt(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) {
++    markCapture(command,drawable); notePresented(command);
++    double interval=AKBatterySaverPaceInterval();
++    if(interval<=0.0) { if(atomic_load(&s_paceWanted)) atomic_fetch_add(&s_paceBypassed,1); originalPresentAt(command,selector,drawable,time); return; }
++    // atTime: is the guest's own timing, so it is preserved: the frame is presented no
++    // earlier than the cap allows, and never earlier than the guest asked for.
++    CFTimeInterval target=AKBatterySaverPaceTarget(drawable,interval);
++    if(target>time) { atomic_fetch_add(&s_paceRaised,1); originalPresentAt(command,selector,drawable,target); }
++    else { atomic_fetch_add(&s_paceKept,1); originalPresentAt(command,selector,drawable,time); }
++}
++static void observedPresentAfter(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) {
++    markCapture(command,drawable); notePresented(command);
++    double interval=AKBatterySaverPaceInterval();
++    if(interval<=0.0) { if(atomic_load(&s_paceWanted)) atomic_fetch_add(&s_paceBypassed,1); originalPresentAfter(command,selector,drawable,time); return; }
++    // The guest asked for a minimum duration of its own. A longer one is its decision and is
++    // kept; a shorter one is raised to the cap.
++    if(time>=interval) { atomic_fetch_add(&s_paceKept,1); originalPresentAfter(command,selector,drawable,time); }
++    else { atomic_fetch_add(&s_paceExtended,1); originalPresentAfter(command,selector,drawable,interval); }
++}
+ static void observedWaitUntilCompleted(id command,SEL selector) {
+     AKFrameTiming *timing=measureFrames ? objc_getAssociatedObject(command,&timingMarker) : nil;
+     double start=timing ? CACurrentMediaTime() : 0.0;
+@@ -387,12 +533,19 @@
+     BOOL measure=[NSProcessInfo.processInfo.arguments containsObject:@"--measure-native"];
+     id layout=[NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverTouchLayoutV1"];
+     BOOL hud=[layout isKindOfClass:NSDictionary.class] && [layout[@"performanceOverlayEnabled"] boolValue];
+-    // The launcher writes this preference before start. Avoid all presentation
+-    // hooks in ordinary play; the independent background-pacing hook remains.
+-    if(!sample && !measure && !hud) return;
++    // Battery Saver. The choice was snapshotted by the launcher before this guest started,
++    // so a submenu change cannot alter the session that is playing.
++    BOOL pacing=AKBatterySaverLaunchFrameLimit()!=AKBatterySaverFrameLimitOff ||
++                AKBatterySaverLaunchAFKMinutes()>0;
++    // Nothing to observe or pace in ordinary play: no presentation hook is installed at all.
++    if(!sample && !measure && !hud && !pacing) return;
+     static dispatch_once_t once;
+     dispatch_once(&once,^{
+         captureFrames=sample; measureFrames=measure;
++        if(pacing) {
++            atomic_store(&s_paceWanted,true);
++            AKBatterySaverObserveDim();
++        }
+         // --measure-native wants the same per-frame statistics the HUD asks for,
+         // so it turns the gate on itself rather than relying on a HUD nobody opened.
+         if(measure) atomic_store(&s_recordFrames,true);
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -9,6 +9,8 @@
+ // The guest screen's pixels per point, defined in Screens.m.
+ CGFloat AKGuestBackingScale(void);
+ #import "AKPerformanceOverlay.h"
++#import "BatterySaverPolicy.h"
++#import "BatterySaverIdle.h"
+ #import <GameController/GameController.h>
+ #import <objc/message.h>
+ #import <objc/runtime.h>
+@@ -299,6 +301,7 @@
+ @implementation AKHostView { CGPoint _last; NSEventModifierFlags _mods; BOOL _pressedRight, _pressedLeft, _pointerInside, _softwareCursor; UIImageView *_cursorView; UIPointerInteraction *_pointer; UIPointerStyle *_gamePointerStyle; unsigned _hoverUpdates, _pointerUpdates, _cursorVisibilityReasons; NSTimeInterval _pointerReportTime; CGPoint _cursorHotSpot;
+     AKTouchControls *_touchControls; BOOL _controllerTouchpadActive;
+     AKPerformanceOverlay *_performanceOverlay;
++    AKBatterySaverIdle *_batterySaver;
+     BOOL _touchCursorActive, _touchCursorInitialized, _pressedMiddle;
+     NSTimeInterval _lastTouchClickTime;
+     CGPoint _lastTouchClickPoint;
+@@ -364,6 +367,21 @@
+         [self addSubview:_performanceOverlay];
+         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(performanceOverlayLayoutChanged:)
+             name:AKGamepadLayoutDidChangeNotification object:nil];
++        // Battery Saver's AFK coordinator. Built only for a session the launcher started with
++        // an AFK timeout: with the option off there is no layer, no timer and no change to any
++        // input path. The dim is a view over the game surface - never a change to the
++        // display's brightness, to idleTimerDisabled, to the session or to the game.
++        if (AKBatterySaverLaunchAFKMinutes() > 0) {
++            _batterySaver = [[AKBatterySaverIdle alloc] initWithHostView:self];
++            __weak AKHostView *weakSelf = self;
++            _batterySaver.configurationActive = ^BOOL { return weakSelf->_touchControls.configuring; };
++            // A controller button the app routes, and the controller touchpad relay, are inputs
++            // this view never receives. They arrive as the app's own notification, so they wake
++            // a dimmed session without a second GameController handler competing with the
++            // touchpad/mouse handoff.
++            [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(batterySaverActivity:)
++                name:AKBatterySaverActivityNotification object:nil];
++        }
+     }
+     return self;
+ }
+@@ -373,6 +391,23 @@
+     // launcher writes the same preference without owning an AKGamepadLayout.
+     AKGamepadLayout *layout = [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+     _performanceOverlay.hidden = !layout.performanceOverlayEnabled;
++}
++// An input the host does not receive itself: a controller button the app routes, or the
++// controller touchpad relay. It counts as activity, and the caller that produced it decides
++// whether its own event is delivered.
++- (void)batterySaverActivity:(NSNotification *)note {
++    if (!NSThread.isMainThread) {
++        dispatch_async(dispatch_get_main_queue(), ^{ [self batterySaverActivity:note]; });
++        return;
++    }
++    [_batterySaver input:note.userInfo[AKBatterySaverActivitySourceKey] ?: @"controller"];
++}
++// YES when this input only woke a dimmed session, in which case the game must not receive it.
++// That is the whole point of the AFK option: reaching for the tablet does not also move the
++// camera or fire a spell. Nil when the session was started without an AFK timeout, so the
++// option being off costs one message send per input and changes nothing else.
++- (BOOL)ak_consumeBatterySaverInput:(NSString *)source {
++    return [_batterySaver input:source];
+ }
+ - (void)installTouchControls {
+     _touchControls = [[AKTouchControls alloc] initWithFrame:CGRectZero];
+@@ -396,6 +431,8 @@
+ - (void)layoutSubviews {
+     [super layoutSubviews];
+     [self.nsWindow ak_hostBoundsChanged:self.bounds];
++    // The dim layer covers the surface it was made for, at the surface's current size.
++    [_batterySaver layoutDimView];
+     if (!_touchCursorInitialized && _touchControls.trackpadEnabled) [self touchTrackpadChanged:YES];
+     if (!CGSizeEqualToSize(_touchViewportSize, self.bounds.size)) {
+         [_touchControls cancelTouches];
+@@ -428,6 +465,7 @@
+ }
+ - (void)touchMoveBy:(CGPoint)delta {
+     if (!isfinite(delta.x) || !isfinite(delta.y)) return;
++    if ([self ak_consumeBatterySaverInput:@"touchpad"]) return;
+     [self activateTouchCursor];
+     if (AKMouseIsCaptured()) {
+         // Camera motion uses deltas even at a screen edge, without a physical
+@@ -442,6 +480,7 @@
+     }
+ }
+ - (void)touchScrollBy:(CGPoint)delta {
++    if ([self ak_consumeBatterySaverInput:@"touchpad"]) return;
+     [self activateTouchCursor];
+     NSEvent *event = [NSEvent new];
+     event.type = NSEventTypeScrollWheel; event.window = self.nsWindow;
+@@ -453,6 +492,7 @@
+ }
+ - (void)touchButton:(unsigned)button pressed:(BOOL)pressed {
+     if (button > 2) return;
++    if (pressed && [self ak_consumeBatterySaverInput:@"touchpad"]) return;
+     [self activateTouchCursor];
+     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+     if (pressed) {
+@@ -477,6 +517,7 @@
+     }
+ }
+ - (void)touchInsertText:(NSString *)text {
++    if ([self ak_consumeBatterySaverInput:@"key"]) return;
+     AKEnumerateTextKeys(text, ^(NSString *characters, NSString *unmodified, unsigned short code, NSUInteger modifiers) {
+         [self postTextKey:code characters:characters unmodified:unmodified modifiers:modifiers];
+     });
+@@ -501,11 +542,14 @@
+     [self touchInsertText:text];
+ }
+ - (void)touchSpecialKey:(unsigned short)code characters:(NSString *)characters {
++    if ([self ak_consumeBatterySaverInput:@"key"]) return;
+     [self postTextKey:code characters:characters unmodified:characters modifiers:0];
+ }
+ // One key, pressed or released, for a control that holds it as long as the finger does - the
+ // touch gamepad's jump, whose Space must stay down while swimming up.
+ - (void)touchKey:(unsigned short)code characters:(NSString *)characters pressed:(BOOL)pressed {
++    if (pressed && [self ak_consumeBatterySaverInput:@"key"]) return;
++    [_batterySaver setHeld:pressed reason:@"key"];
+     NSEvent *event = [NSEvent new];
+     event.type = pressed ? NSEventTypeKeyDown : NSEventTypeKeyUp;
+     event.window = self.nsWindow; event.keyCode = code; event.modifierFlags = 0;
+@@ -540,6 +584,13 @@
+         return;
+     }
+     _controllerTouchpadActive = [notification.userInfo[@"active"] boolValue];
++    // The relay is a real input like any other: a contact is "held" while it lasts, and a
++    // contact that arrives while the session is dimmed wakes it and is consumed, exactly like
++    // a finger on the screen. Nothing here changes which stream reaches the game - that is the
++    // handoff above, and Battery Saver only observes.
++    BOOL held = _controllerTouchpadActive;
++    if (held && [self ak_consumeBatterySaverInput:@"controllerTouchpad"]) return;
++    [_batterySaver setHeld:held reason:@"controllerTouchpad"];
+ }
+ - (void)installMouse:(GCMouse *)mouse {
+     mouse.handlerQueue=dispatch_get_main_queue();
+@@ -554,6 +605,7 @@
+     mouse.mouseInput.scroll.valueChangedHandler=^(GCControllerDirectionPad *pad,float x,float y) {
+         (void)pad;AKHostView *view=weakSelf;if(!view || !view.window.isKeyWindow)return;
+         if(view->_controllerTouchpadActive)return;
++        if([view ak_consumeBatterySaverInput:@"mouse"])return;
+         NSEvent *event=[NSEvent new];event.window=view.nsWindow;event.type=NSEventTypeScrollWheel;
+         event.locationInWindow=view.nsWindow.ak_mouseLocation;event.modifierFlags=view->_mods;
+         // GCMouse reports the device's own direction. AppKit's deltas follow
+@@ -567,6 +619,7 @@
+ // confinement rect. Wine uses absolute positions inside it and deltas at its edges.
+ - (void)postRelativeMouseX:(CGFloat)dx y:(CGFloat)dy {
+     if(!isfinite(dx) || !isfinite(dy))return;
++    if ([self ak_consumeBatterySaverInput:@"mouse"]) return;
+     NSPoint point=self.nsWindow.ak_mouseLocation;
+     point.x+=dx;point.y+=dy;
+     NSRect rect=self.nsWindow.mouseConfinementRect;
+@@ -584,6 +637,7 @@
+ }
+ - (void)rawButton:(NSInteger)button pressed:(BOOL)pressed {
+     if(!self.window.isKeyWindow || _controllerTouchpadActive)return;
++    if ([self ak_consumeBatterySaverInput:@"mouse"]) return;
+     BOOL previous=button?_pressedRight:_pressedLeft;
+     if(previous==pressed || (pressed && ![self usesRelativeMouse]))return;
+     NSEventType type=button?(pressed?NSEventTypeRightMouseDown:NSEventTypeRightMouseUp):(pressed?NSEventTypeLeftMouseDown:NSEventTypeLeftMouseUp);
+@@ -600,6 +654,9 @@
+     if(t==NSEventTypeRightMouseUp)_pressedRight=NO;
+     if(t==NSEventTypeOtherMouseDown)_pressedMiddle=YES;
+     if(t==NSEventTypeOtherMouseUp)_pressedMiddle=NO;
++    // A button held down is an input still in progress, and the session must not dim on top
++    // of it. Every press and release passes through here.
++    [_batterySaver setHeld:(_pressedLeft || _pressedRight || _pressedMiddle) reason:@"mouse"];
+     NSEvent *e = [NSEvent new];
+     e.type = t; e.window = self.nsWindow; e.modifierFlags = _mods; e.buttonNumber = b; e.clickCount = clicks;
+     e.timestamp = NSProcessInfo.processInfo.systemUptime;
+@@ -662,6 +719,7 @@
+ }
+ - (void)moveHoverTo:(CGPoint)point inside:(BOOL)inside {
+     if([self usesRelativeMouse])return;
++    if(inside && [self ak_consumeBatterySaverInput:@"mouse"])return;
+     BOOL wasTouchCursor = _touchCursorActive;
+     _touchCursorActive = NO;
+     BOOL changed=wasTouchCursor || _pointerInside!=inside || !CGPointEqualToPoint(_last,point);
+@@ -753,6 +811,8 @@
+ }
+ - (BOOL)directGestureActive { return _directTouch != nil || _directMulti; }
+ - (void)touchesBegan:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
++    if ([self ak_consumeBatterySaverInput:@"touch"]) return;
++    [_batterySaver setHeld:YES reason:@"touch"];
+     if ([self handleTrackpadTouches:t event:ev]) return;
+     BOOL r = AKIsRight(ev);
+     if (!r && AKMobileInterface() && AKIsFinger(t) && ![self usesRelativeMouse]) {
+@@ -807,6 +867,7 @@
+     _directMulti = NO; _directTouch = nil;
+ }
+ - (void)touchesEnded:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
++    [_batterySaver setHeld:NO reason:@"touch"];
+     if ([self handleTrackpadTouches:t event:ev]) return;
+     if ([self directGestureActive]) {
+         if (!_directMulti && [t containsObject:_directTouch]) {
+@@ -832,6 +893,7 @@
+     [self postMouse:_pressedRight ? NSEventTypeRightMouseUp : NSEventTypeLeftMouseUp at:[self usesRelativeMouse]?_last:[t.anyObject locationInView:self] button:_pressedRight];
+ }
+ - (void)touchesCancelled:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
++    [_batterySaver setHeld:NO reason:@"touch"];
+     if ([self directGestureActive]) {
+         // A cancelled gesture clicks nothing; whatever it held is let go.
+         [self cancelDirectHold];
+@@ -881,9 +943,9 @@
+         [NSApp postEvent:e atStart:NO];
+     }
+ }
+-- (void)pressesBegan:(NSSet<UIPress *> *)p withEvent:(UIPressesEvent *)e { [self postKeys:p down:YES]; }
+-- (void)pressesEnded:(NSSet<UIPress *> *)p withEvent:(UIPressesEvent *)e { [self postKeys:p down:NO]; }
+-- (void)pressesCancelled:(NSSet<UIPress *> *)p withEvent:(UIPressesEvent *)e { [self postKeys:p down:NO]; }
++- (void)pressesBegan:(NSSet<UIPress *> *)p withEvent:(UIPressesEvent *)e { if ([self ak_consumeBatterySaverInput:@"key"]) return; [_batterySaver setHeld:YES reason:@"key"]; [self postKeys:p down:YES]; }
++- (void)pressesEnded:(NSSet<UIPress *> *)p withEvent:(UIPressesEvent *)e { [_batterySaver setHeld:NO reason:@"key"]; [self postKeys:p down:NO]; }
++- (void)pressesCancelled:(NSSet<UIPress *> *)p withEvent:(UIPressesEvent *)e { [_batterySaver setHeld:NO reason:@"key"]; [self postKeys:p down:NO]; }
+ @end
+ 
+ @interface AKHostViewController : UIViewController
