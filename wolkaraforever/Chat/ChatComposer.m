@@ -297,6 +297,11 @@ static unsigned short const AKChatKeyEscape = 53;
         case AKChatComposerStateListening:
         case AKChatComposerStateEditing:
         case AKChatComposerStateReady:
+        // A cancelled or failed session keeps its draft on screen; an explicit Send from there
+        // is a new transaction, not a retry. Refusing it left Send dead for the rest of the
+        // session (seen on an iPhone Duo login screen: state=6 draft=20 sendable=0).
+        case AKChatComposerStateCancelled:
+        case AKChatComposerStateFailed:
             break;
         default:
             return NO;

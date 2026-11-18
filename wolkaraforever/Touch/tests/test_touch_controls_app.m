@@ -28,6 +28,7 @@ static BOOL AKTouchFixtureWaitFor(NSTimeInterval timeout, BOOL (^ready)(void)) {
 // controls keep it private; the fixture asks for it the way the controls do.
 @interface AKTouchControls (LayerKeyboardFixture)
 - (void)showLayerKeyboard;
+- (BOOL)composerInReviewMode;
 // The composer's language control asks through this; the fixture drives the same method the
 // menu action calls, so what it exercises is the production path rather than a copy of it.
 - (void)chooseSpeechLanguage:(NSString *)stored;
@@ -534,21 +535,20 @@ static void AKFixtureInputSource(void *context) {
     assert(AKChatComposer.shared.state == AKChatComposerStateCancelled);
     NSLog(@"chat composer: Cancel posts one Escape and no text");
 
-    // The failure the card has to be able to show: the guest has a password field, so a chat key
-    // has no business there and nothing is posted. This is the Carbon adapter's real notification.
+    // A secure-input field is a password, not chat. Review mode yields it to the normal keyboard
+    // instead of opening a Composer transaction that would refuse the field.
     [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
                                                      object:nil userInfo:@{@"enabled": @YES}];
     before = fixture.keyCodes.count;
     [controls openChatComposerFromSource:AKChatComposerSourceController];
     AKDrainFixtureEvents();
     assert(fixture.keyCodes.count == before);
-    assert(AKChatComposer.shared.state == AKChatComposerStateFailed);
-    UILabel *state = (UILabel *)AKFindInputView(host, @"wolkaraforever.composer.state");
-    assert(state && [state.text isEqual:AKHostLocalized(@"chat.composer.problem.notSent")]);
-    assert(!send.enabled && cancel.enabled);
-    NSLog(@"chat composer: a refused open shows the localized error and posts nothing");
+    assert(AKChatComposer.shared.state == AKChatComposerStateCancelled);
+    assert(![controls composerInReviewMode]);
+    NSLog(@"chat composer: protected input keeps the Composer out of the password field");
     [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
                                                      object:nil userInfo:@{@"enabled": @NO}];
+    assert([controls composerInReviewMode]);
 
     // Background and return: the draft is kept, and nothing is sent while the app is away.
     [controls openChatComposerFromSource:AKChatComposerSourceController];
