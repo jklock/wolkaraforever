@@ -1,0 +1,37 @@
+## Interface: 16001
+## Title: TouchPlay
+## Notes: The touch play screen for WoW Forever on iPad: spell buttons under the right thumb, health and target cards, a quest card, one-tap Bags and Menu.
+## Author: Yahya Ismail
+## Version: 0.1.0
+## SavedVariables: TouchPlayDB
+## SavedVariablesPerCharacter: TouchPlayCharDB
+
+Core.lua
+Text.lua
+Style.lua
+Bars.lua
+Cluster.lua
+Units.lua
+InfoCard.lua
+Picker.lua
+ItemRail.lua
+ClassBars.lua
+Hud.lua
+Auras.lua
+Interact.lua
+Chat.lua
+Loot.lua
+Hold.lua
+Popups.lua
+Tooltip.lua
+Corpse.lua
+Menu.lua
+Feel.lua
+Targeting.lua
+Sharp.lua
+Guide.lua
+Perf.lua
+Swipe.lua
+Keylog.lua
+Signal.lua
+Contract.lua

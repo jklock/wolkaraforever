@@ -90,6 +90,7 @@
 "home.addons.install.needsgame" = "Add-ons installieren (Curse & direkt) (zuerst Spiel installieren)";
 "home.addons.recommended.macEver" = "Empfohlene Add-ons installieren (Mac-Ever)";
 "home.addons.recommended.wolkaraRoue" = "Empfohlene Add-ons installieren (WolkaraRoue)";
+"home.addons.recommended.touchPlay" = "Empfohlene Add-ons installieren (TouchPlay)";
 "home.addons.directory" = "Add-on-Ordner öffnen";
 "home.addons.directory.needsgame" = "Add-on-Ordner öffnen (zuerst Spiel installieren)";
 "home.addons.backup" = "Add-ons sichern";
@@ -555,6 +556,8 @@
 "addons.bundled.installed" = "WolkaraRoue %@ aus dem Paket dieser App installiert.";
 "addons.bundled.unavailable" = "Das mitgelieferte Add-on-Paket fehlt oder ist nicht das, das diese App ausgeliefert hat.";
 "addons.bundled.title" = "Mitgeliefertes Add-on";
+"addons.bundled.touchPlay.name" = "TouchPlay (mitgeliefert)";
+"addons.bundled.touchPlay.installed" = "TouchPlay %@ aus dem Paket dieser App installiert.";
 "addons.by" = "Von %@";
 "addons.downloads" = "%@ Downloads auf CurseForge";
 "addons.installLatest" = "Neueste kompatible Datei installieren";

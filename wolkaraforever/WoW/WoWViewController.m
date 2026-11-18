@@ -268,13 +268,15 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UILabel *_stateLabel, *_detailLabel, *_versionLabel;
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_touchpadButton, *_permissionsButton, *_primaryButton,
-        *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
+        *_macEverButton, *_touchPlayButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
         *_renderProfileButton, *_deviceProfileButton, *_interfaceModeButton,
         *_addonsBackupButton, *_addonsRestoreButton,
         *_layoutCreateButton, *_layoutRestoreButton, *_layoutBackupButton;
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
+    // The Launcher Manager card, whose rows gain iPad touch's recommendation row in that mode only.
+    UIView *_launcherManagerBox;
     TKWoWSwitchRow *_gamepadRow, *_overlayRow;
     UIButton *_interfaceSetupButton;
     // Set while the layout-import picker is up, so a document chosen there is read as a layout
@@ -436,6 +438,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // The recommended add-ons for the chosen interface. The row opens the Add-On Manager,
     // where the package is chosen and installed explicitly; it never installs silently.
     _macEverButton=[self button:@"wow.addons.macEver" action:@selector(openRecommendedAddons)];
+    // iPad touch's recommendation row: the same route, offered on the Launcher Manager card under the
+    // mode row while iPad touch is the mode (and only then: no other mode's card has it). It opens the
+    // Add-On Manager on the bundled TouchPlay package, whose Install is the explicit step.
+    _touchPlayButton=[self button:@"wow.launcher.touchPlay" action:@selector(openRecommendedAddons)];
     _addonsDirectoryButton=[self button:@"wow.addons.directory" action:@selector(openAddonDirectory)];
     // The whole add-on folder, in one ZIP and back again. Two rows and nothing else: there is
     // no list to keep in step, no check that runs while the page is open, and no state that can
@@ -492,7 +498,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // the one place the recommendation row's own card sends a person to install it. It sits
     // beside UI Manager on a wide page and after it on a narrow one, and it changes no other
     // card's width, inset or order.
-    UIView *launcherManagerBox=[self sectionBoxWithIdentifier:@"wow.box.launcherManager"
+    UIView *launcherManagerBox=_launcherManagerBox=[self sectionBoxWithIdentifier:@"wow.box.launcherManager"
         rows:@[_interfaceModeButton, _layoutCreateButton, _interfaceSetupButton,
                _layoutRestoreButton, _layoutBackupButton]];
 
@@ -977,7 +983,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // the route it opens is real and the page's own tests exercise it - the page simply does
     // not offer it here any more.
     [self configureButton:_macEverButton
-        title:WKLocalized(@"home.addons.recommended.wolkaraRoue") filled:NO];
+        title:AKInterfaceModeIsTouchPlay()?WKLocalized(@"home.addons.recommended.touchPlay"):WKLocalized(@"home.addons.recommended.wolkaraRoue") filled:NO];
     _macEverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _macEverButton.enabled=!_starting && !_running && !_sessionUsed;
     _macEverButton.hidden=YES;
@@ -1038,6 +1044,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             InterfaceModeLabel(AKInterfaceModeName())) filled:NO];
     _interfaceModeButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _interfaceModeButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
+    [self placeTouchPlayRecommendation];
     [self configureButton:_interfaceSetupButton
         title:WKLocalized(@"home.launcher.interfaceSetup.row") filled:NO];
     _interfaceSetupButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
@@ -2142,15 +2149,38 @@ static NSString *ElementLabel(NSString *element) {
     }
     [self presentSheet:sheet anchor:_layoutRestoreButton];
 }
+// iPad touch's recommendation row, on the Launcher Manager card right under the mode row while
+// iPad touch is the mode, and not in the card at all otherwise: every other mode's card has exactly
+// the rows it had. It follows the page's idle rule, like the mode row above it.
+- (void)placeTouchPlayRecommendation {
+    UIStackView *rows=(UIStackView *)_launcherManagerBox.subviews.firstObject;
+    if (![rows isKindOfClass:UIStackView.class]) return;
+    BOOL wanted=AKInterfaceModeIsTouchPlay();
+    BOOL placed=[rows.arrangedSubviews containsObject:_touchPlayButton];
+    if (wanted && !placed) {
+        NSUInteger mode=[rows.arrangedSubviews indexOfObject:_interfaceModeButton];
+        [rows insertArrangedSubview:_touchPlayButton atIndex:mode==NSNotFound?rows.arrangedSubviews.count:mode+1];
+    } else if (!wanted && placed) {
+        [rows removeArrangedSubview:_touchPlayButton];
+        [_touchPlayButton removeFromSuperview];
+    }
+    if (!wanted) return;
+    [self configureButton:_touchPlayButton title:WKLocalized(@"home.addons.recommended.touchPlay") filled:NO];
+    _touchPlayButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    [self stylePlainButton:_touchPlayButton];
+    _touchPlayButton.enabled=_installation.app && !_busy && !_starting && !_running && !_sessionUsed;
+}
 // The recommendation row. It opens the Add-On Manager, which is where a package is chosen
 // and installed explicitly; pressing the row never installs anything by itself. It offers
-// this product's own add-on, whose packaged release ships in the app, in either interface.
+// this product's own add-on, whose packaged release ships in the app, in either interface -
+// and in iPad touch, TouchPlay, the add-on that draws that interface's buttons.
 - (void)openRecommendedAddons {
     NSError *error=nil;
     NSString *addons=[self addOnsDirectoryWithError:&error];
     if (!addons) { [self presentAddonsUnavailable:error]; return; }
-    TKAddonRecommendation recommendation=TKAddonRecommendationWolkaraRoue;
-    WKLog("ui", @"recommendation: opening the add-on manager for WolkaraRoue");
+    BOOL touchPlay=AKInterfaceModeIsTouchPlay();
+    TKAddonRecommendation recommendation=touchPlay?TKAddonRecommendationTouchPlay:TKAddonRecommendationWolkaraRoue;
+    WKLog("ui", @"recommendation: opening the add-on manager for %@", touchPlay?@"TouchPlay":@"WolkaraRoue");
     TKWoWAddonManagerViewController *manager=[[TKWoWAddonManagerViewController alloc]
         initWithAddOnsDirectory:addons edition:_product[@"name"] recommendation:recommendation];
     [self presentPage:manager];

@@ -87,6 +87,7 @@
 "home.addons.install.needsgame" = "Installer des addons (CurseForge et direct) (installez d’abord le jeu)";
 "home.addons.recommended.macEver" = "Installer les addons recommandés (Mac-Ever)";
 "home.addons.recommended.wolkaraRoue" = "Installer les addons recommandés (WolkaraRoue)";
+"home.addons.recommended.touchPlay" = "Installer les addons recommandés (TouchPlay)";
 "home.addons.directory" = "Ouvrir le dossier des addons";
 "home.addons.directory.needsgame" = "Ouvrir le dossier des addons (installez d’abord le jeu)";
 "home.addons.backup" = "Sauvegarder les addons";
@@ -556,6 +557,8 @@
 "addons.bundled.installed" = "WolkaraRoue %@ installé depuis le paquet de cette app.";
 "addons.bundled.unavailable" = "Le paquet d’addon fourni est absent ou n’est pas celui que cette app a livré.";
 "addons.bundled.title" = "Addon fourni";
+"addons.bundled.touchPlay.name" = "TouchPlay (fourni)";
+"addons.bundled.touchPlay.installed" = "TouchPlay %@ installé depuis le paquet de cette app.";
 "addons.by" = "Par %@";
 "addons.downloads" = "%@ téléchargements sur CurseForge";
 "addons.installLatest" = "Installer le dernier fichier compatible";

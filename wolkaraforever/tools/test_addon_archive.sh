@@ -25,9 +25,12 @@ python3 wolkaraforever/tools/tests/make_addon_archives.py "$build/fixtures"
 # The bundled WolkaraRoue pair and the deliberately wrong packages beside it. The install
 # lifecycle below uses the same archives the verifier is tested against, so "what the app
 # installs" and "what the fixture accepts" cannot drift apart.
-rm -rf "$build/package" "$build/package-fixtures"
+rm -rf "$build/package" "$build/package-fixtures" "$build/package-touchplay" "$build/package-fixtures-touchplay"
 python3 wolkaraforever/tools/package_addon_zip.py --output "$build/package" \
     --fixtures "$build/package-fixtures" > /dev/null
+# ...and iPad touch's TouchPlay package, installed through the same store.
+python3 wolkaraforever/tools/package_addon_zip.py --addon TouchPlay --output "$build/package-touchplay" \
+    --fixtures "$build/package-fixtures-touchplay" > /dev/null
 
 wolkaraforever/tools/prepare.sh
 cd build/platform
@@ -47,4 +50,4 @@ xcrun swiftc -warnings-as-errors -I "$build" -L "$build" -lZIPFoundation \
     tests/test_addon_archive.swift "$build/AddonStore.o" "$build/AddonHubLog.o" \
     "$build/AddonUpdateResolver.o" "$build/UpdateLock.o" "$build/import.o" \
     "$build/WKLocalization.o" "$build/WolkaraForeverLog.o" -o "$build/test_addon_archive"
-"$build/test_addon_archive" "$build/fixtures" "$build/package-fixtures"
+"$build/test_addon_archive" "$build/fixtures" "$build/package-fixtures" "$build/package-fixtures-touchplay"

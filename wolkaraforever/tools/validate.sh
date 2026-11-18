@@ -271,6 +271,7 @@ run_step "a silent device cannot hang a devicectl call" wolkaraforever/tools/tes
 run_step "External-JIT log classification" wolkaraforever/tools/tests/test_classify_external_jit.sh || failures=$((failures+1))
 run_step "the bundled add-on is what its reviewed sources produce" wolkaraforever/tools/test_addon_package.sh || failures=$((failures+1))
 run_step "the mobile add-on's Lua, saves and game API" wolkaraforever/tools/test_mobile_addon.sh || failures=$((failures+1))
+run_step "iPad touch's TouchPlay add-on: its Lua, its .toc and its own tests" wolkaraforever/tools/test_touchplay_addon.sh || failures=$((failures+1))
 if [ -n "${DEVELOPMENT_TEAM:-}" ]; then
     run_step "the signed app builds for the device" wolkaraforever/tools/install.sh --build-only || failures=$((failures+1))
 else

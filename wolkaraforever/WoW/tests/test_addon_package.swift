@@ -13,20 +13,27 @@ struct AddonPackageTests {
     static func main() {
         let arguments = CommandLine.arguments
         guard arguments.count >= 3 else {
-            FileHandle.standardError.write(Data("usage: test_addon_package <fixtures> <release>\n".utf8))
+            FileHandle.standardError.write(Data("usage: test_addon_package <fixtures> <release> [<folder>]\n".utf8))
             exit(2)
         }
         let fixtures = URL(fileURLWithPath: arguments[1], isDirectory: true)
         let release = arguments[2]
-        let archiveName = "WolkaraRoue-\(release).zip"
-        let manifestName = "WolkaraRoue-\(release).json"
+        // WolkaraRoue unless named: the calls without a folder are the ones the app has always made.
+        let folder = arguments.count > 3 ? arguments[3] : "WolkaraRoue"
+        let named = arguments.count > 3
+        let archiveName = "\(folder)-\(release).zip"
+        let manifestName = "\(folder)-\(release).json"
 
         func run(_ name: String) -> (ok: Bool, message: String) {
             let directory = fixtures.appendingPathComponent(name)
             var error: NSError?
-            let ok = TKAddonPackage.verify(archive: directory.appendingPathComponent(archiveName),
-                                           manifest: directory.appendingPathComponent(manifestName),
-                                           expectedRelease: release, error: &error)
+            let ok = named
+                ? TKAddonPackage.verify(archive: directory.appendingPathComponent(archiveName),
+                                        manifest: directory.appendingPathComponent(manifestName),
+                                        expectedRelease: release, folder: folder, error: &error)
+                : TKAddonPackage.verify(archive: directory.appendingPathComponent(archiveName),
+                                        manifest: directory.appendingPathComponent(manifestName),
+                                        expectedRelease: release, error: &error)
             return (ok, error?.localizedDescription ?? "")
         }
 
@@ -58,7 +65,8 @@ struct AddonPackageTests {
         // exactly the committed pair and refuse every wrong package before extracting a byte.
         func locate(_ directory: URL) -> (info: NSDictionary?, message: String) {
             var error: NSError?
-            let info = TKAddonPackage.bundled(in: directory, error: &error)
+            let info = named ? TKAddonPackage.bundled(named: folder, in: directory, error: &error)
+                             : TKAddonPackage.bundled(in: directory, error: &error)
             return (info, error?.localizedDescription ?? "")
         }
         func requireLocated(_ name: String, accepted: Bool) {
@@ -101,10 +109,32 @@ struct AddonPackageTests {
         require("absent-archive", accepted: false, mentioning: ["archive"])
         require("foreign-manifest", accepted: false, mentioning: ["add-on"])
 
+        // A package is only ever the one its folder names: the other shipped add-on's verifier refuses
+        // it, and a folder this app does not ship is refused before anything is read.
+        let other = folder == "WolkaraRoue" ? "TouchPlay" : "WolkaraRoue"
+        let good = fixtures.appendingPathComponent("good")
+        var crossError: NSError?
+        if TKAddonPackage.verify(archive: good.appendingPathComponent(archiveName),
+                                 manifest: good.appendingPathComponent(manifestName),
+                                 expectedRelease: release, folder: other, error: &crossError) {
+            FileHandle.standardError.write(Data("FAIL cross: the \(other) verifier accepted \(folder)\n".utf8))
+            failures += 1
+        } else {
+            print("PASS cross: the \(other) verifier refuses \(folder) - \(crossError?.localizedDescription ?? "")")
+        }
+        var unknownError: NSError?
+        if TKAddonPackage.bundled(named: "SomeOtherAddon", in: good, error: &unknownError) != nil
+            || !(unknownError?.localizedDescription ?? "").contains("not one this app ships") {
+            FileHandle.standardError.write(Data("FAIL unknown: a folder this app does not ship was looked up\n".utf8))
+            failures += 1
+        } else {
+            print("PASS unknown: \(unknownError?.localizedDescription ?? "")")
+        }
+
         if failures > 0 {
             FileHandle.standardError.write(Data("ADDON_PACKAGE_FAIL: \(failures) check(s)\n".utf8))
             exit(1)
         }
-        print("ADDON_PACKAGE_PASS: the bundled WolkaraRoue \(release) package verifies and 9 wrong ones are refused")
+        print("ADDON_PACKAGE_PASS: the bundled \(folder) \(release) package verifies and 9 wrong ones are refused")
     }
 }

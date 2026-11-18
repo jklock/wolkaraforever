@@ -143,10 +143,11 @@ intent() {
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
-    echo "# Addons: the bundled Interface mobile add-on package - one versioned ZIP of the"
-    echo "# reviewed Lua in addons/WolkaraRoue, and the manifest that binds it to its release"
-    echo "# and to every file's hash. A fixture rebuilds both from the sources and compares,"
-    echo "# so the archive the app ships cannot drift from the Lua that was reviewed."
+    echo "# Addons: the bundled add-on packages - one versioned ZIP each of the reviewed Lua in"
+    echo "# addons/WolkaraRoue (the Interface mobile add-on) and addons/TouchPlay (iPad touch's),"
+    echo "# and the manifest that binds it to its release and to every file's hash. A fixture"
+    echo "# rebuilds both from the sources and compares, so the archive the app ships cannot"
+    echo "# drift from the Lua that was reviewed."
     git ls-files wolkaraforever/Addons | while read -r f; do
         dst=launcher/Addons/${f#wolkaraforever/Addons/}
         echo "$f $dst $(intent "$dst")"

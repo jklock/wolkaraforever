@@ -1,0 +1,151 @@
+{
+  "archive": "TouchPlay-0.1.0.zip",
+  "files": {
+    "TouchPlay/Art/CREDITS.txt": {
+      "sha256": "683f001a1580ae77178bef258f1131379d05aff7693e5143b90b699efbd54238",
+      "size": 3449
+    },
+    "TouchPlay/Art/Glyphs.tga": {
+      "sha256": "563badaaf31f059904eeec22e10f7108669d643eee53776d0beb67233f436869",
+      "size": 8388652
+    },
+    "TouchPlay/Art/Minimap.tga": {
+      "sha256": "6b11eafda2061f701249d1217956e473c70adfa71c254a6f6a0cf4d97e550358",
+      "size": 1048620
+    },
+    "TouchPlay/Art/Ring.tga": {
+      "sha256": "543136a7b963ef76e6f8003b4b560a4743e3d1bdcb8f7c74f24637d72b0368b9",
+      "size": 262188
+    },
+    "TouchPlay/Auras.lua": {
+      "sha256": "eba4ff34da99d080b30d49bed1a69158c50323504731cf87c4332a866d051c76",
+      "size": 7408
+    },
+    "TouchPlay/Bars.lua": {
+      "sha256": "64a631ec6ddd4c7dc2f22ee8c8acdd0c49b94134dbb42acb7d31087ef5199d85",
+      "size": 19470
+    },
+    "TouchPlay/Chat.lua": {
+      "sha256": "641ed979c4ff366f81593d96883fea834e42869eda37e9315c3c9f21005a1a72",
+      "size": 26081
+    },
+    "TouchPlay/ClassBars.lua": {
+      "sha256": "8d8b7a6077fa2da6d85d8cabc2af32b154ce308cbbbc8d2a5fd68a869ac33bfc",
+      "size": 33534
+    },
+    "TouchPlay/Cluster.lua": {
+      "sha256": "ab51bf7f854696ebbe6079b0edc0e86c58b9fd1f609f637fd364b00dd26da9a3",
+      "size": 12453
+    },
+    "TouchPlay/Contract.lua": {
+      "sha256": "1d7912ddfa3099fdcf981cee60a984bd90a4bd9be01f49773580744bf9dc85d0",
+      "size": 30069
+    },
+    "TouchPlay/Core.lua": {
+      "sha256": "e749218b76b93e66dfd99228514148f2be3f5f9c201a1da11de316873c1d561c",
+      "size": 13005
+    },
+    "TouchPlay/Corpse.lua": {
+      "sha256": "3cee41d675b6e0041d277f359e7d70468c3502062b9bd9e747206a92655c422c",
+      "size": 9295
+    },
+    "TouchPlay/Feel.lua": {
+      "sha256": "35fd0421f5daa6a63cafc1ec2f5663fa2f70fe8b731bb5069ddc2ba63cda21ab",
+      "size": 19549
+    },
+    "TouchPlay/Guide.lua": {
+      "sha256": "a84aa6e26c9e5ca5e67304c3511f1b479eebac8b5e83c2e33ab378efa1e271a6",
+      "size": 15194
+    },
+    "TouchPlay/Hold.lua": {
+      "sha256": "039ce737cf8562e0f2c253ed5970ce75399cfa8a1a71aee9b8bb87b00ba09d67",
+      "size": 8258
+    },
+    "TouchPlay/Hud.lua": {
+      "sha256": "26280b28f7ed9bcbf83b43443f09e50cad6ee3a786deb785d597ba7fe08484a2",
+      "size": 55530
+    },
+    "TouchPlay/InfoCard.lua": {
+      "sha256": "490929629a02345749b060310b31be0914c0206e945eedc67e265f2ec8b1efac",
+      "size": 50175
+    },
+    "TouchPlay/Interact.lua": {
+      "sha256": "304d6f62ccbaa73d242741d71d0898536b1112ed8883645d012761690ba99191",
+      "size": 28776
+    },
+    "TouchPlay/ItemRail.lua": {
+      "sha256": "ba99191828075bd2a8d87396c87b2ee70424f52f2ac2a11cb7d32fa64660ffea",
+      "size": 31965
+    },
+    "TouchPlay/Keylog.lua": {
+      "sha256": "401f92f4beecb64cf0bac5d48161a392488fd8de40d0b65c283c52c2ae8cca14",
+      "size": 11420
+    },
+    "TouchPlay/Loot.lua": {
+      "sha256": "0b85b787951cdb45b6735fb5cb6455a19d5cac101ff8b7d0beea334dc5ca87b9",
+      "size": 25411
+    },
+    "TouchPlay/Menu.lua": {
+      "sha256": "0c5e48278be262acc74079fdc979c406db13a00d626b03377eb0105f613c0a6a",
+      "size": 23254
+    },
+    "TouchPlay/NOTICE.md": {
+      "sha256": "d41d9a3e27acd0bddfa31c99f31706c6617369f8e6224e7843334ee5152ed283",
+      "size": 4923
+    },
+    "TouchPlay/Perf.lua": {
+      "sha256": "3939947f5e0261a668bdd23c953c94230990da4bf0004a2f41848e91137c8530",
+      "size": 16122
+    },
+    "TouchPlay/Picker.lua": {
+      "sha256": "2f5b6f47ec925e6a2fb13b6cdb8d42c82d938b06a2f1090ea9fe1a466c986a17",
+      "size": 43109
+    },
+    "TouchPlay/Popups.lua": {
+      "sha256": "dcffe38aab862aedc2d7b4c01d789743a8bfad402a5d38dfe325aaa5b8a245ec",
+      "size": 17557
+    },
+    "TouchPlay/Sharp.lua": {
+      "sha256": "3392da34a8c266bcd71cd6f2c96fd297ad79af755ed64565fcd91b049861bf3e",
+      "size": 20260
+    },
+    "TouchPlay/Signal.lua": {
+      "sha256": "8a89b8888f8b7b730a4335505fd9570415a2afd58cb8d9de4675865ccb4dfcb2",
+      "size": 28477
+    },
+    "TouchPlay/Style.lua": {
+      "sha256": "22f124520ae084274c290ece25b6921559b027d9791d79a7384e3f7f0964312e",
+      "size": 50946
+    },
+    "TouchPlay/Swipe.lua": {
+      "sha256": "1da521e81ee3d04db5cfe8f82fc6dda7483231dbf6c18d6f159844fd90a2da78",
+      "size": 5253
+    },
+    "TouchPlay/Targeting.lua": {
+      "sha256": "3c5d25bd45a157e731022092a625e15a2c92ae0a5f82c8446e16d6e9d6c8bea1",
+      "size": 14303
+    },
+    "TouchPlay/Text.lua": {
+      "sha256": "11f91cb1784e74bfd7e484752277b527fc986323c9344021a2df31263d2dac07",
+      "size": 1324
+    },
+    "TouchPlay/Tooltip.lua": {
+      "sha256": "5ea49a0d36f21105f79b151ccad23f379796dff7f20e9991ed666ccb47ca649d",
+      "size": 4295
+    },
+    "TouchPlay/TouchPlay.toc": {
+      "sha256": "754f0eaa7d08030b0b384bca990610670bf0a150199b2e11fd6945b7f873dab1",
+      "size": 625
+    },
+    "TouchPlay/Units.lua": {
+      "sha256": "3dd4aa466534bcb9e62d1179908c91c2f39056be9d02103bef397caab96f86d1",
+      "size": 33091
+    }
+  },
+  "format": "wolkaraforever.addon",
+  "interface": 16001,
+  "name": "TouchPlay",
+  "release": "0.1.0",
+  "sha256": "c7ee9bc31b90eba13510ab1b0a1d9561fabb70e6331b69a7b37f8770742e03ee",
+  "version": 1
+}

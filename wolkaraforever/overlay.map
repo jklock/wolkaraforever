@@ -260,10 +260,13 @@ wolkaraforever/Input/tests/test_controller_input_app.m tests/test_controller_inp
 # session itself, so a bare test process has no route to report.
 wolkaraforever/CoreAudio/tests/test_audio_hardware.m tests/test_audio_hardware.m replace
 #
-# Addons: the bundled Interface mobile add-on package - one versioned ZIP of the
-# reviewed Lua in addons/WolkaraRoue, and the manifest that binds it to its release
-# and to every file's hash. A fixture rebuilds both from the sources and compares,
-# so the archive the app ships cannot drift from the Lua that was reviewed.
+# Addons: the bundled add-on packages - one versioned ZIP each of the reviewed Lua in
+# addons/WolkaraRoue (the Interface mobile add-on) and addons/TouchPlay (iPad touch's),
+# and the manifest that binds it to its release and to every file's hash. A fixture
+# rebuilds both from the sources and compares, so the archive the app ships cannot
+# drift from the Lua that was reviewed.
+wolkaraforever/Addons/TouchPlay-0.1.0.json launcher/Addons/TouchPlay-0.1.0.json add
+wolkaraforever/Addons/TouchPlay-0.1.0.zip launcher/Addons/TouchPlay-0.1.0.zip add
 wolkaraforever/Addons/WolkaraRoue-1.0.4.json launcher/Addons/WolkaraRoue-1.0.4.json add
 wolkaraforever/Addons/WolkaraRoue-1.0.4.zip launcher/Addons/WolkaraRoue-1.0.4.zip add
 #

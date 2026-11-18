@@ -2002,6 +2002,56 @@ static void TestPhoneDisplayDefaults(void) {
         assert([defaults integerForKey:@"WolkaraForeverTouchUncleanStarts"] == 0);
         assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
             isEqual:@"Interface Mode: iPad touch"]);
+        // iPad touch's recommendation row: on the Launcher Manager card right under the mode row, in
+        // this mode only, naming TouchPlay; the hidden recommendation control names it too.
+        UIStackView *managerRows = (UIStackView *)Find(self.controller.view, @"wow.box.launcherManager").subviews.firstObject;
+        NSArray *managerOrder = [managerRows.arrangedSubviews valueForKey:@"accessibilityIdentifier"];
+        assert([managerOrder isEqualToArray:(@[@"wow.heading.launcherManager", @"wow.launcher.interfaceMode", @"wow.launcher.touchPlay",
+                                               @"wow.launcher.layoutCreate", @"wow.launcher.interfaceSetup",
+                                               @"wow.launcher.layoutRestore", @"wow.launcher.layoutBackup"])]);
+        UIButton *touchPlayRow = (UIButton *)Find(self.controller.view, @"wow.launcher.touchPlay");
+        assert([touchPlayRow.configuration.title isEqual:@"Install Recommended Add-ons (TouchPlay)"] && touchPlayRow.enabled);
+        assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
+            isEqual:@"Install Recommended Add-ons (TouchPlay)"]);
+        // It opens the Add-On Manager on the bundled TouchPlay package, with the same explicit Install and
+        // the same refusal as WolkaraRoue's; nothing is installed by opening it.
+        [touchPlayRow sendActionsForControlEvents:UIControlEventTouchUpInside];
+        PumpUntil(^{ return (BOOL)(self.controller.presentedViewController != nil); }, 5.0);
+        UINavigationController *touchPlayFrame = [self settledPresentedController];
+        TKWoWAddonManagerViewController *touchPlayPage = (id)touchPlayFrame.topViewController;
+        assert([touchPlayPage isKindOfClass:TKWoWAddonManagerViewController.class]);
+        assert(touchPlayPage.recommendation == TKAddonRecommendationTouchPlay && touchPlayPage.recommendedProjectID == nil);
+        PumpUntil(^{ return (BOOL)(touchPlayFrame.viewIfLoaded.window != nil && !touchPlayFrame.isBeingPresented); }, 5.0);
+        touchPlayPage.bundledPackageProvider = ^NSDictionary *(NSError **error) {
+            (void)error;
+            return @{@"archive":[NSURL fileURLWithPath:@"/tmp/TouchPlay-0.1.0.zip"],
+                     @"manifest":[NSURL fileURLWithPath:@"/tmp/TouchPlay-0.1.0.json"],
+                     @"release":@"0.1.0",
+                     @"sha256":@"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+                     @"folder":@"TouchPlay", @"files":@35};
+        };
+        [touchPlayPage reloadBundledPackage];
+        [touchPlayPage.view layoutIfNeeded];
+        [touchPlayPage.tableView layoutIfNeeded];
+        assert([[(UILabel *)Find(touchPlayPage.view, @"wow.addons.bundled.name") text] isEqual:@"TouchPlay (bundled)"]);
+        NSString *touchPlayDetail = [(UILabel *)Find(touchPlayPage.view, @"wow.addons.bundled.detail") text];
+        assert([touchPlayDetail containsString:@"0.1.0"] && [touchPlayDetail containsString:@"SHA-256"]);
+        UIButton *touchPlayInstall = (id)Find(touchPlayPage.view, @"wow.addons.bundled.install");
+        assert(touchPlayInstall != nil && !touchPlayInstall.hidden && touchPlayInstall.enabled);
+        touchPlayPage.bundledPackageProvider = ^NSDictionary *(NSError **error) {
+            if (error) *error = [NSError errorWithDomain:@"WolkaraForever.AddOns" code:1
+                userInfo:@{NSLocalizedDescriptionKey:@"The add-on archive is not the one this app shipped."}];
+            return nil;
+        };
+        [touchPlayPage reloadBundledPackage];
+        [touchPlayPage.view layoutIfNeeded];
+        [touchPlayPage.tableView layoutIfNeeded];
+        assert(((UIButton *)Find(touchPlayPage.view, @"wow.addons.bundled.install")).hidden);
+        NSArray *addonsAfterTouchPlay = [[NSFileManager.defaultManager contentsOfDirectoryAtPath:addonsDirectory error:NULL]
+            sortedArrayUsingSelector:@selector(compare:)];
+        assert([addonsAfterTouchPlay isEqualToArray:addonsBefore]);
+        [self.controller dismissViewControllerAnimated:NO completion:nil];
+        PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
         // The sheet now ticks it.
         [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
         PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
@@ -2034,6 +2084,12 @@ static void TestPhoneDisplayDefaults(void) {
     assert([defaults integerForKey:@"WolkaraForeverTouchUncleanStarts"] == 0);
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Interface Mode: iPadOS"]);
+    // Back in iPadOS the Launcher Manager card is exactly the card it always was.
+    UIStackView *rowsAfter = (UIStackView *)Find(self.controller.view, @"wow.box.launcherManager").subviews.firstObject;
+    assert(![[rowsAfter.arrangedSubviews valueForKey:@"accessibilityIdentifier"] containsObject:@"wow.launcher.touchPlay"]);
+    assert(Find(self.controller.view, @"wow.launcher.touchPlay") == nil);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
+        isEqual:@"Install Recommended Add-ons (WolkaraRoue)"]);
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
     // Shown once: nothing more on the next appearance.

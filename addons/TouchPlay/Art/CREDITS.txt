@@ -1,0 +1,35 @@
+TouchPlay art credits
+
+The icons in Glyphs.tga are from game-icons.net (https://game-icons.net), licensed under
+Creative Commons Attribution 3.0 Unported (CC BY 3.0, https://creativecommons.org/licenses/by/3.0/).
+TouchPlay recoloured them as gold or red metal (a gradient, a bevel, an outline and a shadow);
+Jump's arrow is turned to point up.
+
+bag: "knapsack" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/knapsack.html; used for Bags (ring and Menu tile)
+menu: "hamburger-menu" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/hamburger-menu.html; used for Menu
+talk: "conversation" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/conversation.html; used for Interact: talk
+jump: "plain-arrow" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/plain-arrow.html; used for Jump (turned to point up)
+dive: "plain-arrow" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/plain-arrow.html; used for Dive and Dismount
+cross: "convergence-target" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/convergence-target.html; used for Next target
+cancel: "cross-mark" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/cross-mark.html; used for Interact: cancel
+mail: "envelope" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/envelope.html; used for Minimap: new mail
+loot: "swap-bag" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/swap-bag.html; used for Interact: loot
+open: "open-chest" by Skoll, CC BY 3.0, https://game-icons.net/1x1/skoll/open-chest.html; used for Interact: open
+hook: "fishing-hook" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/fishing-hook.html; used for Interact: reel in
+skin: "animal-hide" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/animal-hide.html; used for Interact: skin
+sword: "crossed-swords" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/crossed-swords.html; used for Interact: attack
+person: "visored-helm" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/visored-helm.html; used for Menu: Character
+book: "spell-book" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/spell-book.html; used for Menu: Spellbook
+star: "stars-stack" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/stars-stack.html; used for Menu: Talents
+scroll: "scroll-unfurled" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/scroll-unfurled.html; used for Menu: Quests
+map: "treasure-map" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/treasure-map.html; used for Menu: Map
+hammer: "anvil-impact" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/anvil-impact.html; used for Menu: Professions
+people: "three-friends" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/three-friends.html; used for Menu: Social
+chat: "chat-bubble" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/chat-bubble.html; used for Menu: Chat
+gear: "cog" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/cog.html; used for Menu: Settings
+layout: "move" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/move.html; used for Menu: Edit layout
+exit: "exit-door" by Delapouite, CC BY 3.0, https://game-icons.net/1x1/delapouite/exit-door.html; used for Menu: Log out
+mount: "horse-head" by Lorc, CC BY 3.0, https://game-icons.net/1x1/lorc/horse-head.html; used for Mount
+
+Ring.tga, Minimap.tga and the glow and box cells of Glyphs.tga are TouchPlay's own,
+drawn by tools/make-art.py.

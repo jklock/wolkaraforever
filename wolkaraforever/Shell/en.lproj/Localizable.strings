@@ -90,6 +90,7 @@
 "home.addons.install.needsgame" = "Install Addons (Curse & Direct) (install game first)";
 "home.addons.recommended.macEver" = "Install Recommended Add-ons (Mac-Ever)";
 "home.addons.recommended.wolkaraRoue" = "Install Recommended Add-ons (WolkaraRoue)";
+"home.addons.recommended.touchPlay" = "Install Recommended Add-ons (TouchPlay)";
 "home.addons.directory" = "Open Add-on Directory";
 "home.addons.directory.needsgame" = "Open Add-on Directory (install game first)";
 "home.addons.backup" = "Backup Add-ons";
@@ -557,6 +558,8 @@
 "addons.bundled.installed" = "Installed WolkaraRoue %@ from this app's bundle.";
 "addons.bundled.unavailable" = "The bundled add-on package is missing or is not the one this app shipped.";
 "addons.bundled.title" = "Bundled add-on";
+"addons.bundled.touchPlay.name" = "TouchPlay (bundled)";
+"addons.bundled.touchPlay.installed" = "Installed TouchPlay %@ from this app's bundle.";
 "addons.by" = "By %@";
 "addons.downloads" = "%@ downloads on CurseForge";
 "addons.installLatest" = "Install latest compatible file";

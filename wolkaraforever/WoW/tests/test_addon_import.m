@@ -188,25 +188,27 @@ int TestRealAddonImport(const char *fixtures, const char *temporary) {
 // explicitly, through the store, from the archive the app ships. The good and the tampered
 // archives come from `package_addon_zip.py --fixtures`, so this is the same pair the
 // verifier is tested against.
-int TestBundledPackageInstall(const char *packageFixtures, const char *temporary) {
+// The same for any package the app ships, by its folder: TouchPlay (iPad touch's add-on) is installed exactly so.
+int TestBundledPackageInstallNamed(const char *packageFixtures, const char *temporary, const char *folderName) {
     @autoreleasepool {
+        NSString *folder = [NSString stringWithUTF8String:folderName];
         NSString *fixtures = [NSString stringWithUTF8String:packageFixtures];
         NSString *good = [fixtures stringByAppendingPathComponent:@"good"];
         NSString *root = [NSString stringWithUTF8String:temporary];
-        NSString *directory = [root stringByAppendingPathComponent:@"Bundled/Interface/AddOns"];
+        NSString *directory = [root stringByAppendingPathComponent:[@"Bundled" stringByAppendingPathComponent:[folder stringByAppendingPathComponent:@"Interface/AddOns"]]];
         NSFileManager *fm = NSFileManager.defaultManager;
         NSError *error = nil;
         CHECK([fm createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error], "create the bundled sandbox");
         NSString *archiveName = nil;
         for (NSString *name in [fm contentsOfDirectoryAtPath:good error:&error])
-            if ([name hasPrefix:@"WolkaraRoue-"] && [name hasSuffix:@".zip"]) { archiveName = name; break; }
+            if ([name hasPrefix:[folder stringByAppendingString:@"-"]] && [name hasSuffix:@".zip"]) { archiveName = name; break; }
         CHECK(archiveName != nil, "the package fixture names its archive");
         NSURL *archive = [NSURL fileURLWithPath:[good stringByAppendingPathComponent:archiveName]];
         TKAddonStore *store = [[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wowf" gameVersion:@"1.60.1"];
         CHECK([store importZIPAtURL:archive error:&error], "the bundled package installs through the store");
         CHECK(store.records.count == 1, "and is listed exactly once");
-        CHECK([store.records.firstObject.folders containsObject:@"WolkaraRoue"], "as its own reviewed folder");
-        NSString *toc = [directory stringByAppendingPathComponent:@"WolkaraRoue/WolkaraRoue.toc"];
+        CHECK([store.records.firstObject.folders containsObject:folder], "as its own reviewed folder");
+        NSString *toc = [directory stringByAppendingPathComponent:[folder stringByAppendingPathComponent:[folder stringByAppendingString:@".toc"]]];
         CHECK([fm fileExistsAtPath:toc], "with the reviewed TOC in place");
         // A second Install is an Update of the one record, not a second copy of the folder.
         CHECK([store updateRecord:store.records.firstObject archiveURL:archive provider:nil error:&error],
@@ -218,7 +220,10 @@ int TestBundledPackageInstall(const char *packageFixtures, const char *temporary
             [@"tampered" stringByAppendingPathComponent:archiveName]]];
         CHECK(![store importZIPAtURL:tampered error:&error], "a tampered bundled archive is refused");
         CHECK([before isEqual:[NSData dataWithContentsOfFile:toc]], "and nothing installed was replaced");
-        puts("BUNDLED PACKAGE PASS: installs, updates in place, refuses a tampered archive");
+        printf("BUNDLED PACKAGE PASS: %s installs, updates in place, refuses a tampered archive\n", folderName);
         return 0;
     }
+}
+int TestBundledPackageInstall(const char *packageFixtures, const char *temporary) {
+    return TestBundledPackageInstallNamed(packageFixtures, temporary, "WolkaraRoue");
 }
