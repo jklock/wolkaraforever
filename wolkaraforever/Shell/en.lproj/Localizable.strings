@@ -414,6 +414,15 @@
 "touch.draft.clear" = "Clear draft";
 "touch.keyboard.show" = "Show keyboard";
 "touch.keyboard.hide" = "Hide keyboard";
+"touch.keyboard.password" = "Password";
+"touch.keyboard.username" = "User name";
+"touch.keyboard.typePassword" = "Type password";
+"touch.chat.say" = "Say";
+"touch.chat.party" = "Party";
+"touch.chat.guild" = "Guild";
+"touch.chat.whisper" = "Whisper";
+"touch.chat.yell" = "Yell";
+"touch.chat.send" = "Send";
 "touch.toolbar.show" = "Show toolbar";
 "touch.toolbar.hide" = "Hide toolbar";
 "touch.trackpad.enable" = "Enable touch trackpad";

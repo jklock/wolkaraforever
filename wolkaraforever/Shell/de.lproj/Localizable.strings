@@ -412,6 +412,15 @@
 "touch.draft.clear" = "Entwurf leeren";
 "touch.keyboard.show" = "Tastatur einblenden";
 "touch.keyboard.hide" = "Tastatur ausblenden";
+"touch.keyboard.password" = "Passwort";
+"touch.keyboard.username" = "Benutzername";
+"touch.keyboard.typePassword" = "Passwort eingeben";
+"touch.chat.say" = "Sagen";
+"touch.chat.party" = "Gruppe";
+"touch.chat.guild" = "Gilde";
+"touch.chat.whisper" = "Flüstern";
+"touch.chat.yell" = "Schreien";
+"touch.chat.send" = "Senden";
 "touch.toolbar.show" = "Leiste einblenden";
 "touch.toolbar.hide" = "Leiste ausblenden";
 "touch.trackpad.enable" = "Touch-Trackpad einschalten";

@@ -413,6 +413,15 @@
 "touch.draft.clear" = "Effacer le brouillon";
 "touch.keyboard.show" = "Afficher le clavier";
 "touch.keyboard.hide" = "Masquer le clavier";
+"touch.keyboard.password" = "Mot de passe";
+"touch.keyboard.username" = "Nom d’utilisateur";
+"touch.keyboard.typePassword" = "Saisir le mot de passe";
+"touch.chat.say" = "Dire";
+"touch.chat.party" = "Groupe";
+"touch.chat.guild" = "Guilde";
+"touch.chat.whisper" = "Chuchoter";
+"touch.chat.yell" = "Crier";
+"touch.chat.send" = "Envoyer";
 "touch.toolbar.show" = "Afficher la barre";
 "touch.toolbar.hide" = "Masquer la barre";
 "touch.trackpad.enable" = "Activer le trackpad tactile";

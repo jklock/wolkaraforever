@@ -176,6 +176,10 @@ wolkaraforever/Touch/TouchGamepadLayout.h translation/AppKit/TouchGamepadLayout.
 wolkaraforever/Touch/TouchGamepadLayout.m translation/AppKit/TouchGamepadLayout.m add
 wolkaraforever/Touch/TouchHaptics.h translation/AppKit/TouchHaptics.h add
 wolkaraforever/Touch/TouchHaptics.m translation/AppKit/TouchHaptics.m add
+wolkaraforever/Touch/TouchTextBridge.h translation/AppKit/TouchTextBridge.h add
+wolkaraforever/Touch/TouchTextBridge.m translation/AppKit/TouchTextBridge.m add
+wolkaraforever/Touch/TouchWorldSignal.h translation/AppKit/TouchWorldSignal.h add
+wolkaraforever/Touch/TouchWorldSignal.m translation/AppKit/TouchWorldSignal.m add
 wolkaraforever/Touch/tests/fixtures/TouchPlay-broken.lua tests/fixtures/TouchPlay-broken.lua add
 wolkaraforever/Touch/tests/fixtures/TouchPlay-v1-a22.lua tests/fixtures/TouchPlay-v1-a22.lua add
 wolkaraforever/Touch/tests/fixtures/TouchPlay-v1-altorder.lua tests/fixtures/TouchPlay-v1-altorder.lua add
@@ -186,6 +190,8 @@ wolkaraforever/Touch/tests/test_touch_areas.m tests/test_touch_areas.m add
 wolkaraforever/Touch/tests/test_touch_contract.m tests/test_touch_contract.m add
 wolkaraforever/Touch/tests/test_touch_controls_app.m tests/test_touch_controls_app.m replace
 wolkaraforever/Touch/tests/test_touch_gamepad_app.m tests/test_touch_gamepad_app.m add
+wolkaraforever/Touch/tests/test_touch_text.m tests/test_touch_text.m add
+wolkaraforever/Touch/tests/test_touch_world.m tests/test_touch_world.m add
 #
 # Chat: the Composer, which is compiled into the same compatibility library as the
 # controls it draws from - the draft editor, the card and the guest's key path all

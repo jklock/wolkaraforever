@@ -89,6 +89,27 @@ else
     cp -R launcher/App/en.lproj launcher/App/de.lproj launcher/App/fr.lproj "$(dirname "$AREAS")/"   # the notice reads the app's tables beside it
     xcrun simctl spawn "$SIM_ID" "$PWD/$AREAS" "$PWD/tests/fixtures" 2>&1 | tee build/touch-controls-fixture/areas.log
     grep -q 'TOUCH_AREAS_PASS:' build/touch-controls-fixture/areas.log
+    # The chat keyboard and the game's password box (typed by hand): the bridge's field, with a recorder for the
+    # host's text path; a bare UIKit process, its own stderr captured to prove nothing typed is logged.
+    TEXT=build/touch-controls-fixture/TouchTextTest
+    xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
+        -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Itranslation/AKSupport -Itranslation/AppKit \
+        translation/AKSupport/AKSupport.m translation/AppKit/TouchTextBridge.m translation/AppKit/InterfaceMode.m \
+        translation/AppKit/AKHostLocalization.m tests/test_touch_text.m \
+        -framework Foundation -framework UIKit -framework CoreGraphics -o "$TEXT"
+    xcrun simctl spawn "$SIM_ID" "$PWD/$TEXT" 2>&1 | tee build/touch-controls-fixture/text.log
+    grep -q 'TOUCH_TEXT_PASS:' build/touch-controls-fixture/text.log
+    # The in-world gate: the add-on's secure-input pulses read on a fixture clock - one short pulse enters the
+    # world, two leave it, three are a window open, a held secure input is a password box - and the password
+    # field's debounce agrees with the pulse limit. A bare Foundation process.
+    WORLD=build/touch-controls-fixture/TouchWorldTest
+    xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
+        -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Itranslation/AKSupport -Itranslation/AppKit \
+        translation/AKSupport/AKSupport.m translation/AppKit/TouchWorldSignal.m translation/AppKit/TouchTextBridge.m \
+        translation/AppKit/InterfaceMode.m translation/AppKit/AKHostLocalization.m tests/test_touch_world.m \
+        -framework Foundation -framework UIKit -framework CoreGraphics -o "$WORLD"
+    xcrun simctl spawn "$SIM_ID" "$PWD/$WORLD" 2>&1 | tee build/touch-controls-fixture/world.log
+    grep -q 'TOUCH_WORLD_PASS:' build/touch-controls-fixture/world.log
     # The reader is compiled into the app and into the adapter library, and one process loads both.
     # Two images defining one Objective-C class make the runtime warn and pick one, so the app's copy
     # has its own class names: load both in one simulator process and look for the warning.
@@ -120,22 +141,31 @@ SRC
     grep -q 'TOUCH_CONTRACT_TWO_IMAGES_PASS:' "$DUP/run.log"
     # ...and that the app loads it at game start (Shell/main.m has no test of its own; this reads it).
     ../../wolkaraforever/tools/test_touch_contract_wiring.sh
-    # Both interfaces: the default (iPadOS, what every release through v1.0.7 has) and the
-    # mobile one the launcher selects with WolkaraForeverInterfaceModeV1.
-    for MODE in "" "--mobile-interface"; do
-        LOG="build/touch-controls-fixture/self-test${MODE:+-mobile}.log"
+    # Every stored interface: the default (iPadOS, what every release through v1.0.7 has), the
+    # mobile one the launcher selects with WolkaraForeverInterfaceModeV1 (iOS), iOS on Duo, and
+    # iPad touch. The first three run the same suite they always ran; iPad touch adds its own checks.
+    for MODE in "" "--mobile-interface" "--mobile-interface iosduo" "--mobile-interface ipadtouch"; do
+        # self-test.log, self-test-mobile.log (as before), self-test-mobile-iosduo.log, self-test-mobile-ipadtouch.log
+        NAME="$(echo "${MODE:+ $MODE}" | sed -e 's/ --mobile-interface/-mobile/' -e 's/ /-/g')"
+        LOG="build/touch-controls-fixture/self-test$NAME.log"
         # simctl may report success even when the app aborts an assertion.
         xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls "$@" $MODE 2>&1 | tee "$LOG"
         grep -q 'TOUCH_UI_SELF_TEST_PASS:' "$LOG"
+        # The iPad touch run types a password nothing else could hold by chance; it is in no log line.
+        # (An `if`, not `! grep`: set -e does not stop on a negated command.)
+        if grep -q 'Tp9-Zx!qv7' "$LOG"; then echo "a password reached the log: $LOG" >&2; exit 1; fi
+        # iPad touch keeps its own chat and never uses the Composer (its self-test above checks that the
+        # review mode is not in force there), so the Composer's card runs in the other interfaces only.
+        if [ "$MODE" = "--mobile-interface ipadtouch" ]; then continue; fi
         # The Composer's card and a real guest, in the same interface: the assertions the state
         # machine's own fixture cannot make because it has no window.
-        CLOG="build/touch-controls-fixture/composer${MODE:+-mobile}.log"
+        CLOG="build/touch-controls-fixture/composer$NAME.log"
         xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls --composer-test $MODE 2>&1 | tee "$CLOG"
         grep -q 'TOUCH_UI_SELF_TEST_PASS: the Composer card' "$CLOG"
         # The same card at an accessibility text size: it has to grow rather than clip, and the
         # editor has to keep its height. UIKit reads the category from this launch argument, so
         # this is the player's own setting, not a stub.
-        ALOG="build/touch-controls-fixture/composer${MODE:+-mobile}-dynamic-type.log"
+        ALOG="build/touch-controls-fixture/composer$NAME-dynamic-type.log"
         xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls \
             --composer-test $MODE -UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL 2>&1 | tee "$ALOG"
         grep -q 'TOUCH_UI_SELF_TEST_PASS: the Composer card' "$ALOG"
