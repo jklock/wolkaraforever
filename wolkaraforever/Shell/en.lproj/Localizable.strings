@@ -51,6 +51,7 @@
 "touch.fallback.title" = "iPad touch turned off";
 "touch.fallback.message" = "The game closed unexpectedly twice in a row in iPad touch mode, so WolkaraForever went back to iPadOS. You can choose iPad touch again under Interface Mode.";
 "home.launcher.interfaceSetup.row" = "Edit Controller Layout";
+"touch.contract.missing" = "Touch buttons not found, so taps are plain clicks. Start the game, then use Menu › Save settings once.";
 "home.launcher.interfaceSetup.title" = "Controller Layout";
 /* The three rows that used to be inside the one Controller Layout sheet. */
 "home.launcher.layout.create" = "Create Controller Layout";

@@ -1,0 +1,180 @@
+# WolkaraForever layer patch 0066 - host: TouchPlay's buttons take their fingers (iPad touch)
+#
+# Why: in iPad touch the TouchPlay add-on draws the game's touch buttons and saves where they are and
+# which CTRL-ALT-SHIFT keys they have (the contract, TouchContract.h). The layer's AKTouchAreas
+# (TouchAreas.m) turns a finger on one of them into its keys and draws the press glow and hold ring;
+# this patch is the host's half:
+#   - In iPad touch only, the host view makes the areas, gives them its key path and keeps them told of
+#     its fingers: every touches* method offers its fingers to the areas first, and a finger the areas
+#     take never reaches the 1.0.8 direct-touch gestures (0055) or the trackpad. With no contract the
+#     areas take nothing, so the host is exactly what it was. Every other mode makes no areas.
+#   - A key with modifiers: the host's only key calls (0059's touchKey:characters:pressed: and
+#     touchSpecialKey:) post modifierFlags 0. touchKey:characters:modifiers:pressed: presses each
+#     modifier the key needs (a flags-changed event with that modifier's key code and left-hand bit, as
+#     a Mac keyboard reports it), posts the key, and releases those modifiers in reverse - for the down
+#     and again for the up, so nothing is held between two touch keys.
+#   - A finger that ends while another is held on a button still finishes the direct gesture: the
+#     "is any other finger of this gesture down" check skips the buttons' fingers.
+#   - The pinch recognizer never takes a finger on a button (a spell plus a walk is not a pinch).
+#   - "Touch buttons not found" (touch.contract.missing) is shown once per game start in the game view
+#     when iPad touch has no contract, once the view has a size.
+#   - When the view changes size (rotation, Stage Manager) the areas let go of every finger, as the
+#     toolbar does: a held Jump key is released and no finger keeps an old rectangle.
+#
+# Applies after: 0065-host-ipad-touch-has-the-direct-touch-gestures.patch
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: no (TouchPlay and iPad touch live in the WolkaraForever layer).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -6,6 +6,7 @@
+ #import "AKTouchEventPump.h"
+ #import "TouchGamepadLayout.h"
+ #import "InterfaceMode.h"
++#import "TouchAreas.h"
+ 
+ // The guest screen's pixels per point, defined in Screens.m.
+ CGFloat AKGuestBackingScale(void);
+@@ -283,7 +284,7 @@
+     return AKHeldFlags(held);
+ }
+ 
+-@interface AKHostView : UIView <UIPointerInteractionDelegate, AKTouchControlsDelegate>
++@interface AKHostView : UIView <UIPointerInteractionDelegate, AKTouchControlsDelegate, AKTouchKeySink, UIGestureRecognizerDelegate>
+ @property (nonatomic, weak) NSWindow *nsWindow;
+ - (BOOL)ak_needsTrackingEvents;
+ @end
+@@ -319,6 +320,10 @@
+     BOOL _directMulti;
+     CGFloat _pinchScale, _pinchCarry;
+     UIPinchGestureRecognizer *_pinch;
++    // iPad touch: TouchPlay's buttons (TouchAreas.m). Each finger is offered to them first; one they
++    // take never reaches the gestures above. Nil in every other mode.
++    AKTouchAreas *_touchAreas;
++    BOOL _touchAreasNoticeAsked;
+ }
+ - (BOOL)ak_needsTrackingEvents { return _touchControls.configuring || _touchControls.keyboardVisible || _pressedLeft || _pressedRight || _pressedMiddle; }
+ - (instancetype)initWithFrame:(CGRect)f {
+@@ -331,6 +336,13 @@
+             _pinch = [[UIPinchGestureRecognizer alloc] initWithTarget:self action:@selector(directPinch:)];
+             _pinch.cancelsTouchesInView = NO; _pinch.delaysTouchesEnded = NO;
+             [self addGestureRecognizer:_pinch];
++            // iPad touch: the add-on's buttons, played by the fingers, with their keys sent through
++            // this view. The pinch is told not to take a finger that is on a button.
++            if (AKInterfaceModeIsTouchPlay()) {
++                _touchAreas = [[AKTouchAreas alloc] initWithView:self];
++                AKTouchSetKeySink(self);
++                _pinch.delegate = self;
++            }
+         } else {
+             self.multipleTouchEnabled = NO;
+         }
+@@ -396,9 +408,16 @@
+ - (void)layoutSubviews {
+     [super layoutSubviews];
+     [self.nsWindow ak_hostBoundsChanged:self.bounds];
++    // Once the game view has a size: "touch buttons not found", if this game has none (ruling A17).
++    if (_touchAreas && !_touchAreasNoticeAsked && !CGRectIsEmpty(self.bounds)) {
++        _touchAreasNoticeAsked = YES;
++        [_touchAreas showMissingNoticeIfNeeded];
++    }
+     if (!_touchCursorInitialized && _touchControls.trackpadEnabled) [self touchTrackpadChanged:YES];
+     if (!CGSizeEqualToSize(_touchViewportSize, self.bounds.size)) {
+         [_touchControls cancelTouches];
++        // The buttons moved with the size: a held Jump is let go, and no finger keeps an old rectangle.
++        [_touchAreas cancelAll];
+         _touchViewportSize = self.bounds.size;
+         _last.x = MAX(0, MIN(self.bounds.size.width - 1, _last.x));
+         _last.y = MAX(0, MIN(self.bounds.size.height - 1, _last.y));
+@@ -509,9 +528,51 @@
+     NSEvent *event = [NSEvent new];
+     event.type = pressed ? NSEventTypeKeyDown : NSEventTypeKeyUp;
+     event.window = self.nsWindow; event.keyCode = code; event.modifierFlags = 0;
++    event.characters = characters; event.charactersIgnoringModifiers = characters;
++    event.timestamp = NSProcessInfo.processInfo.systemUptime;
++    [NSApp postEvent:event atStart:NO];
++}
++// One key with modifiers, pressed or released - a TouchPlay button's CTRL-ALT-SHIFT key. Each modifier
++// the key needs and is not already held goes down first, as its own key (a flags-changed event with its
++// key code and left-hand device bit, as a Mac keyboard reports it); then the key; then those modifiers
++// come up again, in reverse. So nothing stays held between two touch keys, and a click or a typed key in
++// between carries only what the user is really holding. TouchPlay acts on the up click, so the caller
++// sends a down and an up for each tap.
++- (void)touchKey:(unsigned short)code characters:(NSString *)characters modifiers:(NSUInteger)modifiers pressed:(BOOL)pressed {
++    static const struct { UIKeyboardHIDUsage usage; NSEventModifierFlags flag; } chord[] = {
++        {0xE0, NSEventModifierFlagControl}, {0xE2, NSEventModifierFlagOption}, {0xE1, NSEventModifierFlagShift},
++    };
++    UIKeyboardHIDUsage added[3]; size_t count = 0;
++    for (size_t i = 0; i < 3; i++) {
++        if (!(modifiers & chord[i].flag) || (_mods & chord[i].flag)) continue;
++        _mods = AKModifiersAfterKey(_mods, chord[i].usage, YES);
++        [self postTouchModifier:chord[i].usage];
++        added[count++] = chord[i].usage;
++    }
++    NSEvent *event = [NSEvent new];
++    event.type = pressed ? NSEventTypeKeyDown : NSEventTypeKeyUp;
++    event.window = self.nsWindow; event.keyCode = code; event.modifierFlags = _mods;
+     event.characters = characters; event.charactersIgnoringModifiers = characters;
++    event.timestamp = NSProcessInfo.processInfo.systemUptime;
++    [NSApp postEvent:event atStart:NO];
++    while (count > 0) {
++        UIKeyboardHIDUsage usage = added[--count];
++        _mods = AKModifiersAfterKey(_mods, usage, NO);
++        [self postTouchModifier:usage];
++    }
++}
++- (void)postTouchModifier:(UIKeyboardHIDUsage)usage {
++    NSEvent *event = [NSEvent new];
++    event.type = NSEventTypeFlagsChanged; event.window = self.nsWindow;
++    event.keyCode = AKKeyCode(usage); event.modifierFlags = _mods;
+     event.timestamp = NSProcessInfo.processInfo.systemUptime;
+     [NSApp postEvent:event atStart:NO];
++}
++// The pinch (two fingers zoom the camera) never takes a finger that is on a TouchPlay button: a spell
++// and a walk are two fingers, not a pinch.
++- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldReceiveTouch:(UITouch *)touch {
++    if (recognizer != _pinch || !_touchAreas) return YES;
++    return ![_touchAreas ownsTouch:touch] && ![_touchAreas claimsPoint:[touch locationInView:self]];
+ }
+ - (BOOL)usesRelativeMouse { return AKMouseIsCaptured() && GCMouse.mice.count>0; }
+ - (void)captureChanged:(NSNotification *)notification {
+@@ -741,6 +802,8 @@
+ }
+ - (BOOL)directGestureActive { return _directTouch != nil || _directMulti; }
+ - (void)touchesBegan:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
++    // iPad touch: a finger on a TouchPlay button is the button's; only the others go on.
++    if (_touchAreas && !(t = [_touchAreas unclaimedTouches:t phase:UITouchPhaseBegan]).count) return;
+     if ([self handleTrackpadTouches:t event:ev]) return;
+     BOOL r = AKIsRight(ev);
+     if (!r && AKMobileInterface() && AKIsFinger(t) && ![self usesRelativeMouse]) {
+@@ -766,6 +829,7 @@
+     [self postMouse:r ? NSEventTypeRightMouseDown : NSEventTypeLeftMouseDown at:_last button:r];
+ }
+ - (void)touchesMoved:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
++    if (_touchAreas && !(t = [_touchAreas unclaimedTouches:t phase:UITouchPhaseMoved]).count) return;
+     if ([self handleTrackpadTouches:t event:ev]) return;
+     if([self usesRelativeMouse])return;
+     if ([self directGestureActive]) {
+@@ -789,12 +853,13 @@
+ // The direct gesture is over once no finger of it is left on this view.
+ - (void)finishDirectGestureIfIdle:(NSSet<UITouch *> *)lifted event:(UIEvent *)ev {
+     for (UITouch *touch in ev.allTouches) {
+-        if (touch.view != self || [lifted containsObject:touch]) continue;
++        if (touch.view != self || [lifted containsObject:touch] || [_touchAreas ownsTouch:touch]) continue;
+         if (touch.phase != UITouchPhaseEnded && touch.phase != UITouchPhaseCancelled) return;
+     }
+     _directMulti = NO; _directTouch = nil;
+ }
+ - (void)touchesEnded:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
++    if (_touchAreas && !(t = [_touchAreas unclaimedTouches:t phase:UITouchPhaseEnded]).count) return;
+     if ([self handleTrackpadTouches:t event:ev]) return;
+     if ([self directGestureActive]) {
+         if (!_directMulti && [t containsObject:_directTouch]) {
+@@ -820,6 +885,7 @@
+     [self postMouse:_pressedRight ? NSEventTypeRightMouseUp : NSEventTypeLeftMouseUp at:[self usesRelativeMouse]?_last:[t.anyObject locationInView:self] button:_pressedRight];
+ }
+ - (void)touchesCancelled:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
++    if (_touchAreas && !(t = [_touchAreas unclaimedTouches:t phase:UITouchPhaseCancelled]).count) return;
+     if ([self directGestureActive]) {
+         // A cancelled gesture clicks nothing; whatever it held is let go.
+         [self cancelDirectHold];
