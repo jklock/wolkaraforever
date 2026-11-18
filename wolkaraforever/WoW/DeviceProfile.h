@@ -27,6 +27,18 @@ typedef NS_ENUM(NSInteger, TKRenderQuality) {
     TKRenderQualityQuality,
 };
 
+// What was measured at Quality on a record's hardware, for the confirmation that asks before a
+// person picks it. Data, not words: the launcher says it in the app's language. A record that
+// measured nothing at Quality has nothing to say, and the confirmation then says only what the
+// choice costs.
+typedef NS_ENUM(NSInteger, TKQualityFinding) {
+    TKQualityFindingNone,
+    // Native size missed the frame budget and then throttled (the 12.9-inch M1).
+    TKQualityFindingMissedFrameBudget,
+    // Native size held 30 FPS at about 2.5 times the graphics work of Performance (the 11-inch M5).
+    TKQualityFindingGraphicsWork,
+};
+
 @interface TKDeviceProfile : NSObject
 
 // Stable identifier, stored in defaults when a profile is chosen by hand. Never shown.
@@ -48,6 +60,8 @@ typedef NS_ENUM(NSInteger, TKRenderQuality) {
 @property (nonatomic, readonly, copy) NSString *notes;
 // YES when this exact hardware was measured on this project rather than assumed.
 @property (nonatomic, readonly) BOOL measured;
+// What was measured at Quality here, or None.
+@property (nonatomic, readonly) TKQualityFinding qualityFinding;
 // `hw.machine` values that resolve to this record. Empty for the fallback.
 @property (nonatomic, readonly, copy) NSArray<NSString *> *modelIdentifiers;
 
@@ -78,7 +92,9 @@ typedef NS_ENUM(NSInteger, TKRenderQuality) {
 - (CGFloat)backingScaleForQuality:(TKRenderQuality)quality;
 // The quality this profile renders at when nothing else is chosen. This is deliberately not
 // `highestQuality`: Quality is a choice a person makes, with a confirmation, and never the
-// default - on the one device measured here, native rendering is what missed the frame budget.
+// default - on the 12.9-inch M1, native rendering is what missed the frame budget. A record may
+// state a lower default of its own (the 11-inch M5 keeps Performance, what it had before it
+// was in the table); otherwise a device that offers Quality defaults to Balanced.
 - (TKRenderQuality)recommendedQuality;
 // The quality nearest to `scale`, for the settings written before this table existed.
 + (TKRenderQuality)qualityForBackingScale:(CGFloat)scale;

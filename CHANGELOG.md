@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- **The iPad Pro 11-inch (M5) has its own device profile.** It was not in the table, so it got the fallback: Performance only (908 × 626). Its measured record (`iPad17,1`) also offers Balanced (1210 × 834) and **Quality at the panel's own 2420 × 1668**, which asks first. The default stays Performance, so nothing changes until Quality is picked.
+- **The render-profile confirmation says what a choice costs, on every device.** It used to say that the higher choice was measured missing the frame budget, which was only measured on the 12.9-inch M1. It now says what Quality or Balanced draws and that it takes more graphics work, then adds a measured sentence only where that device's record has one (the 12.9-inch M1 keeps its missed budget; the 11-inch M5 says about 2.5 times the graphics work of Performance). In en, de and fr.
 - **A dropped connection no longer stalls the game download.** The retry wait now always has a real scheduler, so it cannot spin while holding the download lock and block transfers or Cancel.
 
 ## v1.0.19

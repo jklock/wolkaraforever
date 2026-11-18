@@ -245,7 +245,10 @@
 "home.render.ready.title" = "Render profile ready";
 "home.render.ready.message" = "%@ takes effect when Forever next starts. Nothing in the game's own settings was changed.";
 "home.render.confirm.title" = "Above the recommendation";
-"home.render.confirm.message" = "%1$@ renders at %2$@ on %3$@, which is more than this profile recommends. It was measured missing the frame budget there.";
+"home.render.confirm.quality" = "Quality draws the 3D world at the screen's full resolution, %1$@ on %2$@, and takes much more graphics work than this profile's default. Lowering the game's own Render Scale brings that back down.";
+"home.render.confirm.balanced" = "Balanced draws the game at %1$@ on %2$@, more pixels than this profile's default, which can take more graphics work.";
+"home.render.confirm.finding.missedBudget" = "Measured on this iPad, full resolution missed the frame budget.";
+"home.render.confirm.finding.graphicsWork" = "Measured on this iPad at 30 FPS, full resolution took about 2.5 times the graphics work of Performance.";
 "home.render.confirm.yes" = "Use %@";
 "home.profile.title" = "Device profile";
 "home.profile.message" = "This device is %@. Automatic uses the profile that was measured for it; another device can be chosen to compare, and it is labelled as a preview everywhere it appears.";

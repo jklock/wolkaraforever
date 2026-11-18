@@ -20,6 +20,9 @@
 @property (nonatomic, copy, readwrite) NSString *notes;
 @property (nonatomic) BOOL measured;
 @property (nonatomic, copy, readwrite) NSArray<NSString *> *modelIdentifiers;
+// A default the record states itself, or -1 for none (the rule in -recommendedQuality decides).
+@property (nonatomic) NSInteger statedRecommendation;
+@property (nonatomic) TKQualityFinding qualityFinding;
 @end
 
 @implementation TKDeviceProfile
@@ -40,7 +43,27 @@
     profile.measured=measured;
     profile.notes=notes;
     profile.modelIdentifiers=models;
+    profile.statedRecommendation=-1;
     return profile;
+}
+
+// A record whose default is not the rule's: Quality offered, and a default below Balanced kept on
+// purpose. Never above the record's own ceiling.
++ (instancetype)record:(NSString *)identifier name:(NSString *)name family:(TKDeviceFamily)family
+                  chip:(NSString *)chip width:(CGFloat)width height:(CGFloat)height
+               highest:(TKRenderQuality)highest qualityScale:(CGFloat)qualityScale
+           recommended:(TKRenderQuality)recommended
+              measured:(BOOL)measured notes:(NSString *)notes models:(NSArray<NSString *> *)models {
+    TKDeviceProfile *profile=[self record:identifier name:name family:family chip:chip width:width height:height
+        highest:highest qualityScale:qualityScale measured:measured notes:notes models:models];
+    profile.statedRecommendation=MIN(recommended,highest);
+    return profile;
+}
+
+// The table's records are built once and never changed after; this only finishes one in place.
+- (instancetype)withQualityFinding:(TKQualityFinding)finding {
+    self.qualityFinding=finding;
+    return self;
 }
 
 + (NSArray<TKDeviceProfile *> *)profiles {
@@ -87,11 +110,26 @@
             // reduce measured GPU time (9.9 ms against 9.0 ms). So Performance here means a
             // smaller drawable on this device, not a faster one, and nothing on the page may
             // promise a frame rate from it.
-            [self record:@"ipad-pro-12.9-m1" name:@"iPad Pro 12.9-inch (M1)" family:TKDeviceFamilyPad
+            [[self record:@"ipad-pro-12.9-m1" name:@"iPad Pro 12.9-inch (M1)" family:TKDeviceFamilyPad
                     chip:@"M1" width:1366 height:1024
                  highest:TKRenderQualityQuality qualityScale:2.0 measured:YES
                    notes:@"Measured on Dadpad (iPadOS 27, 2026-10-22/23). Native 2732x2048 missed the 16.7 ms budget and then throttled, per PERFORMANCE_THERMAL.md. Its 0.75 backing scale measured no GPU saving there (9.9 ms against 9.0 ms), so Performance is a smaller drawable, not a faster frame."
-                  models:@[@"iPad13,8",@"iPad13,9",@"iPad13,10",@"iPad13,11"]],
+                  models:@[@"iPad13,8",@"iPad13,9",@"iPad13,10",@"iPad13,11"]]
+                withQualityFinding:TKQualityFindingMissedFrameBudget],
+            // Measured by a contributor on an iPad Pro 11-inch (M5), the only identifier seen being
+            // iPad17,1. The game is CPU-bound there: at 30 FPS outdoors the CPU stayed at 74-80 % of a
+            // core whatever the scale, while the GPU ranged from 17 % busy (Performance 0.75) to 43 %
+            // (native 2.0 with the game's own Render Scale at 100 %). With the game's Render Scale at
+            // 37.5-50 %, native 2.0 cost 17-24 % - about what Performance costs today - with the
+            // game's interface drawn at the panel's own pixels. So Quality is offered, and asks first
+            // as everywhere; the default stays Performance, which is what this iPad had as the
+            // fallback, so nothing changes for anyone who does not pick it.
+            [[self record:@"ipad-pro-11-m5" name:@"iPad Pro 11-inch (M5)" family:TKDeviceFamilyPad
+                    chip:@"M5" width:1210 height:834
+                 highest:TKRenderQualityQuality qualityScale:2.0 recommended:TKRenderQualityPerformance measured:YES
+                   notes:@"Measured on an iPad Pro 11-inch (M5) (iPad17,1, iPadOS 26.5, Developer service, plugged in, 2026-11-17/18), Forever outdoors at 30 FPS. CPU-bound: 74-80% of a core at every scale. GPU busy: 17% at Performance 0.75 (908x626); 43% (14.4 ms a frame) at Quality 2.0 (2420x1668) with the game's Render Scale at 100%; 17-24% at Quality with Render Scale 37.5-50%. One iPad, GPU/CPU proxies, no watts. Quality asks first; Performance stays the default."
+                  models:@[@"iPad17,1"]]
+                withQualityFinding:TKQualityFindingGraphicsWork],
             // Everything below is the same conservative policy: native-size rendering is not
             // offered until someone measures it on that hardware, so Balanced is the ceiling.
             [self record:@"ipad-pro-11-m1" name:@"iPad Pro 11-inch (M1)" family:TKDeviceFamilyPad
@@ -195,9 +233,12 @@
 
 - (TKDeviceProfile *)profileWithWidth:(CGFloat)width height:(CGFloat)height {
     if (self.family!=TKDeviceFamilyPhone || !isfinite(width) || !isfinite(height) || width<=0 || height<=0) return self;
-    return [TKDeviceProfile record:self.identifier name:self.displayName family:self.family chip:self.chip
+    TKDeviceProfile *sized=[TKDeviceProfile record:self.identifier name:self.displayName family:self.family chip:self.chip
         width:width height:height highest:self.highestQuality qualityScale:self.qualityBackingScale
         measured:self.measured notes:self.notes models:self.modelIdentifiers];
+    sized.statedRecommendation=self.statedRecommendation;
+    sized.qualityFinding=self.qualityFinding;
+    return sized;
 }
 
 - (CGFloat)backingScaleForQuality:(TKRenderQuality)quality {
@@ -218,6 +259,8 @@
     // and on this project the thing that measurement found was native rendering missing the
     // frame budget - so Quality stays a choice that asks first, and Balanced is what a device
     // gets until its owner says otherwise. Unmeasured hardware has no Quality to offer at all.
+    // A record may state a lower default of its own (the 11-inch M5: Performance, as before).
+    if (self.statedRecommendation>=0) return (TKRenderQuality)self.statedRecommendation;
     return self.highestQuality==TKRenderQualityQuality ? TKRenderQualityBalanced : self.highestQuality;
 }
 
