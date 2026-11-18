@@ -2502,6 +2502,10 @@ static int backupsBeforePerformance;
     // A product name stays itself in both languages.
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text]
         isEqual:@"Gamepad-Oberfläche"]);
+    // Battery Saver's row, its summary and its "Off" - the three words a German page needs for
+    // a setting that has never been touched.
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
+        isEqual:@"Akku-Sparmodus: Aus"]);
     // Section headings, which were made before this language existed.
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"SPIELVERWALTUNG"]);
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.profile") text] isEqual:@"LEISTUNGSVERWALTUNG"]);
