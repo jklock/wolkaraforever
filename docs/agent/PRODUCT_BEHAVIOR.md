@@ -10,6 +10,7 @@ WolkaraForever lets a user choose a Forever region and game language; download, 
 | Build assembly, execution modes, run commands, packaging | [Build and run WolkaraForever](../BUILDING.md) |
 | Game lifecycle, languages, add-ons, recovery, controls, voice | [Using WolkaraForever](../USING_WOLKARAFOREVER.md) |
 | Phone-specific interface and constraints | [iPhone](../IPHONE.md) |
+| iPad touch with the bundled TouchPlay add-on | [Play by touch on iPad](../IPAD_TOUCH.md); agent page [iPad touch](IPAD_TOUCH.md) |
 | Supported boundary and issue reports | [Compatibility](../../COMPATIBILITY.md) |
 
 The launcher records only managed add-ons for removal, stages updates and restores before replacement, and keeps diagnostics redacted. An API key is device-local and optional; browser or Files acquisition remains available where appropriate.
