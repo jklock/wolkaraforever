@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- **iPad touch.** A fifth interface mode, offered on an iPad and never chosen by Automatic, for playing with the bundled **TouchPlay** add-on: a finger on one of its buttons is that button's key (tap on lift, hold for its card, slide off a spell to aim), the world is played by touch, a walk stick appears under the thumb, and with a game window open touches are plain clicks. Its keyboard types the game's password by hand (no AutoFill), its chat has Say/Party/Guild/Whisper/Yell and a Send button, and two crashes in a row put the mode back to iPadOS. iPadOS, iOS and iOS on Duo are unchanged. See [Play by touch on iPad](docs/IPAD_TOUCH.md).
+- **TouchPlay is bundled.** Like WolkaraRoue it ships as a verified package; in iPad touch, **Launcher Manager** offers **Install Recommended Add-ons (TouchPlay)**, and nothing is installed until **Install** is pressed.
 - **A dropped connection no longer stalls the game download.** The retry wait now always has a real scheduler, so it cannot spin while holding the download lock and block transfers or Cancel.
 
 ## v1.0.19

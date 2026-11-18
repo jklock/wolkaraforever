@@ -1,0 +1,48 @@
+# WolkaraForever layer patch 0070 - host: the app leaving the screen lets go of the world gesture (iPad touch)
+#
+# Why: in iPad touch the app is put away all the time - a call, Control Centre, the app switcher, Home - and
+# every key TouchPlay can hold must come up when it is (Task 8, review focus 4). The layer's controls now have one
+# entry point for that (TouchControls.m, AKTouchReleaseEverything): the buttons' held keys and hold rings
+# (TouchAreas), the walk stick (TouchGamepad) and the text keyboard are all the layer's own. The world gesture is
+# the host's - a finger dragging the view holds a mouse button down (a left drag, or the right button for turn=1) -
+# so the host gets one method the layer can reach through the key sink it already has (0066):
+#   - touchReleaseWorldGesture: while a finger of the direct gesture is still down, the same let-go as a pinch
+#     beginning (beginDirectMulti): the hold timer is cancelled, a tap or hold still waiting never fires, the mouse
+#     buttons come up, and the rest of that finger's gesture posts nothing until it lifts. When the system has
+#     already lifted the finger there is nothing to wait for, so the whole gesture state is cleared outright -
+#     a pinch's multi-finger mode too, which would otherwise outlive fingers the system never lifted and swallow
+#     the first tap on return. A mouse button down for any other reason (a trackpad press) comes up too.
+# It is optional on the sink (the layer asks respondsToSelector), called only from the controls in iPad touch
+# on WillResignActive and DidEnterBackground, and nothing else in the host calls it: in every other interface
+# mode the host is exactly 0055 + 0065 .. 0069.
+#
+# Applies after: 0069-touchplay-world-touch-only-in-the-world.patch
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: no (TouchPlay and iPad touch live in the WolkaraForever layer).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -594,6 +594,23 @@
+     if (!click) return;
+     [self postMouse:NSEventTypeLeftMouseDown at:p button:0];
+     [self postMouse:NSEventTypeLeftMouseUp at:p button:0];
++}
++// The app is leaving the screen (a call, Control Centre, the app switcher, Home) while a finger or a mouse
++// button is down (TouchControls.m's AKTouchReleaseEverything, iPad touch only): a drag's button comes up where
++// it was, a tap or hold still waiting never fires, and the rest of that finger's gesture posts nothing - the
++// same "let go, then quiet until it lifts" as a pinch beginning (beginDirectMulti). With no finger of the gesture
++// down there is nothing to wait for, so the whole state is cleared outright - the multi-finger mode of a pinch too,
++// or its fingers, never lifted by the system, would swallow the first tap on return.
++- (void)touchReleaseWorldGesture {
++    BOOL down = _directTouch && _directTouch.phase != UITouchPhaseEnded && _directTouch.phase != UITouchPhaseCancelled;
++    if (down) [self beginDirectMulti];
++    else {
++        [self cancelDirectHold];
++        _directPending = NO; _directHeld = NO; _directMulti = NO; _directTouch = nil; _worldTapRecorded = NO;
++    }
++    if (_pressedLeft) [self postMouse:NSEventTypeLeftMouseUp at:_last button:0];
++    if (_pressedRight) [self postMouse:NSEventTypeRightMouseUp at:_last button:1];
++    if (_pressedMiddle) [self postMouse:NSEventTypeOtherMouseUp at:_last button:2];
+ }
+ // The pinch (two fingers zoom the camera) never takes a finger that is on a TouchPlay button: a spell
+ // and a walk are two fingers, not a pinch.

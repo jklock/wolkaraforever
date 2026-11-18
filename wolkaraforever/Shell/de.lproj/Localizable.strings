@@ -47,7 +47,11 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS auf dem Duo";
+"home.launcher.interfaceMode.ipadtouch" = "iPad-Touch";
+"touch.fallback.title" = "iPad-Touch ausgeschaltet";
+"touch.fallback.message" = "Das Spiel wurde im iPad-Touch-Modus zweimal hintereinander unerwartet beendet, daher ist WolkaraForever zu iPadOS zurückgekehrt. Unter Oberflächenmodus kannst du iPad-Touch wieder auswählen.";
 "home.launcher.interfaceSetup.row" = "Steuerungslayout bearbeiten";
+"touch.contract.missing" = "Touch-Tasten nicht gefunden, daher sind Berührungen einfache Klicks. Starten Sie das Spiel und tippen Sie dann einmal auf „Menu › Save settings“ (so heißt es im Spiel).";
 "home.launcher.interfaceSetup.title" = "Steuerungslayout";
 /* Die drei Zeilen, die früher in einem einzigen Blatt versteckt waren. */
 "home.launcher.layout.create" = "Steuerungslayout anlegen";
@@ -86,6 +90,7 @@
 "home.addons.install.needsgame" = "Add-ons installieren (Curse & direkt) (zuerst Spiel installieren)";
 "home.addons.recommended.macEver" = "Empfohlene Add-ons installieren (Mac-Ever)";
 "home.addons.recommended.wolkaraRoue" = "Empfohlene Add-ons installieren (WolkaraRoue)";
+"home.addons.recommended.touchPlay" = "Empfohlene Add-ons installieren (TouchPlay)";
 "home.addons.directory" = "Add-on-Ordner öffnen";
 "home.addons.directory.needsgame" = "Add-on-Ordner öffnen (zuerst Spiel installieren)";
 "home.addons.backup" = "Add-ons sichern";
@@ -408,6 +413,15 @@
 "touch.draft.clear" = "Entwurf leeren";
 "touch.keyboard.show" = "Tastatur einblenden";
 "touch.keyboard.hide" = "Tastatur ausblenden";
+"touch.keyboard.password" = "Passwort";
+"touch.keyboard.username" = "Benutzername";
+"touch.keyboard.typePassword" = "Passwort eingeben";
+"touch.chat.say" = "Sagen";
+"touch.chat.party" = "Gruppe";
+"touch.chat.guild" = "Gilde";
+"touch.chat.whisper" = "Flüstern";
+"touch.chat.yell" = "Schreien";
+"touch.chat.send" = "Senden";
 "touch.toolbar.show" = "Leiste einblenden";
 "touch.toolbar.hide" = "Leiste ausblenden";
 "touch.trackpad.enable" = "Touch-Trackpad einschalten";
@@ -425,6 +439,7 @@
 "touch.gamepad.rightStick" = "Controller, rechter Stick";
 "touch.gamepad.jump" = "Springen";
 "touch.autorun" = "Automatisch laufen";
+"touch.walkStick" = "Laufstick";
 "touch.gamepad.doneEditing" = "Bearbeiten beenden";
 "touch.gamepad.dragHint" = "Elemente zum Verschieben ziehen";
 "touch.settings" = "Einstellungen der Bedienelemente";
@@ -541,6 +556,8 @@
 "addons.bundled.installed" = "WolkaraRoue %@ aus dem Paket dieser App installiert.";
 "addons.bundled.unavailable" = "Das mitgelieferte Add-on-Paket fehlt oder ist nicht das, das diese App ausgeliefert hat.";
 "addons.bundled.title" = "Mitgeliefertes Add-on";
+"addons.bundled.touchPlay.name" = "TouchPlay (mitgeliefert)";
+"addons.bundled.touchPlay.installed" = "TouchPlay %@ aus dem Paket dieser App installiert.";
 "addons.by" = "Von %@";
 "addons.downloads" = "%@ Downloads auf CurseForge";
 "addons.installLatest" = "Neueste kompatible Datei installieren";

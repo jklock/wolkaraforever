@@ -47,7 +47,11 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS on Duo";
+"home.launcher.interfaceMode.ipadtouch" = "iPad touch";
+"touch.fallback.title" = "iPad touch turned off";
+"touch.fallback.message" = "The game closed unexpectedly twice in a row in iPad touch mode, so WolkaraForever went back to iPadOS. You can choose iPad touch again under Interface Mode.";
 "home.launcher.interfaceSetup.row" = "Edit Controller Layout";
+"touch.contract.missing" = "Touch buttons not found, so taps are plain clicks. Start the game, then use Menu › Save settings once.";
 "home.launcher.interfaceSetup.title" = "Controller Layout";
 /* The three rows that used to be inside the one Controller Layout sheet. */
 "home.launcher.layout.create" = "Create Controller Layout";
@@ -86,6 +90,7 @@
 "home.addons.install.needsgame" = "Install Addons (Curse & Direct) (install game first)";
 "home.addons.recommended.macEver" = "Install Recommended Add-ons (Mac-Ever)";
 "home.addons.recommended.wolkaraRoue" = "Install Recommended Add-ons (WolkaraRoue)";
+"home.addons.recommended.touchPlay" = "Install Recommended Add-ons (TouchPlay)";
 "home.addons.directory" = "Open Add-on Directory";
 "home.addons.directory.needsgame" = "Open Add-on Directory (install game first)";
 "home.addons.backup" = "Backup Add-ons";
@@ -410,6 +415,15 @@
 "touch.draft.clear" = "Clear draft";
 "touch.keyboard.show" = "Show keyboard";
 "touch.keyboard.hide" = "Hide keyboard";
+"touch.keyboard.password" = "Password";
+"touch.keyboard.username" = "User name";
+"touch.keyboard.typePassword" = "Type password";
+"touch.chat.say" = "Say";
+"touch.chat.party" = "Party";
+"touch.chat.guild" = "Guild";
+"touch.chat.whisper" = "Whisper";
+"touch.chat.yell" = "Yell";
+"touch.chat.send" = "Send";
 "touch.toolbar.show" = "Show toolbar";
 "touch.toolbar.hide" = "Hide toolbar";
 "touch.trackpad.enable" = "Enable touch trackpad";
@@ -427,6 +441,7 @@
 "touch.gamepad.rightStick" = "Controller right stick";
 "touch.gamepad.jump" = "Jump";
 "touch.autorun" = "Auto-run";
+"touch.walkStick" = "Walk stick";
 "touch.gamepad.doneEditing" = "Done editing";
 "touch.gamepad.dragHint" = "Drag controls to move them";
 "touch.settings" = "Touch control settings";
@@ -543,6 +558,8 @@
 "addons.bundled.installed" = "Installed WolkaraRoue %@ from this app's bundle.";
 "addons.bundled.unavailable" = "The bundled add-on package is missing or is not the one this app shipped.";
 "addons.bundled.title" = "Bundled add-on";
+"addons.bundled.touchPlay.name" = "TouchPlay (bundled)";
+"addons.bundled.touchPlay.installed" = "Installed TouchPlay %@ from this app's bundle.";
 "addons.by" = "By %@";
 "addons.downloads" = "%@ downloads on CurseForge";
 "addons.installLatest" = "Install latest compatible file";

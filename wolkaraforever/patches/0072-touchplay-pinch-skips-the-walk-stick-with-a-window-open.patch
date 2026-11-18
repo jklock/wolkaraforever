@@ -1,0 +1,30 @@
+# WolkaraForever layer patch 0072 - host: the pinch skips the walk stick's thumb with a window open too (iPad touch)
+#
+# Why: ruling A34 (17 Nov 2026, iPad run 6) keeps the walk stick live while a game window is open in the world
+# (the add-on's three pulses, AKTouchAreas.windowOpen): an auto-run locked by accident could not be stopped from the
+# stick until the window closed, and once only backgrounding the app stopped it. With a window open every other touch is
+# 0055's plain touch (ruling A33), and the plain touch's pinch is this view's recognizer, which sees every touch in its
+# subtree - so a walking thumb and a tap on the window would have been a pinch: the camera zoomed, and the pinch's
+# cancel would have let go of the walk. 0068/0069 refused the stick's thumb only with the buttons live (liveContract);
+# this refuses it with a window open too. Nothing else changes: the edge zone, the second tap, the world key and the
+# turn drag still follow liveContract only, so with a window open they are 0055's.
+# Out of the world (two pulses), with no contract, and in every other interface mode the host is exactly 0055 .. 0071.
+#
+# Applies after: 0071-touchplay-chord-modifiers-last-the-games-frame.patch
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: no (TouchPlay and iPad touch live in the WolkaraForever layer).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -709,8 +709,9 @@
+ - (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldReceiveTouch:(UITouch *)touch {
+     if (recognizer != _pinch || !_touchAreas) return YES;
+     // ...nor a finger on a view of the layer's over the game - the walk stick's thumb (0068): a walk
+-    // and a look are two fingers, not a pinch.
+-    if (_touchAreas.liveContract && touch.view && touch.view != self) return NO;
++    // and a look are two fingers, not a pinch. With a game window open the stick stays live (0072, ruling
++    // A34), so its thumb is still not the pinch's while every other touch is the plain one.
++    if ((_touchAreas.liveContract || (_touchAreas.windowOpen && _touchAreas.contract)) && touch.view && touch.view != self) return NO;
+     CGPoint p = [touch locationInView:self];
+     if (_touchAreas.liveContract && [self pointInEdgeZone:p]) return NO;   // nor one in the edge zone (0067)
+     return ![_touchAreas ownsTouch:touch] && ![_touchAreas claimsPoint:p];

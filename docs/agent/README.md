@@ -20,5 +20,6 @@ Refresh this directory on every tracked-file change. Run `python3 wolkaraforever
 - [Testing](TESTING.md)
 - [Security and policy](SECURITY_AND_POLICY.md)
 - [Human documentation map](HUMAN_DOCUMENTATION_MAP.md)
+- [iPad touch](IPAD_TOUCH.md)
 - [File catalog](FILE_CATALOG.md)
 - [Roadmap](ROADMAP.md)

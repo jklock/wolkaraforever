@@ -6,11 +6,15 @@ func testImport(_ fixtures: UnsafePointer<CChar>, _ temporary: UnsafePointer<CCh
 @_silgen_name("TestBundledPackageInstall")
 func testBundledPackageInstall(_ fixtures: UnsafePointer<CChar>, _ temporary: UnsafePointer<CChar>) -> Int32
 
+@_silgen_name("TestBundledPackageInstallNamed")
+func testBundledPackageInstallNamed(_ fixtures: UnsafePointer<CChar>, _ temporary: UnsafePointer<CChar>,
+                                    _ folder: UnsafePointer<CChar>) -> Int32
+
 @main
 struct ArchiveTests {
     static func main() throws {
         guard CommandLine.arguments.count >= 3 else {
-            FileHandle.standardError.write(Data("usage: test_addon_archive <fixtures> <package-fixtures>\n".utf8))
+            FileHandle.standardError.write(Data("usage: test_addon_archive <fixtures> <package-fixtures> [<touchplay-package-fixtures>]\n".utf8))
             exit(2)
         }
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
@@ -68,6 +72,15 @@ struct ArchiveTests {
             }
         }
         check(bundledResult == 0, "bundled package install lifecycle")
+        // iPad touch's TouchPlay package, through the same store and the same lifecycle.
+        if CommandLine.arguments.count > 3 {
+            let touchPlayResult = CommandLine.arguments[3].withCString { fixtures in
+                work.appendingPathComponent("bundled-touchplay").path.withCString { temporary in
+                    "TouchPlay".withCString { folder in testBundledPackageInstallNamed(fixtures, temporary, folder) }
+                }
+            }
+            check(touchPlayResult == 0, "bundled TouchPlay package install lifecycle")
+        }
         print("ADDON ARCHIVE PASS: \(checks) checks, production Swift and pinned ZIPFoundation")
     }
 }

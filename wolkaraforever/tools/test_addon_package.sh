@@ -1,7 +1,7 @@
 #!/bin/bash
-# The bundled Interface mobile add-on package: the committed archive is exactly what the
-# reviewed sources in addons/WolkaraRoue produce, and the app's verifier refuses every
-# package that is not that one.
+# The bundled add-on packages: the committed archives are exactly what the reviewed sources in
+# addons/WolkaraRoue (the Interface mobile add-on) and addons/TouchPlay (iPad touch's) produce,
+# and the app's verifier refuses every package that is not that one.
 #
 # The archive and its manifest are built by the same script here, so a source change that
 # reaches the ZIP without a new artifact - or an artifact nobody can rebuild - is a
@@ -26,16 +26,21 @@ xcrun swiftc -O -emit-library -emit-module -module-name ZIPFoundation \
 
 # 1. The committed artifacts are what the sources produce.
 python3 wolkaraforever/tools/package_addon_zip.py --check
+python3 wolkaraforever/tools/package_addon_zip.py --addon TouchPlay --check
 
 # 2. ...and the wrong packages the verifier has to refuse. The output directory is cleared
 # first: the packager writes the release the TOC names and does not delete what an earlier
 # run left behind, so a stale manifest made the glob below expand to two releases and the
 # suite handed the verifier the wrong one - it failed on a tree whose sources were fine.
-rm -rf "$build/fixtures" "$build/package"
+rm -rf "$build/fixtures" "$build/package" "$build/fixtures-touchplay" "$build/package-touchplay"
 python3 wolkaraforever/tools/package_addon_zip.py --output "$build/package" \
     --fixtures "$build/fixtures" > /dev/null
 release=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release"])' \
     "$build/package"/WolkaraRoue-*.json)
+python3 wolkaraforever/tools/package_addon_zip.py --addon TouchPlay --output "$build/package-touchplay" \
+    --fixtures "$build/fixtures-touchplay" > /dev/null
+touchplay=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release"])' \
+    "$build/package-touchplay"/TouchPlay-*.json)
 
 # 3. The app's own verifier, from the prepared tree, so it is the code that ships.
 wolkaraforever/tools/prepare.sh > /dev/null
@@ -44,3 +49,4 @@ xcrun swiftc -warnings-as-errors -I "$build" -L "$build" -lZIPFoundation \
     -Xlinker -rpath -Xlinker "$build" launcher/WoW/AddonPackage.swift \
     tests/test_addon_package.swift -o "$build/test_addon_package"
 "$build/test_addon_package" "$build/fixtures" "$release"
+"$build/test_addon_package" "$build/fixtures-touchplay" "$touchplay" TouchPlay

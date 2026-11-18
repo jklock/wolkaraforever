@@ -18,6 +18,9 @@ in its own directory. The Swift fixture (``tests/test_addon_package.swift``) run
 production verifier against every one of them and requires each to be refused for the
 reason its name gives.
 
+``--addon TouchPlay`` packages ``addons/TouchPlay`` (iPad touch's add-on) the same way, into
+``TouchPlay-<version>.zip`` and ``.json``; the default is WolkaraRoue, exactly as before.
+
 Run from anywhere; it works on the repository root.
 """
 import argparse
@@ -29,9 +32,11 @@ import sys
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
-SOURCE = ROOT / "addons" / "WolkaraRoue"
 DESTINATION = ROOT / "wolkaraforever" / "Addons"
+# The add-ons this layer ships, each from addons/<name>. WolkaraRoue is the default; --addon picks another.
+ADDONS = ("WolkaraRoue", "TouchPlay")
 FOLDER = "WolkaraRoue"
+SOURCE = ROOT / "addons" / FOLDER
 FORMAT = "wolkaraforever.addon"
 FORMAT_VERSION = 1
 # The ZIP's own timestamp: fixed, so two runs are byte-identical. 1980-01-01 is the
@@ -49,15 +54,15 @@ def toc_heading(text, name):
 
 
 def read_release():
-    toc = (SOURCE / "WolkaraRoue.toc").read_text(encoding="utf-8")
+    toc = (SOURCE / f"{FOLDER}.toc").read_text(encoding="utf-8")
     release = toc_heading(toc, "Version")
     interface = toc_heading(toc, "Interface")
     if not release or not interface:
-        raise SystemExit(f"{SOURCE}/WolkaraRoue.toc: no ## Version or ## Interface line")
+        raise SystemExit(f"{SOURCE}/{FOLDER}.toc: no ## Version or ## Interface line")
     try:
         interface = int(interface.split(",")[0].strip())
     except ValueError:
-        raise SystemExit(f"{SOURCE}/WolkaraRoue.toc: ## Interface is not a number")
+        raise SystemExit(f"{SOURCE}/{FOLDER}.toc: ## Interface is not a number")
     return release, interface
 
 
@@ -73,7 +78,7 @@ def toc_lists_every_script(files):
     """The TOC must name every script the add-on ships: a Lua file it does not load, or an
     XML file it never reads, is not the add-on that was reviewed. ``Bindings.xml`` is the one
     exception, because the game loads it by name without a TOC entry."""
-    toc = (SOURCE / "WolkaraRoue.toc").read_text(encoding="utf-8")
+    toc = (SOURCE / f"{FOLDER}.toc").read_text(encoding="utf-8")
     listed = {line.strip() for line in toc.splitlines()
               if line.strip() and not line.startswith("##")}
     present = {name for name, _ in files
@@ -81,7 +86,7 @@ def toc_lists_every_script(files):
     if listed != present:
         missing = sorted(present - listed)
         absent = sorted(listed - present)
-        raise SystemExit(f"WolkaraRoue.toc does not match the sources: "
+        raise SystemExit(f"{FOLDER}.toc does not match the sources: "
                          f"not loaded {missing}, not shipped {absent}")
 
 
@@ -238,7 +243,12 @@ def main():
     parser.add_argument("--check", action="store_true",
                         help="build into a temporary directory and compare with the "
                              "committed artifacts instead of writing them")
+    parser.add_argument("--addon", choices=ADDONS, default="WolkaraRoue",
+                        help="which add-on under addons/ to package (default: WolkaraRoue)")
     arguments = parser.parse_args()
+    global FOLDER, SOURCE
+    FOLDER = arguments.addon
+    SOURCE = ROOT / "addons" / FOLDER
 
     release, interface = read_release()
     files = source_files()
@@ -255,7 +265,7 @@ def main():
                 if built.read_bytes() != committed.read_bytes():
                     raise SystemExit(f"{committed} is not what the sources produce; "
                                      f"run this script without --check")
-            print(f"addon package: {archive.name} is what addons/WolkaraRoue produces")
+            print(f"addon package: {archive.name} is what addons/{FOLDER} produces")
     else:
         archive, manifest = write_package(arguments.output, release, interface, files)
         print(f"addon package: {archive}")

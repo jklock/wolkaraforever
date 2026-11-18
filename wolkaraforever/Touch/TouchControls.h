@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import "ChatComposer.h"
+#import "TouchTextBridge.h"
 
 // Posted when the user chose to close WolkaraForever from the game's toolbar. Shell/main.m observes
 // it, flushes what the session owns and ends the process. By name on the shell's side,
@@ -81,6 +82,12 @@ extern NSString *const AKChatComposerOutcomeKey;                        // "outc
 
 // The identifier a destination chip carries, so a fixture (or a VoiceOver user) can name it.
 #define AKChatComposerDestinationIdentifierFormat "wolkaraforever.composer.destination.%@"
+// iPad touch (Task 8): lets go of everything the TouchPlay layer can hold - every button's key (Jump and Dive
+// up, a half-full hold ring cancelled with no hold key sent, an aimed spell stopped with Interact's stop key),
+// the walk stick (keys up, centred, hidden, auto-run off), the host's world gesture (mouse buttons up) and the
+// text keyboard. Called when the app is about to leave the screen (WillResignActive, DidEnterBackground); the
+// same call can be made by anything else that needs a clean slate. Nothing outside iPad touch is touched.
+extern void AKTouchReleaseEverything(void);
 
 @protocol AKTouchControlsDelegate <NSObject>
 - (void)touchMoveBy:(CGPoint)delta;
@@ -113,7 +120,10 @@ extern NSString *const AKChatComposerOutcomeKey;                        // "outc
 @property (nonatomic, readonly) BOOL gamepadEnabled;
 @property (nonatomic, readonly) BOOL configuring;
 - (void)setGamepadVisible:(BOOL)visible;
+// Whether a keyboard of the layer's is up: the chat composer, or (iPad touch) the password field.
 @property (nonatomic, readonly) BOOL keyboardVisible;
+// What that keyboard is for: Chat (the composer), Password or Username (iPad touch's bridge), None.
+@property (nonatomic, readonly) AKTextKind textKind;
 - (void)processTouches:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event;
 - (void)cancelTouches;
 - (void)toggleKeyboard;

@@ -1,0 +1,48 @@
+# WolkaraForever layer patch 0073 - host: two fingers are a pinch, even when one lands on the walk stick (iPad touch)
+#
+# Why: On the iPad (17 Nov 2026): "pinch zoom in the middle of the screen grabs the walk stick more often than it zooms".
+# 0068/0072 never let the pinch take the walk stick's thumb, so a pinch whose first finger landed in the walk area was a
+# walk instead. The walk area is now only the outer third away from the hand, lower 55 % (TouchGamepad.m), and this lets
+# two fingers that come together be a pinch: the pinch's delegate asks the walk stick (AKWalkStickPinchOffer) whether its
+# finger may be the pinch's - the first thumb may, a later one only if it came within 0.15 s of the first or before the
+# first walked past the dead zone - and, before the pinch begins (AKWalkStickPinchMayBegin), whether it may: with a thumb
+# on the stick only for that rule, and then the stick lets go of its walk (every walk key up, nothing sent after). A
+# walking thumb and a finger that comes later are a walk and a look, never a pinch, as with 0068.
+# Every other recognizer, the pinch with no contract, and every other interface mode are exactly 0055 .. 0072.
+#
+# Applies after: 0072-touchplay-pinch-skips-the-walk-stick-with-a-window-open.patch
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: no (TouchPlay and iPad touch live in the WolkaraForever layer).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -7,6 +7,7 @@
+ #import "TouchGamepadLayout.h"
+ #import "InterfaceMode.h"
+ #import "TouchAreas.h"
++#import "TouchGamepad.h"
+ 
+ // The guest screen's pixels per point, defined in Screens.m.
+ CGFloat AKGuestBackingScale(void);
+@@ -711,10 +712,21 @@
+     // ...nor a finger on a view of the layer's over the game - the walk stick's thumb (0068): a walk
+     // and a look are two fingers, not a pinch. With a game window open the stick stays live (0072, ruling
+     // A34), so its thumb is still not the pinch's while every other touch is the plain one.
++    // Two fingers are a pinch (0073, 17 Nov 2026: a pinch grabbed the stick): the walk stick says whether its own
++    // finger may be the pinch's, and notes every other finger the pinch is offered while its thumb is down.
++    NSInteger stick = AKWalkStickPinchOffer(self, touch);
++    if (stick >= 0) return stick == 1;
+     if ((_touchAreas.liveContract || (_touchAreas.windowOpen && _touchAreas.contract)) && touch.view && touch.view != self) return NO;
+     CGPoint p = [touch locationInView:self];
+     if (_touchAreas.liveContract && [self pointInEdgeZone:p]) return NO;   // nor one in the edge zone (0067)
+     return ![_touchAreas ownsTouch:touch] && ![_touchAreas claimsPoint:p];
++}
++// The pinch's start (0073): with a thumb on the walk stick, only a second finger that came within 0.15 s of it, or before
++// it walked, makes a pinch - and then the stick lets go of its walk; a walking thumb and a later finger are a walk and a
++// look. Every other recognizer, and the pinch outside iPad touch, begins as before.
++- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)recognizer {
++    if (recognizer != _pinch || !_touchAreas) return YES;
++    return AKWalkStickPinchMayBegin(self);
+ }
+ - (BOOL)usesRelativeMouse { return AKMouseIsCaptured() && GCMouse.mice.count>0; }
+ - (void)captureChanged:(NSNotification *)notification {

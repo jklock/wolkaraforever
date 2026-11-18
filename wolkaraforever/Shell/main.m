@@ -24,6 +24,8 @@
 // what may and may not appear in it.
 #import "../Voice/KeyboardDictationEvents.h"
 #import "../WoW/CASC.h"
+#import "../WoW/InterfaceMode.h"
+#import "../WoW/TouchContract.h"
 #import "../WoW/WoWViewController.h"
 #import "LaunchProgressView.h"
 #import "NativeGuest.h"
@@ -138,6 +140,15 @@ static BOOL CanStartApps(void) {
 }
 static void FlushSteamCloudAtExit(int code, void *context) {
     if (!code) @autoreleasepool { [(__bridge TKSteamCloudCoordinator *)context flush]; }
+}
+// iPad touch only: the guest's exit observer, for the exits atexit() never sees. A guest that leaves by
+// _exit(0) skips the atexit handler the crash fallback installs, and any clean exit is a clean end of
+// the session. It replaces the session's Steam cloud flush in that one slot, so it carries the flush
+// too: the context is the scene delegate, so the flush finds whatever coordinator the session has by
+// then. Every other interface mode keeps the slot exactly as it was (the cloud path below).
+static void GuestExitObserver(int code, void *context) {
+    if (!code) AKTouchCrashGuardEndSession();
+    FlushSteamCloudAtExit(code, (__bridge void *)((__bridge AKHostSceneDelegate *)context).steamCloud);
 }
 static const char *ModeIdentifier(TKExecutionMode mode) { return (TKExecutionModeIdentifier(mode)?:@"none").UTF8String; }
 // Files shows the app's Documents under its bundle name (Tolkara or TolkaraDiagnostics).
@@ -330,6 +341,9 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
 - (void)closeAfterGuestRefusedToQuit:(NSNotification *)note {
     (void)note;
     WKLog("host", @"the user chose to leave the game; closing WolkaraForever after the countdown");
+    // The user's own Leave game is a clean way out, whatever the guest answered (iPad touch's crash
+    // fallback; it does nothing in any other interface mode).
+    AKTouchCrashGuardEndSession();
     [self.steamCloud flush];
     [self showClosingPage:WKLocalized(@"shell.leaving")];
 }
@@ -1502,6 +1516,17 @@ static NSString *AKAudioStateDescription(void) {
     [self startStartupActivityInFolder:directory];
     if (chdir(directory.fileSystemRepresentation)) fprintf(log,"[host] app working directory failed: %s\n",strerror(errno));
     else fprintf(log,"[host] app working directory=%s\n",directory.fileSystemRepresentation);
+    // iPad touch only: TouchPlay's button list, read once for this game from the game folder (the
+    // working directory just entered). Without it the game still plays, with plain taps, and the
+    // player is told once how to get the buttons. The guest's own copy of the reader reads the
+    // same file from the working directory; nothing else here depends on the result.
+    if (AKInterfaceModeIsTouchPlay()) {
+        AKTouchContract *touchContract=AKTouchContractLoadForGame([NSURL fileURLWithPath:directory isDirectory:YES],^(NSString *key){
+            self.status.text=WKLocalized(@"touch.contract.missing");
+            fprintf(log,"[host] touch contract: none usable in %s; plain taps (%s)\n",directory.fileSystemRepresentation,key.UTF8String);
+        });
+        if (touchContract) fprintf(log,"[host] touch contract: %lu areas, hold %.2f s, %s-handed\n",(unsigned long)touchContract.areas.count,touchContract.holdSeconds,touchContract.leftHanded?"left":"right");
+    }
     // A profile's caseAliases: folders the application names in another case
     // than its installer wrote them, which only macOS's file system ignores.
     for (NSString *line in [self.library linkCaseAliasesForApp:app]) fprintf(log,"[host] %s\n",line.UTF8String);
@@ -1573,11 +1598,20 @@ static NSString *AKAudioStateDescription(void) {
     // launch before entering native code, then consume the marker it produces.
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestAlert.Last"];
+    // iPad touch only (AKTouchCrashGuardBeginSession does nothing in any other mode): this start
+    // counts as unclean until the guest says otherwise. It leaves cleanly by any orderly exit (the
+    // atexit handler Begin installs, and the observer for _exit(0)), by returning (below), or by the
+    // user's Leave game; put in the background it is not counted.
+    AKTouchCrashGuardBeginSession();
+    if (AKInterfaceModeIsTouchPlay()) ng_set_exit_observer(GuestExitObserver,(__bridge void *)self);
     BOOL ok = ng_initialize(path.fileSystemRepresentation, NSBundle.mainBundle.privateFrameworksPath.fileSystemRepresentation, map.fileSystemRepresentation, log, fullStartup);
     if (externalJIT) {
         WKExternalJITDiagnosticsMemory(@"native-return");
         WKExternalJITDiagnosticsFinish(ok);
     }
+    // The guest came back by itself: a clean way out. One that did not start is not a crash and not
+    // a clean exit either: it is not counted at all. Both do nothing outside iPad touch.
+    if (ok) AKTouchCrashGuardEndSession(); else AKTouchCrashGuardAbandonSession();
     NSString *guestDamage=[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
     NSString *guestAlert=[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForever.GuestAlert.Last"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];

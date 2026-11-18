@@ -44,7 +44,11 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS sur Duo";
+"home.launcher.interfaceMode.ipadtouch" = "iPad tactile";
+"touch.fallback.title" = "iPad tactile désactivé";
+"touch.fallback.message" = "Le jeu s’est fermé de façon inattendue deux fois de suite en mode iPad tactile, WolkaraForever est donc revenu à iPadOS. Vous pouvez de nouveau choisir iPad tactile sous Mode d’interface.";
 "home.launcher.interfaceSetup.row" = "Modifier la disposition des commandes";
+"touch.contract.missing" = "Boutons tactiles introuvables, les appuis sont donc de simples clics. Lancez le jeu, puis touchez une fois « Menu › Save settings » (c’est le nom dans le jeu).";
 "home.launcher.interfaceSetup.title" = "Disposition des commandes";
 /* Les trois lignes qui étaient auparavant dans une seule feuille. */
 "home.launcher.layout.create" = "Créer une disposition des commandes";
@@ -83,6 +87,7 @@
 "home.addons.install.needsgame" = "Installer des addons (CurseForge et direct) (installez d’abord le jeu)";
 "home.addons.recommended.macEver" = "Installer les addons recommandés (Mac-Ever)";
 "home.addons.recommended.wolkaraRoue" = "Installer les addons recommandés (WolkaraRoue)";
+"home.addons.recommended.touchPlay" = "Installer les addons recommandés (TouchPlay)";
 "home.addons.directory" = "Ouvrir le dossier des addons";
 "home.addons.directory.needsgame" = "Ouvrir le dossier des addons (installez d’abord le jeu)";
 "home.addons.backup" = "Sauvegarder les addons";
@@ -409,6 +414,15 @@
 "touch.draft.clear" = "Effacer le brouillon";
 "touch.keyboard.show" = "Afficher le clavier";
 "touch.keyboard.hide" = "Masquer le clavier";
+"touch.keyboard.password" = "Mot de passe";
+"touch.keyboard.username" = "Nom d’utilisateur";
+"touch.keyboard.typePassword" = "Saisir le mot de passe";
+"touch.chat.say" = "Dire";
+"touch.chat.party" = "Groupe";
+"touch.chat.guild" = "Guilde";
+"touch.chat.whisper" = "Chuchoter";
+"touch.chat.yell" = "Crier";
+"touch.chat.send" = "Envoyer";
 "touch.toolbar.show" = "Afficher la barre";
 "touch.toolbar.hide" = "Masquer la barre";
 "touch.trackpad.enable" = "Activer le trackpad tactile";
@@ -426,6 +440,7 @@
 "touch.gamepad.rightStick" = "Stick droit de la manette";
 "touch.gamepad.jump" = "Saut";
 "touch.autorun" = "Course automatique";
+"touch.walkStick" = "Stick de déplacement";
 "touch.gamepad.doneEditing" = "Terminer la modification";
 "touch.gamepad.dragHint" = "Faites glisser les commandes pour les déplacer";
 "touch.settings" = "Réglages des commandes tactiles";
@@ -542,6 +557,8 @@
 "addons.bundled.installed" = "WolkaraRoue %@ installé depuis le paquet de cette app.";
 "addons.bundled.unavailable" = "Le paquet d’addon fourni est absent ou n’est pas celui que cette app a livré.";
 "addons.bundled.title" = "Addon fourni";
+"addons.bundled.touchPlay.name" = "TouchPlay (fourni)";
+"addons.bundled.touchPlay.installed" = "TouchPlay %@ installé depuis le paquet de cette app.";
 "addons.by" = "Par %@";
 "addons.downloads" = "%@ téléchargements sur CurseForge";
 "addons.installLatest" = "Installer le dernier fichier compatible";

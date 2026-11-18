@@ -16,8 +16,11 @@ final class TKAddonPackage: NSObject {
     static let format = "wolkaraforever.addon"
     static let formatVersion = 1
     /// Every entry lives under this one folder, so installing the archive is copying a
-    /// folder into the game's `Interface/AddOns` and nothing else.
+    /// folder into the game's `Interface/AddOns` and nothing else. WolkaraRoue is the package
+    /// every existing call names; TouchPlay (iPad touch's add-on) is the only other one this
+    /// app ships, and a package is asked for by its folder name.
     static let folder = "WolkaraRoue"
+    static let shippedFolders: Set<String> = ["WolkaraRoue", "TouchPlay"]
 
     private struct Manifest {
         let name: String
@@ -65,7 +68,7 @@ final class TKAddonPackage: NSObject {
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func readManifest(_ url: URL, _ output: NSErrorPointer) -> Manifest? {
+    private static func readManifest(_ url: URL, folder: String, _ output: NSErrorPointer) -> Manifest? {
         guard let data = try? Data(contentsOf: url),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             _ = fail("The add-on manifest is missing or is not readable JSON.", output)
@@ -105,7 +108,18 @@ final class TKAddonPackage: NSObject {
     @objc(verifyArchiveAtURL:manifestAtURL:expectedRelease:error:)
     static func verify(archive archiveURL: URL, manifest manifestURL: URL,
                        expectedRelease: String, error output: NSErrorPointer) -> Bool {
-        guard let manifest = readManifest(manifestURL, output) else { return false }
+        verify(archive: archiveURL, manifest: manifestURL, expectedRelease: expectedRelease,
+               folder: folder, error: output)
+    }
+
+    /// The same check for the package whose folder is `folder` (one of `shippedFolders`).
+    @objc(verifyArchiveAtURL:manifestAtURL:expectedRelease:folder:error:)
+    static func verify(archive archiveURL: URL, manifest manifestURL: URL,
+                       expectedRelease: String, folder: String, error output: NSErrorPointer) -> Bool {
+        guard shippedFolders.contains(folder) else {
+            return fail("That add-on is not one this app ships.", output)
+        }
+        guard let manifest = readManifest(manifestURL, folder: folder, output) else { return false }
         guard manifest.name == folder else {
             return fail("That manifest belongs to another add-on.", output)
         }
@@ -179,6 +193,15 @@ final class TKAddonPackage: NSObject {
     /// release is refused rather than believed. Nothing is extracted here.
     @objc(bundledPackageInDirectory:error:)
     static func bundled(in directory: URL, error output: NSErrorPointer) -> NSDictionary? {
+        bundled(named: folder, in: directory, error: output)
+    }
+
+    /// The same lookup for the package whose folder is `folder` (one of `shippedFolders`).
+    @objc(bundledPackageNamed:inDirectory:error:)
+    static func bundled(named folder: String, in directory: URL, error output: NSErrorPointer) -> NSDictionary? {
+        guard shippedFolders.contains(folder) else {
+            return failureDictionary("That add-on is not one this app ships.", output)
+        }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         let archives = names.filter { $0.hasPrefix("\(folder)-") && $0.hasSuffix(".zip") }.sorted()
         guard let archiveName = archives.first else {
@@ -190,12 +213,12 @@ final class TKAddonPackage: NSObject {
         let manifestName = String(archiveName.dropLast(4)) + ".json"
         let archiveURL = directory.appendingPathComponent(archiveName)
         let manifestURL = directory.appendingPathComponent(manifestName)
-        guard let manifest = readManifest(manifestURL, output) else { return nil }
+        guard let manifest = readManifest(manifestURL, folder: folder, output) else { return nil }
         guard manifest.archive == archiveName else {
             return failureDictionary("That manifest belongs to another archive.", output)
         }
         guard verify(archive: archiveURL, manifest: manifestURL,
-                     expectedRelease: manifest.release, error: output) else { return nil }
+                     expectedRelease: manifest.release, folder: folder, error: output) else { return nil }
         return ["archive": archiveURL, "manifest": manifestURL, "release": manifest.release,
                 "sha256": manifest.sha256, "folder": folder, "files": manifest.files.count]
     }
@@ -204,9 +227,15 @@ final class TKAddonPackage: NSObject {
     /// resources, so the app reads the exact pair a fixture rebuilds from `addons/WolkaraRoue`.
     @objc(bundledPackageWithError:)
     static func bundledPackage(error output: NSErrorPointer) -> NSDictionary? {
+        bundledPackage(named: folder, error: output)
+    }
+
+    /// The same lookup in the app's bundle, for the package whose folder is `folder`.
+    @objc(bundledPackageNamed:error:)
+    static func bundledPackage(named folder: String, error output: NSErrorPointer) -> NSDictionary? {
         guard let directory = Bundle.main.resourceURL else {
             return failureDictionary("The app bundle has no resources.", output)
         }
-        return bundled(in: directory, error: output)
+        return bundled(named: folder, in: directory, error: output)
     }
 }

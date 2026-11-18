@@ -8,6 +8,7 @@
 | Build assembly, execution modes, run commands, simulator runs, unsigned IPA packaging | [Build and run WolkaraForever](../BUILDING.md) |
 | Download, update, language, add-ons, recovery, controls, voice | [Using WolkaraForever](../USING_WOLKARAFOREVER.md) |
 | Phone layout, mobile interface, phone hardware | [iPhone](../IPHONE.md) |
+| iPad touch, TouchPlay, its buttons, chat and password keyboard | [Play by touch on iPad](../IPAD_TOUCH.md) |
 | Product positioning and quick start | [README](../../README.md) |
 | Support boundary or issue-reporting expectations | [Compatibility](../../COMPATIBILITY.md) |
 | Security reporting | [Security](../../SECURITY.md) |

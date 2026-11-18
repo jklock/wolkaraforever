@@ -52,6 +52,9 @@ typedef NS_ENUM(NSInteger, TKAddonRecommendation) {
     // iOS on Duo: the Add-On Manager opens on Installed with the bundled, verified
     // WolkaraRoue package and its own explicit local Install action.
     TKAddonRecommendationWolkaraRoue,
+    // iPad touch: the same page and flow for the bundled, verified TouchPlay package, the add-on
+    // that draws iPad touch's buttons. Asked for only while iPad touch is the interface mode.
+    TKAddonRecommendationTouchPlay,
 };
 
 // The three native tabs. My Add-ons is the page's default and the only one that manages
@@ -106,7 +109,8 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
 - (NSArray<TKAddonRecord *> *)selectedUpdatableRecords;
 // The CurseForge project the Mac-Ever recommendation is filtered to (1733200), or nil.
 @property(nonatomic, readonly, copy, nullable) NSNumber *recommendedProjectID;
-// The bundled WolkaraRoue package, once resolved: `archive` (NSURL), `manifest` (NSURL),
+// The bundled package the recommendation names (WolkaraRoue, or TouchPlay for iPad touch), once
+// resolved: `archive` (NSURL), `manifest` (NSURL),
 // `release` (NSString) and `sha256` (NSString). A malformed, missing or unexpected package
 // resolves to nil plus an error, and the page refuses rather than installing anything.
 @property(nonatomic, readonly, copy, nullable) NSDictionary *bundledPackage;

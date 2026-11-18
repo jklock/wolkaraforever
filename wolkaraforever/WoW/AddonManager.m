@@ -638,6 +638,8 @@ static UIImage *TKAddonPlaceholderIcon(void) {
 // what the verifier accepted, not what the page hopes the archive is.
 @interface TKAddonBundledCell : UITableViewCell
 @property (nonatomic, copy, nullable) void (^onInstall)(void);
+// Which bundled package the row is: NO is WolkaraRoue, as it always was; YES is TouchPlay (iPad touch).
+@property (nonatomic) BOOL touchPlay;
 @property (nonatomic, readonly) UIButton *installButton;
 - (void)configureWithPackage:(nullable NSDictionary *)package error:(nullable NSError *)error
                         busy:(BOOL)busy installed:(BOOL)installed;
@@ -689,7 +691,7 @@ static UIImage *TKAddonPlaceholderIcon(void) {
                         busy:(BOOL)busy installed:(BOOL)installed {
     NSString *release=[package[@"release"] isKindOfClass:NSString.class]?package[@"release"]:nil;
     NSString *hash=[package[@"sha256"] isKindOfClass:NSString.class]?package[@"sha256"]:nil;
-    _titleLabel.text=WKLocalized(@"addons.bundled.name");
+    _titleLabel.text=self.touchPlay?WKLocalized(@"addons.bundled.touchPlay.name"):WKLocalized(@"addons.bundled.name");
     BOOL verified=release.length>0 && hash.length>0;
     _detailLabel.text=verified?WKLocalizedFormat(@"addons.bundled.detail",release,hash)
                              :(error.localizedDescription?:WKLocalized(@"addons.bundled.unavailable"));
@@ -953,7 +955,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     [self reloadAddons];
     // Resolve the bundled package after the installed list, because the row's own word
     // (Install or Update) depends on whether this store already owns WolkaraRoue.
-    if (_recommendation==TKAddonRecommendationWolkaraRoue) [self reloadBundledPackage];
+    if ([self recommendsBundledPackage]) [self reloadBundledPackage];
     [self updateToolbar];
     if (_startInBrowse) {
         [self selectTab:TKAddonHubTabBrowse];
@@ -1802,14 +1804,25 @@ static NSString *BrowseSortLabel(NSInteger field) {
     [self resolveMissingArtwork];
 }
 
-#pragma mark - The bundled WolkaraRoue package
+#pragma mark - The bundled package (WolkaraRoue, or TouchPlay for iPad touch)
+
+// Whether this page shows a bundled package's row, and which folder that package installs. WolkaraRoue
+// is the one every recommendation before iPad touch named; TouchPlay is asked for only by iPad touch's.
+- (BOOL)recommendsBundledPackage {
+    return _recommendation==TKAddonRecommendationWolkaraRoue || _recommendation==TKAddonRecommendationTouchPlay;
+}
+- (NSString *)bundledFolder {
+    return _recommendation==TKAddonRecommendationTouchPlay ? @"TouchPlay" : @"WolkaraRoue";
+}
 
 // The package this app ships, located and verified. The app's verifier is Swift and the
 // fixture does not link it, so it is found by name exactly as the store finds the archive
 // extractor; a fixture supplies the same shape through `bundledPackageProvider` instead.
 - (nullable NSDictionary *)loadBundledPackage:(NSError **)error {
     Class packageClass=NSClassFromString(@"TKAddonPackage");
-    SEL selector=NSSelectorFromString(@"bundledPackageWithError:");
+    // WolkaraRoue through the call the app has always made; TouchPlay through the same verifier by its folder.
+    BOOL named=_recommendation==TKAddonRecommendationTouchPlay;
+    SEL selector=NSSelectorFromString(named?@"bundledPackageNamed:error:":@"bundledPackageWithError:");
     if (!packageClass || ![packageClass respondsToSelector:selector]) {
         if (error) *error=[NSError errorWithDomain:@"WolkaraForever.AddOns" code:2
             userInfo:@{NSLocalizedDescriptionKey:WKLocalized(@"addons.bundled.unavailable")}];
@@ -1820,7 +1833,9 @@ static NSString *BrowseSortLabel(NSInteger field) {
     invocation.target=packageClass; invocation.selector=selector;
     NSError *__autoreleasing localError=nil;
     NSError *__autoreleasing *pointer=&localError;
-    [invocation setArgument:&pointer atIndex:2];
+    __unsafe_unretained NSString *folder=[self bundledFolder];
+    if (named) [invocation setArgument:&folder atIndex:2];
+    [invocation setArgument:&pointer atIndex:named?3:2];
     [invocation invoke];
     __unsafe_unretained NSDictionary *result=nil;
     [invocation getReturnValue:&result];
@@ -1840,7 +1855,7 @@ static NSString *BrowseSortLabel(NSInteger field) {
 // second Install an Update of the same package instead of a second copy of it.
 - (nullable TKAddonRecord *)bundledRecord {
     for (TKAddonRecord *record in _store.records)
-        if ([record.folders containsObject:@"WolkaraRoue"]) return record;
+        if ([record.folders containsObject:[self bundledFolder]]) return record;
     return nil;
 }
 // Explicit, and transactional: the store stages the archive, validates it, copies it under
@@ -1872,7 +1887,9 @@ static NSString *BrowseSortLabel(NSInteger field) {
                 [self.tableView reloadData];
                 return;
             }
-            self.browseStatus=WKLocalizedFormat(@"addons.bundled.installed",release);
+            self.browseStatus=self.recommendation==TKAddonRecommendationTouchPlay
+                ? WKLocalizedFormat(@"addons.bundled.touchPlay.installed",release)
+                : WKLocalizedFormat(@"addons.bundled.installed",release);
             [self reloadAddons];
             [self checkForUpdates];
         });
@@ -2456,7 +2473,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
     NSMutableArray<NSDictionary *> *sections=[NSMutableArray array];
     NSMutableArray *summary=[NSMutableArray array];
     [summary addObject:@{ @"kind": @"summary" }];
-    if (_recommendation==TKAddonRecommendationWolkaraRoue) [summary addObject:@{ @"kind": @"bundled" }];
+    if ([self recommendsBundledPackage]) [summary addObject:@{ @"kind": @"bundled" }];
     // The explanatory line only when there is something to explain: an empty list already says
     // it is empty one row above. A dictionary literal cannot carry nil, so the footer is added
     // only when there is one.
@@ -2625,6 +2642,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             bundled.accessibilityIdentifier=@"wow.addons.bundled";
             __weak TKWoWAddonManagerViewController *weakSelf=self;
             bundled.onInstall=^{ [weakSelf installBundledPackage]; };
+            bundled.touchPlay=_recommendation==TKAddonRecommendationTouchPlay;
             [bundled configureWithPackage:_bundledPackage error:_bundledPackageError
                                      busy:_bundledInstalling installed:[self bundledRecord]!=nil];
             return bundled;

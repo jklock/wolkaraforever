@@ -1888,7 +1888,13 @@ static void TestPhoneDisplayDefaults(void) {
     // Automatic names what this device would resolve to, even while iPadOS is what is in force.
     NSString *automatic = [NSString stringWithFormat:@"Automatic (%@)",
         UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone ? @"iOS on Duo" : @"iPadOS"];
-    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"✓ iPadOS", @"iOS", @"iOS on Duo", @"Cancel"])]);
+    // iPad touch is offered on an iPad only; a phone's sheet is the four choices it always had.
+    BOOL offersIPadTouch = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
+    NSArray<NSString *> *(^modeChoices)(NSArray<NSString *> *) = ^NSArray<NSString *> *(NSArray<NSString *> *choices) {
+        return offersIPadTouch ? [choices arrayByAddingObjectsFromArray:@[@"iPad touch", @"Cancel"]]
+                               : [choices arrayByAddingObject:@"Cancel"];
+    };
+    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:modeChoices(@[automatic, @"✓ iPadOS", @"iOS", @"iOS on Duo"])]);
     UIAlertAction *duo = nil;
     for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iOS on Duo"]) duo = action;
     assert(duo != nil);
@@ -1964,7 +1970,7 @@ static void TestPhoneDisplayDefaults(void) {
     PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
     modeSheet = WaitForSheetTitled(self.controller, @"Interface Mode", 20.0);
     assert(modeSheet != nil);
-    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"iPadOS", @"iOS", @"✓ iOS on Duo", @"Cancel"])]);
+    assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:modeChoices(@[automatic, @"iPadOS", @"iOS", @"✓ iOS on Duo"])]);
     UIAlertAction *ipados = nil;
     for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iPadOS"]) ipados = action;
     assert(ipados != nil);
@@ -1976,6 +1982,155 @@ static void TestPhoneDisplayDefaults(void) {
         isEqual:@"Install Recommended Add-ons (WolkaraRoue)"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Interface Mode: iPadOS"]);
+
+    // --- iPad touch (an iPad only): the fifth choice stores "ipadtouch", starts a clean run, and is
+    // the only mode the crash fallback watches.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    if (offersIPadTouch) {
+        [defaults setInteger:1 forKey:@"WolkaraForeverTouchUncleanStarts"];
+        [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+        PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
+        modeSheet = (id)self.controller.presentedViewController;
+        assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:modeChoices(@[automatic, @"✓ iPadOS", @"iOS", @"iOS on Duo"])]);
+        UIAlertAction *ipadTouch = nil;
+        for (UIAlertAction *action in modeSheet.actions) if ([action.title isEqual:@"iPad touch"]) ipadTouch = action;
+        assert(ipadTouch != nil);
+        [self.controller dismissViewControllerAnimated:NO completion:nil];
+        RunAction(ipadTouch);
+        PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+        assert([[defaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ipadtouch"]);
+        assert([defaults integerForKey:@"WolkaraForeverTouchUncleanStarts"] == 0);
+        assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
+            isEqual:@"Interface Mode: iPad touch"]);
+        // iPad touch's recommendation row: on the Launcher Manager card right under the mode row, in
+        // this mode only, naming TouchPlay; the hidden recommendation control names it too.
+        UIStackView *managerRows = (UIStackView *)Find(self.controller.view, @"wow.box.launcherManager").subviews.firstObject;
+        NSArray *managerOrder = [managerRows.arrangedSubviews valueForKey:@"accessibilityIdentifier"];
+        assert([managerOrder isEqualToArray:(@[@"wow.heading.launcherManager", @"wow.launcher.interfaceMode", @"wow.launcher.touchPlay",
+                                               @"wow.launcher.layoutCreate", @"wow.launcher.interfaceSetup",
+                                               @"wow.launcher.layoutRestore", @"wow.launcher.layoutBackup"])]);
+        UIButton *touchPlayRow = (UIButton *)Find(self.controller.view, @"wow.launcher.touchPlay");
+        assert([touchPlayRow.configuration.title isEqual:@"Install Recommended Add-ons (TouchPlay)"] && touchPlayRow.enabled);
+        assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
+            isEqual:@"Install Recommended Add-ons (TouchPlay)"]);
+        // It opens the Add-On Manager on the bundled TouchPlay package, with the same explicit Install and
+        // the same refusal as WolkaraRoue's; nothing is installed by opening it.
+        [touchPlayRow sendActionsForControlEvents:UIControlEventTouchUpInside];
+        PumpUntil(^{ return (BOOL)(self.controller.presentedViewController != nil); }, 5.0);
+        UINavigationController *touchPlayFrame = [self settledPresentedController];
+        TKWoWAddonManagerViewController *touchPlayPage = (id)touchPlayFrame.topViewController;
+        assert([touchPlayPage isKindOfClass:TKWoWAddonManagerViewController.class]);
+        assert(touchPlayPage.recommendation == TKAddonRecommendationTouchPlay && touchPlayPage.recommendedProjectID == nil);
+        PumpUntil(^{ return (BOOL)(touchPlayFrame.viewIfLoaded.window != nil && !touchPlayFrame.isBeingPresented); }, 5.0);
+        touchPlayPage.bundledPackageProvider = ^NSDictionary *(NSError **error) {
+            (void)error;
+            return @{@"archive":[NSURL fileURLWithPath:@"/tmp/TouchPlay-0.1.0.zip"],
+                     @"manifest":[NSURL fileURLWithPath:@"/tmp/TouchPlay-0.1.0.json"],
+                     @"release":@"0.1.0",
+                     @"sha256":@"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+                     @"folder":@"TouchPlay", @"files":@35};
+        };
+        [touchPlayPage reloadBundledPackage];
+        [touchPlayPage.view layoutIfNeeded];
+        [touchPlayPage.tableView layoutIfNeeded];
+        assert([[(UILabel *)Find(touchPlayPage.view, @"wow.addons.bundled.name") text] isEqual:@"TouchPlay (bundled)"]);
+        NSString *touchPlayDetail = [(UILabel *)Find(touchPlayPage.view, @"wow.addons.bundled.detail") text];
+        assert([touchPlayDetail containsString:@"0.1.0"] && [touchPlayDetail containsString:@"SHA-256"]);
+        UIButton *touchPlayInstall = (id)Find(touchPlayPage.view, @"wow.addons.bundled.install");
+        assert(touchPlayInstall != nil && !touchPlayInstall.hidden && touchPlayInstall.enabled);
+        touchPlayPage.bundledPackageProvider = ^NSDictionary *(NSError **error) {
+            if (error) *error = [NSError errorWithDomain:@"WolkaraForever.AddOns" code:1
+                userInfo:@{NSLocalizedDescriptionKey:@"The add-on archive is not the one this app shipped."}];
+            return nil;
+        };
+        [touchPlayPage reloadBundledPackage];
+        [touchPlayPage.view layoutIfNeeded];
+        [touchPlayPage.tableView layoutIfNeeded];
+        assert(((UIButton *)Find(touchPlayPage.view, @"wow.addons.bundled.install")).hidden);
+        NSArray *addonsAfterTouchPlay = [[NSFileManager.defaultManager contentsOfDirectoryAtPath:addonsDirectory error:NULL]
+            sortedArrayUsingSelector:@selector(compare:)];
+        assert([addonsAfterTouchPlay isEqualToArray:addonsBefore]);
+        [self.controller dismissViewControllerAnimated:NO completion:nil];
+        PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+        // The sheet now ticks it.
+        [[self row:@"wow.launcher.interfaceMode"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+        PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
+        modeSheet = (id)self.controller.presentedViewController;
+        assert([[modeSheet.actions valueForKey:@"title"] isEqualToArray:(@[automatic, @"iPadOS", @"iOS", @"iOS on Duo", @"✓ iPad touch", @"Cancel"])]);
+        [self.controller dismissViewControllerAnimated:NO completion:nil];
+        PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+    } else {
+        // A phone is not offered iPad touch (asserted on the sheet above); a stored value is still
+        // what the fallback watches, wherever it came from.
+        [defaults setObject:@"ipadtouch" forKey:@"WolkaraForeverInterfaceModeV1"];
+        [self.controller render];
+    }
+
+    // --- the crash fallback, shown once in the launcher. One unclean start changes nothing.
+    [defaults setInteger:1 forKey:@"WolkaraForeverTouchUncleanStarts"];
+    [self.controller viewDidAppear:NO];
+    Pump(0.3);
+    assert(self.controller.presentedViewController == nil);
+    assert([[defaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ipadtouch"]);
+    assert([defaults integerForKey:@"WolkaraForeverTouchUncleanStarts"] == 1);
+    // Two in a row: iPadOS again, the count cleared, and one message saying why.
+    [defaults setInteger:2 forKey:@"WolkaraForeverTouchUncleanStarts"];
+    [self.controller viewDidAppear:NO];
+    PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
+    UIAlertController *fallback = (id)self.controller.presentedViewController;
+    assert([fallback.title isEqual:@"iPad touch turned off"]);
+    assert([fallback.message containsString:@"twice in a row"] && [fallback.message containsString:@"iPadOS"]);
+    assert([[defaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ipados"]);
+    assert([defaults integerForKey:@"WolkaraForeverTouchUncleanStarts"] == 0);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
+        isEqual:@"Interface Mode: iPadOS"]);
+    // Back in iPadOS the Launcher Manager card is exactly the card it always was.
+    UIStackView *rowsAfter = (UIStackView *)Find(self.controller.view, @"wow.box.launcherManager").subviews.firstObject;
+    assert(![[rowsAfter.arrangedSubviews valueForKey:@"accessibilityIdentifier"] containsObject:@"wow.launcher.touchPlay"]);
+    assert(Find(self.controller.view, @"wow.launcher.touchPlay") == nil);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].title
+        isEqual:@"Install Recommended Add-ons (WolkaraRoue)"]);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+    // Shown once: nothing more on the next appearance.
+    [self.controller viewDidAppear:NO];
+    Pump(0.3);
+    assert(self.controller.presentedViewController == nil);
+    // Not while a game is starting, running or finished: the mode is not the user's to have changed
+    // under a session, and the message would land on a page that is not theirs. The fallback waits
+    // for the next appearance of an idle launcher.
+    for (NSString *flag in @[@"_starting", @"_running", @"sessionUsed"]) {
+        [defaults setObject:@"ipadtouch" forKey:@"WolkaraForeverInterfaceModeV1"];
+        [defaults setInteger:2 forKey:@"WolkaraForeverTouchUncleanStarts"];
+        if ([flag isEqual:@"sessionUsed"]) self.controller.sessionUsed = YES; else [self.controller setValue:@YES forKey:flag];
+        [self.controller viewDidAppear:NO];
+        Pump(0.2);
+        assert(self.controller.presentedViewController == nil);
+        assert([[defaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ipadtouch"]);
+        assert([defaults integerForKey:@"WolkaraForeverTouchUncleanStarts"] == 2);
+        if ([flag isEqual:@"sessionUsed"]) self.controller.sessionUsed = NO; else [self.controller setValue:@NO forKey:flag];
+    }
+    // Idle again: the same state now falls back, with its one message.
+    [self.controller viewDidAppear:NO];
+    PumpUntil(^{ return (BOOL)([self.controller.presentedViewController isKindOfClass:UIAlertController.class]); }, 5.0);
+    assert([[defaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ipados"]);
+    assert([defaults integerForKey:@"WolkaraForeverTouchUncleanStarts"] == 0);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 5.0);
+    // No other mode is ever watched, whatever the count says.
+    for (NSString *other in @[@"ipados", @"ios", @"iosduo", @"auto"]) {
+        [defaults setObject:other forKey:@"WolkaraForeverInterfaceModeV1"];
+        [defaults setInteger:4 forKey:@"WolkaraForeverTouchUncleanStarts"];
+        [self.controller viewDidAppear:NO];
+        Pump(0.2);
+        assert(self.controller.presentedViewController == nil);
+        assert([[defaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:other]);
+        assert([defaults integerForKey:@"WolkaraForeverTouchUncleanStarts"] == 4);
+    }
+    [defaults removeObjectForKey:@"WolkaraForeverTouchUncleanStarts"];
+    [defaults setObject:@"ipados" forKey:@"WolkaraForeverInterfaceModeV1"];
+    [self.controller render];
+
 
     // --- the overlay switch writes the shared store, keeping the layout's own values
     UISwitch *overlay = [self toggle:@"wow.performance.overlay"];

@@ -10,7 +10,9 @@ Use this guide to install WolkaraForever and manage a Forever installation.
 3. [Use WolkaraForever](USING_WOLKARAFOREVER.md) to download a game, choose languages, configure
    controls and voice, manage add-ons, and recover your interface.
 4. [Use WolkaraForever on iPhone](IPHONE.md) for phone-specific setup and limits.
-5. [Send us a log](SENDING_LOGS.md) when something goes wrong — three taps on the iPad, and no
+5. [Play by touch on iPad](IPAD_TOUCH.md) for iPad touch, the interface played with the bundled
+   TouchPlay add-on's buttons.
+6. [Send us a log](SENDING_LOGS.md) when something goes wrong — three taps on the iPad, and no
    computer needed.
 
 For help, read [Compatibility](../COMPATIBILITY.md) and send the log described in
