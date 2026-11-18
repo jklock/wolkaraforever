@@ -335,6 +335,16 @@ static void TestSendFailures(void) {
     NSUInteger generation = composer.generation;
     [composer speechFinished:@"late" generation:generation];
     CHECK([target countOf:@"insert"] == 0, @"a failed send does not retry, got %@", target.line);
+    // It may be retried explicitly once the target is back.  Failed is terminal for the old
+    // transaction, not for the Send control or the kept draft.
+    target.live = YES;
+    CHECK(composer.canSend, @"a failed send with a kept draft can be started again explicitly");
+    [target reset];
+    [composer sendWithDestination:nil];
+    CHECK([target.line isEqual:@"insert:keep me key:36 key:53"],
+          @"the explicit retry sends the kept draft once, got %@", target.line);
+    CHECK(composer.state == AKChatComposerStateIdle && composer.draft.length == 0,
+          @"the successful retry closes and clears the new transaction");
 
     // A target that refuses the text keeps the draft too, and posts no Return.
     [composer resetForTesting];
