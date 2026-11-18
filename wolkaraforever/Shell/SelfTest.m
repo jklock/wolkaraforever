@@ -936,6 +936,7 @@ static const struct AKSelfTestControl AKSelfTestControlTable[] = {
     {@"wow.touchpad",                  AKSelfTestControlOpensPage,  @"the controller touchpad row opens its configuration"},
     {@"wow.performance.deviceProfile", AKSelfTestControlOpensSheet, @"Device profile opens its sheet"},
     {@"wow.performance.renderProfile", AKSelfTestControlOpensSheet, @"Render profile opens its sheet"},
+    {@"wow.performance.batterySaver", AKSelfTestControlOpensSheet, @"Battery Saver opens its submenu"},
     {@"wow.launcher.interfaceMode",    AKSelfTestControlOpensSheet, @"Interface Mode opens its sheet"},
     {@"wow.launcher.interfaceSetup",   AKSelfTestControlOpensSheet, @"Controller Layout opens its sheet"},
 };
@@ -949,7 +950,6 @@ static const struct { __unsafe_unretained NSString *identifier; __unsafe_unretai
     {@"wow.performance.restore",        @"forever-ui writes and restores the user's own configuration on this device"},
     {@"wow.performance.reset",          @"forever-ui writes and restores the user's own configuration on this device"},
     {@"wow.performance.gamepad",        @"forever-ui writes the game's own UI configuration and puts it back"},
-    {@"wow.performance.overlay",        @"forever-ui turns the overlay on and forever-ui-clean turns it off again"},
     {@"wow.diagnostics",                @"the Diagnostics page runs probes of its own; the fixture presses it and the matrix reads its log"},
 };
 
