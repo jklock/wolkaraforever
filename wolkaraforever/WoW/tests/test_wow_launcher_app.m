@@ -3,6 +3,8 @@
 #import <objc/runtime.h>
 #include <stdatomic.h>
 #import "../launcher/WoW/WoWViewController.h"
+#import "../launcher/WoW/BattleNetSession.h"
+#import "../launcher/WoW/BattleNetBrowser.h"
 #import "../launcher/WoW/AddonManager.h"
 #import "../launcher/WoW/AddonStore.h"
 #import "../launcher/WoW/AddonCredentialStore.h"
@@ -10,6 +12,7 @@
 #import "../launcher/WoW/AddonHubLog.h"
 #import "../launcher/WoW/AddonBrowser.h"
 #import <WebKit/WebKit.h>
+#import <GameController/GameController.h>
 #import <Security/Security.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "../launcher/WoW/Client.h"
@@ -30,6 +33,107 @@
 - (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation
          withError:(NSError *)error;
 @end
+@interface TKBattleNetBrowser (Fixture)
+- (void)cancel;
+- (void)finish:(BOOL)received;
++ (WKWebsiteDataStore *)signInDataStore;
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)action
+    decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler;
+- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation;
+- (BOOL)acceptMainFrameRedirect:(NSURL *)url navigation:(WKNavigation *)navigation;
+- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error;
+@end
+// Delegate inputs are synthetic: no network, real account, or browser cookies.
+@interface LoginOriginFixture : NSObject
+@property(nonatomic, copy) NSString *protocol;
+@property(nonatomic, copy) NSString *host;
+@property(nonatomic) NSInteger port;
+@end
+@implementation LoginOriginFixture
+@end
+@interface LoginFrameFixture : NSObject
+@property(nonatomic, getter=isMainFrame) BOOL mainFrame;
+@property(nonatomic, strong) LoginOriginFixture *securityOrigin;
+@end
+@implementation LoginFrameFixture
+@end
+@interface LoginActionFixture : NSObject
+@property(nonatomic, strong) NSURLRequest *request;
+@property(nonatomic, strong) LoginFrameFixture *sourceFrame;
+@property(nonatomic, strong) LoginFrameFixture *targetFrame;
+@end
+@implementation LoginActionFixture
+@end
+@interface LoginBrowserFixture : TKBattleNetBrowser
+@property(nonatomic) BOOL received;
+@end
+@implementation LoginBrowserFixture
+- (void)finish:(BOOL)received { self.received=received; }
+@end
+static void TestBrowserNavigationPolicy(void) {
+    NSURL *callback=[NSURL URLWithString:@"http://localhost:0/?ST=US-0123456789abcdef0123456789abcdef-123456789"];
+    LoginOriginFixture *origin=[LoginOriginFixture new];
+    origin.protocol=@"https"; origin.host=@"us.battle.net"; origin.port=443;
+    LoginFrameFixture *frame=[LoginFrameFixture new];
+    frame.mainFrame=YES; frame.securityOrigin=origin;
+    LoginActionFixture *action=[LoginActionFixture new];
+    action.sourceFrame=frame; action.targetFrame=frame;
+    action.request=[NSURLRequest requestWithURL:callback];
+    __block WKNavigationActionPolicy policy=WKNavigationActionPolicyAllow;
+    void (^decide)(WKNavigationActionPolicy)=^(WKNavigationActionPolicy value) { policy=value; };
+    LoginBrowserFixture *browser=[[LoginBrowserFixture alloc] initWithRegion:@"us" locale:@"enUS"];
+    [browser webView:nil decidePolicyForNavigationAction:(id)action decisionHandler:decide];
+    assert(policy==WKNavigationActionPolicyCancel && browser.received && [TKBattleNetSession isReady]);
+    [TKBattleNetSession clear];
+
+    for (NSString *host in @[@"evil.test", @"us.battle.net"]) {
+        browser=[[LoginBrowserFixture alloc] initWithRegion:@"us" locale:@"enUS"];
+        origin.host=host;
+        frame.mainFrame=![host isEqual:@"us.battle.net"]; // approved host, wrong frame
+        [browser webView:nil decidePolicyForNavigationAction:(id)action decisionHandler:decide];
+        assert(policy==WKNavigationActionPolicyCancel && !browser.received && ![TKBattleNetSession isReady]);
+    }
+    frame.mainFrame=YES; origin.host=@"us.battle.net";
+    browser=[[LoginBrowserFixture alloc] initWithRegion:@"us" locale:@"enUS"];
+    action.request=[NSURLRequest requestWithURL:[NSURL URLWithString:@"https://us.battle.net/login/en/"]];
+    [browser webView:nil decidePolicyForNavigationAction:(id)action decisionHandler:decide];
+    assert(policy==WKNavigationActionPolicyAllow);
+    WKNavigation *navigation=(id)[NSObject new];
+    [browser webView:nil didStartProvisionalNavigation:navigation];
+    assert(![browser acceptMainFrameRedirect:callback navigation:nil]);
+    assert(![browser acceptMainFrameRedirect:callback navigation:(id)[NSObject new]]);
+    NSError *cancelled=[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled
+        userInfo:@{NSURLErrorFailingURLErrorKey:callback}];
+    [browser webView:nil didFailProvisionalNavigation:navigation withError:cancelled];
+    assert(!browser.received && ![TKBattleNetSession isReady]);
+    assert([browser acceptMainFrameRedirect:callback navigation:navigation]);
+    assert(browser.received && [TKBattleNetSession isReady]);
+    [TKBattleNetSession clear];
+
+    browser=[[LoginBrowserFixture alloc] initWithRegion:@"us" locale:@"enUS"];
+    [browser webView:nil decidePolicyForNavigationAction:(id)action decisionHandler:decide];
+    [browser webView:nil didStartProvisionalNavigation:navigation];
+    origin.host=@"evil.test"; action.request=[NSURLRequest requestWithURL:callback];
+    [browser webView:nil decidePolicyForNavigationAction:(id)action decisionHandler:decide];
+    assert(![browser acceptMainFrameRedirect:callback navigation:navigation]);
+    assert(!browser.received && ![TKBattleNetSession isReady]);
+    action.request=[NSURLRequest requestWithURL:[NSURL URLWithString:@"https://evil.test/"]];
+    [browser webView:nil decidePolicyForNavigationAction:(id)action decisionHandler:decide];
+    assert(policy==WKNavigationActionPolicyCancel);
+    frame.mainFrame=NO;
+    [browser webView:nil decidePolicyForNavigationAction:(id)action decisionHandler:decide];
+    assert(policy==WKNavigationActionPolicyAllow); // CAPTCHA subframe can load
+    puts("BROWSER_POLICY_PASS: trusted main-frame callbacks, navigation identity, cancellation and rejected redirects");
+}
+
+// The first voice baseline predates the simulator's controller connection.
+static NSArray<GCController *> *NoFixtureControllers(__unused id object, __unused SEL selector) { return @[]; }
+static IMP automaticBrowserOriginalLoad;
+static void BrowserFixtureViewDidLoad(UIViewController *controller, SEL selector) {
+    (void)selector;
+    // Exercise presentation/dismissal without opening a real sign-in page.
+    controller.view.backgroundColor=UIColor.systemBackgroundColor;
+}
 #import "wow_installation_fixture.h"
 
 // The verdict is ours, not the C library's. A failed assertion called abort(), which prints
@@ -63,6 +167,7 @@
 - (BOOL)foreverActionAllowed;
 - (NSString *)foreverWorkingDirectory;
 - (void)preferences;
+- (void)browserSignInSettings;
 - (void)settings;
 - (void)chooseAppLanguage;
 - (void)applyAppLanguage:(WKAppLanguage)language;
@@ -948,6 +1053,44 @@ static void TestPhoneDisplayDefaults(void) {
     // with the reason and the stack, and it can be read afterwards.
     WKLogStart();
     WKLog("test", @"fixture starting");
+    [NSTimeZone setDefaultTimeZone:[NSTimeZone timeZoneWithName:@"America/Chicago"]];
+    // This is the isolated simulator container, with synthetic credentials only.
+    [TKBattleNetSession beginProcess];
+    assert(![TKBattleNetSession isReady]);
+    TestBrowserNavigationPolicy();
+    NSString *browserTestDomain=@"org.wolkaraforever.tests.handoff";
+    BOOL browserTestSaved=TKBattleNetWriteTicket(@"US-0123456789abcdef0123456789abcdef-123456789",@"testuser",@"US",@"enUS",browserTestDomain);
+    assert(browserTestSaved);
+    TKBattleNetClearTicket(browserTestDomain);
+    assert([TKBattleNetSession acceptTicket:@"US-0123456789abcdef0123456789abcdef-123456789" region:@"us" locale:@"enUS"]);
+    assert([[TKBattleNetSession argumentsForProfile:@"wow-forever"] isEqualToArray:(@[@"-launcherlogin",@"-uid",@"wowf"])]);
+    assert([TKBattleNetSession argumentsForProfile:@"another-app"].count==0);
+    assert(![TKBattleNetSession acceptTicket:@"invalid" region:@"us" locale:@"enUS"]);
+    assert(![TKBattleNetSession isReady]);
+    puts("BROWSER_SESSION_PASS: iOS preference handoff, profile isolation and cleanup (synthetic ticket)");
+    WKWebsiteDataStore *browserStore=[TKBattleNetBrowser signInDataStore];
+    assert(!browserStore.persistent && browserStore!=WKWebsiteDataStore.defaultDataStore && browserStore==[TKBattleNetBrowser signInDataStore]);
+    NSHTTPCookie *fixtureCookie=[NSHTTPCookie cookieWithProperties:@{
+        NSHTTPCookieName:@"fixture_session",NSHTTPCookieValue:@"synthetic-only",
+        NSHTTPCookieDomain:@"example.invalid",NSHTTPCookiePath:@"/",
+        NSHTTPCookieSecure:@"TRUE",NSHTTPCookieExpires:[NSDate dateWithTimeIntervalSinceNow:3600]}];
+    __block BOOL cookieDone=NO;
+    [browserStore.httpCookieStore setCookie:fixtureCookie completionHandler:^{ cookieDone=YES; }];
+    assert(PumpUntil(^{ return cookieDone; },30.0));
+    cookieDone=NO;
+    [[TKBattleNetBrowser signInDataStore].httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
+        assert([[cookies valueForKey:@"name"] containsObject:@"fixture_session"]); cookieDone=YES;
+    }];
+    assert(PumpUntil(^{ return cookieDone; },30.0));
+    cookieDone=NO;
+    [TKBattleNetBrowser clearSavedSignInWithCompletion:^{ cookieDone=YES; }];
+    assert(PumpUntil(^{ return cookieDone; },30.0));
+    cookieDone=NO;
+    [browserStore.httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
+        assert(cookies.count==0); cookieDone=YES;
+    }];
+    assert(PumpUntil(^{ return cookieDone; },30.0));
+    puts("BROWSER_COOKIE_PASS: dedicated in-memory store retains a synthetic session and sign-out removes it");
     if ([NSProcessInfo.processInfo.arguments containsObject:@"--display-only"]) {
         TestPhoneDisplayDefaults(); exit(0);
     }
@@ -1340,6 +1483,11 @@ static void TestPhoneDisplayDefaults(void) {
     UINavigationController *frame=[self settledPresentedController];
     assert(frame!=nil && [frame.topViewController isKindOfClass:AKVoiceViewController.class]);
     [self.window layoutIfNeeded];
+    Method controllers=class_getClassMethod(GCController.class,@selector(controllers));
+    IMP originalControllers=method_setImplementation(controllers,(IMP)NoFixtureControllers);
+    // Redraw the initial no-controller state used by the reviewed baseline.
+    AKVoiceViewController *voice=(id)((UINavigationController *)self.controller.presentedViewController).topViewController;
+    [voice viewWillAppear:NO];
     [self capture:@"voice-settings.png"];
     UIButton *test=(id)Find(frame.topViewController.view,@"voice.test");
     assert(test!=nil);
@@ -1394,6 +1542,28 @@ static void TestPhoneDisplayDefaults(void) {
 - (void)checkOffline {
     PumpUntil(^{ return [self primary].enabled; }, 30.0);
     assert([self primary].enabled && self.launches==0);
+    // Clearing a saved login must not depend on fetching the game manifest.
+    assert([self.controller valueForKey:@"_installation"]==nil);
+    assert([TKBattleNetSession acceptTicket:@"US-0123456789abcdef0123456789abcdef-123456789" region:@"us" locale:@"enUS"]);
+    [self.controller settings];
+    UIAlertController *settings=WaitForSheetTitled(self.controller,@"Settings",20.0);
+    UIAlertAction *login=nil;
+    for (UIAlertAction *action in settings.actions)
+        if ([action.title isEqual:WKLocalized(@"login.title")]) login=action;
+    assert(login);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(login);
+    UIAlertController *sheet=WaitForSheetTitled(self.controller,WKLocalized(@"login.title"),20.0);
+    UIAlertAction *signOut=nil;
+    for (UIAlertAction *action in sheet.actions)
+        if ([action.title isEqual:WKLocalized(@"login.signOut")]) signOut=action;
+    assert(signOut);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(signOut);
+    assert(WaitForSheetTitled(self.controller,WKLocalized(@"login.signedOut"),20.0));
+    assert(![TKBattleNetSession isReady]);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    puts("BROWSER_OFFLINE_SIGN_OUT_PASS: saved login can be cleared without a ready installation");
     atomic_store(&failure,false); [self tap];
     [self performSelector:@selector(startThenBackground) withObject:nil afterDelay:0.3];
 }
@@ -1545,7 +1715,83 @@ static void TestPhoneDisplayDefaults(void) {
     UIScrollView *scroll=(id)Find(self.controller.view,@"wow.scroll");
     scroll.contentOffset=CGPointZero;
     [self capture:@"wow-home.png"];
-    [self tap]; [self performSelector:@selector(checkLaunch) withObject:nil afterDelay:0.3];
+    // Existing users keep direct login; enabling the preference is explicit.
+    assert(![NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"]);
+    __block NSUInteger directLaunches=0;
+    void (^originalStart)(TKApp *)=self.controller.startApp;
+    self.controller.startApp=^(__unused TKApp *app) { directLaunches++; };
+    [self tap];
+    assert(PumpUntil(^{ return (BOOL)(directLaunches==1); },10.0));
+    assert(!self.controller.presentedViewController && ![TKBattleNetSession isReady]);
+    self.controller.startApp=originalStart;
+    [self.controller settings];
+    UIAlertController *settings=WaitForSheetTitled(self.controller,@"Settings",20.0);
+    UIAlertAction *login=nil;
+    for (UIAlertAction *action in settings.actions)
+        if ([action.title isEqual:WKLocalized(@"login.title")]) login=action;
+    assert(login);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(login);
+    UIAlertController *preferences=WaitForSheetTitled(self.controller,WKLocalized(@"login.title"),20.0);
+    assert(preferences && [preferences.message isEqual:WKLocalized(@"login.explanation")]);
+    Pump(0.5);
+    [self capture:@"wow-browser-login-disabled.png"];
+    UIAlertAction *enable=nil;
+    for (UIAlertAction *action in preferences.actions)
+        if ([action.title isEqual:WKLocalized(@"login.enable")]) enable=action;
+    assert(enable);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(enable);
+    Pump(0.8);
+    assert([NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"]);
+    [self.controller browserSignInSettings];
+    assert(WaitForSheetTitled(self.controller,WKLocalized(@"login.title"),20.0));
+    Pump(0.5);
+    [self capture:@"wow-browser-login-enabled.png"];
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    Pump(0.8);
+    automaticBrowserOriginalLoad=method_setImplementation(
+        class_getInstanceMethod(TKBattleNetBrowser.class,@selector(viewDidLoad)),(IMP)BrowserFixtureViewDidLoad);
+    atomic_store(&slow,true);
+    [self tap];
+    [self.controller settings];
+    settings=WaitForSheetTitled(self.controller,@"Settings",20.0);
+    assert(settings);
+    assert(PumpUntil(^{ return (BOOL)(![[self.controller valueForKey:@"_busy"] boolValue]); },10.0));
+    Pump(1.2); // Outlast the presentation helper's retry window.
+    assert(self.controller.presentedViewController==settings && self.launches==0);
+    assert(![[self.controller valueForKey:@"_browserSignInPresented"] boolValue]);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    assert(PumpUntil(^{ return (BOOL)(self.controller.presentedViewController==nil); },10.0));
+    atomic_store(&slow,false);
+    puts("BROWSER_SETTINGS_RACE_PASS: an open Settings sheet leaves Play available to retry");
+    [self tap]; [self performSelector:@selector(checkAutomaticBrowserLogin) withObject:nil afterDelay:0.3];
+}
+- (void)checkAutomaticBrowserLogin {
+    assert(PumpUntil(^{
+        UINavigationController *frame=(id)self.controller.presentedViewController;
+        return (BOOL)([frame isKindOfClass:UINavigationController.class] && [frame.topViewController isKindOfClass:TKBattleNetBrowser.class] && frame.view.window && !frame.isBeingPresented);
+    },10.0));
+    assert(self.launches==0);
+    UINavigationController *frame=(id)self.controller.presentedViewController;
+    [self tap];
+    assert(self.controller.presentedViewController==frame && self.launches==0);
+    [(TKBattleNetBrowser *)frame.topViewController cancel];
+    assert(PumpUntil(^{ return (BOOL)(self.controller.presentedViewController==nil &&
+        ![[self.controller valueForKey:@"_browserSignInPresented"] boolValue]); },10.0));
+    assert(!self.controller.presentedViewController && self.launches==0);
+    [self tap];
+    assert(PumpUntil(^{ return [self.controller.presentedViewController isKindOfClass:UINavigationController.class]; },10.0));
+    Pump(0.7);
+    frame=(id)self.controller.presentedViewController;
+    TKBattleNetBrowser *browser=(id)frame.topViewController;
+    assert([browser isKindOfClass:TKBattleNetBrowser.class]);
+    assert([TKBattleNetSession acceptTicket:@"US-0123456789abcdef0123456789abcdef-123456789" region:@"us" locale:@"enUS"]);
+    [browser finish:YES]; [browser finish:YES];
+    assert(PumpUntil(^{ return (BOOL)(self.launches==1); },10.0));
+    method_setImplementation(class_getInstanceMethod(TKBattleNetBrowser.class,@selector(viewDidLoad)),automaticBrowserOriginalLoad);
+    puts("BROWSER_AUTO_PLAY_PASS: prompts once after verification, cancellation never launches, successful sign-in continues exactly once");
+    [self checkLaunch];
 }
 - (void)capture:(NSString *)name {
     // Presenting is asynchronous: `presentedViewController` is set before the transition has
@@ -1598,7 +1844,9 @@ static void TestPhoneDisplayDefaults(void) {
     // lets them carry on as if nothing happened.
     CALayer *root=self.window.layer;
     CFTimeInterval savedSpeed=root.speed, savedOffset=root.timeOffset;
-    root.speed=0; root.timeOffset=0;
+    // Rewinding the sign-in sheet's persistent glass animations changes its material.
+    // Its background clock and spinners are already fixed above.
+    if (![name hasPrefix:@"wow-browser-login-"]) { root.speed=0; root.timeOffset=0; }
     [self.window layoutIfNeeded];
     UIGraphicsImageRenderer *renderer=[[UIGraphicsImageRenderer alloc] initWithBounds:self.window.bounds];
     UIImage *image=[renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
@@ -2806,9 +3054,38 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(settings != nil);
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
-        (@[@"Verify and repair game files", @"Diagnostics and logs",
+        (@[@"Verify and repair game files", @"Battle.net sign-in", @"Diagnostics and logs",
            @"Turn on input diagnostics", @"About and open-source licenses", @"Cancel"])]);
     assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
+    UIAlertAction *loginAction=nil;
+    for (UIAlertAction *action in settings.actions)
+        if ([action.title isEqual:WKLocalized(@"login.title")]) loginAction=action;
+    assert(loginAction);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(loginAction);
+    UIAlertController *loginSheet=WaitForSheetTitled(self.controller,WKLocalized(@"login.title"),20.0);
+    assert(loginSheet);
+    UIAlertAction *disable=nil;
+    for (UIAlertAction *action in loginSheet.actions)
+        if ([action.title isEqual:WKLocalized(@"login.disable")]) disable=action;
+    assert(disable);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(disable);
+    Pump(0.8);
+    assert(![NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"]);
+    assert(![TKBattleNetSession isReady]);
+    [self.controller browserSignInSettings];
+    loginSheet=WaitForSheetTitled(self.controller,WKLocalized(@"login.title"),20.0);
+    UIAlertAction *signOut=nil;
+    for (UIAlertAction *action in loginSheet.actions)
+        if ([action.title isEqual:WKLocalized(@"login.signOut")]) signOut=action;
+    assert(signOut);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    RunAction(signOut);
+    assert(WaitForSheetTitled(self.controller,WKLocalized(@"login.signedOut"),20.0));
+    [self dismissPresented];
+    TapBarItem(gear);
+    settings=WaitForSheetTitled(self.controller,@"Settings",20.0);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
     __block NSInteger diagnostics = 0;
     self.controller.showDiagnostics = ^{ diagnostics++; };

@@ -8,6 +8,12 @@ WolkaraForever is a source-built project for an iPad or iPhone that you own and 
 
 The project supports the Forever lifecycle and features described in the current user guide. Its reviewed simulator layouts are iPhone Duo and iPad Pro 13-inch (M5).
 
+Browser sign-in was tested on 2026-11-16 at source `aada284` with Forever
+1.60.1.70938 in Developer service mode. On an iPad Pro 13-inch (M5), iPadOS 27.2,
+Play reused the saved website session and the account owner confirmed sign-in.
+On iPhone Duo, iOS 27.2.1, installation and the Settings panel were verified;
+live sign-in on that build was not repeated.
+
 ## Not guaranteed
 
 WolkaraForever does not promise universal device, iOS-version, controller, network, account, or game-client compatibility. It does not provide an App Store build, game distribution, gameplay automation, game-code modification, integrity bypasses, or account-safety guarantees.

@@ -18,6 +18,33 @@ Changing game language can require additional files. App language and game langu
 
 The first time you start a game with no mode chosen, the launcher asks how to start it. **Developer service** is the supported route and is what [Install WolkaraForever](INSTALLATION.md) sets up; **Local signing** and **External JIT** need their own setup first. The choice cannot be skipped on that first start, it is remembered afterwards, and the **Execution Mode** button on the library screen changes it. [Build and run WolkaraForever](BUILDING.md) explains what each mode needs.
 
+## Optional Battle.net browser sign-in
+
+If in-game login disconnects after verification, open **Settings → Battle.net sign-in** and choose
+**Enable browser sign-in (experimental)**. This setting is off by default. Press
+**Play**: after checking the game files, the launcher opens Battle.net's official
+sign-in page and continues into WoW after successful sign-in. Cancel returns to the
+launcher without starting the game. Your password and authenticator stay in
+Battle.net's website; the launcher does not store your password.
+
+Nothing about the sign-in is saved to storage. The website session lives in memory
+and ends when the app closes. The launch ticket is kept in memory until the game
+starts, is used once, and is removed from the game's launch settings as soon as the
+game has read it (or when the game closes, or after ten minutes). **Sign out of
+Battle.net** ends the website session and drops any ticket. **Disable browser
+sign-in** restores direct in-game login and drops any ticket.
+These settings remain available while idle even if the game is missing or an
+update check fails. If you open another panel while Play checks for updates,
+close it and press Play again to sign in.
+
+Launch tickets are cleared on app restart and expire after ten minutes. Never
+share tickets or callback URLs in issue reports. Passkeys are not supported in this
+embedded window; use another sign-in method offered by Battle.net. This optional
+handoff is adapted from [Waypoint](https://github.com/wowlocal/waypoint-launcher)
+and leaves the game executable unchanged.
+
+![Battle.net sign-in settings](../wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-browser-login-disabled.png)
+
 ## Change app language or interface
 
 Open **Settings** to choose an app language. Open **Launcher Manager** to choose **iPadOS** or **iOS on Duo**. Interface selection changes the arrangement only; it does not change game data or add-ons.

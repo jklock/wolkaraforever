@@ -6,6 +6,25 @@ Never commit game data, signing material, provisioning profiles, credentials, pa
 
 Developer service, Local signing, and External JIT have separate executable-memory boundaries. Review an execution-mode change against its owning source, tests, and [Security](../../SECURITY.md).
 
+## Browser sign-in data
+
+Opt-in browser sign-in (off by default) uses a dedicated in-memory WebKit data store
+for the Battle.net session; it is never written to disk and ends with the process.
+Do not read, log, export or copy its cookie values. Passwords stay in the official
+website's form; there is no injected script, native autofill bridge or password storage.
+
+The launch ticket is held in process memory only until the game starts. It is then
+consumed once: written to the `net.battle` launch preferences the game reads, and the
+in-memory copy dropped. Those preferences (`WEB_TOKEN`, `REGION`, `LOCALE`,
+`GAME_ACCOUNT`, `ACCOUNT_TS`) are removed as soon as the game has taken `WEB_TOKEN`,
+when the game returns, after ten minutes, and on every process start. The
+`WEB_TOKEN` cipher is the game's fixed wire format, not a security boundary; the
+protection is that the ticket never sits in storage. Never log tickets,
+credential-bearing callbacks or navigation error descriptions. Synthetic tests use
+isolated domains and fabricated tickets. Do not read desktop credentials, modify the
+game or weaken account authentication to make sign-in work.
+
+
 ## Refresh when
 
 Refresh after a security boundary, data-retention rule, execution mode, device protocol, or reporting route changes.

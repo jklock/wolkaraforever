@@ -837,3 +837,13 @@
 "chat.composer.settings.done" = "Fertig";
 "chat.composer.destination.title" = "Bezeichnung";
 "chat.composer.destination.command" = "Befehl, zum Beispiel /say";
+
+/* Optional Battle.net browser sign-in. */
+"login.enable" = "Browser-Anmeldung aktivieren (experimentell)";
+"login.disable" = "Browser-Anmeldung deaktivieren";
+"login.signOut" = "Bei Battle.net abmelden";
+"login.signedOut" = "Abgemeldet";
+"login.signedOutMessage" = "Die Battle.net-Sitzung und jedes Start-Ticket wurden entfernt. Bei der nächsten Browser-Anmeldung musst du dich erneut anmelden.";
+"login.title" = "Battle.net-Anmeldung";
+"login.failed" = "Anmeldung nicht abgeschlossen. Abbrechen und erneut versuchen.";
+"login.explanation" = "Standardmäßig meldest du dich im Spiel an. Aktiviere die Browser-Anmeldung, wenn das für dein Konto nicht funktioniert. Spielen öffnet die Battle.net-Website. Es wird nichts gespeichert: Die Sitzung endet mit der App und das Start-Ticket wird nur einmal verwendet. Dein Authenticator bleibt aktiviert. Passkeys werden in diesem Fenster nicht unterstützt.";
