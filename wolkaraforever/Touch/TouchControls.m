@@ -80,6 +80,11 @@ NSString *const AKChatComposerOutcomeKey = @"outcome";
 // ChatComposer.m, which owns the closing decision.
 static unsigned short const AKKeyReturnCode = 36;
 static NSString *const AKTouchTrackpadDefaultsKey = @"TKTouchTrackpadEnabled";
+// iPad touch's own trackpad switch. Its plain touches are a click where the finger is (0055), and a trackpad
+// turned on in another interface must not carry into it: on the iPad the shared switch, left on from an
+// earlier interface, made every tap on the character screen click at the cursor instead. Every other
+// interface reads and writes the shared key exactly as before.
+static NSString *const AKTouchTrackpadIPadTouchDefaultsKey = @"WolkaraForeverIPadTouchTrackpadEnabled";
 // Whether the top toolbar is folded into its handle. Folded unless the user left it open.
 static NSString *const AKTouchToolbarCollapsedDefaultsKey = @"WolkaraForeverToolbarCollapsed";
 // An open toolbar folds itself away after this long without a tap on it.
@@ -587,7 +592,7 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
 @implementation AKTouchControls {
     UIButton *_keyboardButton, *_trackpadButton, *_gamepadButton, *_settingsButton, *_leaveButton;
     UIButton *_toolbarHandle;
-    BOOL _toolbarCollapsed, _mobileInterface;
+    BOOL _toolbarCollapsed, _mobileInterface, _touchPlay;
     NSTimer *_toolbarCollapseTimer;
     UIButton *_insertDraftButton, *_clearDraftButton;
     UIButton *_speechLanguageButton;
@@ -707,6 +712,10 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         // does, and the launcher writes the key before a guest starts. Standard (iPadOS)
         // keeps the toolbar it has always had - five buttons across the top, always open.
         _mobileInterface = AKInterfaceModeIsMobile();
+        // iPad touch: the TouchPlay add-on draws the buttons, so the controller overlay and its
+        // virtual gamepad are never made (see the guard where the gamepad is created). Read once, with
+        // the interface, for the same reason. NO in every other interface.
+        _touchPlay = AKInterfaceModeIsTouchPlay();
         if (_mobileInterface) {
             // The handle folds the five buttons away so they do not sit over the game, and
             // brings them back with one tap.
@@ -735,12 +744,15 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
             }]];
         }
         _trackpadButton.menu = [UIMenu menuWithTitle:@"Mouse buttons" children:actions];
-        NSNumber *saved = [NSUserDefaults.standardUserDefaults objectForKey:AKTouchTrackpadDefaultsKey];
+        NSNumber *saved = [NSUserDefaults.standardUserDefaults objectForKey:[self trackpadDefaultsKey]];
         // Mobile: direct touch by default - a tap clicks where the finger is and a hold
         // right-clicks (patch 0055), which reads better than a cursor moved like a trackpad.
         // Standard: the default it has always had, a trackpad on a phone and off on an iPad.
+        // iPad touch reads only its own switch, off until it is turned on in iPad touch.
         self.trackpadEnabled = saved ? saved.boolValue
             : (_mobileInterface ? NO : UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone);
+        if (_touchPlay) AKLog(@"touch controls: iPad touch's trackpad is %@ (%@)", self.trackpadEnabled ? @"on" : @"off",
+                              saved ? @"turned so in iPad touch" : @"its default; another interface's switch does not apply");
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(suspendInput:) name:UIApplicationWillResignActiveNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(backgroundInput:) name:UIApplicationDidEnterBackgroundNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowResigned:) name:UIWindowDidResignKeyNotification object:nil];
@@ -793,8 +805,12 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         return;
     }
     // Folded, the keyboard stays: it is the button a player reaches for most (the chat).
-    for (UIButton *button in @[_trackpadButton, _gamepadButton, _settingsButton, _leaveButton])
+    for (UIButton *button in @[_trackpadButton, _leaveButton])
         button.hidden = _toolbarCollapsed;
+    // The controller overlay's toggle and settings gear: in iPad touch there is no overlay for them
+    // to act on, so they are never shown, folded or open. Everywhere else they fold with the rest.
+    for (UIButton *button in @[_gamepadButton, _settingsButton])
+        button.hidden = _touchPlay || _toolbarCollapsed;
     _keyboardButton.hidden = NO;
     [_toolbarHandle setImage:[UIImage systemImageNamed:_toolbarCollapsed ? @"chevron.compact.down" : @"chevron.compact.up"]
                     forState:UIControlStateNormal];
@@ -864,7 +880,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     CGFloat width, height;
     if (!_mobileInterface) { width = 252; height = 44; }
     else if (_toolbarCollapsed) { width = 96; height = 34; }
-    else { width = 304; height = 44; }
+    else { width = _touchPlay ? 208 : 304; height = 44; }   // iPad touch: four buttons, not six
     CGRect bounds = host.bounds;
     CGFloat y = (!_mobileInterface || self.keyboardVisible) ? host.safeAreaInsets.top + 8
         : bounds.size.height - host.safeAreaInsets.bottom - 8 - height;
@@ -905,8 +921,9 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     _keyboardButton.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
     _gamepadButton.frame = CGRectMake(104, 0, 44, 44);
     _settingsButton.frame = CGRectMake(156, 0, 44, 44);
-    _leaveButton.frame = CGRectMake(208, 0, 44, 44);
-    _toolbarHandle.frame = _toolbarCollapsed ? CGRectMake(52, 0, 44, 34) : CGRectMake(260, 0, 44, 44);
+    // iPad touch packs the four buttons it shows: trackpad, keyboard, leave, handle.
+    _leaveButton.frame = CGRectMake(_touchPlay ? 104 : 208, 0, 44, 44);
+    _toolbarHandle.frame = _toolbarCollapsed ? CGRectMake(52, 0, 44, 34) : CGRectMake(_touchPlay ? 156 : 260, 0, 44, 44);
     _toolbarHandle.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
 }
 - (void)setTrackpadEnabled:(BOOL)enabled {
@@ -919,11 +936,15 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 }
 - (void)toggleTrackpad {
     self.trackpadEnabled = !self.trackpadEnabled;
-    [NSUserDefaults.standardUserDefaults setBool:self.trackpadEnabled forKey:AKTouchTrackpadDefaultsKey];
+    [NSUserDefaults.standardUserDefaults setBool:self.trackpadEnabled forKey:[self trackpadDefaultsKey]];
 }
+// The trackpad switch this interface reads and writes: iPad touch's own, or the one every other interface shares.
+- (NSString *)trackpadDefaultsKey { return _touchPlay ? AKTouchTrackpadIPadTouchDefaultsKey : AKTouchTrackpadDefaultsKey; }
 - (BOOL)gamepadEnabled { return _gamepadEnabled; }
 - (BOOL)configuring { return _gamepad.configuring; }
 - (void)showControlSettings {
+    // iPad touch has no controller overlay, hence no settings sheet; the gear is hidden there.
+    if (_touchPlay) return;
     [self cancelCameraGesture:@"settings"]; [self dismissKeyboard];
     // The gamepad owns the settings sheet, so we open it here rather than asking a
     // host that may have no such thing.
@@ -966,6 +987,8 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         AKHostLocalized(@"touch.gamepad.value.automatic")) : AKHostLocalized(@"touch.gamepad.value.off");
 }
 - (void)toggleGamepad {
+    // iPad touch has no gamepad to switch, and the stored preference belongs to the modes that do.
+    if (_touchPlay) return;
     _gamepadEnabled = !_gamepadEnabled;
     [NSUserDefaults.standardUserDefaults setBool:_gamepadEnabled forKey:@"TKTouchGamepadEnabled"];
     _gamepad.enabled = _gamepadEnabled;
@@ -1927,7 +1950,10 @@ static const unsigned short AKKeyF12 = 111;
     // placeToolbarInHost. Constraints are the host's to set, and Apple says a view must
     // not set translatesAutoresizingMaskIntoConstraints on itself; frame placement from
     // the host's bounds is the one thing neither can argue with.
-    if (!_gamepad) {
+    // iPad touch has no controller overlay and attaches no virtual gamepad to the game: the sticks,
+    // shoulders and face buttons are the add-on's to draw, and a layer of ours over them is what
+    // swallowed its taps. The toolbar above stays. Every other mode makes it as it always has.
+    if (!_gamepad && !_touchPlay) {
         _gamepad = [[AKTouchGamepad alloc] initWithHostView:host];
         __weak AKTouchControls *weakSelf = self;
         _gamepad.visibilityChanged = ^(BOOL visible) {

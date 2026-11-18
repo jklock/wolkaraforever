@@ -342,6 +342,23 @@ static void TestInterfaceMode(void) {
     assert([AKInterfaceModeName() isEqual:AKInterfaceModeIOSDuo]);
     assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeIOSDuo]);
     setMode(AKInterfaceModeIPadOS); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
+    // iPad touch is the TouchPlay mode: mobile, its own name, its own stored spelling, and the
+    // only value for which the TouchPlay query answers YES. ios and iosduo are not TouchPlay.
+    setMode(AKInterfaceModeIPadTouch);
+    assert(AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic() && AKInterfaceModeIsTouchPlay());
+    assert([AKInterfaceModeIPadTouch isEqual:@"ipadtouch"]);
+    assert([AKInterfaceModeName() isEqual:AKInterfaceModeIPadTouch]);
+    assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeIPadTouch]);
+    setMode(@"IPadTouch"); assert(AKInterfaceModeIsMobile() && AKInterfaceModeIsTouchPlay());
+    for (NSString *other in @[AKInterfaceModeIOS, AKInterfaceModeIOSDuo, AKInterfaceModeIPadOS, AKInterfaceModeAuto, @"touchplay", @""]) {
+        setMode(other); assert(!AKInterfaceModeIsTouchPlay());
+    }
+    setMode(nil); assert(!AKInterfaceModeIsTouchPlay());
+    // "auto" still resolves to the hardware's own answer; on an iPad that is iPadOS, never iPad touch.
+    setMode(AKInterfaceModeAuto);
+    assert(!AKInterfaceModeIsTouchPlay());
+    assert(phone || [AKInterfaceModeName() isEqual:AKInterfaceModeIPadOS]);
+    assert(![AKInterfaceModeAutomaticName() isEqual:AKInterfaceModeIPadTouch]);
     setMode(AKInterfaceModeAuto);
     assert(AKInterfaceModeIsMobile()==phone && AKInterfaceModeIsAutomatic());
     assert([AKInterfaceModeName() isEqual:AKInterfaceModeAutomaticName()]);
@@ -355,7 +372,122 @@ static void TestInterfaceMode(void) {
     NSString *automatic=AKInterfaceModeAutomaticName();
     assert(([automatic isEqual:AKInterfaceModeIOS] || [automatic isEqual:AKInterfaceModeIOSDuo])==phone);
     setMode(original);
-    puts("TOUCH_INTERFACE_MODE_PASS: ios and ipados are explicit, auto is the device's own hardware class (spelled in any case), and a missing or unrecognised value is Standard.");
+    puts("TOUCH_INTERFACE_MODE_PASS: ios, iosduo, ipadtouch (the only TouchPlay mode) and ipados are explicit, auto is the device's own hardware class (spelled in any case), and a missing or unrecognised value is Standard.");
+}
+// The crash fallback for iPad touch: only while it is the stored mode, a start that never exits
+// cleanly is counted; two in a row put the mode back to iPadOS and clear the count. The fixture
+// writes the persistent domain (the launcher's own write) and lifts any argument-domain value
+// for the duration, because that domain outranks the persistent one.
+static void CrashGuardExitVerifier(void);
+static void TestCrashGuard(void) {
+    // Registered before the product's own exit handler can be (the first session below installs it),
+    // so that, atexit handlers running last-in first-out, it sees the result of that handler.
+    static dispatch_once_t verifierOnce;
+    dispatch_once(&verifierOnce, ^{ atexit(CrashGuardExitVerifier); });
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSString *key=AKInterfaceModeDefaultsKey;
+    NSMutableDictionary *arguments=[[defaults volatileDomainForName:NSArgumentDomain] mutableCopy] ?: [NSMutableDictionary new];
+    id argumentMode=arguments[key];
+    [arguments removeObjectForKey:key]; [defaults setVolatileDomain:arguments forName:NSArgumentDomain];
+    id originalMode=[defaults objectForKey:key];
+    void (^reset)(NSString *)=^(NSString *mode) {
+        if (mode) [defaults setObject:mode forKey:key]; else [defaults removeObjectForKey:key];
+        [defaults removeObjectForKey:AKTouchCrashGuardDefaultsKey];
+    };
+    // crash_fallback_after_two
+    reset(AKInterfaceModeIPadTouch);
+    assert(!AKTouchCrashGuardShouldFallBack());
+    AKTouchCrashGuardWillStart(); assert(!AKTouchCrashGuardShouldFallBack());
+    AKTouchCrashGuardWillStart(); assert(AKTouchCrashGuardShouldFallBack());
+    assert(AKTouchCrashGuardApplyFallback());
+    assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeIPadOS] && !AKInterfaceModeIsTouchPlay());
+    assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==0);
+    assert(!AKTouchCrashGuardShouldFallBack() && !AKTouchCrashGuardApplyFallback()); // once only
+    // one_unclean_start_keeps_mode
+    reset(AKInterfaceModeIPadTouch);
+    AKTouchCrashGuardWillStart();
+    assert(!AKTouchCrashGuardShouldFallBack() && !AKTouchCrashGuardApplyFallback());
+    assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeIPadTouch]);
+    // A clean exit clears the run: unclean, clean, unclean is never two in a row.
+    AKTouchCrashGuardDidExitCleanly(); AKTouchCrashGuardWillStart();
+    assert(!AKTouchCrashGuardShouldFallBack() && [defaults integerForKey:AKTouchCrashGuardDefaultsKey]==1);
+    AKTouchCrashGuardDidExitCleanly(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==0);
+    // other_modes_never_count: nothing is read, written or reset under any other value.
+    for (NSString *other in @[AKInterfaceModeIPadOS, AKInterfaceModeIOS, AKInterfaceModeIOSDuo, AKInterfaceModeAuto]) {
+        reset(other);
+        for (int i=0; i<3; i++) AKTouchCrashGuardWillStart();
+        assert(![defaults objectForKey:AKTouchCrashGuardDefaultsKey]);
+        assert(!AKTouchCrashGuardShouldFallBack() && !AKTouchCrashGuardApplyFallback());
+        [defaults setInteger:5 forKey:AKTouchCrashGuardDefaultsKey];
+        AKTouchCrashGuardDidExitCleanly();
+        assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==5);
+        assert([AKInterfaceModeStoredName() isEqual:other]);
+    }
+    // --- The session: what main.m drives. Begin counts the start and installs the exit handler and
+    // the background/foreground watch once; End is any clean way out; Abandon is a start that never
+    // got going. Only a real crash may leave the count up.
+    NSNotificationCenter *center=NSNotificationCenter.defaultCenter;
+    void (^background)(void)=^{ [center postNotificationName:UIApplicationDidEnterBackgroundNotification object:nil]; };
+    void (^foreground)(void)=^{ [center postNotificationName:UIApplicationWillEnterForegroundNotification object:nil]; };
+    // normal_quit_via_atexit: the handler registered with atexit() is the clean-exit mark.
+    reset(AKInterfaceModeIPadTouch);
+    AKTouchCrashGuardBeginSession();
+    assert(AKTouchCrashGuardExitHandlerInstalled() && [defaults integerForKey:AKTouchCrashGuardDefaultsKey]==1);
+    AKTouchCrashGuardExitHandler();
+    assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==0);
+    // background_then_killed_not_counted: a game put away is not a game that crashed.
+    reset(AKInterfaceModeIPadTouch);
+    AKTouchCrashGuardBeginSession(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==1);
+    background(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==0);
+    // ...killed here by iPadOS: the next start finds nothing to hold against it, however often.
+    AKTouchCrashGuardBeginSession(); background(); AKTouchCrashGuardBeginSession(); background();
+    assert(!AKTouchCrashGuardShouldFallBack() && [defaults integerForKey:AKTouchCrashGuardDefaultsKey]==0);
+    // An earlier real crash stays on record through a background trip of the next session.
+    [defaults setInteger:1 forKey:AKTouchCrashGuardDefaultsKey];
+    AKTouchCrashGuardBeginSession(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==2);
+    background(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==1 && !AKTouchCrashGuardShouldFallBack());
+    // foreground_then_crash_counted: back in front, the session is at risk again.
+    foreground(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==2 && AKTouchCrashGuardShouldFallBack());
+    foreground(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==2); // not twice
+    background(); background(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==1);
+    // A fresh run: start, away, back, crash = one unclean start; the next start makes two.
+    reset(AKInterfaceModeIPadTouch);
+    AKTouchCrashGuardBeginSession(); background(); foreground();
+    assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==1); // crash: nothing more is written
+    AKTouchCrashGuardBeginSession();
+    assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==2 && AKTouchCrashGuardShouldFallBack());
+    // failed_start_not_counted: a start that never began is taken back, and later foregrounds
+    // do not bring it back.
+    [defaults setInteger:1 forKey:AKTouchCrashGuardDefaultsKey];
+    AKTouchCrashGuardBeginSession(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==2);
+    AKTouchCrashGuardAbandonSession();
+    assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==1 && !AKTouchCrashGuardShouldFallBack());
+    foreground(); background(); foreground();
+    assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==1);
+    // ...and the orderly exit that follows the closing page does not undo it either.
+    AKTouchCrashGuardExitHandler(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==1);
+    // A clean end clears the run and ends the watch.
+    AKTouchCrashGuardBeginSession(); AKTouchCrashGuardEndSession();
+    assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==0);
+    foreground(); assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==0);
+    // other modes: the whole session API leaves the counter alone.
+    for (NSString *other in @[AKInterfaceModeIPadOS, AKInterfaceModeIOS, AKInterfaceModeIOSDuo, AKInterfaceModeAuto]) {
+        reset(other);
+        AKTouchCrashGuardBeginSession(); background(); foreground(); AKTouchCrashGuardAbandonSession();
+        AKTouchCrashGuardBeginSession(); AKTouchCrashGuardEndSession(); AKTouchCrashGuardExitHandler();
+        assert(![defaults objectForKey:AKTouchCrashGuardDefaultsKey]);
+    }
+    reset(nil);
+    for (int i=0; i<3; i++) AKTouchCrashGuardWillStart();
+    assert(![defaults objectForKey:AKTouchCrashGuardDefaultsKey] && !AKTouchCrashGuardShouldFallBack());
+    // Nonsense in the counter is read as zero, never as a reason to change the mode.
+    reset(AKInterfaceModeIPadTouch);
+    [defaults setObject:@"many" forKey:AKTouchCrashGuardDefaultsKey]; assert(!AKTouchCrashGuardShouldFallBack());
+    [defaults setInteger:-3 forKey:AKTouchCrashGuardDefaultsKey]; assert(!AKTouchCrashGuardShouldFallBack());
+    reset(nil);
+    if (originalMode) [defaults setObject:originalMode forKey:key]; else [defaults removeObjectForKey:key];
+    if (argumentMode) { arguments[key]=argumentMode; [defaults setVolatileDomain:arguments forName:NSArgumentDomain]; }
+    puts("TOUCH_CRASH_GUARD_PASS: two unclean iPad touch starts in a row fall back to iPadOS once; one does not; a clean exit clears the run; every other mode leaves the counter alone.");
 }
 // --- the log a fixture can read ------------------------------------------------
 //
@@ -704,6 +836,27 @@ static UIView *GamepadControl(UIView *host, NSString *name) {
     return Find(host, [@"tolkara.gamepad." stringByAppendingString:name]);
 }
 static void TestTouchControllerTwo(UIView *host, AKPreviewGamepad *manager);
+// The last check, through the process's real exit(): a verifier is registered first (in TestCrashGuard,
+// so it runs last, atexit handlers being last-in first-out), then a session begins in iPad touch, then exit(0) runs
+// the handler the product registered. The verifier reads the stored count and tidies the defaults.
+static void CrashGuardExitVerifier(void) {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSInteger count=[defaults integerForKey:AKTouchCrashGuardDefaultsKey];
+    [defaults removeObjectForKey:AKTouchCrashGuardDefaultsKey];
+    [defaults removeObjectForKey:AKInterfaceModeDefaultsKey];
+    if (count!=0) { fprintf(stderr,"TOUCH_CRASH_GUARD_EXIT_FAIL: count %ld after exit(0)\n",(long)count); _Exit(3); }
+    puts("TOUCH_CRASH_GUARD_EXIT_PASS: a game that quits through exit(0) is a clean exit; the registered handler cleared the count.");
+    fflush(stdout);
+}
+static void TestCrashGuardRealExit(void) {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSMutableDictionary *arguments=[[defaults volatileDomainForName:NSArgumentDomain] mutableCopy] ?: [NSMutableDictionary new];
+    [arguments removeObjectForKey:AKInterfaceModeDefaultsKey]; [defaults setVolatileDomain:arguments forName:NSArgumentDomain];
+    [defaults setObject:AKInterfaceModeIPadTouch forKey:AKInterfaceModeDefaultsKey];
+    [defaults removeObjectForKey:AKTouchCrashGuardDefaultsKey];
+    AKTouchCrashGuardBeginSession();
+    assert([defaults integerForKey:AKTouchCrashGuardDefaultsKey]==1);
+}
 static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     GCExtendedGamepad *pad=manager.created.controller.extendedGamepad;
     assert(pad && manager.visible);
@@ -1309,6 +1462,7 @@ static void TestLifecycle(UIView *host) {
     TestLayoutSchema();
     TestDirectCamera();
     TestControllerPointer();
+    TestCrashGuard();
     AKFixtureGamepad *pad=[[AKFixtureGamepad alloc] initWithHostView:host];
     // The fixture asserts the controller lifecycle, not the device's foreground phase.
     // A simulator launched by simctl reports the app Inactive, which would gate every
@@ -1385,9 +1539,14 @@ static void TestLifecycle(UIView *host) {
     self.window=[[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     // The mobile interface is chosen before anything reads it, exactly as the launcher
     // chooses it: by the defaults key, here in the argument domain.
-    if ([NSProcessInfo.processInfo.arguments containsObject:@"--mobile-interface"]) {
+    NSArray<NSString *> *launchArguments=NSProcessInfo.processInfo.arguments;
+    NSUInteger mobileFlag=[launchArguments indexOfObject:@"--mobile-interface"];
+    if (mobileFlag!=NSNotFound) {
+        // "--mobile-interface" alone is iOS; a value after it ("ipadtouch", "iosduo") is that mode.
+        NSString *named=mobileFlag+1<launchArguments.count ? launchArguments[mobileFlag+1] : nil;
+        if (!named || [named hasPrefix:@"-"]) named=@"ios";
         NSMutableDictionary *modes=[[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
-        modes[@"WolkaraForeverInterfaceModeV1"]=@"ios";
+        modes[@"WolkaraForeverInterfaceModeV1"]=named;
         [NSUserDefaults.standardUserDefaults setVolatileDomain:modes forName:NSArgumentDomain];
     }
     UIViewController *vc=[UIViewController new]; vc.view=[AKFixtureHostView new]; vc.view.backgroundColor=[UIColor colorWithRed:.04 green:.07 blue:.12 alpha:1];
@@ -1420,7 +1579,7 @@ static void TestLifecycle(UIView *host) {
         [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverTouchLayoutV1"];
         [[[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults] reset];
     }
-    if (test) { TestLifecycle(self.window.rootViewController.view); fflush(stdout); exit(0); }
+    if (test) { TestLifecycle(self.window.rootViewController.view); TestCrashGuardRealExit(); fflush(stdout); exit(0); }
     // A plain launch is for looking at the fixture. Without --stay it closes itself
     // after a minute anyway, so a headless run cannot sit on it for ever. (The
     // --self-test-input path above has its own shorter watchdog.)

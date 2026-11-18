@@ -614,8 +614,21 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             [self configureButton:_renderProfileButton title:title filled:NO];
     }
 }
+// Two games in a row that never exited cleanly in iPad touch: the mode goes back to iPadOS (the
+// crash guard does that, and only while iPad touch is the stored mode), and the user is told once,
+// here, where they will see it. In every other mode AKTouchCrashGuardApplyFallback answers NO.
+- (void)presentTouchFallbackIfNeeded {
+    // Not under a session: a game starting, running or finished is not the moment to change the mode
+    // or to talk over it. The next appearance of an idle launcher does it.
+    if (_starting || _running || _sessionUsed) return;
+    if (!AKTouchCrashGuardApplyFallback()) return;
+    WKLog("ui", @"interface mode: two unclean iPad touch starts in a row; back to iPadOS");
+    [self render];
+    [self presentMessage:WKLocalized(@"touch.fallback.title") message:WKLocalized(@"touch.fallback.message")];
+}
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    [self presentTouchFallbackIfNeeded];
     if (_resumeCheck) { [self resumeCheckIfVisible]; return; }
     // Once per launch, and not again. This used to run on every appearance, so
     // closing the add-on or the voice popup sent the launcher back for a full
@@ -1793,10 +1806,13 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
 }
 static NSString *InterfaceModeLabel(NSString *name) {    if ([name isEqual:AKInterfaceModeIPadOS]) return WKLocalized(@"home.launcher.interfaceMode.ipados");
     if ([name isEqual:AKInterfaceModeIOSDuo]) return WKLocalized(@"home.launcher.interfaceMode.iosduo");
+    if ([name isEqual:AKInterfaceModeIPadTouch]) return WKLocalized(@"home.launcher.interfaceMode.ipadtouch");
     return WKLocalized(@"home.launcher.interfaceMode.ios");
 }
-// Which interface this launcher drives: Automatic, iPadOS, iOS, or iOS on Duo. Automatic is the
-// device's own answer and is labelled with what it resolves to. An explicit choice always wins.
+// Which interface this launcher drives: Automatic, iPadOS, iOS, or iOS on Duo - and, on an iPad
+// only, iPad touch (the TouchPlay add-on's interface, which is chosen on purpose and never what
+// Automatic resolves to). Automatic is the device's own answer and is labelled with what it
+// resolves to. An explicit choice always wins.
 - (void)chooseInterfaceMode {
     if (_busy || _starting || _running || _sessionUsed) {
         WKLog("ui", @"interface mode: declined while the page is busy");
@@ -1812,6 +1828,10 @@ static NSString *InterfaceModeLabel(NSString *name) {    if ([name isEqual:AKInt
                                               @[AKInterfaceModeIPadOS, InterfaceModeLabel(AKInterfaceModeIPadOS)],
                                               @[AKInterfaceModeIOS, InterfaceModeLabel(AKInterfaceModeIOS)],
                                               @[AKInterfaceModeIOSDuo, InterfaceModeLabel(AKInterfaceModeIOSDuo)]];
+    // iPad touch is laid out for an iPad's screen, so a phone is not offered it: its sheet is the
+    // four choices it always had.
+    if (UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad || [current isEqualToString:AKInterfaceModeIPadTouch])
+        choices=[choices arrayByAddingObject:@[AKInterfaceModeIPadTouch, InterfaceModeLabel(AKInterfaceModeIPadTouch)]];
     for (NSArray<NSString *> *choice in choices) {
         NSString *title=choice[1];
         if ([current isEqualToString:choice[0]]) title=[@"✓ " stringByAppendingString:title];
@@ -1826,6 +1846,9 @@ static NSString *InterfaceModeLabel(NSString *name) {    if ([name isEqual:AKInt
 // an installation, a disable, a removal or an update, and this path touches no package.
 - (void)applyInterfaceModeNamed:(NSString *)name {
     [NSUserDefaults.standardUserDefaults setObject:name forKey:AKInterfaceModeDefaultsKey];
+    // Choosing iPad touch is a fresh start for its crash fallback: whatever the last attempt left
+    // behind is not held against this one.
+    if ([name isEqual:AKInterfaceModeIPadTouch]) [NSUserDefaults.standardUserDefaults removeObjectForKey:AKTouchCrashGuardDefaultsKey];
     WKLog("ui", @"interface mode: %@ (resolves to %@)", name, AKInterfaceModeName());
     [self render];
 }

@@ -47,6 +47,9 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS on Duo";
+"home.launcher.interfaceMode.ipadtouch" = "iPad touch";
+"touch.fallback.title" = "iPad touch turned off";
+"touch.fallback.message" = "The game closed unexpectedly twice in a row in iPad touch mode, so WolkaraForever went back to iPadOS. You can choose iPad touch again under Interface Mode.";
 "home.launcher.interfaceSetup.row" = "Edit Controller Layout";
 "home.launcher.interfaceSetup.title" = "Controller Layout";
 /* The three rows that used to be inside the one Controller Layout sheet. */

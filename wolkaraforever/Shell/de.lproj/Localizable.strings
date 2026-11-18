@@ -47,6 +47,9 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS auf dem Duo";
+"home.launcher.interfaceMode.ipadtouch" = "iPad-Touch";
+"touch.fallback.title" = "iPad-Touch ausgeschaltet";
+"touch.fallback.message" = "Das Spiel wurde im iPad-Touch-Modus zweimal hintereinander unerwartet beendet, daher ist WolkaraForever zu iPadOS zurückgekehrt. Unter Oberflächenmodus kannst du iPad-Touch wieder auswählen.";
 "home.launcher.interfaceSetup.row" = "Steuerungslayout bearbeiten";
 "home.launcher.interfaceSetup.title" = "Steuerungslayout";
 /* Die drei Zeilen, die früher in einem einzigen Blatt versteckt waren. */

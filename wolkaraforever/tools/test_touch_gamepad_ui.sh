@@ -55,10 +55,18 @@ else
     fi
     # Both interfaces: the default (iPadOS, what every release through v1.0.7 has) and the
     # mobile one the launcher selects with WolkaraForeverInterfaceModeV1.
-    for MODE in "" "--mobile-interface"; do
-        LOG="build/touch-gamepad-fixture/self-test${MODE:+-mobile}.log"
+    # ...and iOS on Duo and iPad touch ("--mobile-interface <mode>"): every stored mode runs the
+    # same suite, and the iPad touch rules (its crash fallback) are gated on that one mode.
+    for MODE in "" "--mobile-interface" "--mobile-interface iosduo" "--mobile-interface ipadtouch"; do
+        LOG="build/touch-gamepad-fixture/self-test$(echo "${MODE:+ $MODE}" | sed -e 's/ --mobile-interface/-mobile/' -e 's/ /-/g').log"
         # simctl may report success even when the app aborts an assertion.
         xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-gamepad "$@" $MODE 2>&1 | tee "$LOG"
         grep -Eq 'TOUCH_GAMEPAD_(LIFECYCLE|INPUT)_PASS:' "$LOG"
+        # The self-test ends through the process's real exit(); iPad touch's crash-fallback handler
+        # must have run (it is what makes a quit from the game a clean exit).
+        if [[ " $* " == *" --self-test "* ]]; then grep -q 'TOUCH_CRASH_GUARD_EXIT_PASS:' "$LOG"; fi
     done
+    # ...and that Shell/main.m and the launcher call the crash fallback where they must (they have
+    # no test of their own; this reads them).
+    ../../wolkaraforever/tools/test_crash_guard_wiring.sh
 fi

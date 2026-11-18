@@ -44,6 +44,9 @@
 "home.launcher.interfaceMode.ipados" = "iPadOS";
 "home.launcher.interfaceMode.ios" = "iOS";
 "home.launcher.interfaceMode.iosduo" = "iOS sur Duo";
+"home.launcher.interfaceMode.ipadtouch" = "iPad tactile";
+"touch.fallback.title" = "iPad tactile désactivé";
+"touch.fallback.message" = "Le jeu s’est fermé de façon inattendue deux fois de suite en mode iPad tactile, WolkaraForever est donc revenu à iPadOS. Vous pouvez de nouveau choisir iPad tactile sous Mode d’interface.";
 "home.launcher.interfaceSetup.row" = "Modifier la disposition des commandes";
 "home.launcher.interfaceSetup.title" = "Disposition des commandes";
 /* Les trois lignes qui étaient auparavant dans une seule feuille. */
