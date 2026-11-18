@@ -93,6 +93,55 @@ int main(void) {
         Check([TKDeviceProfileSizeDescription(dadpad) isEqual:@"1366 × 1024"], @"and it renders at 1366 × 1024");
         Check([TKDeviceProfileSizeDescription(unknown) isEqual:@""], @"an unknown device states no size");
 
+        // --- the iPad Pro 11-inch (M5), measured by a contributor: its own record, Quality offered at
+        // the panel's own pixels, and the default it had as the fallback (Performance) kept
+        TKDeviceProfile *m5=[TKDeviceProfile profileForModelIdentifier:@"iPad17,1"];
+        Check([m5.identifier isEqual:@"ipad-pro-11-m5"], @"iPad17,1 resolves to the 11-inch M5's own record");
+        Check(m5.family==TKDeviceFamilyPad, @"which is an iPad");
+        Check([m5.chip isEqual:@"M5"], @"with an M5");
+        Check(m5.measured, @"and is marked measured");
+        Check([TKDeviceProfileSizeDescription(m5) isEqual:@"1210 × 834"], @"at 1210 × 834 points");
+        Check(m5.highestQuality==TKRenderQualityQuality, @"Quality is offered");
+        Check([m5 backingScaleForQuality:TKRenderQualityQuality]==2.0, @"at native 2.0 (2420 × 1668)");
+        Check([m5 backingScaleForQuality:TKRenderQualityBalanced]==1.0, @"Balanced is 1.0 (1210 × 834)");
+        Check([m5 backingScaleForQuality:TKRenderQualityPerformance]==0.75, @"Performance is 0.75 (908 × 626)");
+        Check(m5.recommendedQuality==TKRenderQualityPerformance,
+              @"and the default stays Performance, what this iPad had as the fallback");
+        Check(m5.recommendedQuality<m5.highestQuality, @"so choosing Quality is above the default and asks first");
+        Check([m5.notes containsString:@"iPad17,1"] && [m5.notes containsString:@"2420x1668"],
+              @"the notes say which hardware and which size were measured");
+        // Only the identifier that was seen is claimed; the other M5s are not guessed at.
+        for (NSString *model in @[@"iPad17,2",@"iPad17,3",@"iPad17,4"])
+            Check([TKDeviceProfile profileForModelIdentifier:model]==TKDeviceProfile.fallbackProfile,
+                  [NSString stringWithFormat:@"%@ is not claimed by the measured record", model]);
+
+        // --- Quality is offered only where it was measured: the 12.9-inch M1 and the 11-inch M5
+        NSMutableArray<NSString *> *offersQuality=[NSMutableArray new];
+        for (TKDeviceProfile *profile in profiles) {
+            if (profile.highestQuality!=TKRenderQualityQuality) continue;
+            [offersQuality addObject:profile.identifier];
+            Check(profile.measured, [NSString stringWithFormat:@"%@ offers Quality only because it was measured", profile.identifier]);
+        }
+        Check([offersQuality isEqualToArray:(@[@"ipad-pro-12.9-m1",@"ipad-pro-11-m5"])],
+              @"exactly the two measured iPads offer Quality");
+        TKDeviceProfile *m4=[TKDeviceProfile profileForModelIdentifier:@"iPad16,3"];
+        Check([m4.identifier isEqual:@"ipad-pro-11-m4"] && m4.highestQuality==TKRenderQualityBalanced,
+              @"the 11-inch M4, the same panel size, still stops at Balanced");
+        Check(dadpad.recommendedQuality==TKRenderQualityBalanced,
+              @"and the 12.9-inch M1's default is unchanged by a record that states its own");
+
+        // --- what the Quality confirmation may say was measured: only what each record measured
+        Check(dadpad.qualityFinding==TKQualityFindingMissedFrameBudget,
+              @"the 12.9-inch M1 keeps its measured fact: native missed the frame budget");
+        Check(m5.qualityFinding==TKQualityFindingGraphicsWork,
+              @"the 11-inch M5 states its own: about 2.5 times the graphics work of Performance");
+        for (TKDeviceProfile *profile in profiles) {
+            if (profile==dadpad || profile==m5) continue;
+            Check(profile.qualityFinding==TKQualityFindingNone,
+                  [NSString stringWithFormat:@"%@ claims no measured finding", profile.identifier]);
+        }
+        Check(unknown.qualityFinding==TKQualityFindingNone, @"and neither does the fallback");
+
         // --- known but unmeasured hardware stops at Balanced
         TKDeviceProfile *unmeasured=[TKDeviceProfile profileForModelIdentifier:@"iPad16,5"];
         Check([unmeasured.identifier isEqual:@"ipad-pro-13-m4"], @"a 13-inch M4 is known");

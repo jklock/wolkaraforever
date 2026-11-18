@@ -241,7 +241,10 @@
 "home.render.title" = "Renderprofil";
 "home.render.message" = "Gilt beim nächsten Start von Forever. Das ist Forevers eigener Renderfaktor auf %@; die eigenen Einstellungen des Spiels werden nicht verändert.";
 "home.render.confirm.title" = "Über der Empfehlung";
-"home.render.confirm.message" = "%1$@ rendert auf %3$@ mit %2$@, also mehr, als dieses Profil empfiehlt. Dort wurde gemessen, dass das Frame-Budget nicht gehalten wird.";
+"home.render.confirm.quality" = "Qualität zeichnet die 3D-Welt in der vollen Auflösung des Bildschirms, %1$@ auf %2$@, und braucht deutlich mehr Grafikleistung als die Vorgabe dieses Profils. Eine niedrigere Renderskalierung im Spiel senkt das wieder.";
+"home.render.confirm.balanced" = "Ausgewogen zeichnet das Spiel mit %1$@ auf %2$@, also mit mehr Pixeln als die Vorgabe dieses Profils, was mehr Grafikleistung kosten kann.";
+"home.render.confirm.finding.missedBudget" = "Auf diesem iPad gemessen: In voller Auflösung wurde das Frame-Budget nicht gehalten.";
+"home.render.confirm.finding.graphicsWork" = "Auf diesem iPad bei 30 FPS gemessen: Die volle Auflösung brauchte etwa 2,5-mal so viel Grafikleistung wie das Profil Leistung.";
 "home.render.confirm.yes" = "%@ verwenden";
 "home.profile.title" = "Geräteprofil";
 "home.profile.message" = "Dieses Gerät ist %@. „Automatisch“ verwendet das dafür gemessene Profil; ein anderes Gerät lässt sich zum Vergleich wählen und ist überall als Vorschau gekennzeichnet.";

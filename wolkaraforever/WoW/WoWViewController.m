@@ -1756,12 +1756,27 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     [self presentMessage:WKLocalized(@"home.render.ready.title")
         message:WKLocalizedFormat(@"home.render.ready.message",TKRenderQualityTitle(device,quality))];
 }
+// What a choice above the recommendation costs, in words true on every device, then what was
+// measured at Quality on this profile's own hardware, when it measured anything.
+- (NSString *)renderConfirmationMessageForQuality:(TKRenderQuality)quality {
+    TKDeviceProfile *device=[self selectedDeviceProfile];
+    NSString *size=TKRenderSize(device,quality), *name=[self deviceProfileName];
+    if (quality!=TKRenderQualityQuality)
+        return WKLocalizedFormat(@"home.render.confirm.balanced",size,name);
+    NSString *message=WKLocalizedFormat(@"home.render.confirm.quality",size,name);
+    NSString *finding=nil;
+    switch (device.qualityFinding) {
+        case TKQualityFindingMissedFrameBudget: finding=WKLocalized(@"home.render.confirm.finding.missedBudget"); break;
+        case TKQualityFindingGraphicsWork: finding=WKLocalized(@"home.render.confirm.finding.graphicsWork"); break;
+        case TKQualityFindingNone: break;
+    }
+    return finding.length?[NSString stringWithFormat:@"%@ %@",message,finding]:message;
+}
 - (void)confirmRenderQuality:(TKRenderQuality)quality {
     TKDeviceProfile *device=[self selectedDeviceProfile];
     NSString *title=TKRenderQualityTitle(device,quality);
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.render.confirm.title")
-        message:WKLocalizedFormat(@"home.render.confirm.message",TKRenderQualityName(quality),
-                                  TKRenderSize(device,quality),[self deviceProfileName])
+        message:[self renderConfirmationMessageForQuality:quality]
         preferredStyle:UIAlertControllerStyleActionSheet];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalizedFormat(@"home.render.confirm.yes",TKRenderQualityName(quality))
         style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {

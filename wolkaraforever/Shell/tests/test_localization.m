@@ -159,6 +159,46 @@ static void TestFormatting(void) {
     CHECK([WKLocalization.shared.locale.localeIdentifier hasPrefix:@"en"], @"the English locale is English");
 }
 
+// The render-profile confirmation: device-neutral words for what a choice above the default costs,
+// plus a sentence for what was measured, only where a record measured it. No language may carry the
+// old line that claimed a measured miss on every device.
+static void TestRenderConfirmation(void) {
+    [WKLocalization setResourceBundleForTesting:nil];
+    NSArray *keys = @[@"home.render.confirm.quality", @"home.render.confirm.balanced",
+                      @"home.render.confirm.finding.missedBudget", @"home.render.confirm.finding.graphicsWork"];
+    NSMutableDictionary<NSString *, NSString *> *english = [NSMutableDictionary dictionary];
+    for (NSNumber *language in @[@(WKAppLanguageEnglish), @(WKAppLanguageGerman), @(WKAppLanguageFrench)]) {
+        WKLocalization.shared.language = language.integerValue;
+        NSString *code = WKLocalization.shared.languageCode;
+        for (NSString *key in keys) {
+            NSString *text = WKLocalized(key);
+            CHECK(text.length > 20 && ![text containsString:@"home.render"],
+                  ([NSString stringWithFormat:@"%@ answers %@", code, key]));
+            if (language.integerValue == WKAppLanguageEnglish) english[key] = text;
+            else CHECK(![text isEqual:english[key]], ([NSString stringWithFormat:@"%@ translates %@", code, key]));
+        }
+        NSString *quality = WKLocalizedFormat(@"home.render.confirm.quality", @"2420 × 1668", @"iPad Pro 11-inch (M5)");
+        CHECK([quality containsString:@"2420 × 1668"] && [quality containsString:@"iPad Pro 11-inch (M5)"],
+              ([NSString stringWithFormat:@"%@: the Quality line carries the size and the device", code]));
+        CHECK(![quality containsString:@"%"], ([NSString stringWithFormat:@"%@: no conversion is left over", code]));
+        NSString *balanced = WKLocalizedFormat(@"home.render.confirm.balanced", @"1210 × 834", @"iPad Pro 11-inch (M5)");
+        CHECK([balanced containsString:@"1210 × 834"] && [balanced containsString:@"iPad Pro 11-inch (M5)"],
+              ([NSString stringWithFormat:@"%@: the Balanced line carries the size and the device", code]));
+    }
+    WKLocalization.shared.language = WKAppLanguageEnglish;
+    CHECK([WKLocalizedFormat(@"home.render.confirm.quality", @"2420 × 1668", @"iPad Pro 11-inch (M5)") isEqual:
+           @"Quality draws the 3D world at the screen's full resolution, 2420 × 1668 on iPad Pro 11-inch (M5), and takes much more graphics work than this profile's default. Lowering the game's own Render Scale brings that back down."],
+          @"the English Quality line, word for word");
+    CHECK(![WKLocalized(@"home.render.confirm.quality") containsString:@"frame budget"],
+          @"the device-neutral line claims no measurement");
+    CHECK([WKLocalized(@"home.render.confirm.finding.missedBudget") containsString:@"frame budget"],
+          @"the 12.9-inch M1's measured miss is kept, as its own sentence");
+    CHECK([WKLocalized(@"home.render.confirm.finding.graphicsWork") containsString:@"2.5 times"],
+          @"the 11-inch M5's measurement is its own sentence");
+    // The old one-size line is gone from every table rather than left behind unused.
+    CHECK([WKLocalized(@"home.render.confirm.message") isEqual:@"Message"], @"the old line is no longer in the table");
+}
+
 static unsigned changes = 0;
 static WKAppLanguage lastNew = WKAppLanguageSystem, lastOld = WKAppLanguageSystem;
 static void OnChange(NSNotification *note) {
@@ -193,12 +233,13 @@ int main(void) {
         TestStoredValues();
         TestTables();
         TestFormatting();
+        TestRenderConfirmation();
         TestChangeNotification();
     }
     if (failures) {
         printf("localization FAIL: %d of %d checks\n", failures, checks);
         return 1;
     }
-    printf("localization PASS: %d checks (resolution, stored values, tables, fallback, formatting, plurals, change notice)\n", checks);
+    printf("localization PASS: %d checks (resolution, stored values, tables, fallback, formatting, plurals, render confirmation, change notice)\n", checks);
     return 0;
 }

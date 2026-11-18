@@ -878,6 +878,11 @@ static void TestAddonHub(void) {
 - (void)prepareRenderProfileForStartup;
 - (TKDeviceProfile *)selectedDeviceProfile;
 - (void)writeDeviceProfileOverride:(NSString *)identifier quality:(TKRenderQuality)quality;
+- (BOOL)deviceProfileIsThisDevice;
+- (NSString *)deviceProfileName;
+- (TKRenderQuality)effectiveRenderQuality;
+- (NSString *)renderProfileDescription;
+- (NSString *)renderConfirmationMessageForQuality:(TKRenderQuality)quality;
 @end
 @interface TKDisplayFixtureController : TKWoWViewController
 @end
@@ -921,6 +926,52 @@ static void TestPhoneDisplayDefaults(void) {
     for (NSString *key in keys) [defaults removeObjectForKey:key];
     puts("WoW UIKit PASS: phone profile migration, one-shot upgrade, manual overrides, startup scale and current viewport");
 }
+// The iPad Pro 11-inch (M5) (iPad17,1): its own record, Quality offered at the panel's own pixels,
+// and the default unchanged (Performance, what it had as the fallback) with nothing stored.
+static void TestIPadM5RenderProfile(void) {
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    NSArray *keys=@[@"WolkaraForeverDeviceProfile",@"WolkaraForeverRenderProfile",@"WolkaraForeverBackingScale"];
+    Method method=class_getClassMethod(TKDeviceProfile.class,@selector(currentModelIdentifier));
+    IMP previous=method_setImplementation(method,(IMP)DisplayFixtureModel);
+    displayFixtureModel=@"iPad17,1";
+    for (NSString *key in keys) [defaults removeObjectForKey:key];
+    TKDisplayFixtureController *controller=[[TKDisplayFixtureController alloc] initWithLibrary:(id)[TKFixtureLibrary new]];
+    [controller loadViewIfNeeded];
+    controller.view.frame=CGRectMake(0,0,1210,834);
+    TKDeviceProfile *device=[controller selectedDeviceProfile];
+    assert([device.identifier isEqual:@"ipad-pro-11-m5"]);
+    assert([controller deviceProfileIsThisDevice]);
+    assert([[controller deviceProfileName] isEqual:@"iPad Pro 11-inch (M5)"]);
+    // Nothing stored: still Performance, 908 × 626, as before this record existed.
+    assert([controller effectiveRenderQuality]==TKRenderQualityPerformance);
+    assert([[controller renderProfileDescription] isEqual:@"Performance — 908 × 626"]);
+    [controller prepareRenderProfileForStartup];
+    assert([defaults doubleForKey:@"WolkaraForeverBackingScale"]==0.75);
+    assert([[defaults stringForKey:@"WolkaraForeverRenderProfile"] isEqual:@"performance"]);
+    // Quality is offered at 2420 × 1668 and, once chosen, is what the next start uses.
+    assert(device.highestQuality==TKRenderQualityQuality);
+    assert(device.recommendedQuality<TKRenderQualityQuality);   // so the row asks first
+    // What the confirmation says here: what the choice costs, and this iPad's own measurement. It
+    // does not claim a missed frame budget, which was the 12.9-inch M1's finding, not this one's.
+    NSString *qualityWords=[controller renderConfirmationMessageForQuality:TKRenderQualityQuality];
+    assert([qualityWords isEqual:@"Quality draws the 3D world at the screen's full resolution, 2420 × 1668 on iPad Pro 11-inch (M5), and takes much more graphics work than this profile's default. Lowering the game's own Render Scale brings that back down. Measured on this iPad at 30 FPS, full resolution took about 2.5 times the graphics work of Performance."]);
+    assert(![qualityWords containsString:@"frame budget"]);
+    // Balanced is above this record's default too, so it asks with a line of its own and no finding.
+    NSString *balancedWords=[controller renderConfirmationMessageForQuality:TKRenderQualityBalanced];
+    assert([balancedWords isEqual:@"Balanced draws the game at 1210 × 834 on iPad Pro 11-inch (M5), more pixels than this profile's default, which can take more graphics work."]);
+    [controller writeDeviceProfileOverride:nil quality:TKRenderQualityQuality];
+    assert([[controller renderProfileDescription] isEqual:@"Quality — 2420 × 1668"]);
+    [controller prepareRenderProfileForStartup];
+    assert([controller effectiveRenderQuality]==TKRenderQualityQuality);
+    assert([defaults doubleForKey:@"WolkaraForeverBackingScale"]==2.0);
+    assert([defaults stringForKey:@"WolkaraForeverDeviceProfile"]==nil);   // Automatic, not an override
+    // Back to Performance is one choice away.
+    [controller writeDeviceProfileOverride:nil quality:TKRenderQualityPerformance];
+    assert([defaults doubleForKey:@"WolkaraForeverBackingScale"]==0.75);
+    method_setImplementation(method,previous);
+    for (NSString *key in keys) [defaults removeObjectForKey:key];
+    puts("WoW UIKit PASS: iPad Pro 11-inch (M5) has its own profile, offers Quality at 2420 × 1668, and still defaults to Performance — 908 × 626");
+}
 
 @interface TKWoWFixtureDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic) UIWindow *window;
@@ -949,13 +1000,15 @@ static void TestPhoneDisplayDefaults(void) {
     WKLogStart();
     WKLog("test", @"fixture starting");
     if ([NSProcessInfo.processInfo.arguments containsObject:@"--display-only"]) {
-        TestPhoneDisplayDefaults(); exit(0);
+        TestPhoneDisplayDefaults(); TestIPadM5RenderProfile(); exit(0);
     }
     method_setImplementation(class_getInstanceMethod(TKWoWClient.class,@selector(planForProduct:region:locale:error:)),(IMP)Plan);
     method_setImplementation(class_getInstanceMethod(TKWoWUpdater.class,@selector(updatePlan:root:progress:error:)),(IMP)Update);
     // Simulator host hardware is not launcher-device evidence. Keep fallback-profile assertions
     // deterministic, then select measured profiles explicitly in the test below.
     method_setImplementation(class_getClassMethod(TKDeviceProfile.class,@selector(currentModelIdentifier)),(IMP)FixtureModelIdentifier);
+    // The 11-inch M5 record, checked off-screen; it restores the fixture model and clears the keys.
+    TestIPadM5RenderProfile();
     [NSUserDefaults.standardUserDefaults setObject:@"wowf" forKey:@"WoWProduct"];
     [NSUserDefaults.standardUserDefaults setObject:@"enUS" forKey:@"WoWLocale"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWRepairRequested.wowf"];
@@ -2172,6 +2225,7 @@ static int backupsBeforePerformance;
     assert([titles.firstObject isEqual:@"✓ Automatic (recommended) — this device (unrecognised)"]);
     assert([titles containsObject:@"iPad Pro 12.9-inch (M1) — 1366 × 1024"]);
     assert([titles containsObject:@"iPad Pro 13-inch (M4) — 1376 × 1032"]);
+    assert([titles containsObject:@"iPad Pro 11-inch (M5) — 1210 × 834"]);
     assert(titles.count == TKDeviceProfile.profiles.count + 2);   // + Automatic + Cancel
     // Choosing another device is a preview, and the sheet says so before the row changes.
     // The action is run the way UIKit runs it - after the sheet has gone - and the message it
@@ -2224,7 +2278,8 @@ static int backupsBeforePerformance;
     Pump(0.6);
     UIAlertController *confirm = WaitForSheetTitled(self.controller, @"Above the recommendation", 20.0);
     assert(confirm != nil);
-    assert([confirm.message containsString:@"more than this profile recommends"]);
+    // The 12.9-inch M1: the device-neutral line, then its own measured fact, kept as it was found.
+    assert([confirm.message isEqual:@"Quality draws the 3D world at the screen's full resolution, 2732 × 2048 on iPad Pro 12.9-inch (M1), and takes much more graphics work than this profile's default. Lowering the game's own Render Scale brings that back down. Measured on this iPad, full resolution missed the frame budget."]);
     [self dismissPresented];
     Pump(0.4);
     // Declining the confirmation leaves the quality exactly where it was.

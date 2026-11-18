@@ -244,7 +244,10 @@
 "home.render.ready.title" = "Profil de rendu prêt";
 "home.render.ready.message" = "%@ s’appliquera au prochain démarrage de Forever. Aucun réglage du jeu n’a été modifié.";
 "home.render.confirm.title" = "Au-delà de la recommandation";
-"home.render.confirm.message" = "%1$@ fait le rendu à %2$@ sur %3$@, plus que ce que ce profil recommande. Mesuré sur cet appareil, il dépassait le temps disponible par image.";
+"home.render.confirm.quality" = "Qualité dessine le monde 3D à la pleine résolution de l’écran, %1$@ sur %2$@, et demande bien plus de travail graphique que le réglage par défaut de ce profil. Baisser l’échelle de rendu du jeu le fait redescendre.";
+"home.render.confirm.balanced" = "Équilibré dessine le jeu en %1$@ sur %2$@, plus de pixels que le réglage par défaut de ce profil, ce qui peut demander plus de travail graphique.";
+"home.render.confirm.finding.missedBudget" = "Mesuré sur cet iPad : en pleine résolution, le temps disponible par image était dépassé.";
+"home.render.confirm.finding.graphicsWork" = "Mesuré sur cet iPad à 30 FPS : la pleine résolution demandait environ 2,5 fois le travail graphique de Performances.";
 "home.render.confirm.yes" = "Utiliser %@";
 "home.profile.title" = "Profil de l’appareil";
 "home.profile.message" = "Appareil détecté : %@. Le mode automatique utilise le profil mesuré pour lui ; vous pouvez choisir un autre appareil pour comparer, il est alors signalé comme aperçu partout où il apparaît.";
