@@ -6,7 +6,7 @@
 | --- | --- |
 | Installation, signing, prerequisites, first launch | [Installation](../INSTALLATION.md) |
 | Build assembly, execution modes, run commands, simulator runs, unsigned IPA packaging | [Build and run WolkaraForever](../BUILDING.md) |
-| Download, update, language, add-ons, recovery, controls, voice | [Using WolkaraForever](../USING_WOLKARAFOREVER.md) |
+| Download, update, language, add-ons, recovery, controls, voice, battery-saving sound | [Using WolkaraForever](../USING_WOLKARAFOREVER.md) |
 | Phone layout, mobile interface, phone hardware | [iPhone](../IPHONE.md) |
 | Product positioning and quick start | [README](../../README.md) |
 | Support boundary or issue-reporting expectations | [Compatibility](../../COMPATIBILITY.md) |

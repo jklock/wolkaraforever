@@ -119,6 +119,7 @@
 "home.performance.gamepad" = "Gamepad-Oberfläche";
 "home.performance.overlay" = "Leistungsanzeige";
 "home.performance.renderProfile" = "Renderprofil: %@";
+"home.performance.audioAvoidHAL" = "Akkuschonender Ton";
 "home.performance.deviceProfile" = "Geräteprofil: %@";
 "home.render.performance" = "Leistung";
 "home.render.balanced" = "Ausgewogen";
