@@ -1,0 +1,38 @@
+name: Repository checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: repository-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Layer and documentation gates
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Fetch the pinned upstream tree
+        run: |
+          pin=$(git log --grep='^git-subtree-dir: platform$' -n 1 --format=%B | sed -n 's/^git-subtree-split: //p')
+          test -n "$pin" || { echo "No pinned platform commit recorded"; exit 1; }
+          git remote add upstream https://github.com/tolkara/tolkara.git
+          git fetch --quiet upstream "$pin"
+          git update-ref refs/remotes/upstream/main "$pin"
+
+      - run: wolkaraforever/tools/check_docs.sh
+      - run: python3 wolkaraforever/tools/check_localization.py
+      - run: wolkaraforever/tools/check_layers.sh

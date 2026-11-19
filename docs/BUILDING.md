@@ -162,9 +162,10 @@ signs the app with your own Apple ID and provides the memory that External JIT n
 
 `package_altstore_ipa.sh` refuses a dirty source tree and verifies the result before reporting
 success. A maintainer can publish the same artifact for an existing tag with the manual
-**Experimental IPA** workflow; nothing is built or published on a tag push. The bare
-`package_ipa.sh` writes into the prepared tree, which the next `prepare.sh` deletes; pass an
-output path under `build/ipa/` if you want to keep the result.
+**Experimental IPA** workflow; nothing is built or published on a tag push. `package_ipa.sh`
+writes its default output, and resolves any relative output path, from the repository root. For
+example, `build/ipa/Tolkara-unsigned.ipa` survives the next `prepare.sh` and is the same path a
+release workflow uploads.
 
 ## Test devices
 
