@@ -225,6 +225,11 @@ wolkaraforever/Voice/VoiceViewController.h launcher/Voice/VoiceViewController.h 
 wolkaraforever/Voice/VoiceViewController.m launcher/Voice/VoiceViewController.m add
 wolkaraforever/Voice/tests/test_voice_app.m tests/test_voice_app.m add
 #
+# NetworkHealth: an opt-in, bounded native runtime diagnostic
+wolkaraforever/NetworkHealth/NetworkHealth.h runtime/NetworkHealth.h add
+wolkaraforever/NetworkHealth/NetworkHealth.m runtime/NetworkHealth.m add
+wolkaraforever/NetworkHealth/tests/test_network_health.m tests/test_network_health.m add
+#
 # Input: any button, on any controller, in one stream (diagnostic)
 wolkaraforever/Input/ControllerCommandIngress.h launcher/Input/ControllerCommandIngress.h add
 wolkaraforever/Input/ControllerCommandIngress.m launcher/Input/ControllerCommandIngress.m add

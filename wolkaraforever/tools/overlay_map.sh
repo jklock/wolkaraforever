@@ -121,6 +121,15 @@ intent() {
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
+    echo "# NetworkHealth: an opt-in, bounded native runtime diagnostic"
+    git ls-files wolkaraforever/NetworkHealth | while read -r f; do
+        case "$f" in
+            wolkaraforever/NetworkHealth/tests/*) dst=tests/${f#wolkaraforever/NetworkHealth/tests/};;
+            *) dst=runtime/${f#wolkaraforever/NetworkHealth/};;
+        esac
+        echo "$f $dst $(intent "$dst")"
+    done
+    echo "#"
     echo "# Input: any button, on any controller, in one stream (diagnostic)"
     git ls-files wolkaraforever/Input | while read -r f; do
         case "$f" in

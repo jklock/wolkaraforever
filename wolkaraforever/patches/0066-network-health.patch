@@ -1,0 +1,96 @@
+# WolkaraForever layer patch 0066 - opt-in, bounded anonymous TCP health counters
+#
+# Why: connection reports need enough evidence to distinguish a stalled TCP connection from a healthy one without collecting an endpoint, DNS name, port, payload, account data, or game memory. Game Settings Manager arms this only for the next launch; the runtime owns the bound.
+#
+# Applies after: 0065-audio-answer-the-hal-from-a-model.patch
+# Applies to: runtime/NativeGuest.h, runtime/NativeGuest.m
+# Upstream: product-layer diagnostic; off by default.
+
+--- a/runtime/NativeGuest.h
++++ b/runtime/NativeGuest.h
+@@ -16,6 +16,9 @@
+ // compatibility runtime started from a profile. Copied; at most 64 of 4096
+ // bytes. Call before ng_initialize; default: none.
+ void ng_set_arguments(const char *const *arguments, size_t count);
++// Enable bounded anonymous TCP health counters for this launch. The host consumes its
++// one-launch preference before this call; default: disabled.
++void ng_set_network_health(bool enabled);
+ // Host-only cleanup before a guest exits; never reads application memory.
+ // Install before guest entry. A nonzero exit remains an error exit.
+ typedef void (*NGExitObserver)(int code, void *context);
+--- a/runtime/NativeGuest.m
++++ b/runtime/NativeGuest.m
+@@ -22,6 +22,7 @@
+ #include "GuestWait.h"
+ #include "GuestWaitTrace.h"
+ #include "SignedImage.h"
++#include "NetworkHealth.h"
+ #include <dlfcn.h>
+ #include <mach-o/loader.h>
+ #import <objc/objc-exception.h>
+@@ -385,6 +386,8 @@
+         launch_arguments[launch_argument_count++]=strdup(arguments[i]);
+     }
+ }
++static bool network_health;
++void ng_set_network_health(bool enabled) { network_health=enabled; }
+ // Libraries a profile names beside the executable's own list; see ng_set_libraries.
+ static char *launch_root, *launch_libraries[GL_MAX_LIBRARIES];
+ static size_t launch_library_count;
+@@ -734,6 +737,7 @@
+ static DIR *guest_opendir(const char *);
+ static struct dirent *guest_readdir(DIR *);
+ static int guest_socket(int, int, int);
++static int guest_close(int);
+ static int guest_connect(int, const struct sockaddr *, socklen_t);
+ static int guest_getsockopt(int, int, int, void *, socklen_t *);
+ static int guest_setsockopt(int, int, int, const void *, socklen_t);
+@@ -825,8 +829,10 @@
+         HOOK("realpath",guest_realpath); HOOK("realpath$DARWIN_EXTSN",guest_realpath_extsn);
+         if (trace_guest) HOOK("readdir",guest_readdir);
+     }
++    if (trace_guest || network_health) HOOK("socket",guest_socket);
++    if (network_health) HOOK("close",guest_close);
+     if (trace_guest) { HOOK("mkdir",guest_mkdir); HOOK("getenv",guest_getenv);
+-        HOOK("socket",guest_socket); HOOK("connect",guest_connect);
++        HOOK("connect",guest_connect);
+         HOOK("getsockopt",guest_getsockopt); HOOK("setsockopt",guest_setsockopt);
+         HOOK("shutdown",guest_shutdown); HOOK("poll",guest_poll);
+         HOOK("sendto",guest_sendto); HOOK("recvfrom",guest_recvfrom);
+@@ -1194,7 +1200,7 @@
+ // Sockets, under --trace-guest: who the guest tries to talk to (a Galaxy
+ // client's local socket, an HTTPS endpoint) says what a failed sign-in needed.
+ static int guest_socket(int domain, int type, int protocol) {
+-    int fd=socket(domain,type,protocol);
++    int fd=network_health ? nh_socket(domain,type,protocol) : socket(domain,type,protocol);
+     int code=errno;
+     if (trace_guest) {
+         const char *family=domain==AF_UNIX?"AF_UNIX":domain==AF_INET?"AF_INET":domain==AF_INET6?"AF_INET6":"?";
+@@ -1202,6 +1208,7 @@
+     }
+     return fd;
+ }
++static int guest_close(int fd) { return network_health ? nh_close(fd) : close(fd); }
+ static int guest_connect(int fd, const struct sockaddr *address, socklen_t size) {
+     int result=connect(fd,address,size);
+     int code=errno;
+@@ -1807,6 +1814,10 @@
+     }
+     trace_guest=[NSProcessInfo.processInfo.arguments containsObject:@"--trace-guest"];
+     if (trace_guest) LOG("[native] tracing failed file access, created directories, getenv, sockets and the calls dlsym hands out (--trace-guest)\n");
++    if (network_health) {
++        nh_start(log,15*60);
++        LOG("[native] network health: anonymous TCP counters, max 900 seconds\n");
++    }
+     if (trace_guest) {
+         struct sigaction crash_registers={0};
+         crash_registers.sa_sigaction=guest_crash_registers;
+@@ -2046,6 +2057,8 @@
+     }
+ done:
+     LOG("[native] result %s=%s\n",full_startup?"startup_return":"first_initializer",ok?"PASS":"FAIL");
++    nh_stop();
++    network_health=false;
+     // Retain live mappings and library handles: initializer-created pointers and
+     // worker threads may outlive this call. Only one guest per app process.
+     host_debugger_guest_complete(ok);
