@@ -18,6 +18,14 @@ Changing game language can require additional files. App language and game langu
 
 The first time you start a game with no mode chosen, the launcher asks how to start it. **Developer service** is the supported route and is what [Install WolkaraForever](INSTALLATION.md) sets up; **Local signing** and **External JIT** need their own setup first. The choice cannot be skipped on that first start, it is remembered afterwards, and the **Execution Mode** button on the library screen changes it. [Build and run WolkaraForever](BUILDING.md) explains what each mode needs.
 
+## Experimental Battle.net Login
+
+In **Game Settings Manager**, open **Battle.net Login (Experimental)**. It is off by default. Enabling it requires acknowledging that it is an experimental compatibility feature, not WolkaraForever's normal login path, and that you use it at your own risk.
+
+When enabled, **Play** completes its usual readiness checks, then opens Battle.net's official sign-in page. Cancel leaves the game unstarted. A successful result is used once for the immediately following Forever launch. Passwords and authenticators remain on Battle.net's site; WolkaraForever does not save browser sessions or launch tickets. **Disable experimental login** and **Clear sign-in data** both remove the in-memory browser session and any pending result immediately.
+
+This feature can stop working without notice. Do not include credentials, tickets, callback URLs, or account details in reports.
+
 ## Change app language or interface
 
 Open **Settings** to choose an app language. Open **Launcher Manager** to choose **iPadOS** or **iOS on Duo**. Interface selection changes the arrangement only; it does not change game data or add-ons.

@@ -24,6 +24,7 @@
 // what may and may not appear in it.
 #import "../Voice/KeyboardDictationEvents.h"
 #import "../WoW/CASC.h"
+#import "../WoW/BattleNetSession.h"
 #import "../WoW/WoWViewController.h"
 #import "LaunchProgressView.h"
 #import "NativeGuest.h"
@@ -1529,10 +1530,16 @@ static NSString *AKAudioStateDescription(void) {
         fprintf(log,"[host] environment %s=%s\n",name.UTF8String,TKHomeDisplayPath(value,NSHomeDirectory()).UTF8String);
     }
     NSMutableArray<NSString *> *launchArguments=[app.arguments mutableCopy];
+    BOOL guestArgumentsOverridden=NO;
     for (NSString *argument in arguments) if ([argument hasPrefix:@"--guest-arguments="]) {
         // Development launches may replace the profile's arguments (tab-separated).
         [launchArguments setArray:[[argument substringFromIndex:18] componentsSeparatedByString:@"\t"]];
+        guestArgumentsOverridden=YES;
     }
+    // An experimental browser result is held only until this exact launch point.
+    // Development argument overrides never receive it.
+    if (guestArgumentsOverridden) [TKBattleNetSession clear];
+    else [launchArguments addObjectsFromArray:[TKBattleNetSession handOffForProfile:app.profile]];
     const char *argv[64]; size_t argc=0;
     for (NSString *argument in launchArguments) if (argc<64) { argv[argc++]=argument.UTF8String; fprintf(log,"[host] argument %s\n",argument.UTF8String); }
     ng_set_arguments(argv,argc);
@@ -1559,6 +1566,7 @@ static NSString *AKAudioStateDescription(void) {
         char reason[256]={0};
         if(!ng_use_signed_image(container.fileSystemRepresentation,reason,sizeof reason)) {
             fprintf(log,"[host] signed-image rejected: %s (container=%s)\n",reason[0]?reason:"backend unavailable",shown.UTF8String); fflush(log);
+            [TKBattleNetSession gameEnded];
             // One startup attempt per process, as for Developer service.
             NSString *retry=WKLocalized(@"shell.retry.reopen");
             if(self.sessionUsed) retry=WKLocalized(@"shell.retry.reopenOrMode");
@@ -1574,6 +1582,7 @@ static NSString *AKAudioStateDescription(void) {
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestAlert.Last"];
     BOOL ok = ng_initialize(path.fileSystemRepresentation, NSBundle.mainBundle.privateFrameworksPath.fileSystemRepresentation, map.fileSystemRepresentation, log, fullStartup);
+    [TKBattleNetSession gameEnded];
     if (externalJIT) {
         WKExternalJITDiagnosticsMemory(@"native-return");
         WKExternalJITDiagnosticsFinish(ok);
@@ -1931,5 +1940,8 @@ int main(int argc, char *argv[]) {
     // free of the log and the Mac-side suites can link it. Installed here, before any screen or
     // setting asks for a string.
     WKLocalizationSetLogger(WKLanguageLogSink);
-    @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(AKHostAppDelegate.class)); }
+    @autoreleasepool {
+        [TKBattleNetSession beginProcess];
+        return UIApplicationMain(argc, argv, nil, NSStringFromClass(AKHostAppDelegate.class));
+    }
 }

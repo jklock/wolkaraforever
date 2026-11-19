@@ -1791,9 +1791,11 @@ static void TestIPadM5RenderProfile(void) {
     NSDictionary *expectedRows = @{
         // The Game Settings Manager card: the edition, the region/locale pair, and the
         // *app's* language. Three separate settings, three separate rows. The passive
-        // compatibility note that used to sit at the foot of this card is gone.
+        // compatibility note that used to sit at the foot of this card is gone. The
+        // experimental browser-login setting belongs here because it is a Forever
+        // launch choice, not a general launcher preference.
         @"wow.box.edition": @[@"wow.heading.edition", @"wow.edition", @"wow.preferences",
-                              @"wow.language"],
+                              @"wow.language", @"wow.browserLogin"],
         // The Add-On Manager card. The recommendation row is not drawn here any more; the
         // page's own Browse tab reaches it. What is left is what a person uses day to day,
         // plus the two whole-folder rows.

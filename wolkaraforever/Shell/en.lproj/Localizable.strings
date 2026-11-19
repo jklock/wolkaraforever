@@ -844,3 +844,19 @@
 "chat.composer.settings.done" = "Done";
 "chat.composer.destination.title" = "Name";
 "chat.composer.destination.command" = "Command, for example /say";
+
+/* ---- Experimental Battle.net Login ---- */
+"login.row" = "Battle.net Login (Experimental): %@";
+"login.status.off" = "Off";
+"login.status.on" = "On";
+"login.title" = "Battle.net Login (Experimental)";
+"login.explanation" = "Experimental compatibility feature. This is not WolkaraForever's normal login path. Your password and authenticator stay on Battle.net's official website; the launcher keeps no saved browser session or launch ticket. Use at your own risk.";
+"login.enable" = "Enable experimental login";
+"login.disable" = "Disable experimental login";
+"login.clear" = "Clear sign-in data";
+"login.enable.title" = "Enable experimental login?";
+"login.enable.message" = "This opt-in feature hands a one-use sign-in result to Forever only when you press Play. It may stop working without notice. It is not a replacement for normal in-game login. Use at your own risk.";
+"login.enable.confirm" = "I understand — enable";
+"login.cleared.title" = "Sign-in data cleared";
+"login.cleared.message" = "The in-memory browser session and any pending launch ticket were removed.";
+"login.failed" = "Sign-in did not finish. Cancel and try again.";

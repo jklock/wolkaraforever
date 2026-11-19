@@ -1,5 +1,7 @@
 #import "WoWViewController.h"
 #import "Client.h"
+#import "BattleNetBrowser.h"
+#import "BattleNetSession.h"
 #import "AddonManager.h"
 #import "../Voice/VoiceViewController.h"
 #import "../Voice/ControllerTouchpadViewController.h"
@@ -242,7 +244,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSError *_error;
     NSDate *_checkedAt;
     NSUInteger _generation;
-    BOOL _busy, _updating, _updateError, _starting, _running;
+    BOOL _busy, _updating, _updateError, _starting, _running, _browserSignInPresented;
     // A Forever UI file operation is running (backup, reset, restore, gamepad).
     // The rows are disabled while it runs and every handler rechecks it.
     BOOL _uiOperation, _gamepadChangePending;
@@ -268,7 +270,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSLayoutConstraint *_markWidth;
     UIStackView *_gridRow1, *_gridRow2, *_gridRow3, *_topRow;
     UILabel *_stateLabel, *_detailLabel, *_versionLabel;
-    UIButton *_editionButton, *_preferencesButton, *_languageButton, *_addonsButton, *_addonsDirectoryButton,
+    UIButton *_editionButton, *_preferencesButton, *_languageButton, *_browserLoginButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_touchpadButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
         *_renderProfileButton, *_deviceProfileButton, *_interfaceModeButton,
@@ -431,6 +433,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // WolkaraForever's labels, the other changes what World of Warcraft downloads, and a
     // single row for both would be the exact confusion this page has to avoid.
     _languageButton=[self button:@"wow.language" action:@selector(chooseAppLanguage)];
+    _browserLoginButton=[self button:@"wow.browserLogin" action:@selector(browserLoginSettings)];
     _addonsButton=[self button:@"wow.addons.manage" action:@selector(manageAddons)];
     // Mac-Ever is a Forever-compatible add-on that is downloaded from CurseForge
     // by the person using Safari, then installed with the row above. No scrape,
@@ -484,7 +487,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // files, and keeping them apart is what makes either safe to press. Every word in them
     // comes from -localize, below, which is also what a language change runs.
     UIView *editionBox=[self sectionBoxWithIdentifier:@"wow.box.edition"
-        rows:@[_editionButton,_preferencesButton,_languageButton]];
+        rows:@[_editionButton,_preferencesButton,_languageButton,_browserLoginButton]];
     UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
         rows:@[_addonsButton,_addonsDirectoryButton,_addonsBackupButton,_addonsRestoreButton]];
     UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
@@ -810,13 +813,22 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             // Returning from the background or changing edition invalidates this request.
             if (launch && self->_launchWhenReady && [self inFront] &&
                 !error && !client.cancelled && installation.state==TKWoWInstallationReady && installation.app && !self->_sessionUsed &&
-                self.view.window && self.navigationController.topViewController==self && self.startApp) self.startApp(installation.app);
+                self.view.window && self.navigationController.topViewController==self) [self launchReadyApp:installation.app];
         });
     });
 }
+- (void)launchReadyApp:(TKApp *)app {
+    if (_busy || _starting || _running || _sessionUsed || _browserSignInPresented || ![self inFront]) return;
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"] &&
+        [app.profile isEqual:@"wow-forever"] && ![TKBattleNetSession isReady]) {
+        [self browserSignIn];
+        return;
+    }
+    if (self.startApp) self.startApp(app);
+}
 - (void)primaryAction {
     // Starting and running own the button; nothing else may close or start.
-    if (_starting || _running) return;
+    if (_starting || _running || _browserSignInPresented) return;
     // After a session the only useful action is to leave: this process cannot
     // start a second guest, and the user must be able to close it from here.
     if (_sessionUsed) { [self closeApp]; return; }
@@ -881,6 +893,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [_gamepadRow applyTitle:WKLocalized(@"home.performance.gamepad")];
     [_overlayRow applyTitle:WKLocalized(@"home.performance.overlay")];
     [_soundRow applyTitle:WKLocalized(@"home.performance.audioAvoidHAL")];
+    _browserLoginButton.accessibilityLabel=WKLocalized(@"login.row");
     [_diagnosticsButton setTitle:WKLocalized(@"home.diagnostics") forState:UIControlStateNormal];
     _updatesLabel.text=WKLocalized(@"home.updates.note");
     // A VoiceOver reader is told the language of the words it is about to read, so a German
@@ -1072,6 +1085,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _editionButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _preferencesButton.enabled=_editionButton.enabled;
     _languageButton.enabled=_editionButton.enabled;
+    BOOL browserLoginAvailable=_editionButton.enabled && [_product[@"id"] isEqual:TKForeverUIEdition];
+    [self configureButton:_browserLoginButton title:WKLocalizedFormat(@"login.row",
+        WKLocalized([NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"] ? @"login.status.on" : @"login.status.off")) filled:NO];
+    _browserLoginButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _browserLoginButton.enabled=browserLoginAvailable;
     self.navigationItem.rightBarButtonItem.enabled=!_updating && !_starting && !_running;
     _primaryButton.hidden=_starting || _running;
     _updatesLabel.hidden=_starting || _running;
@@ -1267,6 +1285,68 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.preferences.region") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:YES]; }]];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.preferences.language") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { (void)a; [self choosePreference:NO]; }]];
     [self presentSheet:sheet anchor:_preferencesButton];
+}
+- (BOOL)browserLoginAllowed {
+    return !_busy && !_starting && !_running && !_sessionUsed && !_browserSignInPresented &&
+        [_product[@"id"] isEqual:TKForeverUIEdition];
+}
+- (void)clearBrowserLoginDataWithMessage:(BOOL)message {
+    if (_browserSignInPresented) return;
+    _browserSignInPresented=YES;
+    [TKBattleNetBrowser clearSavedSignInWithCompletion:^{
+        self->_browserSignInPresented=NO;
+        [self render];
+        if (message) [self presentMessage:WKLocalized(@"login.cleared.title") message:WKLocalized(@"login.cleared.message")];
+    }];
+}
+- (void)enableBrowserLogin {
+    UIAlertController *warning=[UIAlertController alertControllerWithTitle:WKLocalized(@"login.enable.title")
+        message:WKLocalized(@"login.enable.message") preferredStyle:UIAlertControllerStyleAlert];
+    [warning addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [warning addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.enable.confirm") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"WoWBrowserLogin"];
+        [self render];
+    }]];
+    [self presentSheet:warning anchor:_browserLoginButton];
+}
+- (void)browserLoginSettings {
+    if (![self browserLoginAllowed]) return;
+    BOOL enabled=[NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"login.title")
+        message:WKLocalized(@"login.explanation") preferredStyle:UIAlertControllerStyleActionSheet];
+    if (enabled) {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.disable") style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"WoWBrowserLogin"];
+            [self clearBrowserLoginDataWithMessage:YES];
+        }]];
+    } else {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.enable") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [self enableBrowserLogin];
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.clear") style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+        [self clearBrowserLoginDataWithMessage:YES];
+    }]];
+    [self presentSheet:sheet anchor:_browserLoginButton];
+}
+- (void)browserSignIn {
+    if (self.presentedViewController || ![self browserLoginAllowed] ||
+        _installation.state!=TKWoWInstallationReady || ![_installation.app.profile isEqual:@"wow-forever"]) return;
+    _browserSignInPresented=YES;
+    [TKBattleNetSession clear];
+    NSUInteger generation=_generation;
+    TKBattleNetBrowser *browser=[[TKBattleNetBrowser alloc] initWithRegion:_region locale:_locale];
+    __weak typeof(self) weakSelf=self;
+    browser.completion=^(BOOL received) {
+        typeof(self) self=weakSelf;
+        if (!self) return;
+        self->_browserSignInPresented=NO;
+        if (received && generation==self->_generation && [self inFront] && self.view.window &&
+            self.navigationController.topViewController==self) [self primaryAction];
+    };
+    UINavigationController *navigation=[[UINavigationController alloc] initWithRootViewController:browser];
+    navigation.modalInPresentation=YES;
+    WKPresentWhenFree(self, ^{ [self presentViewController:navigation animated:YES completion:nil]; });
 }
 - (UIAlertController *)settingsSheet {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.title")

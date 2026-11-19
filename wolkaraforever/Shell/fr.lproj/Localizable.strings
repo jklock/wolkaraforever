@@ -844,3 +844,19 @@
 "chat.composer.settings.done" = "Terminé";
 "chat.composer.destination.title" = "Nom";
 "chat.composer.destination.command" = "Commande, par exemple /say";
+
+/* ---- Connexion Battle.net expérimentale ---- */
+"login.row" = "Connexion Battle.net (expérimentale) : %@";
+"login.status.off" = "Désactivée";
+"login.status.on" = "Activée";
+"login.title" = "Connexion Battle.net (expérimentale)";
+"login.explanation" = "Fonction de compatibilité expérimentale. Ce n’est pas le parcours de connexion normal de WolkaraForever. Votre mot de passe et votre authentificateur restent sur le site officiel Battle.net ; le lanceur ne conserve ni session web ni ticket de lancement. Utilisez-la à vos risques.";
+"login.enable" = "Activer la connexion expérimentale";
+"login.disable" = "Désactiver la connexion expérimentale";
+"login.clear" = "Effacer les données de connexion";
+"login.enable.title" = "Activer la connexion expérimentale ?";
+"login.enable.message" = "Cette fonction optionnelle transmet un résultat de connexion à usage unique à Forever seulement après avoir choisi Jouer. Elle peut cesser de fonctionner sans préavis. Elle ne remplace pas la connexion normale dans le jeu. Utilisez-la à vos risques.";
+"login.enable.confirm" = "Je comprends — activer";
+"login.cleared.title" = "Données de connexion effacées";
+"login.cleared.message" = "La session web en mémoire et tout ticket de lancement en attente ont été supprimés.";
+"login.failed" = "La connexion ne s’est pas terminée. Annulez et réessayez.";
