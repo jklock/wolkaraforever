@@ -841,3 +841,19 @@
 "chat.composer.settings.done" = "Fertig";
 "chat.composer.destination.title" = "Bezeichnung";
 "chat.composer.destination.command" = "Befehl, zum Beispiel /say";
+
+/* ---- Experimentelle Battle.net-Anmeldung ---- */
+"login.row" = "Battle.net-Anmeldung (experimentell): %@";
+"login.status.off" = "Aus";
+"login.status.on" = "An";
+"login.title" = "Battle.net-Anmeldung (experimentell)";
+"login.explanation" = "Experimentelle Kompatibilitätsfunktion. Dies ist nicht der normale Anmeldeweg von WolkaraForever. Passwort und Authenticator bleiben auf der offiziellen Battle.net-Website; der Launcher speichert keine Browsersitzung und kein Startticket. Nutzung auf eigenes Risiko.";
+"login.enable" = "Experimentelle Anmeldung aktivieren";
+"login.disable" = "Experimentelle Anmeldung deaktivieren";
+"login.clear" = "Anmeldedaten löschen";
+"login.enable.title" = "Experimentelle Anmeldung aktivieren?";
+"login.enable.message" = "Diese optionale Funktion übergibt ein einmaliges Anmeldeergebnis nur beim Drücken von Spielen an Forever. Sie kann ohne Vorwarnung nicht mehr funktionieren. Sie ersetzt nicht die normale Anmeldung im Spiel. Nutzung auf eigenes Risiko.";
+"login.enable.confirm" = "Ich verstehe — aktivieren";
+"login.cleared.title" = "Anmeldedaten gelöscht";
+"login.cleared.message" = "Die Browser-Sitzung im Speicher und jedes ausstehende Startticket wurden entfernt.";
+"login.failed" = "Die Anmeldung wurde nicht abgeschlossen. Abbrechen und erneut versuchen.";
