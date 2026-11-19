@@ -25,6 +25,10 @@ BOOL TKBattleNetTrustedURL(NSURL *url) {
     return [host isEqual:@"battle.net"] || [host hasSuffix:@".battle.net"] ||
            [host isEqual:@"blizzard.com"] || [host hasSuffix:@".blizzard.com"];
 }
+BOOL TKBattleNetFederatedURL(NSURL *url) {
+    return [url.scheme.lowercaseString isEqual:@"https"] && !url.user && !url.password &&
+        (!url.port || url.port.integerValue==443) && url.host.length>0;
+}
 static BOOL TicketValid(NSString *ticket) {
     if (!ticket.length || ticket.length>128) return NO;
     NSRange match=[ticket rangeOfString:@"\\A(?:US|EU|KR|TW|CN)-[0-9a-fA-F]{32}-[1-9][0-9]*\\z"

@@ -121,15 +121,17 @@
         else WKLog("battle-login", @"callback refused: untrusted source");
         return;
     }
-    // Subframes (including CAPTCHA providers) follow WebKit's normal rules.
-    // Top-level navigation stays on Blizzard's HTTPS sites.
+    // Federation leaves Blizzard's domains for the provider's own HTTPS page. This is allowed
+    // only inside the acknowledged browser. The localhost result stays strict: only an official
+    // Blizzard main frame may deliver the game ticket.
     if (action.targetFrame.mainFrame || !action.targetFrame) {
-        _trustedMainNavigation=TKBattleNetTrustedURL(url);
-        if (!_trustedMainNavigation) {
+        BOOL blizzard=TKBattleNetTrustedURL(url);
+        if (!blizzard && !TKBattleNetFederatedURL(url)) {
             WKLog("battle-login", @"navigation refused: untrusted top-level page");
             decisionHandler(WKNavigationActionPolicyCancel);
             return;
         }
+        _trustedMainNavigation=blizzard;
         if (!action.targetFrame) {
             decisionHandler(WKNavigationActionPolicyCancel);
             [_web loadRequest:action.request];

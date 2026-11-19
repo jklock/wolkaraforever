@@ -22,7 +22,7 @@ The first time you start a game with no mode chosen, the launcher asks how to st
 
 In **Game Settings Manager**, open **Battle.net Login (Experimental)**. It is off by default. Enabling it requires acknowledging that it is an experimental compatibility feature, not WolkaraForever's normal login path, and that you use it at your own risk.
 
-When enabled, **Play** completes its usual readiness checks, then opens Battle.net's official sign-in page. Cancel leaves the game unstarted. A successful result is used once for the immediately following Forever launch. Passwords and authenticators remain on Battle.net's site; WolkaraForever does not save browser sessions or launch tickets. **Disable experimental login** and **Clear sign-in data** both remove the in-memory browser session and any pending result immediately.
+When enabled, **Play** completes its usual readiness checks, then opens Battle.net's official sign-in page. Battle.net may hand the browser to your chosen HTTPS identity provider; verify that provider's address before entering credentials. Cancel leaves the game unstarted. A successful result is used once for the immediately following Forever launch. Passwords and authenticators remain on Battle.net's site; WolkaraForever does not save browser sessions or launch tickets. **Disable experimental login** and **Clear sign-in data** both remove the in-memory browser session and any pending result immediately.
 
 This feature can stop working without notice. Do not include credentials, tickets, callback URLs, or account details in reports.
 

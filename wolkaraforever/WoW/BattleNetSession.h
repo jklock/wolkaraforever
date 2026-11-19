@@ -13,6 +13,9 @@ NS_ASSUME_NONNULL_BEGIN
 //      are cleared as soon as the game removes WEB_TOKEN, when the game returns,
 //      when the ticket's lifetime ends, and on every process start.
 BOOL TKBattleNetTrustedURL(NSURL *url);
+// Federated identity pages may be outside Blizzard's domains. They are allowed only in the
+// opt-in browser; only a Blizzard-origin page may deliver the game callback.
+BOOL TKBattleNetFederatedURL(NSURL *url);
 NSString * _Nullable TKBattleNetCallbackTicket(NSURL *url);
 // The game's own handoff wire format (fixed-entropy PBKDF2 + AES-CBC, zero IV). The
 // unmodified game decrypts WEB_TOKEN with exactly this, so it cannot be changed. It is

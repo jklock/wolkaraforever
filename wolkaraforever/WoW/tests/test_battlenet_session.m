@@ -51,6 +51,10 @@ int main(void) { @autoreleasepool {
         assert(TKBattleNetTrustedURL([NSURL URLWithString:good]));
     for (NSString *bad in @[@"http://us.battle.net", @"https://battle.net.evil.test", @"https://evilbattle.net", @"https://user@battle.net", @"https://battle.net:80", @"file:///battle.net"])
         assert(!TKBattleNetTrustedURL([NSURL URLWithString:bad]));
+    for (NSString *good in @[@"https://accounts.google.com", @"https://login.microsoftonline.com", @"https://appleid.apple.com"])
+        assert(TKBattleNetFederatedURL([NSURL URLWithString:good]));
+    for (NSString *bad in @[@"http://accounts.google.com", @"https://user@accounts.google.com", @"https://accounts.google.com:8443", @"file:///provider"])
+        assert(!TKBattleNetFederatedURL([NSURL URLWithString:bad]));
 
     // Wire-format fixtures (the game decodes exactly this; not a security boundary).
     NSData *encoded=TKBattleNetEncodeLaunchTicket(ticket,@"testuser");
