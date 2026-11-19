@@ -197,6 +197,10 @@
 "home.settings.message" = "Les mises à jour s’installent automatiquement tant que l’app est ouverte. Vos réglages et vos addons sont conservés. La préparation au démarrage est distincte du téléchargement des mises à jour.";
 "home.settings.repair" = "Vérifier et réparer les fichiers du jeu";
 "home.settings.diagnostics" = "Diagnostics et journaux";
+"home.settings.networkHealthOn" = "Activer le diagnostic réseau pour le prochain lancement";
+"home.settings.networkHealthOff" = "Désactiver le diagnostic réseau pour le prochain lancement";
+"home.settings.networkHealth.title" = "Diagnostic réseau activé";
+"home.settings.networkHealth.message" = "Expérimental : le prochain lancement enregistre des compteurs TCP anonymes pendant 15 minutes au maximum. Il n’enregistre ni adresse, ni port, ni nom, ni données utiles, ni identifiant, ni donnée de jeu.";
 "home.settings.inputDiagnosticsOn" = "Activer les diagnostics d’entrée";
 "home.settings.inputDiagnosticsOff" = "Désactiver les diagnostics d’entrée";
 "home.settings.touchpadPointerOn" = "Utiliser le pavé tactile de la manette comme souris";

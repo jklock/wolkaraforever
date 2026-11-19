@@ -1363,6 +1363,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.diagnostics") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a; [self diagnostics];
     }]];
+    BOOL networkHealth=[NSUserDefaults.standardUserDefaults boolForKey:@"WolkaraForever.NetworkHealth.NextLaunch"];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(networkHealth?@"home.settings.networkHealthOff":@"home.settings.networkHealthOn") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
+        NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+        [defaults setBool:!networkHealth forKey:@"WolkaraForever.NetworkHealth.NextLaunch"];
+        if(!networkHealth) [self presentMessage:WKLocalized(@"home.settings.networkHealth.title") message:WKLocalized(@"home.settings.networkHealth.message")];
+    }]];
     // Input diagnostics: the one switch that lets the controller inspector write anything at
     // all during play. Off by default, stored, and off again after the next launch unless the
     // user leaves it on - which is what makes "no controller-inspector event-log growth during

@@ -198,6 +198,10 @@
 "home.settings.message" = "Updates install automatically while this app is open. Settings and addons are preserved. Startup preparation is separate from downloading updates.";
 "home.settings.repair" = "Verify and repair game files";
 "home.settings.diagnostics" = "Diagnostics and logs";
+"home.settings.networkHealthOn" = "Arm network health for next launch";
+"home.settings.networkHealthOff" = "Disarm network health for next launch";
+"home.settings.networkHealth.title" = "Network health armed";
+"home.settings.networkHealth.message" = "Experimental: the next game launch records anonymous TCP health counters for at most 15 minutes. It records no addresses, ports, names, payloads, credentials, or game data.";
 "home.settings.inputDiagnosticsOn" = "Turn on input diagnostics";
 "home.settings.inputDiagnosticsOff" = "Turn off input diagnostics";
 "home.settings.touchpadPointerOn" = "Use controller touchpad as mouse";

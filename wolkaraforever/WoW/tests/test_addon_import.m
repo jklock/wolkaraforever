@@ -82,6 +82,18 @@ int TestRealAddonImport(const char *fixtures, const char *temporary) {
         CHECK(!foreign.providerUpdatable, "and never becomes provider-updatable from its name");
         CHECK([foreign.compatibility isEqual:@"unverified"], "an older interface is unverified, not refused");
 
+        // A single add-on folder can include manifests for multiple game clients. The Forever
+        // manifest must supply the displayed metadata rather than whichever name sorts first.
+        NSString *multi = [directory stringByAppendingPathComponent:@"MultiClient"];
+        CHECK([fm createDirectoryAtPath:multi withIntermediateDirectories:YES attributes:nil error:&error], "create a multi-client add-on");
+        CHECK([@"## Title: Retail name\n## Version: retail\n## Interface: 11509\n" writeToFile:[multi stringByAppendingPathComponent:@"MultiClient.toc"] atomically:YES encoding:NSUTF8StringEncoding error:&error], "write the retail manifest");
+        CHECK([@"## Title: Forever name\n## Version: forever\n## Interface: 16001\n" writeToFile:[multi stringByAppendingPathComponent:@"MultiClient_Forever.toc"] atomically:YES encoding:NSUTF8StringEncoding error:&error], "write the Forever manifest");
+        [store reload];
+        TKAddonRecord *multiRecord = nil;
+        for (TKAddonRecord *record in store.records) if ([record.identifier isEqual:@"MultiClient"]) multiRecord = record;
+        CHECK([multiRecord.name isEqual:@"Forever name"] && [multiRecord.version isEqual:@"forever"], "the active Forever manifest supplies add-on metadata");
+        CHECK([multiRecord.compatibility isEqual:@"verified"], "all multi-client manifests retain compatibility metadata");
+
         // --- a pinned package is not updated, and unpinning restores the ability
         CHECK([store setPinned:YES record:owned error:&error], "pin the package");
         // Each mutation reloads, so the object to pass on is the one the store is holding now.

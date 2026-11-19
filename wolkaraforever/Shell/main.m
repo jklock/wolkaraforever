@@ -1581,6 +1581,13 @@ static NSString *AKAudioStateDescription(void) {
     // launch before entering native code, then consume the marker it produces.
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestFailure.DamagedInstallation"];
     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForever.GuestAlert.Last"];
+    // Network health is explicitly armed from Game Settings Manager for this one launch. Consume
+    // it before guest entry so an interrupted launch cannot leave diagnostics on next time.
+    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+    BOOL networkHealth=[defaults boolForKey:@"WolkaraForever.NetworkHealth.NextLaunch"];
+    [defaults removeObjectForKey:@"WolkaraForever.NetworkHealth.NextLaunch"];
+    ng_set_network_health(networkHealth);
+    if(networkHealth) fprintf(log,"[host] network health: anonymous TCP counters enabled for this launch\n");
     BOOL ok = ng_initialize(path.fileSystemRepresentation, NSBundle.mainBundle.privateFrameworksPath.fileSystemRepresentation, map.fileSystemRepresentation, log, fullStartup);
     [TKBattleNetSession gameEnded];
     if (externalJIT) {

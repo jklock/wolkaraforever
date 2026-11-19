@@ -56,14 +56,33 @@ static const NSInteger ManifestFormat    = 3;
 // imported, shown and used, and marked unverified.
 static NSString *const ForeverInterface = @"16001";
 
+static NSArray<NSString *> *Interfaces(NSString *toc);
 static BOOL Fail(NSError **error, NSString *message) { if(error)*error=[NSError errorWithDomain:@"WolkaraForever.AddOns" code:1 userInfo:@{NSLocalizedDescriptionKey:message}];return NO; }
 static NSString *TOC(NSString *folder) {
     NSArray *names=[[NSFileManager.defaultManager contentsOfDirectoryAtPath:folder error:NULL] sortedArrayUsingSelector:@selector(compare:)];
+    NSString *chosen=nil;
+    NSInteger chosenScore=NSIntegerMin;
+    NSMutableArray<NSString *> *others=[NSMutableArray array];
+    NSString *folderName=folder.lastPathComponent;
     for(NSString *name in names) if([name.pathExtension.lowercaseString isEqual:@"toc"]) {
         NSData *data=[NSData dataWithContentsOfFile:[folder stringByAppendingPathComponent:name] options:0 error:NULL];
-        if(data.length && data.length<=256*1024) return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]?:[[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
+        if(!data.length || data.length>256*1024) continue;
+        NSString *toc=[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]?:[[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
+        if(!toc) continue;
+        // A package may carry manifests for several game clients. Prefer the one explicitly
+        // named for Forever, then a manifest that declares Forever's interface, then its base
+        // folder name. The remaining manifests are retained below for compatibility metadata.
+        NSString *stem=name.stringByDeletingPathExtension;
+        NSInteger score=0;
+        if([stem isEqual:folderName]) score=10;
+        if([Interfaces(toc) containsObject:ForeverInterface]) score=20;
+        if([stem isEqual:[folderName stringByAppendingString:@"_Forever"]] || [stem isEqual:[folderName stringByAppendingString:@"-Forever"]]) score=40;
+        if(!chosen || score>chosenScore) { if(chosen) [others addObject:chosen]; chosen=toc; chosenScore=score; }
+        else [others addObject:toc];
     }
-    return nil;
+    // Value() reads the first manifest. Interfaces() deliberately sees all of them, so an
+    // add-on remains classified correctly even when a secondary manifest declares Forever.
+    return chosen ? [[@[chosen] arrayByAddingObjectsFromArray:others] componentsJoinedByString:@"\n"] : nil;
 }
 static NSString *Value(NSString *toc,NSString *key) {
     for(NSString *line in [toc componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) if([line hasPrefix:[@"## " stringByAppendingString:key]]) {
@@ -73,12 +92,14 @@ static NSString *Value(NSString *toc,NSString *key) {
 }
 // Every interface number a TOC declares, as strings, so they can go in the manifest unchanged.
 static NSArray<NSString *> *Interfaces(NSString *toc) {
-    NSString *declared = toc ? Value(toc, @"Interface:") : nil;
-    if (!declared.length) return @[];
     NSMutableArray<NSString *> *values = [NSMutableArray array];
-    for (NSString *part in [declared componentsSeparatedByString:@","]) {
-        NSString *value = [part stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        if (value.length && ![values containsObject:value]) [values addObject:value];
+    for (NSString *line in [toc componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
+        if (![line hasPrefix:@"## Interface:"]) continue;
+        NSString *declared = [[line substringFromIndex:@"## Interface:".length] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        for (NSString *part in [declared componentsSeparatedByString:@","]) {
+            NSString *value = [part stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if (value.length && ![values containsObject:value]) [values addObject:value];
+        }
     }
     return values;
 }
