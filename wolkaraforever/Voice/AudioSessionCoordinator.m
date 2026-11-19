@@ -232,19 +232,15 @@ static char const AKAudioCoordinatorQueueKey;
             dispatch_async(dispatch_get_main_queue(), ^{ completion(NO, error); });
             return;
         }
-        if (@available(iOS 27.0, *)) {
-            [session activateWithOptions:0 completionHandler:^(BOOL activated, NSError *failure) {
-                dispatch_async(self->_transitions, ^{
-                    BOOL current = generation == self->_activationGeneration && self->_pushToTalk;
-                    if (activated && !current) [session deactivateWithOptions:0 completionHandler:^(BOOL deactivated, NSError *error) { (void)deactivated; (void)error; }];
-                    dispatch_async(dispatch_get_main_queue(), ^{ completion(activated && current, failure); });
-                });
-            }];
-        } else {
-            BOOL activated = [session setActive:YES error:&error];
-            if (activated) { self->_lease = AKAudioLeasePushToTalk; self->_pushToTalk = YES; [self startObserving]; }
-            dispatch_async(dispatch_get_main_queue(), ^{ completion(activated, error); });
+        BOOL activated = [session setActive:YES error:&error];
+        BOOL current = generation == self->_activationGeneration && self->_pushToTalk;
+        if (activated && !current) [session setActive:NO error:NULL];
+        if (activated && current) {
+            self->_lease = AKAudioLeasePushToTalk;
+            self->_pushToTalk = YES;
+            [self startObserving];
         }
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(activated && current, error); });
     });
 }
 
