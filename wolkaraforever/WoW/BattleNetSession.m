@@ -1,4 +1,5 @@
 #import "BattleNetSession.h"
+#import "../App/WolkaraForeverLog.h"
 #import <CommonCrypto/CommonCrypto.h>
 #include <string.h>
 
@@ -126,11 +127,15 @@ static void ClearHandOffLocked(void) {
     [self clear];
     NSString *upper=region.uppercaseString;
     if (!TicketValid(ticket) || ![@[@"US",@"EU",@"KR",@"TW"] containsObject:upper] ||
-        ![@[@"enUS",@"frFR",@"deDE",@"esES"] containsObject:locale]) return NO;
+        ![@[@"enUS",@"frFR",@"deDE",@"esES"] containsObject:locale]) {
+        WKLog("battle-login", @"callback refused: invalid result");
+        return NO;
+    }
     @synchronized (Lock()) {
         heldTicket=[ticket copy]; heldRegion=upper; heldLocale=[locale copy];
         readyUntil=[NSDate dateWithTimeIntervalSinceNow:TKBattleNetTicketLifetime];
     }
+    WKLog("battle-login", @"callback accepted: one-time handoff ready");
     return YES;
 }
 + (BOOL)isReady {
@@ -160,7 +165,10 @@ static void ClearHandOffLocked(void) {
     return [self handOffForProfile:profile domain:Domain clearAfter:TKBattleNetTicketLifetime];
 }
 + (NSArray<NSString *> *)handOffForProfile:(NSString *)profile domain:(NSString *)domain clearAfter:(NSTimeInterval)seconds {
-    if (![profile isEqual:@"wow-forever"] || ![self isReady]) return @[];
+    if (![profile isEqual:@"wow-forever"] || ![self isReady]) {
+        WKLog("battle-login", @"handoff skipped: no ready Forever result");
+        return @[];
+    }
     @synchronized (Lock()) {
         NSString *ticket=heldTicket, *region=heldRegion, *locale=heldLocale;
         // Single use: the in-memory copy is gone whether or not the write succeeds.
@@ -169,7 +177,10 @@ static void ClearHandOffLocked(void) {
         if (!ticket) return @[];
         // Foundation returns an empty username in an iOS sandbox. The public handoff
         // algorithm accepts that: no username bytes are XORed into the entropy.
-        if (!TKBattleNetWriteTicket(ticket,NSUserName()?:@"",region,locale,domain)) return @[];
+        if (!TKBattleNetWriteTicket(ticket,NSUserName()?:@"",region,locale,domain)) {
+            WKLog("battle-login", @"handoff refused: launch-preference write failed");
+            return @[];
+        }
         ticket=nil;
         handedOffDomain=[domain copy];
         NSUInteger mine=++generation;
@@ -193,6 +204,7 @@ static void ClearHandOffLocked(void) {
         watcher=timer;
         dispatch_resume(timer);
     }
+    WKLog("battle-login", @"handoff written: launching Forever once");
     return @[@"-launcherlogin",@"-uid",@"wowf"];
 }
 @end

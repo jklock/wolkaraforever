@@ -1,6 +1,7 @@
 #import "BattleNetBrowser.h"
 #import "BattleNetSession.h"
 #import "../App/WKLocalization.h"
+#import "../App/WolkaraForeverLog.h"
 #import <WebKit/WebKit.h>
 
 @interface TKBattleNetBrowser () <WKNavigationDelegate>
@@ -60,12 +61,14 @@
         [_web.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [_web.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor]]];
     if (![@[@"us", @"eu", @"kr", @"tw"] containsObject:_region]) {
+        WKLog("battle-login", @"browser refused: invalid selected region");
         [self cancel];
         return;
     }
     NSURL *url=[NSURL URLWithString:[NSString stringWithFormat:
         @"https://%@.battle.net/login/en/?externalChallenge=login&app=WoW", _region]];
     self.navigationItem.prompt=url.host;
+    WKLog("battle-login", @"browser opened: official sign-in page");
     [_web loadRequest:[NSURLRequest requestWithURL:url]];
     __weak typeof(self) weakSelf=self;
     _deadline=[NSTimer scheduledTimerWithTimeInterval:600 repeats:NO block:^(__unused NSTimer *timer) {
@@ -84,6 +87,7 @@
     [_web removeFromSuperview];
     _web=nil;
     if (!received) [TKBattleNetSession clear];
+    WKLog("battle-login", @"browser closed: %@", received?@"accepted result":@"no result");
     void (^completion)(BOOL)=self.completion;
     self.completion=nil;
     [self dismissViewControllerAnimated:YES completion:^{
@@ -114,6 +118,7 @@
         _trustedMainNavigation=NO;
         decisionHandler(WKNavigationActionPolicyCancel);
         if (trusted) [self finish:[TKBattleNetSession acceptTicket:ticket region:_region locale:_locale]];
+        else WKLog("battle-login", @"callback refused: untrusted source");
         return;
     }
     // Subframes (including CAPTCHA providers) follow WebKit's normal rules.
@@ -121,6 +126,7 @@
     if (action.targetFrame.mainFrame || !action.targetFrame) {
         _trustedMainNavigation=TKBattleNetTrustedURL(url);
         if (!_trustedMainNavigation) {
+            WKLog("battle-login", @"navigation refused: untrusted top-level page");
             decisionHandler(WKNavigationActionPolicyCancel);
             return;
         }

@@ -821,6 +821,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (_busy || _starting || _running || _sessionUsed || _browserSignInPresented || ![self inFront]) return;
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"] &&
         [app.profile isEqual:@"wow-forever"] && ![TKBattleNetSession isReady]) {
+        WKLog("battle-login", @"Play requested: opening experimental sign-in");
         [self browserSignIn];
         return;
     }
@@ -1305,6 +1306,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [warning addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     [warning addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.enable.confirm") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"WoWBrowserLogin"];
+        WKLog("battle-login", @"experimental login enabled");
         [self render];
     }]];
     [self presentSheet:warning anchor:_browserLoginButton];
@@ -1317,6 +1319,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (enabled) {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.disable") style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
             [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"WoWBrowserLogin"];
+            WKLog("battle-login", @"experimental login disabled");
             [self clearBrowserLoginDataWithMessage:YES];
         }]];
     } else {
@@ -1333,6 +1336,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (self.presentedViewController || ![self browserLoginAllowed] ||
         _installation.state!=TKWoWInstallationReady || ![_installation.app.profile isEqual:@"wow-forever"]) return;
     _browserSignInPresented=YES;
+    WKLog("battle-login", @"presenting sign-in browser");
     [TKBattleNetSession clear];
     NSUInteger generation=_generation;
     TKBattleNetBrowser *browser=[[TKBattleNetBrowser alloc] initWithRegion:_region locale:_locale];

@@ -9,7 +9,7 @@ cd build/platform
 mkdir -p build/wow-launcher
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer -framework Foundation \
-    launcher/WoW/BattleNetSession.m tests/test_battlenet_session.m \
+    launcher/WoW/BattleNetSession.m launcher/App/WolkaraForeverLog.m tests/test_battlenet_session.m \
     -o build/wow-launcher/test_battlenet_session
 build/wow-launcher/test_battlenet_session
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
