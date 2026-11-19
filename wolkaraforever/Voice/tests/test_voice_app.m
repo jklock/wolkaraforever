@@ -679,6 +679,18 @@ static void TestAudioSessionCoordinator(void) {
     // Nothing is claimed at the start, and push to talk is not active.
     CHECK((!coordinator.pushToTalkActive), @"push to talk is not active before anything asks");
 
+    // A running game may be interrupted before dictation has ever been used. The game lease must
+    // therefore begin observing immediately, then reactivate only when iPadOS says it may resume.
+    CHECK(([coordinator requestGamePlayback:@"the game begins before dictation"]), @"the game obtains playback before dictation");
+    NSString *beforeInterruptionEnd = coordinator.lastTransition;
+    [NSNotificationCenter.defaultCenter postNotificationName:AVAudioSessionInterruptionNotification
+                                                     object:nil
+                                                   userInfo:@{AVAudioSessionInterruptionTypeKey: @(AVAudioSessionInterruptionTypeEnded),
+                                                              AVAudioSessionInterruptionOptionKey: @(AVAudioSessionInterruptionOptionShouldResume)}];
+    Pump(0.2);
+    CHECK((![coordinator.lastTransition isEqualToString:beforeInterruptionEnd]), @"a resumable interruption reactivates the game lease");
+    CHECK(([session.category isEqualToString:AVAudioSessionCategoryPlayback]), @"the restored game session remains playback, got %@", session.category);
+
     // Taking the session for push to talk: PlayAndRecord with mixing, so the game keeps its
     // sound while the user talks. Record alone - which this shipped with - takes the output
     // away from the whole process, and the player heard the game go silent for the length of

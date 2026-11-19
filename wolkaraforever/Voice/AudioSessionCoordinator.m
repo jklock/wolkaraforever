@@ -139,11 +139,13 @@ static char const AKAudioCoordinatorQueueKey;
             ? AVAudioSessionCategoryPlayAndRecord : AVAudioSessionCategoryPlayback;
         if (_lease == AKAudioLeaseGame &&
             [AVAudioSession.sharedInstance.category isEqualToString:expected]) {
+            [self startObserving];
             ok = YES;
             return;
         }
         _lease = AKAudioLeaseGame;
         ok = [self applyGameAudioPolicy];
+        if (ok) [self startObserving];
         [self logTransitionFrom:from to:(_dictationEnabled ? @"game duplex" : @"game") result:ok error:nil];
     }];
     return ok;
@@ -380,7 +382,7 @@ static char const AKAudioCoordinatorQueueKey;
         NSNumber *type = note.userInfo[AVAudioSessionInterruptionTypeKey];
         if (type.unsignedIntegerValue == AVAudioSessionInterruptionTypeBegan)
             [weakSelf theSessionWasTaken:@"an interruption"];
-        else
+        else if ([note.userInfo[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue] & AVAudioSessionInterruptionOptionShouldResume)
             [weakSelf theInterruptionEnded];
     }];
     [center addObserverForName:AVAudioSessionMediaServicesWereResetNotification object:nil
@@ -421,7 +423,9 @@ static char const AKAudioCoordinatorQueueKey;
     [self onTheQueue:^{
         if (self->_pushToTalk) return;
         if (self->_gameWantsPlayback) {
-            BOOL ok = [self applyPlaybackForGame];
+            // A call interruption deactivates the session but does not end the running game's
+            // lease. Restore the declared policy, including duplex when dictation is enabled.
+            BOOL ok = [self applyGameAudioPolicy];
             [self logTransitionFrom:@"game" to:@"game" result:ok error:nil];
         }
     }];

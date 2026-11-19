@@ -60,6 +60,8 @@ A DualSense or DualShock 4 touchpad can move the game's pointer. In **Input Mana
 
 **Battery-saving sound** in **Performance Manager** is on by default, in every interface mode. The game's sound plays as before, without loading iOS's audio device layer into the game, whose Bluetooth part kept a quarter of a processor core busy for the whole game. If the sound ever misbehaves (silence, crackles, or no sound after you connect headphones), turn it off; the change applies from the next game start.
 
+If a phone call interrupts Forever, returning to the game restores its active audio session when iPadOS says playback may resume. If sound does not return, keep the app installed and send its log rather than reinstalling; [Send us a log](SENDING_LOGS.md) explains how.
+
 ## Get help safely
 
 When something fails, send a log — it is three taps and needs no computer:
