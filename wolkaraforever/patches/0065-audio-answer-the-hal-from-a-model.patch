@@ -215,7 +215,7 @@
 +    OSStatus (*f)(AudioDeviceID,UInt32,Boolean,UInt32,DeviceListener)=native(__func__);
 +    return f?f(device,channel,input,property,listener):-4;
 +}
-+
+ 
  // The property API (Wine's Mac audio driver asks through it). iPadOS's own
  // answers name no device with output channels; the one output device is the
 @@ -118,6 +232,7 @@
