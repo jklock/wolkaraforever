@@ -3054,6 +3054,10 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.controller.navigationController popToRootViewControllerAnimated:NO];
     assert(self.controller.navigationController.topViewController == self.controller);
 
+    // The Controller Manager page, on its own: placement, the off default, persistence,
+    // the learn/cancel flow at page level, the app language, and no game file touched.
+    [self checkControllerManagerPage];
+
     // --- and no control on the page is dead: every one has a target and an action
     for (NSString *identifier in @[@"wow.edition", @"wow.preferences", @"wow.language",
                                    @"wow.addons.manage", @"wow.addons.directory",
@@ -3065,7 +3069,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
                                    @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
                                    @"wow.performance.backup",
                                    @"wow.performance.reset", @"wow.performance.restore",
-                                   @"wow.performance.settingsFolder", @"wow.primary", @"wow.diagnostics"])
+                                   @"wow.performance.settingsFolder", @"wow.primary", @"wow.diagnostics",
+                                   @"wow.controllerManager.open"])
         assert([[self row:identifier] allTargets].count > 0);
     assert([self toggle:@"wow.performance.gamepad"].allTargets.count > 0);
     assert([[self row:@"wow.performance.batterySaver"] allTargets].count > 0);
@@ -3092,6 +3097,119 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
             assert(!text);
         }
     }
+}
+
+#pragma mark - The Controller Manager page
+
+// The page is launcher-only in this version, so what it has to prove here is that it opens,
+// that it says what it is doing, that the switch persists to WolkaraForever's own defaults,
+// that the learn flow can be armed and cancelled, that it follows the app language, and that
+// none of it writes a game file. The routing itself is proven by test_controller_manager.sh.
+- (void)checkControllerManagerPage {
+    UIButton *row = [self row:@"wow.controllerManager.open"];
+    assert(row != nil && row.enabled);
+    NSString *configBefore = [self configText];
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:@"WolkaraForeverControllerRouting"];
+    // The simulator reports a controller of its own, so the fixture says what is connected
+    // instead of depending on it: this check is about the page, not about the machine.
+    AKControllerManager *manager = AKControllerManager.shared;
+    manager.controllersProvider = ^NSArray<GCController *> *{ return @[]; };
+    // The guest façade is a dylib this fixture does not load, so it is announced here; the
+    // interlock itself is proven by test_controller_manager.sh, which refuses without it.
+    [manager noteGuestFacadePresent];
+    manager.enabled = NO;
+
+    // The sixth card, on the front page: its own section, with the switch, what routing is
+    // doing now, and the way into the mappings. Re-rendered here because the page is the next
+    // thing checked and the card must not be left in a stale state.
+    [self.controller render];
+    UISwitch *cardSwitch = [self toggle:@"wow.controllerManager.routing"];
+    assert(cardSwitch != nil && !cardSwitch.on);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.controllerManager.routing.label") text]
+            isEqual:WKLocalized(@"home.controllerManager.routing")]);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.controllerManager.status") text]
+            isEqual:WKLocalized(@"controller.status.disabled")]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.controllerManager.open")
+             titleForState:UIControlStateNormal] isEqual:WKLocalized(@"home.controllerManager.open")]);
+    // The card's switch is the same setting, not a second one: it writes the manager, the
+    // manager's key, and the card's own status sentence follows.
+    cardSwitch.on = YES;
+    [cardSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+    Pump(0.2);
+    assert([defaults boolForKey:@"WolkaraForeverControllerRouting"] && manager.enabled);
+    // This fixture announced the façade, so the manager is past "waiting for the session" and
+    // the card says there is no controller connected. The "starts when the game starts"
+    // wording is the state where the build carries the adapter but the session has not loaded
+    // it, which is what the device self-test asserts on the installed build.
+    assert([[(UILabel *)Find(self.controller.view, @"wow.controllerManager.status") text]
+            isEqual:WKLocalized(@"controller.status.nocontroller")]);
+    cardSwitch.on = NO;
+    [cardSwitch sendActionsForControlEvents:UIControlEventValueChanged];
+    Pump(0.2);
+    assert(![defaults boolForKey:@"WolkaraForeverControllerRouting"] && !manager.enabled);
+
+    TKWoWControllerManagerViewController *page = [TKWoWControllerManagerViewController new];
+    [page loadViewIfNeeded];
+    [page.view layoutIfNeeded];
+
+    UISwitch *routing = (id)Find(page.view, @"controllerManager.enabled");
+    assert(routing != nil && !routing.on);           // off until the user asks
+    UILabel *status = (id)Find(page.view, @"controllerManager.status");
+    assert([status.text isEqual:WKLocalized(@"controller.status.disabled")]);
+    assert(Find(page.view, @"controllerManager.disclosure") != nil);
+    NSLog(@"CONTROLLER_MANAGER_MODELS: %lu", (unsigned long)AKControllerManager.shared.models.count);
+    assert(![(UIControl *)Find(page.view, @"controllerManager.learn") isEnabled]);   // no controller connected
+    assert(![(UIControl *)Find(page.view, @"controllerManager.reset") isEnabled]);
+    assert(Find(page.view, @"controllerManager.binding.0") == nil);
+
+    // Persistence: the switch writes this app's own key and nothing else.
+    routing.on = YES;
+    [routing sendActionsForControlEvents:UIControlEventValueChanged];
+    Pump(0.2);
+    assert([defaults boolForKey:@"WolkaraForeverControllerRouting"]);
+    assert(AKControllerManager.shared.enabled);
+    assert([status.text isEqual:WKLocalized(@"controller.status.nocontroller")]);
+    routing.on = NO;
+    [routing sendActionsForControlEvents:UIControlEventValueChanged];
+    Pump(0.2);
+    assert(![defaults boolForKey:@"WolkaraForeverControllerRouting"]);
+    assert(!AKControllerManager.shared.enabled);
+
+    // Learn and cancel at page level: arming shows the hint and the way out, cancelling
+    // leaves nothing armed, which is what stops a later press rewriting a profile.
+    [AKControllerManager.shared beginLearningForIdentity:@"fixture.controller"];
+    Pump(0.2);
+    assert(![(UIControl *)Find(page.view, @"controllerManager.cancel") isHidden]);
+    assert(![(UIControl *)Find(page.view, @"controllerManager.hint") isHidden]);
+    [(UIControl *)Find(page.view, @"controllerManager.cancel") sendActionsForControlEvents:UIControlEventTouchUpInside];
+    Pump(0.2);
+    assert(!AKControllerManager.shared.learning);
+    assert([(UIControl *)Find(page.view, @"controllerManager.cancel") isHidden]);
+    assert([(UIControl *)Find(page.view, @"controllerManager.hint") isHidden]);
+
+    // The app language, without reopening the page.
+    WKAppLanguage previous = WKLocalization.shared.language;
+    WKLocalization.shared.language = WKAppLanguageGerman;
+    Pump(0.2);
+    assert([page.title isEqual:@"Controller-Verwaltung"]);
+    assert([[(UILabel *)Find(page.view, @"controllerManager.enabled.label") text]
+            isEqual:@"Physische Controller über den virtuellen Controller leiten"]);
+    WKLocalization.shared.language = previous;
+    Pump(0.2);
+    assert([page.title isEqual:@"Controller Manager"]);
+
+    // Leaving the page disarms the mapper and adopts nothing.
+    [page viewWillDisappear:NO];
+    assert(!AKControllerManager.shared.learning);
+
+    // Not one byte of the game's configuration, and no GamePadConfig file.
+    assert([[self configText] isEqual:configBefore]);
+    assert(![[NSFileManager.defaultManager contentsOfDirectoryAtPath:
+              [fixture.directory stringByAppendingPathComponent:@"WTF"] error:NULL]
+             filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF CONTAINS 'GamePadConfig'"]].count);
+    manager.controllersProvider = nil;
+    NSLog(@"CONTROLLER_MANAGER_PAGE: placement, off default, persistence, learn/cancel, German, no game-file write");
 }
 
 - (void)checkLaunch {

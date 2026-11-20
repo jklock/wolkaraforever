@@ -7,9 +7,13 @@
 // the pad has and what it does, rather than guessing.
 //
 // It reads. It never consumes an input, never writes to a pad, and changes
-// nothing about how input reaches the game — with one deliberate exception:
-// while this is active it clears the system's reservation on Share, because a
-// reserved button cannot be observed at all. That is logged when it happens.
+// nothing about how input reaches the game.
+//
+// Since the Controller Manager it no longer installs a single GameController handler:
+// AKControllerManager owns discovery and every handler, and this is a subscriber. That is
+// what stops two consumers in one process fighting over the same element, and it is why a
+// press that is being routed into the virtual pad is still reported here - the manager
+// reports it once, to everybody who asked.
 
 #import "ControllerInspector.h"
 
@@ -29,7 +33,6 @@
 
 NSNotificationName const AKInputDiagnosticsDidChangeNotification = @"AKInputDiagnosticsDidChange";
 
-#import <GameController/GameController.h>
 #import <UIKit/UIKit.h>
 
 #import "../Input/InputElement.h"
@@ -141,11 +144,6 @@ static void AKCIButton(AKControllerInspector *inspector, NSString *device, NSStr
 @implementation AKControllerInspector {
     NSMutableArray<NSString *> *_history;
     NSMutableDictionary<NSString *, NSNumber *> *_axisBuckets;
-    // Element ids whose system gesture this app has released, per device identity, so
-    // the exact gesture can be handed back rather than guessed at.
-    NSMutableDictionary<NSString *, NSMutableSet<NSString *> *> *_releasedGestures;
-    // The same, but a loan that ends when the user stops choosing a button.
-    NSMutableDictionary<NSString *, NSMutableSet<NSString *> *> *_learningRelease;
     UILabel *_panel;
     BOOL _began;
     NSString *_currentDevice;
@@ -273,30 +271,39 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
 #pragma mark - Start
 
 - (void)begin {
-    if (_began) { [self logInventories]; return; }
+    AKControllerManager *manager = AKControllerManager.shared;
+    if (_began) { [manager begin]; [manager logInventories]; return; }
     _began = YES;
 
-    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
-    [center addObserver:self selector:@selector(padsChanged:) name:GCControllerDidConnectNotification object:nil];
-    [center addObserver:self selector:@selector(padsChanged:) name:GCControllerDidDisconnectNotification object:nil];
-    if (@available(iOS 14.0, *)) {
-        [center addObserver:self selector:@selector(padsChanged:) name:GCKeyboardDidConnectNotification object:nil];
-        [center addObserver:self selector:@selector(padsChanged:) name:GCKeyboardDidDisconnectNotification object:nil];
-        [center addObserver:self selector:@selector(padsChanged:) name:GCMouseDidConnectNotification object:nil];
-        [center addObserver:self selector:@selector(padsChanged:) name:GCMouseDidDisconnectNotification object:nil];
-    }
-
-    AKCILog(@"inspector: watching for controller input");
+    // The manager installs the handlers and publishes one normalized stream. This block
+    // replaces exactly the two things the old handler installation did afterwards: name
+    // the event, then hand it on. Nothing downstream of -onInput: changed when the
+    // handlers moved, which is what keeps the voice trigger byte-for-byte the same.
+    __weak AKControllerInspector *weakSelf = self;
+    manager.onEvent = ^(NSString *element, double value, BOOL pressed,
+                        NSString *device, NSString *deviceName, NSString *source) {
+        AKControllerInspector *inspector = weakSelf;
+        if (!inspector) return;
+        // Set before -onInput: below, because that block reads them.
+        inspector->_currentDevice = device;
+        inspector->_currentDeviceName = deviceName;
+        inspector->_currentSourceName = source;
+        if ([element hasPrefix:@"controller.axis."]) [inspector noteAxis:element value:value];
+        else [inspector noteElement:element value:value pressed:pressed detail:nil];
+    };
+    [manager begin];
 
     // The pad's Share button is a Print Screen key, and iPadOS spends that key on
     // the screenshot gesture before any app is offered it. The screenshot itself
     // is announced to the app, though, so Share is reachable after all: this is
     // the only route to it that the system provides.
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     [center addObserver:self selector:@selector(screenshotTaken:) name:UIApplicationUserDidTakeScreenshotNotification object:nil];
     // And the hold gesture, which the system spends on screen recording.
     [center addObserver:self selector:@selector(screenCaptureChanged:) name:UIScreenCapturedDidChangeNotification object:nil];
-    [self attachEverything];
-    [self logInventories];
+
+    AKCILog(@"inspector: watching for controller input");
+    [manager logInventories];
 }
 
 - (void)screenshotTaken:(NSNotification *)notification {
@@ -362,98 +369,33 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
 }
 
 #pragma mark - The system's gestures, released only on request
+//
+// The manager holds the pads and remembers which *reason* wants which gesture released, so
+// these are forwards and there is deliberately no second copy of the bookkeeping here. A
+// second copy is how a gesture ends up disabled on a pad the user never mapped.
 
-- (nullable GCControllerButtonInput *)buttonForElement:(NSString *)element device:(nullable NSString *)device inPad:(GCController *)pad {
-    if (device.length && ![AKControllerIdentity(pad) isEqualToString:device]) return nil;
-    for (NSString *name in pad.physicalInputProfile.buttons)
-        if ([AKInputElementForControllerButton(name) isEqualToString:element])
-            return pad.physicalInputProfile.buttons[name];
-    return nil;
+- (BOOL)currentControllerDeclaresShare {
+    return AKControllerManager.shared.currentControllerDeclaresShare;
 }
 
 - (BOOL)releaseSystemGestureForElement:(NSString *)element device:(nullable NSString *)device {
-    BOOL released = NO;
-    for (GCController *pad in GCController.controllers) {
-        GCControllerButtonInput *button = [self buttonForElement:element device:device inPad:pad];
-        if (!button) continue;
-        if (button.preferredSystemGestureState != GCSystemGestureStateDisabled) {
-            button.preferredSystemGestureState = GCSystemGestureStateDisabled;
-            AKCILog(@"inspector: released the system gesture on %@ for %@, because the user mapped it", element, AKControllerIdentity(pad));
-        }
-        NSString *identity = AKControllerIdentity(pad);
-        if (!_releasedGestures[identity]) _releasedGestures[identity] = [NSMutableSet set];
-        [_releasedGestures[identity] addObject:element];
-        released = YES;
-    }
-    return released;
+    return [AKControllerManager.shared releaseSystemGestureForElement:element device:device];
 }
 
 - (void)restoreSystemGestureForElement:(NSString *)element device:(nullable NSString *)device {
-    for (GCController *pad in GCController.controllers) {
-        NSString *identity = AKControllerIdentity(pad);
-        if (device.length && ![identity isEqualToString:device]) continue;
-        if (![_releasedGestures[identity] containsObject:element]) continue;
-        GCControllerButtonInput *button = [self buttonForElement:element device:identity inPad:pad];
-        // Back to what the system had, which is "the gesture is mine".
-        if (button.preferredSystemGestureState == GCSystemGestureStateDisabled)
-            button.preferredSystemGestureState = GCSystemGestureStateEnabled;
-        [_releasedGestures[identity] removeObject:element];
-        AKCILog(@"inspector: gave the system its gesture back on %@ for %@", element, identity);
-    }
+    [AKControllerManager.shared restoreSystemGestureForElement:element device:device];
 }
 
 - (void)restoreAllSystemGestures {
-    for (GCController *pad in GCController.controllers) {
-        NSString *identity = AKControllerIdentity(pad);
-        for (NSString *element in [_releasedGestures[identity] allObjects]) {
-            GCControllerButtonInput *button = [self buttonForElement:element device:identity inPad:pad];
-            if (button.preferredSystemGestureState == GCSystemGestureStateDisabled)
-                button.preferredSystemGestureState = GCSystemGestureStateEnabled;
-        }
-    }
-    NSUInteger count = _releasedGestures.count;
-    [_releasedGestures removeAllObjects];
-    if (count) AKCILog(@"inspector: every released system gesture has been given back");
+    [AKControllerManager.shared restoreAllSystemGestures];
 }
 
-#pragma mark - Learning: releasing enough to hear the press
-
-// Every button of every connected pad whose press the system would keep, by name, per device.
-// Kept apart from _releasedGestures on purpose: that one is the user's decisions and survives
-// learning, this one is a loan that ends when the choosing does.
 - (void)beginReleasingForLearning {
-    if (_learningRelease) return;
-    _learningRelease = [NSMutableDictionary dictionary];
-    for (GCController *pad in GCController.controllers) {
-        NSString *identity = AKControllerIdentity(pad);
-        for (NSString *name in pad.physicalInputProfile.buttons) {
-            GCControllerButtonInput *button = pad.physicalInputProfile.buttons[name];
-            if (button.preferredSystemGestureState == GCSystemGestureStateDisabled) continue;
-            button.preferredSystemGestureState = GCSystemGestureStateDisabled;
-            if (!_learningRelease[identity]) _learningRelease[identity] = [NSMutableSet set];
-            [_learningRelease[identity] addObject:AKInputElementForControllerButton(name)];
-            AKCILog(@"inspector: released the system gesture on %@ for %@ while the user chooses a button",
-                    AKInputElementForControllerButton(name), identity);
-        }
-    }
+    [AKControllerManager.shared beginReleasingForLearning];
 }
 
 - (void)endReleasingForLearning {
-    if (!_learningRelease) return;
-    for (GCController *pad in GCController.controllers) {
-        NSString *identity = AKControllerIdentity(pad);
-        for (NSString *element in [_learningRelease[identity] allObjects]) {
-            // A button the user went on to map keeps its release; the settings own that one
-            // and would otherwise have its decision undone here.
-            if ([_releasedGestures[identity] containsObject:element]) continue;
-            GCControllerButtonInput *button = [self buttonForElement:element device:identity inPad:pad];
-            if (button.preferredSystemGestureState == GCSystemGestureStateDisabled)
-                button.preferredSystemGestureState = GCSystemGestureStateEnabled;
-        }
-    }
-    NSUInteger count = _learningRelease.count;
-    _learningRelease = nil;
-    if (count) AKCILog(@"inspector: the gestures lent out for choosing a button are back with the system");
+    [AKControllerManager.shared endReleasingForLearning];
 }
 
 #pragma mark - Inventories: what does this pad actually have?
@@ -725,15 +667,6 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
 }
 
 #pragma mark - Reporting
-
-// Called from the input handlers so that every report carries the device it came
-// from. A message to a weak reference is safe where reading an ivar through one is
-// not. The identity is what a mapping is stored against; the name is for people.
-- (void)markDevice:(NSString *)device name:(NSString *)name source:(NSString *)source {
-    _currentDevice = device;
-    _currentDeviceName = name;
-    _currentSourceName = source;
-}
 
 - (void)noteElement:(NSString *)element value:(double)value pressed:(BOOL)pressed detail:(nullable NSString *)detail {
     NSTimeInterval began = NSProcessInfo.processInfo.systemUptime;

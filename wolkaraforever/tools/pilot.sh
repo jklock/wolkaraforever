@@ -23,6 +23,8 @@
 #   wolkaraforever/tools/pilot.sh return            bring it back to the front
 #   wolkaraforever/tools/pilot.sh restore           start again whatever an install found running
 #   wolkaraforever/tools/pilot.sh selftest <name>   run the app's own device self-test and read it
+#   wolkaraforever/tools/pilot.sh preview <page>    open one page directly (controller-manager, addons),
+#                                                   for a row that is below the fold on the home screen
 #   wolkaraforever/tools/pilot.sh cycle             state, install, launch, wait, view
 #
 # Every command that launches records the newest error file and the newest crash report
@@ -1083,11 +1085,11 @@ cmd_controls() {
 }
 
 case "${1:-state}" in
-    state)   cmd_state ;;
-    stop)    cmd_stop "${2:-}" ;;
+    state)   cmd_state ;;    stop)    cmd_stop "${2:-}" ;;
     install) cmd_install "${2:-}" ;;
     launch)  cmd_launch ;;
     game)    cmd_launch --game ;;
+    preview) cmd_preview "${2:-}" ;;
     wait)    cmd_wait "${2:-}" "${3:-}" ;;
     view)    cmd_view ;;
     crash)   cmd_crash ;;

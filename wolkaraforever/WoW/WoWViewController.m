@@ -3,6 +3,8 @@
 #import "BattleNetBrowser.h"
 #import "BattleNetSession.h"
 #import "AddonManager.h"
+#import "ControllerManagerViewController.h"
+#import "../Controller/ControllerManager.h"
 #import "../Voice/VoiceViewController.h"
 #import "../Voice/ControllerTouchpadViewController.h"
 #import "../App/WolkaraForeverLog.h"
@@ -486,12 +488,19 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     _layoutRestoreButton=[self button:@"wow.launcher.layoutRestore" action:@selector(restoreInterfaceSetup)];
     _layoutBackupButton=[self button:@"wow.launcher.layoutBackup" action:@selector(backupInterfaceSetup)];
 
-    // Five sections, as boxes, in the order they are read. The compatibility note belongs to
+    // Six sections, as boxes, in the order they are read. The compatibility note belongs to
     // the edition it is about, so it lives in that box rather than loose on the page. The
     // render and overlay choices are their own card, beside the game-file tools rather than
     // mixed into them: one group changes how this app draws, the other edits the game's own
     // files, and keeping them apart is what makes either safe to press. Every word in them
     // comes from -localize, below, which is also what a language change runs.
+    //
+    // Controller Manager has a card of its own, and the last one is not a courtesy: routing a
+    // pad, one profile per model, reassignment and a reset are a group of settings as large as
+    // any of the others, and burying them as a row inside somebody else's card is how the
+    // feature ended up below the fold on the 4:3 front page when it was first written. Measured
+    // on the device, 2026-11-03: the game-file card it was in was cut off at "Reset to Default
+    // Graphical Settings".
     UIView *editionBox=[self sectionBoxWithIdentifier:@"wow.box.edition"
         rows:@[_editionButton,_preferencesButton,_languageButton,_browserLoginButton]];
     UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
@@ -589,6 +598,10 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     // the installation it is showing stay exactly as they were.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appLanguageChanged:)
         name:WKLocalizationDidChangeNotification object:nil];
+    // The page can change the same switch, so the card follows the manager rather than
+    // trusting the state it last drew.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controllerManagerChanged:)
+        name:AKControllerManagerDidChangeNotification object:nil];
     [self localize];
 
     [self render];
@@ -1426,6 +1439,47 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 }
 - (void)configureTouchpad {
     [self presentPage:[AKControllerTouchpadViewController new]];
+}
+
+// Controller Manager: physical-controller routing through the hidden virtual controller,
+// and the per-model remap profile. Its own page because it owns a list and a learn flow;
+// it writes only WolkaraForever's preferences, never the game's bindings.
+- (void)manageControllers {
+    [self presentPage:[TKWoWControllerManagerViewController new]];
+}
+
+// The card's own switch. The manager is the owner; this only asks it, and -render is what
+// puts both controls back in step if the change was refused.
+- (void)controllerRoutingChanged:(UISwitch *)sender {
+    AKControllerManager.shared.enabled = sender.on;
+    WKLog("ui", @"controller manager: routing %@ from the home page", sender.on ? @"on" : @"off");
+    [self render];
+}
+
+- (void)controllerManagerChanged:(NSNotification *)note {
+    (void)note;
+    [self render];
+}
+
+// One sentence for the four states, so the card says what is happening rather than only
+// whether the switch is on.
+- (NSString *)controllerManagerStatusText {
+    AKControllerManager *manager = AKControllerManager.shared;
+    switch (manager.state) {
+        case AKControllerRoutingStateDisabled:
+            return WKLocalized(@"controller.status.disabled");
+        case AKControllerRoutingStateWaiting:
+            if (manager.enabled && !manager.guestFacadePresent)
+                return WKLocalized(@"controller.status.pending");
+            return manager.physicalControllerConnected ? WKLocalized(@"controller.status.connecting")
+                                                       : WKLocalized(@"controller.status.nocontroller");
+        case AKControllerRoutingStateRouting:
+            return WKLocalized(@"controller.status.routing");
+        case AKControllerRoutingStateFailed:
+            return manager.guestFacadeAvailable ? WKLocalized(@"controller.status.failed")
+                                                : WKLocalized(@"controller.status.nofacade");
+    }
+    return @"";
 }
 
 // This app's own page in Settings: the Microphone and Speech Recognition switches for WolkaraForever.
@@ -2355,6 +2409,14 @@ static NSString *ElementLabel(NSString *element) {
 - (nullable NSString *)addOnsDirectoryWithError:(NSError **)error {
     NSString *directory=[_library workingDirectoryForApp:_installation.app error:error];
     return directory?[directory stringByAppendingPathComponent:@"Interface/AddOns"]:nil;
+}
+
+// Same reason as -previewAddonBrowser: the Controller Manager row lives at the bottom of a
+// box that is below the fold on an iPad, so a device check needs a way to open the page
+// without a person scrolling and tapping to get there.
+- (void)previewControllerManager {
+    [self loadViewIfNeeded];
+    [self presentPage:[TKWoWControllerManagerViewController new]];
 }
 
 - (void)previewAddonBrowser {

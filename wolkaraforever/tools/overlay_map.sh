@@ -116,9 +116,12 @@ intent() {
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
-    echo "# Controller: what the pad reports, and every change to it (diagnostic)"
+    echo "# Controller: what the pad reports, every change to it, and the manager that owns it"
     git ls-files wolkaraforever/Controller | while read -r f; do
-        dst=launcher/Controller/${f#wolkaraforever/Controller/}
+        case "$f" in
+            wolkaraforever/Controller/tests/*) dst=tests/${f#wolkaraforever/Controller/tests/};;
+            *) dst=launcher/Controller/${f#wolkaraforever/Controller/};;
+        esac
         echo "$f $dst $(intent "$dst")"
     done
     echo "#"
