@@ -16,7 +16,13 @@ permissions:
 jobs:
   checks:
     name: Layer and documentation gates
-    runs-on: macos-26
+    # The gates run prepare.sh, so they need macOS. They do not need Apple
+    # silicon: the Intel image is the one with capacity. On macos-26 the job
+    # was never handed to a runner - "not acquired by Runner of type hosted
+    # even after multiple attempts" - and every run ended cancelled after
+    # queueing, which is why this was red for every commit since #121.
+    runs-on: macos-15-intel
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
