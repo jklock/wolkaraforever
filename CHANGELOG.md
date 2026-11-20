@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+- **The unsigned package is named after the app.** It is `wolkaraforever-unsigned.ipa`,
+  not `Tolkara-unsigned.ipa`, from the packaging script, the verification report and the
+  release that carries it.
 - **The unsigned `.ipa` can log in.** It was built without this Mac's public root
   certificates, so the client could not validate Battle.net's certificate and
   answered `BLZ51900003` on every attempt, with the experimental Battle.net login

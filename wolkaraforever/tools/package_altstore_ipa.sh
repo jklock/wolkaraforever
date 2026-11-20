@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-output=${1:-build/ipa/Tolkara-unsigned.ipa}
+output=${1:-build/ipa/wolkaraforever-unsigned.ipa}
 [ "$#" -le 1 ] || { echo "usage: wolkaraforever/tools/package_altstore_ipa.sh [output.ipa]" >&2; exit 2; }
 case "$output" in /*) ;; *) output="$PWD/$output";; esac
 

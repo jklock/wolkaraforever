@@ -155,7 +155,7 @@ debugger, which must not stay attached to a game.
 ## Build the unsigned External JIT IPA
 
 ```sh
-wolkaraforever/tools/package_altstore_ipa.sh            # verify, then build/ipa/Tolkara-unsigned.ipa
+wolkaraforever/tools/package_altstore_ipa.sh            # verify, then build/ipa/wolkaraforever-unsigned.ipa
 wolkaraforever/tools/package_ipa.sh [output.ipa]        # the engine's own packaging script
 wolkaraforever/tools/verify_ipa.sh <ipa> [report]       # check one before it is sideloaded
 ```

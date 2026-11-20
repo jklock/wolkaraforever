@@ -4,7 +4,7 @@
 # login is refused), the same emulated runtime, External JIT preselected, no profile and no
 # signing team. Run it before a package is handed to a sideloader or published.
 #
-# usage: wolkaraforever/tools/verify_ipa.sh <Tolkara-unsigned.ipa> [report-path]
+# usage: wolkaraforever/tools/verify_ipa.sh <wolkaraforever-unsigned.ipa> [report-path]
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
