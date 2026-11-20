@@ -12,6 +12,13 @@ xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
     launcher/WoW/BattleNetSession.m launcher/App/WolkaraForeverLog.m tests/test_battlenet_session.m \
     -o build/wow-launcher/test_battlenet_session
 build/wow-launcher/test_battlenet_session
+# The saved game password: the Keychain item, the experimental-login gate, and the keyboard's
+# request/answer contract. Security.framework because the class is the only thing that stores it.
+xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
+    -fsanitize=address,undefined -fno-omit-frame-pointer -framework Foundation -framework Security \
+    launcher/WoW/BattleNetSavedPassword.m launcher/App/WolkaraForeverLog.m tests/test_battlenet_saved_password.m \
+    -o build/wow-launcher/test_battlenet_saved_password
+build/wow-launcher/test_battlenet_saved_password
 xcrun clang -fobjc-arc -Wall -Wextra -Werror -O1 -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer -framework Foundation -lz \
     launcher/WoW/Manifest.m launcher/WoW/CASC.m launcher/WoW/Client.m tests/test_wow_manifest.m \

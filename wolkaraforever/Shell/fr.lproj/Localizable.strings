@@ -862,7 +862,7 @@
 "login.enable.message" = "Cette fonction optionnelle transmet un résultat de connexion à usage unique à Forever seulement après avoir choisi Jouer. Elle peut cesser de fonctionner sans préavis. Elle ne remplace pas la connexion normale dans le jeu. Utilisez-la à vos risques.";
 "login.enable.confirm" = "Je comprends — activer";
 "login.cleared.title" = "Données de connexion effacées";
-"login.cleared.message" = "La session web en mémoire et tout ticket de lancement en attente ont été supprimés.";
+"login.cleared.message" = "La session web en mémoire, tout ticket de lancement en attente et le mot de passe enregistré ont été supprimés.";
 "login.failed" = "La connexion ne s’est pas terminée. Annulez et réessayez.";
 
 /* ---- Recovered from the merged feature branches ---- */
@@ -906,3 +906,20 @@
 "controller.targets.title" = "Que doit-elle piloter ?";
 "controller.title" = "Gestionnaire de manette";
 "controller.unavailable" = "absente de cette manette";
+
+/* ---- Saved game password, experimental Battle.net login ---- */
+"login.status.onSaved" = "Activé · mot de passe enregistré";
+"login.savedPassword.signIn" = "Se connecter avec le mot de passe enregistré";
+"login.savedPassword.forget" = "Oublier le mot de passe enregistré";
+"login.savedPassword.forgotten.title" = "Mot de passe enregistré oublié";
+"login.savedPassword.forgotten.message" = "Le mot de passe conservé sur cet appareil a été supprimé. Le jeu le redemandera.";
+"login.savedPassword.save.title" = "Enregistrer votre mot de passe sur cet appareil ?";
+"login.savedPassword.save.message" = "Il est conservé dans le trousseau de cet appareil derrière Face ID ou votre code, ne quitte jamais l'appareil et est saisi dans le champ du mot de passe du jeu quand vous touchez la clé. Maintenez la clé pour l'oublier.";
+"login.savedPassword.save.placeholder" = "Mot de passe Battle.net";
+"login.savedPassword.save.confirm" = "Enregistrer et se connecter";
+"login.savedPassword.forget.title" = "Oublier le mot de passe enregistré ?";
+"login.savedPassword.forget.message" = "Le mot de passe conservé sur cet appareil est supprimé. Le jeu le redemandera.";
+"login.savedPassword.forget.confirm" = "Oublier";
+"login.savedPassword.failed.title" = "Le mot de passe n'a pas été enregistré";
+"login.savedPassword.failed" = "Cet appareil n'a pas conservé le mot de passe : il faut un code, et la clé a besoin de l'accès au trousseau de cette compilation. La connexion a bien eu lieu, mais le mot de passe sera redemandé.";
+"touch.key.savedPassword" = "Mot de passe enregistré";

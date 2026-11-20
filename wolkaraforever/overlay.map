@@ -64,6 +64,8 @@ wolkaraforever/WoW/AddonUpdateResolver.h launcher/WoW/AddonUpdateResolver.h add
 wolkaraforever/WoW/AddonUpdateResolver.m launcher/WoW/AddonUpdateResolver.m add
 wolkaraforever/WoW/BattleNetBrowser.h launcher/WoW/BattleNetBrowser.h add
 wolkaraforever/WoW/BattleNetBrowser.m launcher/WoW/BattleNetBrowser.m add
+wolkaraforever/WoW/BattleNetSavedPassword.h launcher/WoW/BattleNetSavedPassword.h add
+wolkaraforever/WoW/BattleNetSavedPassword.m launcher/WoW/BattleNetSavedPassword.m add
 wolkaraforever/WoW/BattleNetSession.h launcher/WoW/BattleNetSession.h add
 wolkaraforever/WoW/BattleNetSession.m launcher/WoW/BattleNetSession.m add
 wolkaraforever/WoW/CASC.h launcher/WoW/CASC.h add
@@ -98,6 +100,7 @@ wolkaraforever/WoW/tests/test_addon_archive.swift tests/test_addon_archive.swift
 wolkaraforever/WoW/tests/test_addon_import.m tests/test_addon_import.m add
 wolkaraforever/WoW/tests/test_addon_package.swift tests/test_addon_package.swift add
 wolkaraforever/WoW/tests/test_addon_resolver.m tests/test_addon_resolver.m add
+wolkaraforever/WoW/tests/test_battlenet_saved_password.m tests/test_battlenet_saved_password.m add
 wolkaraforever/WoW/tests/test_battlenet_session.m tests/test_battlenet_session.m add
 wolkaraforever/WoW/tests/test_curseforge.m tests/test_curseforge.m add
 wolkaraforever/WoW/tests/test_device_profile.m tests/test_device_profile.m add

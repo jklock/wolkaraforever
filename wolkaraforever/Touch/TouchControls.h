@@ -43,6 +43,25 @@ extern NSString *const AKTouchSpeechLanguageStoredKey;   // "stored"
 // choice under this key.
 extern NSString *const AKTouchControlsDefaultsKey;   // "AKTouchControls"
 
+// The saved game password, and only under the launcher's experimental Battle.net login. The
+// launcher owns the Keychain item and the setting (WoW/BattleNetSavedPassword.h); this library owns
+// the key on the keyboard's row and asks, which is why not one Keychain call is compiled in here.
+//   App -> adapter: may the key be offered? `AKTouchSavedPasswordEnabledKey` is an NSNumber.
+//   Posted at startup, after every change, and when the setting is flipped, so the key follows it.
+//   Adapter -> app: the player tapped the key. `AKTouchSavedPasswordReplyKey` is a
+//   void(^)(NSString *password) the app calls with the password, or with nil when none is kept (or
+//   the setting is off) - and the keyboard then offers to save one. Never posted with the value.
+//   Adapter -> app: the player confirmed the save prompt. `AKTouchSavedPasswordValueKey` is the
+//   password they typed; `AKTouchSavedPasswordReplyKey` is a void(^)(BOOL stored).
+//   Adapter -> app: the player asked to forget it. The app deletes the item and answers nothing.
+extern NSNotificationName const AKTouchSavedPasswordAvailabilityNotification;  // "AKTouchSavedPasswordAvailability"
+extern NSNotificationName const AKTouchSavedPasswordReadRequestNotification;   // "AKTouchSavedPasswordReadRequest"
+extern NSNotificationName const AKTouchSavedPasswordStoreRequestNotification;  // "AKTouchSavedPasswordStoreRequest"
+extern NSNotificationName const AKTouchSavedPasswordForgetRequestNotification; // "AKTouchSavedPasswordForgetRequest"
+extern NSString *const AKTouchSavedPasswordEnabledKey;   // "enabled"
+extern NSString *const AKTouchSavedPasswordReplyKey;     // "reply"
+extern NSString *const AKTouchSavedPasswordValueKey;     // "password"
+
 // The Composer's two crossings, and the reason they exist: the Composer itself is compiled
 // into this compatibility library, while the microphone and the mapped button are the app's.
 // Both directions are a notification by name, exactly like the dictation ones above - the

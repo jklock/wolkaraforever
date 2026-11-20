@@ -862,7 +862,7 @@
 "login.enable.message" = "This opt-in feature hands a one-use sign-in result to Forever only when you press Play. It may stop working without notice. It is not a replacement for normal in-game login. Use at your own risk.";
 "login.enable.confirm" = "I understand — enable";
 "login.cleared.title" = "Sign-in data cleared";
-"login.cleared.message" = "The in-memory browser session and any pending launch ticket were removed.";
+"login.cleared.message" = "The in-memory browser session, any pending launch ticket and the saved password were removed.";
 "login.failed" = "Sign-in did not finish. Cancel and try again.";
 
 /* ---- Recovered from the merged feature branches ---- */
@@ -904,3 +904,20 @@
 "controller.reset" = "Reset this controller to the standard layout";
 "controller.targets.title" = "What should it drive?";
 "controller.disclosure" = "Mappings are saved per controller model. Two identical controllers connected at the same time share one mapping, because iPadOS does not identify individual controllers. Nothing here changes World of Warcraft's own bindings or its gamepad setting.";
+
+/* ---- Saved game password, experimental Battle.net login ---- */
+"login.status.onSaved" = "On · password saved";
+"login.savedPassword.signIn" = "Sign in with the saved password";
+"login.savedPassword.forget" = "Forget the saved password";
+"login.savedPassword.forgotten.title" = "Saved password forgotten";
+"login.savedPassword.forgotten.message" = "The password kept on this device was deleted. The game asks for it again.";
+"login.savedPassword.save.title" = "Save your game password on this device?";
+"login.savedPassword.save.message" = "It is kept in this device's Keychain behind Face ID or your passcode, never leaves the device, and is typed into the game's password field when you tap the key. Hold the key to forget it.";
+"login.savedPassword.save.placeholder" = "Battle.net password";
+"login.savedPassword.save.confirm" = "Save and sign in";
+"login.savedPassword.forget.title" = "Forget the saved password?";
+"login.savedPassword.forget.message" = "The password kept on this device is deleted. The game asks for it again.";
+"login.savedPassword.forget.confirm" = "Forget";
+"login.savedPassword.failed.title" = "The password was not saved";
+"login.savedPassword.failed" = "This device did not keep the password: it needs a passcode, and the key needs this build's keychain access. The sign-in still happened, but the password will be asked for again.";
+"touch.key.savedPassword" = "Saved password";
