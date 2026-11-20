@@ -1,0 +1,35 @@
+# The synthetic peer answers the binary capability probe
+#
+# Why: patch 0071 makes DebugArenaSession send `x0,0` before its memory preflight -
+# LLDB's zero-length binary read, the probe that asks whether the peer speaks the
+# unprefixed binary format. tools/test_debug_over_tunnel.py had no branch for it, so
+# its server raised `AssertionError: x0,0` and tools/test_authorization_handoff.sh has
+# failed on main since #122 merged: measured on f16a4cd in a clean worktree at
+# origin/main, 3 runs of 3, and identically before this branch's own changes.
+#
+# An RSP server answers a command it does not implement with an empty packet, which is
+# exactly what the session reads as "no binary support" and falls back to the hex `m`
+# reads this peer implements. So the peer stays what it is - a peer without binary
+# support - and the fallback 0071 wrote is what the test now exercises.
+#
+# The binary path itself is still uncovered here: covering it needs a peer that answers
+# OK and returns raw frames. That is its own change, not this one.
+#
+# Applies to: tools/test_debug_over_tunnel.py.
+# Upstream: candidate.
+
+--- a/tools/test_debug_over_tunnel.py
++++ b/tools/test_debug_over_tunnel.py
+@@ -86,6 +86,12 @@
+                     if mode=='service-expiry':
+                         assert text=='qSupported'; finished=True; break
+                     if text=='qSupported': answer='PacketSize=8000'
++                    # A zero-length binary read is LLDB's capability probe for the
++                    # unprefixed binary format. This peer has no binary support, so it
++                    # answers the command it does not implement the way RSP does - with
++                    # an empty packet - and the session falls back to the hex `m` reads
++                    # below.
++                    elif text=='x0,0': answer=''
+                     elif text=='QStartNoAckMode': answer='OK'
+                     elif text=='QSetDetachOnError:1': answer='OK'
+                     elif text=='vAttach;4d2': answer='T13thread:7;'

@@ -9,7 +9,9 @@
 # checked. Exit status is non-zero if any link or reference does not resolve.
 set -euo pipefail
 cd "$(dirname "$0")/../.." || exit 2
-exec python3 - "$@" <<'PY'
+# No `exec`: this used to replace the shell with python, so the trailing
+# check_agent_docs.sh never ran and CI never noticed a stale docs/agent catalog.
+python3 - "$@" <<'PY'
 import os
 import re
 import sys

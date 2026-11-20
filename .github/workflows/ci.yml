@@ -1,5 +1,9 @@
 name: Repository checks
 
+# What this pipeline is: the layer's gates and the app built unsigned. What it is
+# not: the test suites, the device matrix and the UI fixtures. Those are a local
+# run - the UI ones need the two matrix simulators, which are Xcode 26 device types
+# the hosted images cannot create.
 on:
   push:
     branches: [main]
@@ -14,7 +18,7 @@ permissions:
   contents: read
 
 jobs:
-  checks:
+  gates:
     name: Layer and documentation gates
     # The gates run prepare.sh, so they need macOS. They do not need Apple
     # silicon: the Intel image is the one with capacity. On macos-26 the job
@@ -39,6 +43,47 @@ jobs:
           git fetch --quiet upstream "$pin"
           git update-ref refs/remotes/upstream/main "$pin"
 
+      # check_docs.sh ends by running check_agent_docs.sh, so one command runs
+      # both documentation gates and neither can be forgotten.
       - run: wolkaraforever/tools/check_docs.sh
       - run: python3 wolkaraforever/tools/check_localization.py
       - run: wolkaraforever/tools/check_layers.sh
+
+  build:
+    name: The app builds, unsigned
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # No local.env on a runner, and none is needed: every personal value is
+      # interpolated empty, and CODE_SIGNING_ALLOWED=NO means nothing is asked
+      # of a team. This is the compile the repository never had a check for.
+      - name: Prepare the tree and generate the project
+        run: wolkaraforever/tools/generate.sh
+
+      - name: Build for the device SDK
+        working-directory: build/platform
+        run: |
+          set -o pipefail
+          # The app needs the iOS 26 SDK: translation/Metal/BCTextures.m uses
+          # MTLTextureViewDescriptor, which exists only there, and that is
+          # platform code this layer may not patch for a CI convenience. Until the
+          # hosted image ships that SDK this step says so instead of pretending to
+          # have compiled, and it starts enforcing the build the day it does.
+          if ! xcodebuild -showsdks | grep -qE 'iphoneos2[6-9]'; then
+            echo "::notice title=Build not run::No iOS 26 SDK on this runner."
+            xcodebuild -showsdks | grep -E 'iphoneos|iOS' || true
+            exit 0
+          fi
+          xcodebuild -project Tolkara.xcodeproj -scheme Tolkara -configuration Debug \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > build.log 2>&1 || true
+          grep -E 'error:|\*\* BUILD' build.log | head -40
+          grep -q '\*\* BUILD SUCCEEDED \*\*' build.log
