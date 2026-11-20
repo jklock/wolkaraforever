@@ -206,6 +206,7 @@ wolkaraforever/Bridge/BatterySaverPolicy.m translation/AppKit/BatterySaverPolicy
 wolkaraforever/Bridge/BatterySaverPolicy.m launcher/WoW/BatterySaverPolicy.m add
 wolkaraforever/Bridge/DisplayRate.m translation/Metal/DisplayRate.m add
 wolkaraforever/Bridge/EnrollmentReference.swift authorization/Storage/EnrollmentReference.swift add
+# not overlaid yet (source of a pending patch): wolkaraforever/Bridge/GameControllerFacade.m
 wolkaraforever/Bridge/LocalServiceRetry.h authorization/App/LocalServiceRetry.h add
 wolkaraforever/Bridge/LocalServiceRetry.m authorization/App/LocalServiceRetry.m add
 wolkaraforever/Bridge/tests/test_authorization_blocked_state.m tests/test_authorization_blocked_state.m add
