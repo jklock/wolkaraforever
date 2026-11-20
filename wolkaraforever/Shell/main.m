@@ -412,6 +412,14 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
     NSString *outcome = note.userInfo[AKChatComposerOutcomeKey];
     if (![outcome isKindOfClass:NSString.class]) outcome = @"unknown";
     [AKControllerCommandIngress traceComposerOpenOutcome:outcome source:source.integerValue];
+// The draft editor's composition, announced by the adapter because it is a dylib this app does
+// not link. Only the phase arrives - never the composed text, never the marked range - and only
+// the phase is recorded. This is the app-side half of the bounded `keyboard-dictation` record;
+// the recogniser half is written by the dictation object.
+- (void)draftCompositionChanged:(NSNotification *)note {
+    NSString *phase = [note.userInfo[@"phase"] isKindOfClass:NSString.class] ? note.userInfo[@"phase"] : nil;
+    if ([phase isEqualToString:@"commit"]) AKKDLog(@"composition.commit");
+    else if ([phase isEqualToString:@"cancel"]) AKKDLog(@"composition.cancel");
 }
 
 // The draft editor's composition, announced by the adapter because it is a dylib this app does
