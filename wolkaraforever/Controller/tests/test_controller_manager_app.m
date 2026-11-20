@@ -12,7 +12,7 @@
 
 #import "../launcher/Controller/ControllerManager.h"
 #import "../launcher/Controller/ControllerProfile.h"
-#import "../launcher/Controller/ControllerIdentity.h"
+#import "../launcher/Controller/ControllerInspector.h"
 
 #include <assert.h>
 #include <math.h>

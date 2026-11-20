@@ -1432,6 +1432,31 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 - (void)settings {
     [self presentSheet:[self settingsSheet] anchor:nil];
 }
+// The speed names and the sheet that chooses one. They arrived with the controller-touchpad
+// branch, and the merge lost the definitions while keeping the two calls to them.
+- (NSString *)touchpadSpeedName:(AKControllerTouchpadSpeed)speed {
+    switch (speed) {
+        case AKControllerTouchpadSpeedSlow: return WKLocalized(@"home.settings.touchpadSpeed.slow");
+        case AKControllerTouchpadSpeedFast: return WKLocalized(@"home.settings.touchpadSpeed.fast");
+        case AKControllerTouchpadSpeedNormal: break;
+    }
+    return WKLocalized(@"home.settings.touchpadSpeed.normal");
+}
+- (void)chooseTouchpadSpeed {
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.touchpadSpeed.title")
+        message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    AKControllerTouchpadSpeed current=AKControllerTouchpadRelay.shared.speed;
+    for (NSNumber *value in @[@(AKControllerTouchpadSpeedSlow),@(AKControllerTouchpadSpeedNormal),@(AKControllerTouchpadSpeedFast)]) {
+        AKControllerTouchpadSpeed speed=(AKControllerTouchpadSpeed)value.integerValue;
+        NSString *name=[self touchpadSpeedName:speed];
+        [sheet addAction:[UIAlertAction actionWithTitle:(speed==current?[@"✓ " stringByAppendingString:name]:name)
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            (void)a; AKControllerTouchpadRelay.shared.speed=speed;
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [self presentSheet:sheet anchor:nil];
+}
 // Everything about dictation lives on its own screen: the button, the mode, its
 // test page, and what happens to the words afterwards.
 - (void)manageVoice {

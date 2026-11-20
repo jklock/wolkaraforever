@@ -1281,12 +1281,21 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     // finger's press short.
     NSMutableDictionary<NSString *, NSNumber *> *_holds;
     BOOL _active, _connecting, _cancelConnect, _failed, _invalidated;
+    // The physical producer. While _physicalRouting is on it owns every element the overlay
+    // would otherwise drive; _physicalHeld is what it currently holds, so releasing it cannot
+    // touch a value the touch producer is responsible for. They arrived with the controller
+    // routing work and the merge lost the declarations while keeping every use.
+    BOOL _physicalRouting;
+    NSMutableSet<NSString *> *_physicalHeld;
     BOOL _controllerArrived;
     BOOL _spaceDown;
 }
 - (instancetype)initWithHostView:(UIView *)host {
     if ((self = [super init])) {
         _host = host; _enabled = YES;
+        // The set the physical producer holds its elements in; nil would make every add and
+        // remove a no-op, so routing would never release what it took.
+        _physicalHeld = [NSMutableSet set];
         _holds = [NSMutableDictionary new];
         _haptics = [self makeHaptics];
         _overlay = [[AKGamepadOverlay alloc] initWithFrame:host.bounds];

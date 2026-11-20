@@ -1,6 +1,6 @@
 #import "ControllerManager.h"
 
-#import "ControllerIdentity.h"
+#import "ControllerInspector.h"
 
 #import "../App/WolkaraForeverLog.h"
 #import "../Input/InputElement.h"

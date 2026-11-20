@@ -15,9 +15,7 @@
 #import <GameController/GameController.h>
 #import "../Input/InputInterest.h"
 
-// The model identity a mapping is remembered against. Declared and implemented once, so
-// the inspector and the manager cannot disagree about what a pad is called.
-#import "ControllerIdentity.h"
+NS_ASSUME_NONNULL_BEGIN
 
 // Posted when the stored diagnostics preference changes. The router listens, because the
 // interest snapshot is what actually turns the stream on and off, and the two classes must not

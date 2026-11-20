@@ -24,13 +24,6 @@ static NSString *const AKVoiceSpeechLanguageGermanValue = @"de-DE";
 static NSString *const AKVoiceSpeechLanguageFrenchValue = @"fr-FR";
 static NSString *const AKVoiceSpeechLanguageSpanishValue = @"es-ES";
 
-// The stored spelling of each choice. A value that is not one of these is not a language this
-// build recognises, and becomes System rather than being written back.
-static NSString *const AKVoiceSpeechLanguageSystemValue = @"system";
-static NSString *const AKVoiceSpeechLanguageEnglishValue = @"en-US";
-static NSString *const AKVoiceSpeechLanguageGermanValue = @"de-DE";
-static NSString *const AKVoiceSpeechLanguageFrenchValue = @"fr-FR";
-static NSString *const AKVoiceSpeechLanguageSpanishValue = @"es-ES";
 
 // The dictionary is biased into the recogniser, so it is bounded: a huge list is not a
 // dictionary, it is a corrupt file, and it would be handed to the SDK either way.

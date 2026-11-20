@@ -122,6 +122,12 @@ static NSString *const AKChatComposerEnabledDefaultsKey = @"AKChatComposerEnable
 #endif
 @end
 
+// The closing page is used by methods above its definition once the merged branches are in
+// place, so it is declared here rather than left to the late parse.
+@interface AKHostSceneDelegate ()
+- (void)showClosingPage:(NSString *)reason;
+@end
+
 // App profiles (profiles/*/profile.json, packaged into Guest/Profiles) name
 // known applications and say where their files live under Documents. They
 // carry no code and no app data; the library adds a profile's app when its
@@ -412,14 +418,6 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
     NSString *outcome = note.userInfo[AKChatComposerOutcomeKey];
     if (![outcome isKindOfClass:NSString.class]) outcome = @"unknown";
     [AKControllerCommandIngress traceComposerOpenOutcome:outcome source:source.integerValue];
-// The draft editor's composition, announced by the adapter because it is a dylib this app does
-// not link. Only the phase arrives - never the composed text, never the marked range - and only
-// the phase is recorded. This is the app-side half of the bounded `keyboard-dictation` record;
-// the recogniser half is written by the dictation object.
-- (void)draftCompositionChanged:(NSNotification *)note {
-    NSString *phase = [note.userInfo[@"phase"] isKindOfClass:NSString.class] ? note.userInfo[@"phase"] : nil;
-    if ([phase isEqualToString:@"commit"]) AKKDLog(@"composition.commit");
-    else if ([phase isEqualToString:@"cancel"]) AKKDLog(@"composition.cancel");
 }
 
 // The draft editor's composition, announced by the adapter because it is a dylib this app does
@@ -431,6 +429,7 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
     if ([phase isEqualToString:@"commit"]) AKKDLog(@"composition.commit");
     else if ([phase isEqualToString:@"cancel"]) AKKDLog(@"composition.cancel");
 }
+
 
 // What the adapter needs to know, and the only thing it can be told: which keys are the
 // user's, so the guest does not see them. Sent on every change to the settings - a mapping,

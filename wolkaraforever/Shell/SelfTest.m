@@ -14,7 +14,7 @@
 #import "../WoW/WoWViewController.h"
 #import "../WoW/ControllerManagerViewController.h"
 #import "../Controller/ControllerManager.h"
-#import "../Controller/ControllerIdentity.h"
+#import "../Controller/ControllerInspector.h"
 #import "../WoW/AddonCredentialStore.h"
 #import "../WoW/AddonManager.h"
 #import "../WoW/AddonStore.h"

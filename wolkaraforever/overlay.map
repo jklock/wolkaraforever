@@ -218,8 +218,6 @@ wolkaraforever/Bridge/tests/test_packet_service_blocked.swift tests/test_packet_
 wolkaraforever/Bridge/tests/test_packet_service_retry.swift tests/test_packet_service_retry.swift add
 #
 # Controller: what the pad reports, every change to it, and the manager that owns it
-wolkaraforever/Controller/ControllerIdentity.h launcher/Controller/ControllerIdentity.h add
-wolkaraforever/Controller/ControllerIdentity.m launcher/Controller/ControllerIdentity.m add
 wolkaraforever/Controller/ControllerInspector.h launcher/Controller/ControllerInspector.h add
 wolkaraforever/Controller/ControllerInspector.m launcher/Controller/ControllerInspector.m add
 wolkaraforever/Controller/ControllerManager.h launcher/Controller/ControllerManager.h add
