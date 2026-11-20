@@ -1,0 +1,62 @@
+# WolkaraForever layer patch 0048 - runtime: name the symbol a guest crash landed in
+#
+# Two reports have now arrived as "EXC_BAD_ACCESS at 0x... in libsystem_pthread",
+# which names a dylib and nothing else: the application's own crash handler prints
+# only the image for a frame outside the guest arena, and 0039 stopped writing dlsym
+# resolution to the guest log, so a symbol that was not found left no trace either.
+# Both are what a reader needs to tell "the client took a lock on an object it never
+# built" apart from "the loader handed it nothing".
+#
+# The guest's dladdr now names a system frame as image+offset symbol=name, and a
+# dlsym that found nothing is logged even without tracing. Both are bounded to 64
+# lines, so a run that resolves in a loop cannot fill the file, and neither changes
+# what the guest is returned.
+#
+# Applies after: 0039-bypass-inactive-runtime-guards.patch
+# Applies to: runtime/NativeGuest.m
+# Upstream: candidate.
+
+--- a/runtime/NativeGuest.m
++++ b/runtime/NativeGuest.m
+@@ -581,7 +581,23 @@
+         *info = (Dl_info){.dli_fname=guest.path,.dli_fbase=guest.arena.executable};
+         LOG("[native] dladdr(%p) -> original image base=%p\n",address,info->dli_fbase); return 1;
+     }
+-    return dladdr(address,info);
++    // A fault inside a system library is named here, in the same call the
++    // application's own crash handler makes for every frame it prints: an image, an
++    // offset and a symbol, rather than the name of a dylib whose internal functions
++    // it cannot otherwise identify. Bounded, because a run that symbolizes in a loop
++    // must not fill the log.
++    if (dladdr(address,info)) {
++        static _Atomic int reported;
++        if (atomic_fetch_add(&reported,1)<64) {
++            const char *leaf=info->dli_fname?strrchr(info->dli_fname,'/'):NULL;
++            uintptr_t base=(uintptr_t)(info->dli_sname?info->dli_saddr:info->dli_fbase);
++            LOG("[native] dladdr(%p) -> %s+%#lx symbol=%s\n",address,
++                leaf?leaf+1:(info->dli_fname?:"(unknown)"),
++                (unsigned long)((uintptr_t)address-base),info->dli_sname?:"(none)");
++        }
++        return 1;
++    }
++    return 0;
+ }
+ // Experimental, opt-in (TOLKARA_VM_BUDGET_MB, off by default): the guest's
+ // large anonymous reservations fit a virtual-memory budget; see GuestVMBudget.h.
+@@ -915,7 +931,15 @@
+     // Tracing reaches through the application's own libraries: what a placed
+     // image exports is wrapped so each call logs its arguments and result.
+     if (trace_guest && placed && value && inside(value,4)) value=gw_wrap(name,value);
+-    if (trace_guest) LOG("[native] dlsym(%s) -> %p\n",name?name:"(null)",value); return value;
++    if (trace_guest) LOG("[native] dlsym(%s) -> %p\n",name?name:"(null)",value);
++    // A symbol that was not found is the usual way a client ends up holding a null
++    // function or object and dies somewhere unrelated, so it is named without tracing
++    // too. Bounded, as the resolution above is.
++    else if (!value) {
++        static _Atomic int missing;
++        if (atomic_fetch_add(&missing,1)<64) LOG("[native] dlsym(%s) -> NULL\n",name?name:"(null)");
++    }
++    return value;
+ }
+ // Placed images stay for the life of the guest.
+ static int guest_dlclose(void *handle) {

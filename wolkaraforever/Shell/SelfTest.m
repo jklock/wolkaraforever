@@ -7,10 +7,14 @@
 
 #import "SelfTest.h"
 #import "WolkaraForeverLog.h"
+#import "WKLocalization.h"
 #import "../WoW/ForeverUI.h"
 #import "../App/WolkaraForeverTheme.h"
 #import "../App/WKLocalization.h"
 #import "../WoW/WoWViewController.h"
+#import "../WoW/ControllerManagerViewController.h"
+#import "../Controller/ControllerManager.h"
+#import "../Controller/ControllerInspector.h"
 #import "../WoW/AddonCredentialStore.h"
 #import "../WoW/AddonManager.h"
 #import "../WoW/AddonStore.h"
@@ -24,6 +28,8 @@
 #import "../Voice/AudioSessionCoordinator.h"
 #import "../Voice/VoiceSettings.h"
 #import <AVFoundation/AVFoundation.h>
+#import <GameController/GameController.h>
+#include <mach/mach_time.h>
 #import <Speech/Speech.h>
 
 NSString *const AKSelfTestInput = @"input";
@@ -176,7 +182,6 @@ static BOOL AKSelfTestIsRecordingCategory(NSString *category) {
 // be adopted by accident, and so that everything these checks write is removed again - which
 // the last two checks are about.
 static NSString *const AKSelfTestDevice = @"selftest.pad";
-
 static void AKSelfTestRunInput(AKSelfTestRecorder *recorder) {
     // --- The matching rule, which the router fires on and ownership is decided by ---
     [recorder check:([AKTrigger element:@"controller.button.a" covers:@"controller.button.a"]) _:@"an exact element id is covered"];
@@ -936,6 +941,7 @@ static const struct AKSelfTestControl AKSelfTestControlTable[] = {
     {@"wow.touchpad",                  AKSelfTestControlOpensPage,  @"the controller touchpad row opens its configuration"},
     {@"wow.performance.deviceProfile", AKSelfTestControlOpensSheet, @"Device profile opens its sheet"},
     {@"wow.performance.renderProfile", AKSelfTestControlOpensSheet, @"Render profile opens its sheet"},
+    {@"wow.performance.batterySaver", AKSelfTestControlOpensSheet, @"Battery Saver opens its submenu"},
     {@"wow.launcher.interfaceMode",    AKSelfTestControlOpensSheet, @"Interface Mode opens its sheet"},
     {@"wow.launcher.interfaceSetup",   AKSelfTestControlOpensSheet, @"Controller Layout opens its sheet"},
 };
@@ -949,7 +955,6 @@ static const struct { __unsafe_unretained NSString *identifier; __unsafe_unretai
     {@"wow.performance.restore",        @"forever-ui writes and restores the user's own configuration on this device"},
     {@"wow.performance.reset",          @"forever-ui writes and restores the user's own configuration on this device"},
     {@"wow.performance.gamepad",        @"forever-ui writes the game's own UI configuration and puts it back"},
-    {@"wow.performance.overlay",        @"forever-ui turns the overlay on and forever-ui-clean turns it off again"},
     {@"wow.diagnostics",                @"the Diagnostics page runs probes of its own; the fixture presses it and the matrix reads its log"},
 };
 
@@ -1660,6 +1665,11 @@ static void AKSelfTestRunLatency(AKSelfTestRecorder *recorder) {
 }
 
 void AKRunSelfTest(NSString *name) {
+    AKRunSelfTestInHomePage(name, nil);
+}
+
+void AKRunSelfTestInHomePage(NSString *name, id home) {
+    UIViewController *homePage = [home isKindOfClass:UIViewController.class] ? home : nil;
     AKSelfTestRecorder *recorder = [AKSelfTestRecorder new];
     recorder.detail = @"";
     WKLog("selftest", @"selftest: %@ starting", name);

@@ -11,12 +11,18 @@
 #define AKIRLog(...) WKLog("input", __VA_ARGS__)
 
 #import "../Controller/ControllerInspector.h"
+#import "../Controller/ControllerManager.h"
 #import "../Voice/VoiceSettings.h"
+#import "../WoW/BatterySaverPolicy.h"
 #import "InputElement.h"
 #import "InputInterest.h"
 #import "ControllerCommandIngress.h"
 
 NSNotificationName const AKInputRouterLearningDidExpireNotification = @"AKInputRouterLearningDidExpire";
+
+// Battery Saver's AFK dim, as the AppKit host last reported it. Main queue only, like the rest
+// of this class's state: the notification is posted from the host's main-queue step.
+static BOOL sBatterySaverDimmed;
 
 // One queue for every piece of input state. Game Controller does not promise which
 // thread its handlers arrive on, the long-press timers run on the main queue, and both
@@ -124,12 +130,11 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
         snapshot = [AKInputInterest none];
     } else {
         NSMutableSet<NSString *> *elements = [NSMutableSet set];
-        // Every mapping that could apply: one keyed to a specific pad, and the one keyed to any
-        // device. Being generous here is the safe direction - the router still checks the exact
-        // trigger before it fires, and a mapped button that never arrives is dictation that
-        // silently does not work.
-        AKTrigger *any = [AKVoiceSettings.shared triggerForDevice:nil];
-        if (any.element.length) [elements addObject:any.element];
+        // Every mapping that could apply, whether or not its pad is connected yet.
+        // Being generous here is the safe direction - the router still checks the
+        // exact trigger before it fires, and a mapped button that never arrives is
+        // dictation that silently does not work.
+        [elements addObjectsFromArray:AKVoiceSettings.shared.mappedElements];
         for (GCController *pad in GCController.controllers) {
             AKTrigger *trigger = [AKVoiceSettings.shared triggerForDevice:AKControllerIdentity(pad)];
             if (trigger.element.length) [elements addObject:trigger.element];
@@ -221,6 +226,11 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
     // Switching diagnostics on or off changes what may reach the router at all.
     [center addObserver:self selector:@selector(refreshInterest)
                    name:AKInputDiagnosticsDidChangeNotification object:nil];
+    // The AppKit host owns the AFK dim and says so when it changes. Reading it here is what
+    // makes the first controller action after the dim a wake rather than a command; the host
+    // cannot see a controller button at all, so this is the only place that can.
+    [center addObserver:self selector:@selector(batterySaverDimChanged:)
+                   name:AKBatterySaverDimDidChangeNotification object:nil];
     [self applyMappings];
     [self refreshInterest];
     AKIRLog(@"input: router watching every source");
@@ -235,6 +245,13 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
     AKIRLog(@"input: %@", notification.name);
     [self applyMappings];
     [self refreshInterest];
+}
+
+// The AppKit host owns the AFK dim. Cached rather than polled: an input can arrive on the same
+// main-queue turn as the dim, and asking the host from here would be a second owner of a state
+// that already has one.
+- (void)batterySaverDimChanged:(NSNotification *)notification {
+    sBatterySaverDimmed = [notification.userInfo[AKBatterySaverDimmedKey] boolValue];
 }
 
 // A pad leaving does disarm it: the element that was being learned no longer exists.
@@ -259,12 +276,19 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
     AKControllerInspector *inspector = AKControllerInspector.shared;
     // Start from the system's own behaviour every time, then hand over only what the
     // user actually asked for. Any other order leaves a gesture released for a mapping
-    // that no longer exists, or for a feature that is switched off.
+    // that no longer exists, or for a feature that is switched off. The inspector
+    // forwards this to the manager, which gives back only the gestures it released for a
+    // *voice* mapping - routing's own releases are its business and are not undone here.
     [inspector restoreAllSystemGestures];
     [self refreshInterest];
     if (!AKVoiceSettings.shared.enabled) return;
 
-    for (GCController *pad in GCController.controllers) {
+    // The manager is the one owner of what is connected, so it is also what decides which
+    // pads exist. Iterating GCController.controllers here would see the hidden virtual
+    // controller as well, and would have this router releasing gestures on a pad nobody
+    // can press.
+    NSArray<GCController *> *pads = AKControllerManager.shared.physicalControllers;
+    for (GCController *pad in pads) {
         NSString *device = AKControllerIdentity(pad);
         [AKVoiceSettings.shared adoptLegacyMappingForDevice:device vendor:pad.vendorName];
         AKTrigger *trigger = [AKVoiceSettings.shared triggerForDevice:device];
@@ -280,7 +304,7 @@ static AKInputSource AKInputSourceFromName(NSString *name) {
     // where someone will see it, because the alternative is a user wondering why the spare
     // pad starts dictation too.
     NSMutableDictionary<NSString *, NSNumber *> *models = [NSMutableDictionary dictionary];
-    for (GCController *pad in GCController.controllers) {
+    for (GCController *pad in pads) {
         NSString *device = AKControllerIdentity(pad);
         models[device] = @([models[device] integerValue] + 1);
     }
@@ -345,6 +369,24 @@ static NSTimeInterval const AKLearningTimeoutDefault = 20.0;
     AKAssertInputQueue();
     if (!element.length) return;
     if (source == AKInputSourceMouse || source == AKInputSourceTouchpad) [self notePointerEvent];
+    // Battery Saver's AFK dim. A controller button is an input the AppKit host never sees, so
+    // the coordinator is told about it here, through the one notification both libraries spell
+    // out, and a controller action that only wakes a dimmed session is not delivered - exactly
+    // as the first touch on the screen is not. Nothing else about the event changes.
+    if (source == AKInputSourceController) {
+        BOOL waking = sBatterySaverDimmed;
+        // The coordinator wakes on this same signal, so the session is awake from here on. Cleared
+        // locally as well as by the host's own notification: a consumed wake that left this flag
+        // set would swallow every controller button until the next dim.
+        if (waking && pressed) sBatterySaverDimmed = NO;
+        [NSNotificationCenter.defaultCenter postNotificationName:AKBatterySaverActivityNotification
+                                                          object:self
+                                                        userInfo:@{ AKBatterySaverActivitySourceKey: @"controller" }];
+        if (waking && pressed) {
+            AKIRLog(@"input: controller %@ only woke the session; not delivered", element);
+            return;
+        }
+    }
 
     AKInputEvent *event = [AKInputEvent new];
     event.source = source;

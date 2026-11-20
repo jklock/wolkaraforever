@@ -24,9 +24,17 @@
 #
 # So this script creates, at most, those two simulators. It deletes nothing and
 # shuts nothing down: a simulator already carrying a matrix name is reused as it
-# is, and every other simulator on this Mac is left alone. `simctl create` is the
-# only simulator creation in this repository, and it is called from here for
-# these two names only.
+# is, and every other simulator on this Mac is left alone.
+#
+# It does not relocate CoreSimulator's data root. It used to, onto an APFS disk
+# image on the external Storage volume, to keep device data off the boot disk -
+# and that made every simulator unbootable: a device whose data lives on a disk
+# image never finishes its first boot. SpringBoard gets a PID,
+# `com.apple.springboard.services` never registers, the screen stays on the Apple
+# logo and the writes stop. The identical device on the boot volume reaches the
+# home screen in seconds (measured, 2026-11-06, both matrix simulators). Device
+# data is under a gigabyte; the runtime images beside it are tens of gigabytes and
+# live on the boot volume either way.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/simulators.sh

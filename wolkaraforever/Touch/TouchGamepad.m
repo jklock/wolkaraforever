@@ -15,6 +15,56 @@
 #define AKGamepadLog(...) NSLog(@"[ak] %@", [NSString stringWithFormat:__VA_ARGS__])
 #endif
 
+// The Controller Manager's channel, by value. Spelled out because this file is built into
+// the AppKit adapter dylib and the manager into the launcher: neither binary can include
+// the other's header. The companion declarations, with the same wording, are in
+// wolkaraforever/Controller/ControllerManager.h.
+static NSString *const AKRouteStateNotification = @"AKControllerRouteState";
+static NSString *const AKRouteQueryNotification = @"AKControllerRouteQuery";
+static NSString *const AKRouteValueNotification = @"AKControllerRouteValue";
+static NSString *const AKRoutePositionNotification = @"AKControllerRoutePosition";
+static NSString *const AKRouteReleaseNotification = @"AKControllerRouteRelease";
+static NSString *const AKRouteElementKey = @"element";
+static NSString *const AKRouteValueKey = @"value";
+static NSString *const AKRouteXKey = @"x";
+static NSString *const AKRouteYKey = @"y";
+static NSString *const AKRouteEnabledKey = @"enabled";
+static NSString *const AKVirtualPadDidChangeNotification = @"AKControllerVirtualPadDidChange";
+static NSString *const AKVirtualPadConnectedKey = @"connected";
+static NSString *const AKVirtualPadControllerKey = @"controller";
+static NSString *const AKVirtualPadErrorKey = @"error";
+
+// A virtual target, named by the layer, to the element name GCVirtualController's setters
+// take. One place, so a profile never has to hold a GameController constant and this file
+// never has to guess what a stored target meant.
+static NSString *AKElementForTarget(NSString *target) {
+    static NSDictionary<NSString *, NSString *> *elements;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        elements = @{@"virtual.button.a": GCInputButtonA,
+                     @"virtual.button.b": GCInputButtonB,
+                     @"virtual.button.x": GCInputButtonX,
+                     @"virtual.button.y": GCInputButtonY,
+                     @"virtual.button.left.shoulder": GCInputLeftShoulder,
+                     @"virtual.button.right.shoulder": GCInputRightShoulder,
+                     @"virtual.button.left.trigger": GCInputLeftTrigger,
+                     @"virtual.button.right.trigger": GCInputRightTrigger,
+                     @"virtual.button.menu": GCInputButtonMenu,
+                     @"virtual.stick.left": GCInputLeftThumbstick,
+                     @"virtual.stick.right": GCInputRightThumbstick,
+                     @"virtual.dpad": GCInputDirectionPad};
+    });
+    return elements[target];
+}
+
+// A stick and the D-pad are positions; everything else is a value. The D-pad is a
+// position of its own, which is also how the overlay has always driven it.
+static BOOL AKTargetIsAxis(NSString *target) {
+    return [target isEqualToString:@"virtual.stick.left"] ||
+           [target isEqualToString:@"virtual.stick.right"] ||
+           [target isEqualToString:@"virtual.dpad"];
+}
+
 CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
     if (!isfinite(point.x) || !isfinite(point.y) || !isfinite(size.width) || !isfinite(size.height) ||
         size.width <= 0 || size.height <= 0) return CGPointZero;
@@ -1231,12 +1281,21 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     // finger's press short.
     NSMutableDictionary<NSString *, NSNumber *> *_holds;
     BOOL _active, _connecting, _cancelConnect, _failed, _invalidated;
+    // The physical producer. While _physicalRouting is on it owns every element the overlay
+    // would otherwise drive; _physicalHeld is what it currently holds, so releasing it cannot
+    // touch a value the touch producer is responsible for. They arrived with the controller
+    // routing work and the merge lost the declarations while keeping every use.
+    BOOL _physicalRouting;
+    NSMutableSet<NSString *> *_physicalHeld;
     BOOL _controllerArrived;
     BOOL _spaceDown;
 }
 - (instancetype)initWithHostView:(UIView *)host {
     if ((self = [super init])) {
         _host = host; _enabled = YES;
+        // The set the physical producer holds its elements in; nil would make every add and
+        // remove a no-op, so routing would never release what it took.
+        _physicalHeld = [NSMutableSet set];
         _holds = [NSMutableDictionary new];
         _haptics = [self makeHaptics];
         _overlay = [[AKGamepadOverlay alloc] initWithFrame:host.bounds];
@@ -1268,9 +1327,20 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
             [center addObserver:self selector:@selector(environmentChanged:) name:name object:nil];
         [center addObserver:self selector:@selector(activate:) name:UIApplicationDidBecomeActiveNotification object:nil];
         [center addObserver:self selector:@selector(deactivate:) name:UIApplicationWillResignActiveNotification object:nil];
+        // The Controller Manager's half of this device. It posts on main, and every
+        // handler below is a state change on main, exactly like the overlay's own.
+        [center addObserver:self selector:@selector(routingStateChanged:) name:AKRouteStateNotification object:nil];
+        [center addObserver:self selector:@selector(routingValueChanged:) name:AKRouteValueNotification object:nil];
+        [center addObserver:self selector:@selector(routingPositionChanged:) name:AKRoutePositionNotification object:nil];
+        [center addObserver:self selector:@selector(routingReleased:) name:AKRouteReleaseNotification object:nil];
+        // Ask now rather than wait for a change: the manager may have decided this long
+        // before the adapter loaded, because the adapter only exists for a guest session.
+        // The answer arrives synchronously, on this call, from the observer just added.
+        [center postNotificationName:AKRouteQueryNotification object:nil];
     }
     return self;
 }
+- (nullable GCController *)virtualController { return _virtualController.controller; }
 - (NSArray<GCController *> *)connectedControllers { return GCController.controllers; }
 - (AKTouchHaptics *)makeHaptics { return [AKTouchHaptics new]; }
 - (void)updateHaptics { _haptics.enabled = _visible && !_overlay.configuring && _overlay.preferences.hapticsEnabled; }
@@ -1292,6 +1362,10 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     return _active && window.isKeyWindow && !window.hidden && !_host.hidden;
 }
 - (BOOL)hasPhysicalController {
+    // While routing, the physical pad is the *source* of this controller, not a competitor
+    // for it. Treating it as one would disconnect the virtual device the instant a pad was
+    // plugged in, which is the exact opposite of what the feature is for.
+    if (_physicalRouting) return NO;
     GCController *own = _virtualController.controller;
     for (GCController *controller in [self connectedControllers]) {
         // Snapshots are app-created state, not connected hardware. Our own
@@ -1302,7 +1376,12 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     return NO;
 }
 - (BOOL)wantsController {
-    return !_invalidated && _enabled && !_keyboardVisible && [self hostIsActive];
+    if (_invalidated) return NO;
+    // Routing does not care whether the on-screen controls are switched on or whether the
+    // keyboard is up: the pad is the input, and the host being active is the only thing
+    // that matters.
+    if (_physicalRouting) return [self hostIsActive];
+    return _enabled && !_keyboardVisible && [self hostIsActive];
 }
 - (void)setVisible:(BOOL)visible {
     if (!visible) {
@@ -1464,14 +1543,104 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     return AKGamepadStickButtonElement(element);
 }
 - (void)stickChanged:(AKGamepadStick *)stick {
+    if (_physicalRouting) return;
     if (_visible && !_overlay.configuring) {
         [_haptics stickMoved:stick.position left:stick == _overlay.leftStick];
         [_virtualController setPosition:stick.position forDirectionPadElement:stick.element];
     }
 }
+
+#pragma mark - The physical producer
+
+- (void)setPhysicalRoutingEnabled:(BOOL)enabled {
+    NSAssert(NSThread.isMainThread, @"Routing is a main-thread state change");
+    if (_physicalRouting == enabled) return;
+    _physicalRouting = enabled;
+    if (enabled) {
+        // The overlay is reset first, so a finger resting on it cannot look to the pad like
+        // a held button that nothing will ever release.
+        [_overlay reset];
+        _failed = NO;
+        NSLog(@"[TouchGamepad] routing physical controllers through the virtual controller");
+    } else {
+        [self releasePhysicalInputs];
+        [_overlay reset];
+    }
+    [self refresh];
+}
+
+- (void)setPhysicalValue:(double)value forTarget:(NSString *)target {
+    NSString *element = AKElementForTarget(target);
+    if (!element || AKTargetIsAxis(target)) return;
+    if (!_physicalRouting || !_virtualController) return;
+    double clamped = value > 1 ? 1 : (value < 0 ? 0 : value);
+    [_virtualController setValue:clamped forButtonElement:element];
+    if (clamped > 0) [_physicalHeld addObject:target]; else [_physicalHeld removeObject:target];
+}
+
+- (void)setPhysicalPosition:(CGPoint)position forTarget:(NSString *)target {
+    NSString *element = AKElementForTarget(target);
+    if (!element || !AKTargetIsAxis(target)) return;
+    if (!_physicalRouting || !_virtualController) return;
+    if (!isfinite(position.x) || !isfinite(position.y)) return;
+    CGPoint clamped = CGPointMake(MAX(-1, MIN(1, position.x)), MAX(-1, MIN(1, position.y)));
+    [_virtualController setPosition:clamped forDirectionPadElement:element];
+    if (clamped.x != 0 || clamped.y != 0) [_physicalHeld addObject:target];
+    else [_physicalHeld removeObject:target];
+}
+
+- (void)releasePhysicalInputs {
+    if (!_physicalHeld.count) return;
+    NSUInteger count = _physicalHeld.count;
+    for (NSString *target in [_physicalHeld copy]) {
+        NSString *element = AKElementForTarget(target);
+        if (!element) continue;
+        if (AKTargetIsAxis(target))
+            [_virtualController setPosition:CGPointZero forDirectionPadElement:element];
+        else
+            [_virtualController setValue:0 forButtonElement:element];
+    }
+    [_physicalHeld removeAllObjects];
+    NSLog(@"[TouchGamepad] released %lu routed value(s)", (unsigned long)count);
+}
+- (void)routingStateChanged:(NSNotification *)note {
+    BOOL enabled = [note.userInfo[AKRouteEnabledKey] boolValue];
+    [self setPhysicalRoutingEnabled:enabled];
+}
+- (void)routingValueChanged:(NSNotification *)note {
+    NSDictionary *info = note.userInfo;
+    NSString *target = info[AKRouteElementKey];
+    if (![target isKindOfClass:NSString.class]) return;
+    [self setPhysicalValue:[info[AKRouteValueKey] doubleValue] forTarget:target];
+}
+- (void)routingPositionChanged:(NSNotification *)note {
+    NSDictionary *info = note.userInfo;
+    NSString *target = info[AKRouteElementKey];
+    if (![target isKindOfClass:NSString.class]) return;
+    [self setPhysicalPosition:CGPointMake([info[AKRouteXKey] doubleValue],
+                                          [info[AKRouteYKey] doubleValue]) forTarget:target];
+}
+- (void)routingReleased:(NSNotification *)note {
+    (void)note;
+    [self releasePhysicalInputs];
+}
+
+// What the manager needs to know to report a state and to tell the guest which controller
+// it may enumerate. Sent on main, where the manager's state lives.
+- (void)postVirtualPadState:(BOOL)connected error:(nullable NSString *)error {
+    NSMutableDictionary *info = [NSMutableDictionary dictionary];
+    info[AKVirtualPadConnectedKey] = @(connected);
+    GCController *controller = _virtualController.controller;
+    if (connected && controller) info[AKVirtualPadControllerKey] = controller;
+    if (error.length) info[AKVirtualPadErrorKey] = error;
+    [NSNotificationCenter.defaultCenter postNotificationName:AKVirtualPadDidChangeNotification
+                                                     object:nil
+                                                   userInfo:info];
+}
 - (void)disconnectController {
     [self holdSpace:NO];
     GCVirtualController *controller = _virtualController;
+    BOOL had = controller != nil;
     // Explicitly release our held controls before removing the virtual device.
     // No value or handler on a physical controller is changed.
     [_overlay releaseTransientInput:@"teardown"];
@@ -1480,6 +1649,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     _virtualController = nil;
     [controller disconnect];
     [self setVisible:NO];
+    if (had) [self postVirtualPadState:NO error:nil];
 }
 - (void)refresh {
     NSAssert(NSThread.isMainThread, @"Touch controller lifecycle belongs on the main thread");
@@ -1515,11 +1685,14 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
             if (error || cancelled || ![self wantsController] || [self hasPhysicalController]) {
                 if (error) NSLog(@"[TouchGamepad] Connection failed: %@ (%ld)",error.domain,(long)error.code);
                 self->_failed = error != nil;
+                NSString *message = error ? (error.localizedDescription ?: @"the virtual controller could not connect") : nil;
                 [self disconnectController];
+                if (message) [self postVirtualPadState:NO error:message];
                 if (cancelled && !error) [self refresh];
                 return;
             }
             [self setVisible:YES];
+            [self postVirtualPadState:YES error:nil];
         });
     }];
 }
