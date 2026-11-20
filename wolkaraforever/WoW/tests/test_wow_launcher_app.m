@@ -2962,6 +2962,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
         (@[@"Verify and repair game files", @"Diagnostics and logs",
+           @"Arm network health for next launch",
            @"Turn on input diagnostics", @"About and open-source licenses", @"Cancel"])]);
     assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
