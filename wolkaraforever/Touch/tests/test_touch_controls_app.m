@@ -148,6 +148,18 @@ static UIView *AKFindInputView(UIView *root, NSString *identifier) {
     return nil;
 }
 
+// One key of the accessory row, by the number it carries rather than by where it sits. The
+// saved-password key is first on the row and hidden most of the time, so an index into
+// arrangedSubviews would name a different key the moment it exists.
+static UIButton *AKAccessoryKey(UIStackView *row, NSUInteger number) {
+    NSString *identifier = [NSString stringWithFormat:@"wolkaraforever.keyboard.key.%lu",
+                            (unsigned long)number];
+    for (UIView *view in row.arrangedSubviews)
+        if ([view isKindOfClass:UIButton.class] && [view.accessibilityIdentifier isEqual:identifier])
+            return (UIButton *)view;
+    return nil;
+}
+
 #pragma mark - Faking a key press at the adapter's door
 
 // UIKey and UIPress cannot be constructed, so they are subclassed and the accessors
@@ -761,6 +773,49 @@ static void AKFixtureInputSource(void *context) {
                 [reference becomeFirstResponder];
                 return;
             }
+            if (selfTest) {
+                // The saved-password key is first on the keyboard's row and is shown only while
+                // the game's own password field has the keyboard *and* the launcher's experimental
+                // Battle.net login is on - the feature it belongs to. Chat and every other field
+                // never show it. Nothing here taps the key: reading the password is Face ID's
+                // business, and the fixture has no Keychain item to read.
+                (void)[controls inputAccessoryView];
+                UIButton *passwordKey = [controls valueForKey:@"_passwordKey"];
+                assert(passwordKey && passwordKey.hidden);
+                assert([passwordKey.accessibilityIdentifier isEqual:@"wolkaraforever.keyboard.key.savedPassword"]);
+                assert([passwordKey.accessibilityLabel isEqual:AKHostLocalized(@"touch.key.savedPassword")]);
+                // A password field, feature off: still no key.
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
+                                                                 object:nil userInfo:@{@"enabled": @YES}];
+                AKDrainFixtureEvents();
+                assert(passwordKey.hidden);
+                // The launcher turns the feature on: the key appears at the password field.
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKTouchSavedPasswordAvailability"
+                                                                 object:nil userInfo:@{@"enabled": @YES}];
+                AKDrainFixtureEvents();
+                assert(!passwordKey.hidden);
+                // It goes again when the field loses the keyboard...
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
+                                                                 object:nil userInfo:@{@"enabled": @NO}];
+                AKDrainFixtureEvents();
+                assert(passwordKey.hidden);
+                // ...comes back at the field...
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
+                                                                 object:nil userInfo:@{@"enabled": @YES}];
+                AKDrainFixtureEvents();
+                assert(!passwordKey.hidden);
+                // ...and goes with the feature it belongs to.
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKTouchSavedPasswordAvailability"
+                                                                 object:nil userInfo:@{@"enabled": @NO}];
+                AKDrainFixtureEvents();
+                assert(passwordKey.hidden);
+                // Back to what the rest of the fixture expects: no password field, feature off.
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
+                                                                 object:nil userInfo:@{@"enabled": @NO}];
+                AKDrainFixtureEvents();
+                puts("SAVED_PASSWORD_KEY_PASS: the key shows only at the game's password field, and only with the experimental login on.");
+                fflush(stdout);
+            }
             // Standard: the toolbar is where it has always been - just below the top, 252 by 44.
             // Mobile: the bottom centre, between the thumbs, folded into its handle.
             [host layoutIfNeeded];
@@ -1004,7 +1059,7 @@ static void AKFixtureInputSource(void *context) {
                 assert([fixture.text isEqual:expected]);
                 UIStackView *accessory = (UIStackView *)controls.inputAccessoryView;
                 [input insertText:@" done"];
-                [(UIButton *)accessory.arrangedSubviews[5] sendActionsForControlEvents:UIControlEventTouchUpInside];
+                [(UIButton *)AKAccessoryKey(accessory, 5) sendActionsForControlEvents:UIControlEventTouchUpInside];
                 AKDrainFixtureEvents();
                 assert([fixture.text isEqual:expected]);
                 // The system keyboard's key follows the interface. Standard: Done replaces the
@@ -1041,7 +1096,7 @@ static void AKFixtureInputSource(void *context) {
                     assert(fixture.replacements == replacementsBefore + 1);
                     assert([fixture.text isEqual:expected] && !input.text.length);
                 }
-                [(UIButton *)accessory.arrangedSubviews[5] sendActionsForControlEvents:UIControlEventTouchUpInside];
+                [(UIButton *)AKAccessoryKey(accessory, 5) sendActionsForControlEvents:UIControlEventTouchUpInside];
                 AKDrainFixtureEvents();
                 [expected appendString:@"\r"];
                 assert([fixture.text isEqual:expected]);

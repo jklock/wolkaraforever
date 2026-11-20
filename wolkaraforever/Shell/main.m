@@ -24,6 +24,7 @@
 // what may and may not appear in it.
 #import "../Voice/KeyboardDictationEvents.h"
 #import "../WoW/CASC.h"
+#import "../WoW/BattleNetSavedPassword.h"
 #import "../WoW/BattleNetSession.h"
 #import "../WoW/WoWViewController.h"
 #import "LaunchProgressView.h"
@@ -1949,6 +1950,9 @@ int main(int argc, char *argv[]) {
     WKLocalizationSetLogger(WKLanguageLogSink);
     @autoreleasepool {
         [TKBattleNetSession beginProcess];
+        // The saved game password, which belongs to the experimental Battle.net login: it answers
+        // the keyboard's requests from here on and tells it whether the key may be offered.
+        [TKBattleNetSavedPassword begin];
         return UIApplicationMain(argc, argv, nil, NSStringFromClass(AKHostAppDelegate.class));
     }
 }

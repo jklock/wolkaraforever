@@ -1,6 +1,7 @@
 #import "WoWViewController.h"
 #import "Client.h"
 #import "BattleNetBrowser.h"
+#import "BattleNetSavedPassword.h"
 #import "BattleNetSession.h"
 #import "AddonManager.h"
 #import "../Voice/VoiceViewController.h"
@@ -284,6 +285,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // Set while the layout-import picker is up, so a document chosen there is read as a layout
     // backup and never mistaken for the UI restore's snapshot.
     BOOL _layoutImportPending;
+    // Set for exactly one start by the login sheet's "sign in with the saved password": that
+    // launch must reach the game's own password field instead of opening the sign-in browser.
+    BOOL _useSavedPassword;
     NSString *_backupsDirectory;
     UIView *_markView;
     NSLayoutConstraint *_markCap;
@@ -819,7 +823,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)launchReadyApp:(TKApp *)app {
     if (_busy || _starting || _running || _sessionUsed || _browserSignInPresented || ![self inFront]) return;
-    if ([NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"] &&
+    // The login sheet asked for the saved password: that start goes straight to the game, which
+    // asks for a password itself, and the keyboard's key types the one kept on this device.
+    BOOL savedPassword=_useSavedPassword && [app.profile isEqual:@"wow-forever"];
+    _useSavedPassword=NO;
+    if (!savedPassword && [NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"] &&
         [app.profile isEqual:@"wow-forever"] && ![TKBattleNetSession isReady]) {
         WKLog("battle-login", @"Play requested: opening experimental sign-in");
         [self browserSignIn];
@@ -1087,8 +1095,13 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _preferencesButton.enabled=_editionButton.enabled;
     _languageButton.enabled=_editionButton.enabled;
     BOOL browserLoginAvailable=_editionButton.enabled && [_product[@"id"] isEqual:TKForeverUIEdition];
+    BOOL browserLoginOn=[NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"];
+    // The row says whether the feature is on, and, when it is, whether a password is kept for it:
+    // that is the one thing about this feature a person needs to see without opening the sheet.
+    NSString *browserLoginState=!browserLoginOn ? @"login.status.off"
+        : ([TKBattleNetSavedPassword hasSavedPassword] ? @"login.status.onSaved" : @"login.status.on");
     [self configureButton:_browserLoginButton title:WKLocalizedFormat(@"login.row",
-        WKLocalized([NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"] ? @"login.status.on" : @"login.status.off")) filled:NO];
+        WKLocalized(browserLoginState)) filled:NO];
     _browserLoginButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _browserLoginButton.enabled=browserLoginAvailable;
     self.navigationItem.rightBarButtonItem.enabled=!_updating && !_starting && !_running;
@@ -1294,6 +1307,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (void)clearBrowserLoginDataWithMessage:(BOOL)message {
     if (_browserSignInPresented) return;
     _browserSignInPresented=YES;
+    // Everything this feature kept goes: the browser session, any pending launch ticket, and the
+    // saved password - it is part of the same feature, not a general keyboard setting.
+    [TKBattleNetSavedPassword forget];
     [TKBattleNetBrowser clearSavedSignInWithCompletion:^{
         self->_browserSignInPresented=NO;
         [self render];
@@ -1307,24 +1323,60 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [warning addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.enable.confirm") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"WoWBrowserLogin"];
         WKLog("battle-login", @"experimental login enabled");
+        // The keyboard's saved-password key belongs to this feature, so it may be offered from now
+        // on. The keyboard is a library this layer does not link; it is told by name.
+        [TKBattleNetSavedPassword postAvailability];
         [self render];
     }]];
     [self presentSheet:warning anchor:_browserLoginButton];
 }
+- (void)signInWithSavedPassword {
+    if (![self browserLoginAllowed] || ![TKBattleNetSavedPassword hasSavedPassword] ||
+        _installation.state!=TKWoWInstallationReady) return;
+    WKLog("battle-login", @"signing in from the saved password");
+    // This start is the saved password's, not a ticket's: a result left over from an earlier
+    // attempt must not take the game to a different account.
+    [TKBattleNetSession clear];
+    _useSavedPassword=YES;
+    [self primaryAction];
+}
+- (void)forgetSavedPassword {
+    [TKBattleNetSavedPassword forget];
+    [self render];
+    [self presentMessage:WKLocalized(@"login.savedPassword.forgotten.title")
+                 message:WKLocalized(@"login.savedPassword.forgotten.message")];
+}
 - (void)browserLoginSettings {
     if (![self browserLoginAllowed]) return;
     BOOL enabled=[NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"];
+    BOOL saved=enabled && [TKBattleNetSavedPassword hasSavedPassword];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"login.title")
         message:WKLocalized(@"login.explanation") preferredStyle:UIAlertControllerStyleActionSheet];
+    if (saved) {
+        // The saved password is this feature's other way in: the game starts and the keyboard's key
+        // signs in at the game's own password field, so no browser and no launch ticket is used.
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.savedPassword.signIn")
+            style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [self signInWithSavedPassword];
+        }]];
+    }
     if (enabled) {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.disable") style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
             [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"WoWBrowserLogin"];
             WKLog("battle-login", @"experimental login disabled");
+            // The password was kept for this feature; it goes with it.
+            [TKBattleNetSavedPassword forget];
             [self clearBrowserLoginDataWithMessage:YES];
         }]];
     } else {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.enable") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             [self enableBrowserLogin];
+        }]];
+    }
+    if (saved) {
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.savedPassword.forget")
+            style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            [self forgetSavedPassword];
         }]];
     }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.clear") style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
