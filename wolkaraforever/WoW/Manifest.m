@@ -24,6 +24,29 @@ NSArray<NSDictionary *> *TKWoWProducts(void) {
         @{@"id":@"wow_beta", @"name":@"Retail · Beta", @"folder":@"_beta_"}
     ];
 }
+// Which of the four account regions a country belongs to. The US portal serves the
+// Americas and Oceania; Korea and Taiwan (with Hong Kong and Macau) have their own; the
+// rest of the world is Europe. Anything unknown is Europe, which is what the launcher
+// did for every device before there was a rule at all.
+static NSString *RegionForCountry(NSString *country) {
+    static NSSet *americas, *taiwan;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        americas=[NSSet setWithArray:@[@"AG",@"AR",@"AU",@"BB",@"BO",@"BR",@"BS",@"BZ",
+            @"CA",@"CL",@"CO",@"CR",@"CU",@"DM",@"DO",@"EC",@"GD",@"GT",@"HN",@"HT",
+            @"JM",@"KN",@"LC",@"MX",@"NI",@"NZ",@"PA",@"PE",@"PR",@"PY",@"SR",@"SV",
+            @"TT",@"US",@"UY",@"VC",@"VE"]];
+        taiwan=[NSSet setWithArray:@[@"TW",@"HK",@"MO"]];
+    });
+    if ([country isEqualToString:@"KR"]) return @"kr";
+    if ([taiwan containsObject:country]) return @"tw";
+    if ([americas containsObject:country]) return @"us";
+    return @"eu";
+}
+NSString *TKWoWDefaultRegion(NSLocale *locale) {
+    NSString *country=[[locale objectForKey:NSLocaleCountryCode] uppercaseString];
+    return country.length ? RegionForCountry(country) : @"eu";
+}
 BOOL TKWoWHashValid(NSString *value) {
     if (![value isKindOfClass:NSString.class] || value.length!=32) return NO;
     return [value rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"] invertedSet]].location==NSNotFound;
