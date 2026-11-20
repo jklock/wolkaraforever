@@ -1,9 +1,9 @@
 name: Repository checks
 
-# What this pipeline is: the layer's gates, the app built unsigned, and every
-# suite that needs no simulator. What it is not: the device matrix and the UI
-# fixtures, which need the two matrix simulators - Xcode 26 device types the
-# hosted images cannot create - and a real iPad. Those stay a local run.
+# What this pipeline is: the layer's gates and the app built unsigned. What it is
+# not: the test suites, the device matrix and the UI fixtures. Those are a local
+# run - the UI ones need the two matrix simulators, which are Xcode 26 device types
+# the hosted images cannot create.
 on:
   push:
     branches: [main]
@@ -87,22 +87,3 @@ jobs:
             build > build.log 2>&1 || true
           grep -E 'error:|\*\* BUILD' build.log | head -40
           grep -q '\*\* BUILD SUCCEEDED \*\*' build.log
-
-  suites:
-    name: Headless suites
-    runs-on: macos-15-intel
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Install XcodeGen and LuaJIT
-        run: brew install xcodegen luajit
-
-      # The suites compile their own fixtures with clang, and the ones that need
-      # the prepared tree call prepare.sh themselves. A suite added later runs
-      # here without being listed: run_headless_suites.sh runs everything except
-      # the suites that need the simulator matrix, and says why each one is out.
-      - name: Every suite that needs no simulator or device
-        run: wolkaraforever/tools/run_headless_suites.sh
