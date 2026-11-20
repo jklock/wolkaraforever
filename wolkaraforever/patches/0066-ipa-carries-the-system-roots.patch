@@ -1,0 +1,152 @@
+# WolkaraForever layer patch 0066 - the unsigned .ipa is a source build, not a reduced one
+#
+# Why: `package_altstore_ipa.sh` and the release workflow built the published .ipa
+# with TOLKARA_SYSTEM_ROOTS=NO, so it carried no macOS system root certificates.
+# The Forever client validates Battle.net's certificate against those roots, so
+# every login on that artifact was refused with BLZ51900003 - with the
+# experimental browser login and without it. The layer now refuses that switch,
+# and verify_ipa.sh refuses a package with no root list.
+#
+# These are the vendored statements that made the reduced build look correct, and
+# the Forever instructions that still described the beta (`_classic_beta_`,
+# `portal "test"`) after the released client moved to `_forever_` and the launcher
+# started writing that config itself. The compatibility table's own rows are left
+# as they were measured; the note added above it says which client they describe.
+#
+# Applies to: AGENTS.md, COMPATIBILITY.md, NOTICE.md, docs/BUILDING.md,
+# docs/IPHONE.md, tools/build_emulated_guest.sh, tools/package_ipa.sh,
+# .github/workflows/release.yml.
+# Upstream: candidate.
+
+diff --git a/AGENTS.md b/AGENTS.md
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -52,4 +52,4 @@
+ after entry, input automation and integrity workarounds still apply. See
+ `docs/SOFTWARE_MEMORY.md` for the tested scope and current limits.
+ 
+-The original executable is never modified: it is imported as hash-verified data and never patched or re-signed. Three execution modes exist and each user chooses one. **Developer service** never signs application code: the iPad's developer service prepares memory and detaches before any application code runs. **External JIT** (TolkaraDiagnostics only) never signs application code either: a JIT enabler (the user's sideloading tool, or one such as StikDebug) attaches at launch and prepares memory; the runtime asks it to detach and refuses guest entry while any debugger is attached or the arena is not executable. **Local signing** signs only a page container derived locally from the application's final code pages, with the user's own developer identity; containers and captures stay in ignored build output or on the user's device and are never committed. Otherwise sign only our runtime and helpers. Users build Tolkara themselves; docs present that first. As a secondary convenience for External JIT, a `v*` tag publishes the unsigned generic `Tolkara-unsigned.ipa` (`.github/workflows/release.yml`): only our own code, never application code, assets, signing material or anything exported from macOS (it is built with `TOLKARA_SYSTEM_ROOTS=NO`, so no system root certificates). The same tag publishes `Tolkara-Management.dmg`, the Mac setup app: it carries only our own code and the tagged source (files git tracks or does not ignore), and builds Tolkara on the user's Mac with the user's own team, so it remains a self-build. It may be signed and notarized with the project's Developer ID from repository secrets; it never contains a user's signing material. It runs helper scripts only from built-in profiles; a profile a user adds is validated data and is never executed. An online game's profile carries a `setup.risk` notice that the user must accept before it is set up; keep each statement in it backed by a linked source. Runtime stubs for unresolved imports only where no build-time analysis covered them: in generic builds and for carried libraries' imports; in a build for one executable, that executable's unresolved imports fail. No application-memory inspection beyond loading and verifying the image, no automation or integrity-check workarounds. Keep credentials, signing teams, device identifiers and pairing records out of commits and logs. Never attach an external debugger after guest entry. Do not uninstall the app from a user's device without coordination.
++The original executable is never modified: it is imported as hash-verified data and never patched or re-signed. Three execution modes exist and each user chooses one. **Developer service** never signs application code: the iPad's developer service prepares memory and detaches before any application code runs. **External JIT** (TolkaraDiagnostics only) never signs application code either: a JIT enabler (the user's sideloading tool, or one such as StikDebug) attaches at launch and prepares memory; the runtime asks it to detach and refuses guest entry while any debugger is attached or the arena is not executable. **Local signing** signs only a page container derived locally from the application's final code pages, with the user's own developer identity; containers and captures stay in ignored build output or on the user's device and are never committed. Otherwise sign only our runtime and helpers. Users build Tolkara themselves; docs present that first. As a secondary convenience for External JIT, a `v*` tag publishes the unsigned generic `Tolkara-unsigned.ipa` (`.github/workflows/release.yml`): only our own code, never application code, assets or signing material, and built with the same inputs a source build uses — including this Mac's public root certificates, which the game validates Battle.net's certificate against and refuses every login without. The same tag publishes `Tolkara-Management.dmg`, the Mac setup app: it carries only our own code and the tagged source (files git tracks or does not ignore), and builds Tolkara on the user's Mac with the user's own team, so it remains a self-build. It may be signed and notarized with the project's Developer ID from repository secrets; it never contains a user's signing material. It runs helper scripts only from built-in profiles; a profile a user adds is validated data and is never executed. An online game's profile carries a `setup.risk` notice that the user must accept before it is set up; keep each statement in it backed by a linked source. Runtime stubs for unresolved imports only where no build-time analysis covered them: in generic builds and for carried libraries' imports; in a build for one executable, that executable's unresolved imports fail. No application-memory inspection beyond loading and verifying the image, no automation or integrity-check workarounds. Keep credentials, signing teams, device identifiers and pairing records out of commits and logs. Never attach an external debugger after guest entry. Do not uninstall the app from a user's device without coordination.
+diff --git a/COMPATIBILITY.md b/COMPATIBILITY.md
+--- a/COMPATIBILITY.md
++++ b/COMPATIBILITY.md
+@@ -4,6 +4,13 @@
+ pull request; say what you tested, on what hardware, with which execution mode
+ (Developer service, Local signing or External JIT), and what did not work.
+ 
++Rows that describe WoW Forever were measured on the beta client. The released
++client installs into `_forever_`, and the launcher writes its own `portal`,
++`textLocale` and `audioLocale` when it installs the game. Every package this
++repository builds carries the macOS system root certificates the client needs to
++validate Battle.net's certificate; a build without them cannot log in
++(`BLZ51900003`), whatever the execution mode.
++
+ | Application | Version | Device / OS | Execution mode | Works | Known problems | Profile |
+ | --- | --- | --- | --- | --- | --- | --- |
+ | World of Warcraft Classic (Classic Era, macOS arm64 client) | 1.15.x | iPad Pro M5, iPadOS 27 | Developer service | In-game login, world entry, movement, combat, spells, quests, trading, audio, intro cinematics, cursors, clean exit. Up to 120 FPS at graphics quality 8, 50% render scale. Launch without a Mac, including after reboot. | Character-selection top menu is oversized and misplaced. Voice chat unavailable (its separate helper app is not supported). Memory preparation at each launch (about 80 s before the 2026-09-27 speed-up; not re-measured since). Switching apps during startup may interrupt it. Shader coverage beyond the played areas is unverified. | [`wow-classic-era`](profiles/wow-classic-era) |
+diff --git a/NOTICE.md b/NOTICE.md
+--- a/NOTICE.md
++++ b/NOTICE.md
+@@ -31,7 +31,7 @@
+ a standard US ANSI keyboard, checked against macOS behaviour. System trust roots
+ are not stored in this repository; `tools/export_system_anchors.m` exports the
+ public certificates from the builder's own Mac at build time. The unsigned build
+-published with releases leaves them out.
++published with releases carries them, as every other build does.
+ 
+ If you contribute code derived from another project, say so in the pull request
+ and add its licence here.
+diff --git a/docs/BUILDING.md b/docs/BUILDING.md
+--- a/docs/BUILDING.md
++++ b/docs/BUILDING.md
+@@ -217,9 +217,11 @@
+ `GUEST_EXE`), with External JIT preselected. As a convenience, each `v*`
+ release carries the same build, made by `.github/workflows/release.yml`, with
+ install links for SideStore and LiveContainer in its notes; building it
+-yourself remains the supported way. The release build leaves out the public
+-root certificates a build exports from your own Mac, so an application that
+-reads macOS's system root certificate store finds none there. Install it with your sideloading
++yourself remains the supported way. The release build carries the public
++root certificates a build exports from your own Mac, exactly as a source build
++does: an application that reads macOS's system root certificate store — a game
++validating Battle.net's certificate, for instance — needs them, and no login
++succeeds without them. Install it with your sideloading
+ tool, open it with JIT enabled, then add your application in the app. Opened
+ without JIT, Tolkara says so instead of starting the application. Sideloading
+ tools usually change the app's bundle identifier: copy your application's files
+diff --git a/docs/IPHONE.md b/docs/IPHONE.md
+--- a/docs/IPHONE.md
++++ b/docs/IPHONE.md
+@@ -26,13 +26,18 @@
+ Documents folder also appears in the Finder (your iPhone > Files) and in the
+ Files app under On My iPhone.
+ 
+-WoW Forever needs the settings of the beta's own installation: take `portal`,
+-`textLocale` and `audioLocale` from `_classic_beta_/WTF/Config.wtf` after you
+-have logged in on the Mac (the beta uses `portal "test"`), not from Classic Era.
+-It also needs the public system root certificates that a build on your own Mac
+-includes by default (`TOLKARA_SYSTEM_ROOTS=YES`; the published unsigned `.ipa`
+-has none). Login was refused (`BLZ51900003`) until both were right.
++WoW Forever needs a `portal`, `textLocale` and `audioLocale` in its own
++`_forever_/WTF/Config.wtf`. The launcher writes them when it installs the game
++itself; a copy pushed from a Mac keeps the settings the client saved there.
++Without them the client asks for a region in a window the AppKit adapter cannot
++show, and quits.
+ 
++It also needs the public system root certificates: the client validates
++Battle.net's certificate against macOS's system roots. A build on your own Mac
++includes them by default (`TOLKARA_SYSTEM_ROOTS=YES`), and the unsigned `.ipa`
++is built with the same inputs, so it carries them too. Login was refused
++(`BLZ51900003`) when either was missing.
++
+ ## Input
+ 
+ The [on-screen controls](TOUCH_INPUT.md), a keyboard button and a touch
+diff --git a/tools/build_emulated_guest.sh b/tools/build_emulated_guest.sh
+--- a/tools/build_emulated_guest.sh
++++ b/tools/build_emulated_guest.sh
+@@ -70,9 +70,11 @@
+         python3 "$ROOT/tools/build_shims.py" "$P" "$W/surface.json" "$OUT/Frameworks"
+         cp "$W/map.json" "$OUT/Guest/libraries.json"
+     fi
+-    # The builder's own Mac's public root certificates. TOLKARA_SYSTEM_ROOTS=NO
+-    # leaves them out, as the published release build does: it is not built on
+-    # the user's Mac, and nothing exported from macOS is redistributed.
++    # The builder's own Mac's public root certificates. They travel with every
++    # artifact, the unsigned .ipa included, because an application that reads
++    # macOS's system root store - a game validating Battle.net, for instance -
++    # cannot work without them. TOLKARA_SYSTEM_ROOTS=NO leaves them out and is
++    # not used by any packaging path in this repository.
+     rm -f "$OUT/CompatibilityRootCertificates.plist"
+     if [ "${TOLKARA_SYSTEM_ROOTS:-YES}" != NO ]; then
+         MACSDK=$(xcrun --sdk macosx --show-sdk-path)
+diff --git a/tools/package_ipa.sh b/tools/package_ipa.sh
+--- a/tools/package_ipa.sh
++++ b/tools/package_ipa.sh
+@@ -6,8 +6,9 @@
+ # the sideloading tool (SideStore or similar), or a JIT enabler such as
+ # StikDebug, enables JIT. For Developer service or Local signing with your own
+ # team, build with tools/install.sh instead.
+-# TOLKARA_SYSTEM_ROOTS=NO leaves out this Mac's public root certificates
+-# (.github/workflows/release.yml does, for the published build).
++# TOLKARA_SYSTEM_ROOTS=NO leaves out this Mac's public root certificates, which
++# the game needs to validate Battle.net: no login can succeed on such a build.
++# Nothing in this repository's toolchain passes it; the default is YES.
+ set -euo pipefail
+ OUT=${1:-Tolkara-unsigned.ipa}
+ case "$OUT" in /*) ;; *) OUT="$PWD/$OUT";; esac
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -61,8 +61,9 @@
+ 
+       - name: Build the unsigned .ipa
+         if: steps.plan.outputs.skip != 'true'
+-        # Published, so nothing exported from the runner's macOS goes in.
+-        run: TOLKARA_SYSTEM_ROOTS=NO tools/package_ipa.sh "$IPA"
++        # The same inputs a source build uses, including this Mac's public root
++        # certificates: without them no login can succeed.
++        run: tools/package_ipa.sh "$IPA"
+ 
+       - name: Write the release notes
+         if: steps.plan.outputs.skip != 'true'

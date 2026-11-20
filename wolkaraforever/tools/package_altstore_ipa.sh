@@ -14,5 +14,7 @@ case "$output" in /*) ;; *) output="$PWD/$output";; esac
     exit 1
 }
 mkdir -p "$(dirname "$output")"
-TOLKARA_SYSTEM_ROOTS=NO wolkaraforever/tools/package_ipa.sh "$output"
+# The same build a source tree produces, down to the public root certificates: a package
+# without them is refused by verify_ipa.sh, because no login can succeed on it.
+wolkaraforever/tools/package_ipa.sh "$output"
 wolkaraforever/tools/verify_ipa.sh "$output"
