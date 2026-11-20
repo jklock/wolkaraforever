@@ -874,5 +874,22 @@
 "login.enable.message" = "Diese optionale Funktion übergibt ein einmaliges Anmeldeergebnis nur beim Drücken von Spielen an Forever. Sie kann ohne Vorwarnung nicht mehr funktionieren. Sie ersetzt nicht die normale Anmeldung im Spiel. Nutzung auf eigenes Risiko.";
 "login.enable.confirm" = "Ich verstehe — aktivieren";
 "login.cleared.title" = "Anmeldedaten gelöscht";
-"login.cleared.message" = "Die Browser-Sitzung im Speicher und jedes ausstehende Startticket wurden entfernt.";
+"login.cleared.message" = "Die Browser-Sitzung im Speicher, jedes ausstehende Startticket und das gesicherte Passwort wurden entfernt.";
 "login.failed" = "Die Anmeldung wurde nicht abgeschlossen. Abbrechen und erneut versuchen.";
+
+/* ---- Saved game password, experimental Battle.net login ---- */
+"login.status.onSaved" = "An · Passwort gesichert";
+"login.savedPassword.signIn" = "Mit dem gesicherten Passwort anmelden";
+"login.savedPassword.forget" = "Gesichertes Passwort löschen";
+"login.savedPassword.forgotten.title" = "Gesichertes Passwort gelöscht";
+"login.savedPassword.forgotten.message" = "Das auf diesem Gerät gesicherte Passwort wurde gelöscht. Das Spiel fragt es erneut ab.";
+"login.savedPassword.save.title" = "Passwort auf diesem Gerät sichern?";
+"login.savedPassword.save.message" = "Es liegt im Schlüsselbund dieses Geräts hinter Face ID oder deinem Code, verlässt das Gerät nie und wird beim Tippen auf den Schlüssel in das Passwortfeld des Spiels eingegeben. Halte den Schlüssel gedrückt, um es zu löschen.";
+"login.savedPassword.save.placeholder" = "Battle.net-Passwort";
+"login.savedPassword.save.confirm" = "Sichern und anmelden";
+"login.savedPassword.forget.title" = "Gesichertes Passwort löschen?";
+"login.savedPassword.forget.message" = "Das auf diesem Gerät gesicherte Passwort wird gelöscht. Das Spiel fragt es erneut ab.";
+"login.savedPassword.forget.confirm" = "Löschen";
+"login.savedPassword.failed.title" = "Das Passwort wurde nicht gesichert";
+"login.savedPassword.failed" = "Dieses Gerät hat das Passwort nicht behalten: Es braucht einen Code, und der Schlüssel braucht den Schlüsselbund-Zugriff dieses Builds. Die Anmeldung ist trotzdem erfolgt, das Passwort wird aber erneut abgefragt.";
+"touch.key.savedPassword" = "Gesichertes Passwort";

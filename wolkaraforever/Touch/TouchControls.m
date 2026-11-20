@@ -63,6 +63,21 @@ NSNotificationName const AKTouchDictationToggleNotification = @"AKTouchDictation
 // is the one the platform already stored, so an existing choice carries over.
 NSString *const AKTouchControlsDefaultsKey = @"AKTouchControls";
 
+// The saved game password. See TouchControls.h, and WoW/BattleNetSavedPassword.h for the split:
+// the launcher owns the Keychain item and the setting, this file owns the key and asks.
+NSNotificationName const AKTouchSavedPasswordAvailabilityNotification = @"AKTouchSavedPasswordAvailability";
+NSNotificationName const AKTouchSavedPasswordReadRequestNotification = @"AKTouchSavedPasswordReadRequest";
+NSNotificationName const AKTouchSavedPasswordStoreRequestNotification = @"AKTouchSavedPasswordStoreRequest";
+NSNotificationName const AKTouchSavedPasswordForgetRequestNotification = @"AKTouchSavedPasswordForgetRequest";
+NSString *const AKTouchSavedPasswordEnabledKey = @"enabled";
+NSString *const AKTouchSavedPasswordReplyKey = @"reply";
+NSString *const AKTouchSavedPasswordValueKey = @"password";
+// The launcher's experimental Battle.net login switch. The key is offered only while it is on, so
+// it is part of that feature and not a general keyboard key. Read once when the controls are made,
+// and kept current by the availability notification (a fixture has no launcher to post it).
+static NSString *const AKBattleNetLoginDefaultsKey = @"WoWBrowserLogin";
+static BOOL AKSavedPasswordEnabled;
+
 // The Composer's crossings. See TouchControls.h for why they are notifications.
 NSNotificationName const AKChatComposerOpenNotification = @"AKChatComposerOpen";
 NSString *const AKChatComposerSourceKey = @"source";
@@ -626,6 +641,13 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     // Whether one of the game's password fields has the keyboard: the game asked for secure
     // event input (Carbon adapter, patch 0058).
     BOOL _protectedField;
+    // The saved-password key, shown only while the field above has the keyboard and the launcher's
+    // experimental login is on. The password itself is never kept here: it is typed and dropped.
+    UIButton *_passwordKey;
+    // The saved password waiting to be typed: Face ID takes the app away for a moment, and the game
+    // only has its password field back once it is active again.
+    NSString *_pendingPassword;
+    NSUInteger _pendingPasswordGeneration;
 }
 
 // The launcher's switch, and the platform's install path, ask this before the
@@ -760,6 +782,12 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     // The Carbon adapter's announcement, by name: that library is not linked from here.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(secureEventInputChanged:)
         name:@"AKSecureEventInputDidChangeNotification" object:nil];
+    // Whether the saved-password key may be offered. Read here once, for a process with no launcher
+    // (the fixture) and for one whose controls are made before it has posted anything, and kept
+    // current by the notification afterwards.
+    AKSavedPasswordEnabled = [NSUserDefaults.standardUserDefaults boolForKey:AKBattleNetLoginDefaultsKey];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(savedPasswordAvailabilityChanged:)
+        name:AKTouchSavedPasswordAvailabilityNotification object:nil];
         [self controlAppearanceChanged:nil];
         [self applyComposerTextSize];
         [self beginChatComposer];
@@ -1171,7 +1199,164 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
 // passwords, and their length is not the log's business.
 static const unsigned short AKKeyF12 = 111;
 - (void)secureEventInputChanged:(NSNotification *)note {
-    _protectedField = [note.userInfo[@"enabled"] boolValue];
+    BOOL protectedField = [note.userInfo[@"enabled"] boolValue];
+    BOOL changed = protectedField != _protectedField;
+    _protectedField = protectedField;
+    if (!changed) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self updateSavedPasswordKey];
+        // The game asks for secure input only while its password field has the keyboard; the key
+        // follows that, so chat and every other field never show it.
+        AKLog(@"keyboard: protected field %@", self->_protectedField ? @"focused" : @"left");
+        if (self->_protectedField) [self typePendingPasswordSoon];
+    });
+}
+
+#pragma mark - The saved game password
+
+// The key on the keyboard's row, shown only while the game's password field has the keyboard and the
+// launcher's experimental Battle.net login is on - it is part of that feature, not a general key.
+// The password is not in this file: the app reads it from the Keychain behind Face ID when the
+// player taps and hands it back only to be typed, and it is dropped again immediately.
+- (void)updateSavedPasswordKey {
+    _passwordKey.hidden = !(_protectedField && AKSavedPasswordEnabled);
+}
+- (void)savedPasswordAvailabilityChanged:(NSNotification *)note {
+    BOOL enabled = [note.userInfo[AKTouchSavedPasswordEnabledKey] boolValue];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        AKSavedPasswordEnabled = enabled;
+        if (!enabled) {
+            // The feature it belongs to went off, so a password waiting to be typed goes too.
+            self->_pendingPassword = nil;
+            self->_pendingPasswordGeneration++;
+        }
+        [self updateSavedPasswordKey];
+        AKLog(@"keyboard: saved password key %@", enabled ? @"offered" : @"withdrawn");
+    });
+}
+// The player tapped the key: ask the launcher for the password. Nothing about it is logged, and
+// nothing is read anywhere except the game's own password field.
+- (void)savedPasswordKey {
+    if (!_protectedField || !AKSavedPasswordEnabled) return;
+    __weak typeof(self) weakSelf = self;
+    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchSavedPasswordReadRequestNotification
+        object:self userInfo:@{AKTouchSavedPasswordReplyKey: ^(NSString *password) {
+        AKTouchControls *strongSelf = weakSelf;
+        if (!strongSelf) return;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (password.length) { [strongSelf typeSavedPassword:password]; return; }
+            // Nothing kept yet: offer to save one, but only while the game's field still has the
+            // keyboard, because the offer means nothing anywhere else.
+            if (strongSelf->_protectedField && AKSavedPasswordEnabled) [strongSelf offerToSavePassword];
+        });
+    }}];
+}
+- (void)offerToSavePassword {
+    UIViewController *front = [self frontViewController];
+    if (!front) return;
+    UIAlertController *ask = [UIAlertController alertControllerWithTitle:AKHostLocalized(@"login.savedPassword.save.title")
+        message:AKHostLocalized(@"login.savedPassword.save.message") preferredStyle:UIAlertControllerStyleAlert];
+    [ask addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.secureTextEntry = YES;
+        field.textContentType = UITextContentTypePassword;
+        field.placeholder = AKHostLocalized(@"login.savedPassword.save.placeholder");
+    }];
+    [ask addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"common.cancel")
+                                            style:UIAlertActionStyleCancel handler:nil]];
+    __weak UIAlertController *weakAsk = ask;
+    __weak typeof(self) weakSelf = self;
+    [ask addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"login.savedPassword.save.confirm")
+                                            style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        (void)action;
+        AKTouchControls *strongSelf = weakSelf;
+        NSString *password = weakAsk.textFields.firstObject.text;
+        if (!strongSelf || !password.length) return;
+        [NSNotificationCenter.defaultCenter postNotificationName:AKTouchSavedPasswordStoreRequestNotification
+            object:self userInfo:@{AKTouchSavedPasswordValueKey: password,
+                                   AKTouchSavedPasswordReplyKey: ^(BOOL stored) {
+            AKTouchControls *innerSelf = weakSelf;
+            if (!innerSelf) return;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                // Saved or not, the player asked to sign in: type it now, and say so if the device
+                // refused to keep it.
+                [innerSelf typeSavedPassword:password];
+                if (!stored) [innerSelf reportSavedPasswordFailure];
+            });
+        }}];
+    }]];
+    [front presentViewController:ask animated:YES completion:nil];
+}
+// The store was refused - no passcode on the device, or a build without the keychain entitlement.
+// The login still happened; what did not is keeping the password for next time.
+- (void)reportSavedPasswordFailure {
+    UIViewController *front = [self frontViewController];
+    if (!front) return;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:AKHostLocalized(@"login.savedPassword.failed.title")
+        message:AKHostLocalized(@"login.savedPassword.failed") preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"common.ok")
+                                            style:UIAlertActionStyleCancel handler:nil]];
+    [front presentViewController:alert animated:YES completion:nil];
+}
+- (void)savedPasswordKeyHeld:(UILongPressGestureRecognizer *)recognizer {
+    if (recognizer.state != UIGestureRecognizerStateBegan || !AKSavedPasswordEnabled) return;
+    UIViewController *front = [self frontViewController];
+    if (!front) return;
+    UIAlertController *ask = [UIAlertController alertControllerWithTitle:AKHostLocalized(@"login.savedPassword.forget.title")
+        message:AKHostLocalized(@"login.savedPassword.forget.message") preferredStyle:UIAlertControllerStyleAlert];
+    [ask addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"common.cancel")
+                                            style:UIAlertActionStyleCancel handler:nil]];
+    [ask addAction:[UIAlertAction actionWithTitle:AKHostLocalized(@"login.savedPassword.forget.confirm")
+                                            style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        (void)action;
+        [NSNotificationCenter.defaultCenter postNotificationName:AKTouchSavedPasswordForgetRequestNotification
+                                                         object:nil];
+        AKLog(@"keyboard: the saved password was forgotten");
+    }]];
+    [front presentViewController:ask animated:YES completion:nil];
+}
+// Type the password and Return, once the game has its field back. The password waits a few seconds
+// for the app to be in front and the field to be focused, then is dropped.
+- (void)typeSavedPassword:(NSString *)password {
+    if (!password.length) return;
+    _pendingPassword = [password copy];
+    NSUInteger generation = ++_pendingPasswordGeneration;
+    AKLog(@"keyboard: saved password ready, waiting for the game's password field");
+    [NSNotificationCenter.defaultCenter removeObserver:self name:UIApplicationDidBecomeActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(passwordAppActive:)
+                                               name:UIApplicationDidBecomeActiveNotification object:nil];
+    [self typePendingPasswordSoon];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self->_pendingPasswordGeneration != generation || !self->_pendingPassword) return;
+        self->_pendingPassword = nil;
+        [NSNotificationCenter.defaultCenter removeObserver:self name:UIApplicationDidBecomeActiveNotification object:nil];
+        AKLog(@"keyboard: saved password dropped, the password field never came back");
+    });
+}
+- (void)passwordAppActive:(NSNotification *)note { (void)note; [self typePendingPasswordSoon]; }
+// A short pause lets the game see it is active and give its field the keyboard again.
+- (void)typePendingPasswordSoon {
+    if (!_pendingPassword) return;
+    NSUInteger generation = _pendingPasswordGeneration;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self->_pendingPasswordGeneration != generation || !self->_pendingPassword) return;
+        if (!AKSavedPasswordEnabled || UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
+            !self->_protectedField) return;
+        NSString *password = self->_pendingPassword;
+        self->_pendingPassword = nil;
+        [NSNotificationCenter.defaultCenter removeObserver:self name:UIApplicationDidBecomeActiveNotification object:nil];
+        [self.delegate touchInsertText:password];
+        [self.delegate touchSpecialKey:36 characters:@"\r"];
+        AKLog(@"keyboard: the saved password was typed into the game's password field");
+        // Its job is done: the login is under way, so the keyboard goes, and the key stays away
+        // until the game asks for a password again.
+        self->_passwordKey.hidden = YES;
+        [self dismissKeyboard];
+    });
+}
+- (UIViewController *)frontViewController {
+    UIViewController *root = self.window.rootViewController;
+    while (root.presentedViewController) root = root.presentedViewController;
+    return root;
 }
 - (void)sendChatText:(NSString *)text {
     if (!text.length) {
@@ -1196,12 +1381,17 @@ static const unsigned short AKKeyF12 = 111;
     AKLog(@"keyboard: a line went to the chat (%@)", [text hasPrefix:@"/"] ? @"command" : @"message");
     [self dismissKeyboard];
 }
-
 - (UIView *)inputAccessoryView {
     if (!_accessory) {
         UIStackView *row = [[UIStackView alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
         row.distribution = UIStackViewDistributionFillEqually;
         row.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.96];
+        // The keys stay inside the safe area: on a phone held sideways the row runs the whole
+        // width, and its first key (the saved-password key, when it shows) sat under the camera
+        // cut-out. The background still reaches the edges.
+        row.layoutMargins = UIEdgeInsetsZero;
+        row.insetsLayoutMarginsFromSafeArea = YES;
+        row.layoutMarginsRelativeArrangement = YES;
         NSArray<NSString *> *titles = @[@"Esc", @"Tab", @"←", @"→", @"⌫", @"↵", @"⌄"];
         for (NSUInteger i = 0; i < titles.count; i++) {
             UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -1216,6 +1406,21 @@ static const unsigned short AKKeyF12 = 111;
             [button addTarget:self action:@selector(accessoryKey:) forControlEvents:UIControlEventTouchUpInside];
             [row addArrangedSubview:button];
         }
+        // The saved-password key, first on the row, and the only key that is not always there: it
+        // shows while the game's password field has the keyboard and the launcher's experimental
+        // Battle.net login is on. Tapping types the password kept on this device; holding it asks
+        // to forget it.
+        _passwordKey = [UIButton buttonWithType:UIButtonTypeSystem];
+        _passwordKey.tag = 7;
+        _passwordKey.tintColor = UIColor.systemYellowColor;
+        [_passwordKey setImage:[UIImage systemImageNamed:@"key.fill"] forState:UIControlStateNormal];
+        _passwordKey.accessibilityIdentifier = @"wolkaraforever.keyboard.key.savedPassword";
+        _passwordKey.accessibilityLabel = AKHostLocalized(@"touch.key.savedPassword");
+        [_passwordKey addTarget:self action:@selector(savedPasswordKey) forControlEvents:UIControlEventTouchUpInside];
+        [_passwordKey addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self
+            action:@selector(savedPasswordKeyHeld:)]];
+        [row insertArrangedSubview:_passwordKey atIndex:0];
+        [self updateSavedPasswordKey];
         _accessory = row;
         [self updateDraftButtons];
     }
@@ -1276,7 +1481,7 @@ static const unsigned short AKKeyF12 = 111;
     _insertDraftButton.enabled = !active && [_keyboardInput canReplaceField];
     _clearDraftButton.enabled = !active && ready && _keyboardInput.hasText;
     for (UIButton *button in ((UIStackView *)_accessory).arrangedSubviews) {
-        button.enabled = button.tag == 6 || (ready && !_keyboardInput.hasText);
+        button.enabled = button.tag == 6 || button.tag == 7 || (ready && !_keyboardInput.hasText);
     }
 }
 
