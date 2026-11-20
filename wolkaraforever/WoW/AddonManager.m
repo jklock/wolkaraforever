@@ -2495,7 +2495,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             // Without a key there is one row to read and one thing to do; the sort and filter
             // controls would be two more copies of the same sentence, so they wait for a key.
             return @[
-                @{ @"kind": @"browseControls", @"rows": [self hasKey] ? @[ @0, @1 ] : @[ @0 ] },
+                @{ @"kind": @"browseControls", @"rows": [self hasKey] ? @[ @0, @1, @2, @3 ] : @[ @0 ] },
                 @{ @"kind": @"browseResults", @"rows": _results },
             ];
         case TKAddonHubTabMyAddOns:
@@ -2567,7 +2567,9 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
         }
         else if (indexPath.row==0) { cell.textLabel.text=WKLocalizedFormat(@"addons.sort.current",BrowseSortLabel(_sortField)); cell.detailTextLabel.text=WKLocalizedFormat(@"addons.sort.tapToChange",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")); }
-        else { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
+        else if (indexPath.row==1) { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
+        else if (indexPath.row==2) { cell.textLabel.text=WKLocalized(@"addons.key.change"); cell.detailTextLabel.text=WKLocalized(@"addons.key.change.detail"); cell.accessibilityIdentifier=@"wow.addons.changeKey"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; }
+        else { cell.textLabel.text=WKLocalized(@"addons.key.remove"); cell.detailTextLabel.text=WKLocalized(@"addons.key.remove.detail"); cell.accessibilityIdentifier=@"wow.addons.removeKey"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; }
     } else if ([kind isEqual:@"browseResults"] || [kind isEqual:@"discover"]) {
         NSArray<NSDictionary *> *projects=[kind isEqual:@"discover"] ? entry[@"rows"] : _results;
         if ([kind isEqual:@"browseResults"] && indexPath.row==(NSInteger)_results.count) {
@@ -2712,6 +2714,8 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         if ([kind isEqual:@"browseControls"] && self.tab==TKAddonHubTabBrowse) {
             if (indexPath.row==0) [self presentSortMenuFrom:indexPath];
             else if (indexPath.row==1) [self chooseCategoryFrom:indexPath];
+            else if (indexPath.row==2) [self setupKey];
+            else if (indexPath.row==3) [self confirmRemoveKey];
         }
         return;
     }
