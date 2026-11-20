@@ -272,10 +272,16 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
 @end
 
 @implementation AKHostSceneDelegate
+// The windowing control style is an iOS 26 API. Guarded by the SDK, not only by
+// API_AVAILABLE: the type itself does not exist in an older SDK, so a compiler
+// without it cannot parse the method at all - which is what stopped the app from
+// building on a toolchain older than the one it was written with.
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
 - (UISceneWindowingControlStyle *)preferredWindowingControlStyleForScene:(UIWindowScene *)scene API_AVAILABLE(ios(26.0)) {
     (void)scene;
     return UISceneWindowingControlStyle.minimalStyle;
 }
+#endif
 // An enabler attaches only briefly: take its arena now.
 - (void)reserveExecutableMemory {
     // External JIT only: any other debugger stops at the request.

@@ -1,5 +1,9 @@
 name: Repository checks
 
+# What this pipeline is: the layer's gates, the app built unsigned, and every
+# suite that needs no simulator. What it is not: the device matrix and the UI
+# fixtures, which need the two matrix simulators - Xcode 26 device types the
+# hosted images cannot create - and a real iPad. Those stay a local run.
 on:
   push:
     branches: [main]
@@ -14,7 +18,7 @@ permissions:
   contents: read
 
 jobs:
-  checks:
+  gates:
     name: Layer and documentation gates
     # The gates run prepare.sh, so they need macOS. They do not need Apple
     # silicon: the Intel image is the one with capacity. On macos-26 the job
@@ -39,6 +43,56 @@ jobs:
           git fetch --quiet upstream "$pin"
           git update-ref refs/remotes/upstream/main "$pin"
 
+      # check_docs.sh ends by running check_agent_docs.sh, so one command runs
+      # both documentation gates and neither can be forgotten.
       - run: wolkaraforever/tools/check_docs.sh
       - run: python3 wolkaraforever/tools/check_localization.py
       - run: wolkaraforever/tools/check_layers.sh
+
+  build:
+    name: The app builds, unsigned
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # No local.env on a runner, and none is needed: every personal value is
+      # interpolated empty, and CODE_SIGNING_ALLOWED=NO means nothing is asked
+      # of a team. This is the compile the repository never had a check for.
+      - name: Prepare the tree and generate the project
+        run: wolkaraforever/tools/generate.sh
+
+      - name: Build for the device SDK
+        working-directory: build/platform
+        run: |
+          set -o pipefail
+          xcodebuild -project Tolkara.xcodeproj -scheme Tolkara -configuration Debug \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > build.log 2>&1 || true
+          grep -E 'error:|\*\* BUILD' build.log | head -40
+          grep -q '\*\* BUILD SUCCEEDED \*\*' build.log
+
+  suites:
+    name: Headless suites
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install XcodeGen and LuaJIT
+        run: brew install xcodegen luajit
+
+      # The suites compile their own fixtures with clang, and the ones that need
+      # the prepared tree call prepare.sh themselves. A suite added later runs
+      # here without being listed: run_headless_suites.sh runs everything except
+      # the suites that need the simulator matrix, and says why each one is out.
+      - name: Every suite that needs no simulator or device
+        run: wolkaraforever/tools/run_headless_suites.sh
