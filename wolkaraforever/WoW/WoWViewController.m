@@ -4,6 +4,8 @@
 #import "BattleNetSavedPassword.h"
 #import "BattleNetSession.h"
 #import "AddonManager.h"
+#import "ControllerManagerViewController.h"
+#import "../Controller/ControllerManager.h"
 #import "../Voice/VoiceViewController.h"
 #import "../Voice/ControllerTouchpadViewController.h"
 #import "../App/WolkaraForeverLog.h"
@@ -17,9 +19,13 @@
 #import "../App/LaunchProgressView.h"
 #import "../Controller/ControllerInspector.h"
 #import "../Input/InputRouter.h"
+#import "../Input/ControllerTouchpad.h"
 // The interface-mode rule, from its one definition: the overlay puts this same source in this
 // target, so the launcher and the guest cannot disagree about what "auto" means.
 #import "InterfaceMode.h"
+// Battery Saver's stored choice and the rule that turns it into a frame rate. The same source
+// is compiled into the Metal and AppKit adapters, so the submenu and the cap cannot disagree.
+#import "BatterySaverPolicy.h"
 // The arrangement the on-screen controls read, as data: the same functions the adapter uses, so
 // a choice made here is what the next guest starts with.
 #import "LayoutStore.h"
@@ -94,12 +100,6 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     dispatch_once(&once, ^{ queue=dispatch_queue_create("org.tolkara.forever-ui", DISPATCH_QUEUE_SERIAL); });
     return queue;
 }
-// The touch layout store's key and change notification, by value. The Touch
-// module owns both, but WoW must not import it: the layer gate keeps these
-// modules apart. Writing the dictionary read-modify-write is what preserves the
-// layout's own values, which the store then reads back unchanged.
-static NSString *const TKForeverLayoutKey = @"WolkaraForeverTouchLayoutV1";
-static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidChange";
 
 
 // A settings row that reads as a switch, not as a command: the words stay the
@@ -249,7 +249,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // A Forever UI file operation is running (backup, reset, restore, gamepad).
     // The rows are disabled while it runs and every handler rechecks it.
     BOOL _uiOperation, _gamepadChangePending;
-    BOOL _gamepadEnabled, _overlayEnabled;
+    BOOL _gamepadEnabled;
     // The game files are read once, when the launcher first appears. Not on every
     // appearance: leaving a popup used to send us straight back to the network.
     BOOL _checkedThisLaunch;
@@ -274,7 +274,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_browserLoginButton, *_addonsButton, *_addonsDirectoryButton,
         *_voiceButton, *_touchpadButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
-        *_renderProfileButton, *_deviceProfileButton, *_interfaceModeButton,
+        *_renderProfileButton, *_deviceProfileButton, *_batterySaverButton, *_interfaceModeButton,
         *_addonsBackupButton, *_addonsRestoreButton,
         *_layoutCreateButton, *_layoutRestoreButton, *_layoutBackupButton;
     // The section headings, by their box's identifier, so a language change can rewrite
@@ -300,7 +300,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     _product=TKWoWProducts()[0];
     for (NSDictionary *p in TKWoWProducts()) if ([p[@"id"] isEqual:[defaults stringForKey:@"WoWProduct"]]) _product=p;
-    _region=[defaults stringForKey:@"WoWRegion"]?:@"eu";
+    // A region the user has not chosen follows the device rather than being Europe
+    // whatever the device is. The first install writes the portal into the client's own
+    // settings once and never rewrites it, so a portal that does not match the account
+    // leaves sign-in at "Connecting" for ever with nothing on screen saying why. A
+    // region the user chose is never replaced.
+    _region=[defaults stringForKey:@"WoWRegion"]?:TKWoWDefaultRegion(NSLocale.currentLocale);
     if (![@[@"eu",@"us",@"kr",@"tw"] containsObject:_region]) _region=@"eu";
     _locale=[defaults stringForKey:@"WoWLocale"]?:TKWoWDefaultLocale(_product);
     if (![@[@"enUS",@"frFR",@"esES",@"deDE"] containsObject:_locale]) _locale=@"enUS";
@@ -463,8 +468,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _restoreButton=[self button:@"wow.performance.restore" action:@selector(restoreUI)];
     _gamepadRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.gamepad"
         target:self action:@selector(gamepadChanged:)];
-    _overlayRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.overlay"
-        target:self action:@selector(overlayChanged:)];
+    // Battery Saver is a submenu, not a switch: it owns two choices and both of them apply to
+    // the *next* launch, which a switch has no way to say. The performance overlay's launcher
+    // switch is deliberately gone - it is already controllable while the game runs, from the
+    // in-game settings page, and a second writer of the same preference was one owner too many.
+    _batterySaverButton=[self button:@"wow.performance.batterySaver" action:@selector(chooseBatterySaver)];
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
     // Battery-saving sound (patch 0065): the game's sound without iOS's HAL, whose Bluetooth plug-in took a quarter of a
@@ -484,12 +492,19 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _layoutRestoreButton=[self button:@"wow.launcher.layoutRestore" action:@selector(restoreInterfaceSetup)];
     _layoutBackupButton=[self button:@"wow.launcher.layoutBackup" action:@selector(backupInterfaceSetup)];
 
-    // Five sections, as boxes, in the order they are read. The compatibility note belongs to
+    // Six sections, as boxes, in the order they are read. The compatibility note belongs to
     // the edition it is about, so it lives in that box rather than loose on the page. The
     // render and overlay choices are their own card, beside the game-file tools rather than
     // mixed into them: one group changes how this app draws, the other edits the game's own
     // files, and keeping them apart is what makes either safe to press. Every word in them
     // comes from -localize, below, which is also what a language change runs.
+    //
+    // Controller Manager has a card of its own, and the last one is not a courtesy: routing a
+    // pad, one profile per model, reassignment and a reset are a group of settings as large as
+    // any of the others, and burying them as a row inside somebody else's card is how the
+    // feature ended up below the fold on the 4:3 front page when it was first written. Measured
+    // on the device, 2026-11-03: the game-file card it was in was cut off at "Reset to Default
+    // Graphical Settings".
     UIView *editionBox=[self sectionBoxWithIdentifier:@"wow.box.edition"
         rows:@[_editionButton,_preferencesButton,_languageButton,_browserLoginButton]];
     UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
@@ -587,6 +602,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // the installation it is showing stay exactly as they were.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appLanguageChanged:)
         name:WKLocalizationDidChangeNotification object:nil];
+    // The page can change the same switch, so the card follows the manager rather than
+    // trusting the state it last drew.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controllerManagerChanged:)
+        name:AKControllerManagerDidChangeNotification object:nil];
     [self localize];
 
     [self render];
@@ -1037,8 +1056,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // That made a successful tap visibly undo itself, despite the later write succeeding.
     if (!_gamepadChangePending)
         _gamepadEnabled=foreverDirectory?[TKForeverUI gamepadEnabledInWorkingDirectory:foreverDirectory]:NO;
-    NSDictionary *layout=[NSUserDefaults.standardUserDefaults objectForKey:TKForeverLayoutKey];
-    _overlayEnabled=[layout isKindOfClass:NSDictionary.class] && [layout[@"performanceOverlayEnabled"] boolValue];
     for (UIButton *button in @[_backupButton,_resetButton,_restoreButton,_settingsFolderButton]) {
         button.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
         button.enabled=foreverReady;
@@ -1075,8 +1092,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // the state.
     _gamepadRow.enabled=foreverReady;
     _gamepadRow.toggle.on=_gamepadEnabled;
-    _overlayRow.enabled=!_busy && !_starting && !_running && !_sessionUsed;
-    _overlayRow.toggle.on=_overlayEnabled;
     // The profile card. None of these rows read or write the game's files: they are Forever's
     // own render scale, which is why they are their own card beside the game-file tools.
     BOOL preferencesIdle=!_busy && !_starting && !_running && !_sessionUsed;
@@ -1216,6 +1231,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
                                 _addonsBackupButton,_addonsRestoreButton,
                                 _permissionsButton,_voiceButton,_touchpadButton,_backupButton,_resetButton,
                                 _restoreButton,_settingsFolderButton,_interfaceModeButton,
+                                _batterySaverButton,
                                 _layoutCreateButton,_interfaceSetupButton,_layoutRestoreButton,_layoutBackupButton])
         [self stylePlainButton:button];
     [self stylePrimaryButton];
@@ -1433,6 +1449,26 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [AKInputRouter.shared refreshInterest];
         [AKControllerInspector.shared showPanel:!inputDiagnostics];
     }]];
+    // A DualSense or DualShock 4 touchpad as the game's pointer. Off unless the user turns it on:
+    // with it on, the touchpad's click is the mouse button and can no longer be learned as a
+    // trigger, which is a change nobody should get without asking for it.
+    AKControllerTouchpadRelay *touchpad=AKControllerTouchpadRelay.shared;
+    BOOL touchpadPointer=touchpad.enabled;
+    UIAlertAction *touchpadAction=[UIAlertAction actionWithTitle:(touchpadPointer?WKLocalized(@"home.settings.touchpadPointerOff"):WKLocalized(@"home.settings.touchpadPointerOn"))
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        (void)a;
+        touchpad.enabled=!touchpadPointer;
+    }];
+    touchpadAction.accessibilityIdentifier=@"wow.settings.touchpadPointer";
+    [sheet addAction:touchpadAction];
+    if (touchpadPointer) {
+        UIAlertAction *speedAction=[UIAlertAction actionWithTitle:WKLocalizedFormat(@"home.settings.touchpadSpeed",[self touchpadSpeedName:touchpad.speed])
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            (void)a; [self chooseTouchpadSpeed];
+        }];
+        speedAction.accessibilityIdentifier=@"wow.settings.touchpadSpeed";
+        [sheet addAction:speedAction];
+    }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.about") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a; [self about];
     }]];
@@ -1448,6 +1484,31 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (void)settings {
     [self presentSheet:[self settingsSheet] anchor:nil];
 }
+// The speed names and the sheet that chooses one. They arrived with the controller-touchpad
+// branch, and the merge lost the definitions while keeping the two calls to them.
+- (NSString *)touchpadSpeedName:(AKControllerTouchpadSpeed)speed {
+    switch (speed) {
+        case AKControllerTouchpadSpeedSlow: return WKLocalized(@"home.settings.touchpadSpeed.slow");
+        case AKControllerTouchpadSpeedFast: return WKLocalized(@"home.settings.touchpadSpeed.fast");
+        case AKControllerTouchpadSpeedNormal: break;
+    }
+    return WKLocalized(@"home.settings.touchpadSpeed.normal");
+}
+- (void)chooseTouchpadSpeed {
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.touchpadSpeed.title")
+        message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    AKControllerTouchpadSpeed current=AKControllerTouchpadRelay.shared.speed;
+    for (NSNumber *value in @[@(AKControllerTouchpadSpeedSlow),@(AKControllerTouchpadSpeedNormal),@(AKControllerTouchpadSpeedFast)]) {
+        AKControllerTouchpadSpeed speed=(AKControllerTouchpadSpeed)value.integerValue;
+        NSString *name=[self touchpadSpeedName:speed];
+        [sheet addAction:[UIAlertAction actionWithTitle:(speed==current?[@"✓ " stringByAppendingString:name]:name)
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            (void)a; AKControllerTouchpadRelay.shared.speed=speed;
+        }]];
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [self presentSheet:sheet anchor:nil];
+}
 // Everything about dictation lives on its own screen: the button, the mode, its
 // test page, and what happens to the words afterwards.
 - (void)manageVoice {
@@ -1455,6 +1516,47 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)configureTouchpad {
     [self presentPage:[AKControllerTouchpadViewController new]];
+}
+
+// Controller Manager: physical-controller routing through the hidden virtual controller,
+// and the per-model remap profile. Its own page because it owns a list and a learn flow;
+// it writes only WolkaraForever's preferences, never the game's bindings.
+- (void)manageControllers {
+    [self presentPage:[TKWoWControllerManagerViewController new]];
+}
+
+// The card's own switch. The manager is the owner; this only asks it, and -render is what
+// puts both controls back in step if the change was refused.
+- (void)controllerRoutingChanged:(UISwitch *)sender {
+    AKControllerManager.shared.enabled = sender.on;
+    WKLog("ui", @"controller manager: routing %@ from the home page", sender.on ? @"on" : @"off");
+    [self render];
+}
+
+- (void)controllerManagerChanged:(NSNotification *)note {
+    (void)note;
+    [self render];
+}
+
+// One sentence for the four states, so the card says what is happening rather than only
+// whether the switch is on.
+- (NSString *)controllerManagerStatusText {
+    AKControllerManager *manager = AKControllerManager.shared;
+    switch (manager.state) {
+        case AKControllerRoutingStateDisabled:
+            return WKLocalized(@"controller.status.disabled");
+        case AKControllerRoutingStateWaiting:
+            if (manager.enabled && !manager.guestFacadePresent)
+                return WKLocalized(@"controller.status.pending");
+            return manager.physicalControllerConnected ? WKLocalized(@"controller.status.connecting")
+                                                       : WKLocalized(@"controller.status.nocontroller");
+        case AKControllerRoutingStateRouting:
+            return WKLocalized(@"controller.status.routing");
+        case AKControllerRoutingStateFailed:
+            return manager.guestFacadeAvailable ? WKLocalized(@"controller.status.failed")
+                                                : WKLocalized(@"controller.status.nofacade");
+    }
+    return @"";
 }
 
 // This app's own page in Settings: the Microphone and Speech Recognition switches for WolkaraForever.
@@ -1710,20 +1812,88 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         });
     });
 }
-// The HUD preference lives in the touch layout store. Read-modify-write keeps
-// every existing value (opacity, scales, haptics, positions) and the change
-// notification is what the in-game settings page and the host view listen to.
-- (void)overlayChanged:(UISwitch *)sender {
-    if (_busy || _starting) { sender.on=!_overlayEnabled; return; }
-    BOOL enabled=sender.on;
-    NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
-    id stored=[defaults objectForKey:TKForeverLayoutKey];
-    NSMutableDictionary *layout=[stored isKindOfClass:NSDictionary.class]?[stored mutableCopy]:[NSMutableDictionary new];
-    layout[@"performanceOverlayEnabled"]=@(enabled);
-    [defaults setObject:layout forKey:TKForeverLayoutKey];
-    [NSNotificationCenter.defaultCenter postNotificationName:TKForeverLayoutDidChange object:defaults];
-    WKLog("ui", @"performance overlay: %@", enabled?@"enabled":@"disabled");
-    [self render];
+#pragma mark - Battery Saver
+
+// The two values as the row says them. Each fragment is translated on its own, so no language
+// has to be taught a sentence for a combination it has never seen.
+- (NSString *)batterySaverFrameText:(AKBatterySaverFrameLimit)limit {
+    switch (limit) {
+        case AKBatterySaverFrameLimitAutomatic: return WKLocalized(@"home.batterySaver.frame.automatic");
+        case AKBatterySaverFrameLimit30: return WKLocalized(@"home.batterySaver.frame.30");
+        case AKBatterySaverFrameLimit60: return WKLocalized(@"home.batterySaver.frame.60");
+        case AKBatterySaverFrameLimitOff: break;
+    }
+    return WKLocalized(@"home.batterySaver.off");
+}
+- (NSString *)batterySaverAFKText:(NSInteger)minutes {
+    switch (minutes) {
+        case 2: return WKLocalized(@"home.batterySaver.afk.2");
+        case 5: return WKLocalized(@"home.batterySaver.afk.5");
+        case 10: return WKLocalized(@"home.batterySaver.afk.10");
+        default: break;
+    }
+    return WKLocalized(@"home.batterySaver.off");
+}
+- (NSString *)batterySaverSummary {
+    AKBatterySaverFrameLimit limit=AKBatterySaverStoredFrameLimit();
+    NSInteger minutes=AKBatterySaverStoredAFKMinutes();
+    // Both off is the state every installation starts in, and it reads as one word rather
+    // than "Off · Off".
+    if (limit==AKBatterySaverFrameLimitOff && minutes==0) return WKLocalized(@"home.batterySaver.off");
+    return [NSString stringWithFormat:@"%@ · %@",[self batterySaverFrameText:limit],[self batterySaverAFKText:minutes]];
+}
+// One submenu with two decisions, both of which take effect at the next launch. A cap that
+// started the moment it was chosen would change the pacing of the session under the player's
+// hands, and the guest has already been given its pacing for this run.
+- (void)chooseBatterySaver {
+    if (_busy || _starting || _running || _sessionUsed) return;
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.batterySaver.title")
+        message:WKLocalized(@"home.batterySaver.message")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalizedFormat(@"home.batterySaver.frameLimit",
+        [self batterySaverFrameText:AKBatterySaverStoredFrameLimit()]) style:UIAlertActionStyleDefault
+        handler:^(__unused UIAlertAction *action) { [self chooseBatterySaverFrameLimit]; }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalizedFormat(@"home.batterySaver.afk",
+        [self batterySaverAFKText:AKBatterySaverStoredAFKMinutes()]) style:UIAlertActionStyleDefault
+        handler:^(__unused UIAlertAction *action) { [self chooseBatterySaverAFK]; }]];
+    [self presentSheet:sheet anchor:_batterySaverButton];
+}
+- (void)chooseBatterySaverFrameLimit {
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.batterySaver.frameLimit.title")
+        message:WKLocalized(@"home.batterySaver.frameLimit.message")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    AKBatterySaverFrameLimit current=AKBatterySaverStoredFrameLimit();
+    for (NSNumber *each in @[@(AKBatterySaverFrameLimitOff),@(AKBatterySaverFrameLimitAutomatic),
+                             @(AKBatterySaverFrameLimit30),@(AKBatterySaverFrameLimit60)]) {
+        AKBatterySaverFrameLimit limit=each.integerValue;
+        NSString *title=[self batterySaverFrameText:limit];
+        if (limit==current) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            AKBatterySaverSetFrameLimit(limit);
+            WKLog("ui", @"battery saver: frame limit %@",AKBatterySaverFrameLimitStoredName(limit));
+            [self render];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_batterySaverButton];
+}
+- (void)chooseBatterySaverAFK {
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.batterySaver.afk.title")
+        message:WKLocalized(@"home.batterySaver.afk.message")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    NSInteger current=AKBatterySaverStoredAFKMinutes();
+    for (NSNumber *each in @[@0,@2,@5,@10]) {
+        NSInteger minutes=each.integerValue;
+        NSString *title=[self batterySaverAFKText:minutes];
+        if (minutes==current) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
+            handler:^(__unused UIAlertAction *action) {
+            AKBatterySaverSetAFKMinutes(minutes);
+            WKLog("ui", @"battery saver: afk saver %ld min",(long)minutes);
+            [self render];
+        }]];
+    }
+    [self presentSheet:sheet anchor:_batterySaverButton];
 }
 // Battery-saving sound: one key, YES or NO, read by both audio adapters at the next game's first sound call.
 - (void)soundPathChanged:(UISwitch *)sender {
@@ -2316,6 +2486,14 @@ static NSString *ElementLabel(NSString *element) {
 - (nullable NSString *)addOnsDirectoryWithError:(NSError **)error {
     NSString *directory=[_library workingDirectoryForApp:_installation.app error:error];
     return directory?[directory stringByAppendingPathComponent:@"Interface/AddOns"]:nil;
+}
+
+// Same reason as -previewAddonBrowser: the Controller Manager row lives at the bottom of a
+// box that is below the fold on an iPad, so a device check needs a way to open the page
+// without a person scrolling and tapping to get there.
+- (void)previewControllerManager {
+    [self loadViewIfNeeded];
+    [self presentPage:[TKWoWControllerManagerViewController new]];
 }
 
 - (void)previewAddonBrowser {

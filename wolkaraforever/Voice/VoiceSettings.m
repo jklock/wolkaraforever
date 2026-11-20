@@ -24,6 +24,7 @@ static NSString *const AKVoiceSpeechLanguageGermanValue = @"de-DE";
 static NSString *const AKVoiceSpeechLanguageFrenchValue = @"fr-FR";
 static NSString *const AKVoiceSpeechLanguageSpanishValue = @"es-ES";
 
+
 // The dictionary is biased into the recogniser, so it is bounded: a huge list is not a
 // dictionary, it is a corrupt file, and it would be handed to the SDK either way.
 static NSUInteger const AKVoiceWordLimit = 512;
@@ -185,6 +186,14 @@ static NSUInteger const AKVoiceWordLengthLimit = 64;
     AKTrigger *trigger = [AKTrigger savedTriggerForDevice:device defaults:NSUserDefaults.standardUserDefaults];
     if (trigger) trigger.pattern = self.mode == AKVoiceModeHold ? AKTriggerPatternPushToTalk : AKTriggerPatternPress;
     return trigger;
+}
+
+// Every mapped element, whatever device it belongs to and whether or not that device
+// is connected. Reading the stored keys rather than walking GCController.controllers is
+// the point: the inspector has to be interested in a mapped button before the pad that
+// carries it has connected, or the first press after connecting is missed.
+- (NSArray<NSString *> *)mappedElements {
+    return [AKTrigger mappedElementsInDefaults:NSUserDefaults.standardUserDefaults];
 }
 
 - (void)setLearnedElement:(NSString *)element forDevice:(nullable NSString *)device {

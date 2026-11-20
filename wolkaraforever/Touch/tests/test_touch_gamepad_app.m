@@ -72,11 +72,23 @@ static void TestHaptics(void) {
 @property GCController *controller;
 @property(copy) void (^reply)(NSError *);
 @property NSUInteger disconnects;
+// What the physical producer wrote, so the routing suite can see the exact element and
+// value GCVirtualController would have been handed.
+@property NSMutableDictionary<NSString *, NSNumber *> *buttonValues;
+@property NSMutableDictionary<NSString *, NSValue *> *positions;
 - (void)finish:(NSError *)error;
 @end
 @implementation AKFixtureConnection
 - (void)connectWithReplyHandler:(void (^)(NSError *))reply { self.reply=reply; }
 - (void)disconnect { self.disconnects++; self.controller=nil; }
+- (void)setValue:(CGFloat)value forButtonElement:(NSString *)element {
+    if (!self.buttonValues) self.buttonValues=[NSMutableDictionary dictionary];
+    self.buttonValues[element]=@(value);
+}
+- (void)setPosition:(CGPoint)position forDirectionPadElement:(NSString *)element {
+    if (!self.positions) self.positions=[NSMutableDictionary dictionary];
+    self.positions[element]=[NSValue valueWithCGPoint:position];
+}
 - (void)finish:(NSError *)error {
     if (!error) {
         AKFixtureController *controller=[AKFixtureController new]; controller.extendedGamepad=@YES;
@@ -948,6 +960,39 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     assert(fabs(cluster.frame.size.width-216)<.01);
     assert(CGRectGetMidX(Button(host,GCInputLeftTrigger).frame)>CGRectGetMidX(Button(host,GCInputLeftShoulder).frame));
     assert(CGRectGetMidX(Button(host,GCInputRightTrigger).frame)<CGRectGetMidX(Button(host,GCInputRightShoulder).frame));
+    // The physical producer, driven through the same *real* GCVirtualController the overlay
+    // drives: what the Controller Manager posts is what a guest reading GCController.controllers
+    // would see. This is the one link the manager fixture cannot cover, because it has no
+    // GameController framework at all.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteState" object:nil
+        userInfo:@{@"enabled":@YES}]; Drain();
+    assert(manager.visible);
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteValue" object:nil
+        userInfo:@{@"element":@"virtual.button.b", @"value":@1}];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteValue" object:nil
+        userInfo:@{@"element":@"virtual.button.left.trigger", @"value":@0.6}];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRoutePosition" object:nil
+        userInfo:@{@"element":@"virtual.stick.left", @"x":@0.5, @"y":@-0.25}];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRoutePosition" object:nil
+        userInfo:@{@"element":@"virtual.dpad", @"x":@0, @"y":@1}]; Drain();
+    assert(pad.buttonB.pressed && pad.buttonB.value==1);
+    assert(fabs(pad.leftTrigger.value-0.6)<.01);
+    assert(fabs(pad.leftThumbstick.xAxis.value-0.5)<.01 && fabs(pad.leftThumbstick.yAxis.value+0.25)<.01);
+    assert(pad.dpad.yAxis.value==1);
+    // A touch while routing must not overwrite a routed value: one element, one owner.
+    [Button(host,GCInputButtonB) sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert(pad.buttonB.value==1);
+    [Button(host,GCInputButtonB) sendActionsForControlEvents:UIControlEventTouchUpInside];
+    // Releasing gives every element back.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteRelease" object:nil]; Drain();
+    assert(!pad.buttonB.pressed && pad.leftTrigger.value==0);
+    assert(pad.leftThumbstick.xAxis.value==0 && pad.dpad.yAxis.value==0);
+    // Switching routing off hands the elements back to the overlay.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteState" object:nil
+        userInfo:@{@"enabled":@NO}]; Drain();
+    [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert(pad.buttonA.pressed);
+    [Button(host,GCInputButtonA) sendActionsForControlEvents:UIControlEventTouchUpInside];
     TestPreferences();
     // Sticks-only is a mobile arrangement: Standard has no switch to turn it on with.
     if (AKInterfaceModeIsMobile()) { TestJumpReach(host,manager); TestFloating(host,manager); }
@@ -1348,6 +1393,82 @@ static void TestTrackingPump(void) {
     CFRunLoopTimerInvalidate(defaultModeTimer); CFRelease(defaultModeTimer);
     CFRunLoopTimerInvalidate(trackingModeTimer); CFRelease(trackingModeTimer);
     puts("TOUCH_TRACKING_PUMP_PASS: deferred UI and tracking timers progress; closed-panel pump remains nonblocking.");
+
+// The physical producer's half of the same virtual controller: the Controller Manager's
+// notifications become writes on the elements GCVirtualController takes, and nothing is
+// left held when routing stops. No physical pad is needed for any of it.
+static void TestRouting(UIView *host) {
+    AKFixtureGamepad *pad=[[AKFixtureGamepad alloc] initWithHostView:host];
+    pad.devices=@[];
+    [pad refresh]; [pad.lastConnection finish:nil];
+    assert(pad.visible);
+    AKFixtureConnection *connection=pad.lastConnection;
+
+    // While routing, a physical pad is the *source* of this controller, not a competitor
+    // for it: it must not make the virtual device disconnect the way touch-only mode does.
+    AKFixtureController *physical=[AKFixtureController new]; physical.extendedGamepad=@YES;
+    pad.devices=@[(id)physical];
+    NSUInteger disconnects=connection.disconnects;
+    [pad setPhysicalRoutingEnabled:YES];
+    [pad refresh];
+    assert(pad.visible && connection.disconnects==disconnects);
+
+    // A routed button, stick and D-pad reach the virtual controller's own elements.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteValue" object:nil
+        userInfo:@{@"element":@"virtual.button.b", @"value":@1}];
+    assert([connection.buttonValues[GCInputButtonB] doubleValue]==1);
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRoutePosition" object:nil
+        userInfo:@{@"element":@"virtual.stick.left", @"x":@0.5, @"y":@-0.5}];
+    CGPoint stick=[connection.positions[GCInputLeftThumbstick] CGPointValue];
+    assert(stick.x==0.5 && stick.y==-0.5);
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRoutePosition" object:nil
+        userInfo:@{@"element":@"virtual.dpad", @"x":@0, @"y":@1}];
+    assert([connection.positions[GCInputDirectionPad] CGPointValue].y==1);
+    // An unknown target is ignored rather than written as nothing.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteValue" object:nil
+        userInfo:@{@"element":@"virtual.button.nonexistent", @"value":@1}];
+    // A value outside the range is clamped, because GCVirtualController clamps and a stored
+    // profile should not be able to claim otherwise.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteValue" object:nil
+        userInfo:@{@"element":@"virtual.button.right.trigger", @"value":@4}];
+    assert([connection.buttonValues[GCInputRightTrigger] doubleValue]==1);
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRoutePosition" object:nil
+        userInfo:@{@"element":@"virtual.stick.right", @"x":@-9, @"y":@9}];
+    CGPoint clamped=[connection.positions[GCInputRightThumbstick] CGPointValue];
+    assert(clamped.x==-1 && clamped.y==1);
+
+    // Releasing gives every held value back to zero - that is the promise that matters.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteRelease" object:nil];
+    assert([connection.buttonValues[GCInputButtonB] doubleValue]==0);
+    assert([connection.buttonValues[GCInputRightTrigger] doubleValue]==0);
+    CGPoint released=[connection.positions[GCInputLeftThumbstick] CGPointValue];
+    assert(released.x==0 && released.y==0);
+    assert([connection.positions[GCInputRightThumbstick] CGPointValue].x==0);
+
+    // Switching routing off releases too, and gives the pad back to touch - which is when
+    // physical priority applies again.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteValue" object:nil
+        userInfo:@{@"element":@"virtual.button.a", @"value":@1}];
+    assert([connection.buttonValues[GCInputButtonA] doubleValue]==1);
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteState" object:nil
+        userInfo:@{@"enabled":@NO}];
+    assert([connection.buttonValues[GCInputButtonA] doubleValue]==0);
+    [pad refresh];
+    assert(!pad.visible && connection.disconnects>disconnects);
+
+    // Routing does not need a physical pad in order to keep the device up: the manager
+    // decides that, and the pad connects on the strength of the request alone.
+    pad.devices=@[];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteState" object:nil
+        userInfo:@{@"enabled":@YES}];
+    [pad.lastConnection finish:nil];
+    assert(pad.visible);
+
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKControllerRouteState" object:nil
+        userInfo:@{@"enabled":@NO}];
+    // No finish: the arming was already consumed, and invalidate is not a connection.
+    [pad invalidate];
+    puts("TOUCH_GAMEPAD_ROUTING_PASS: routed values reach the virtual elements, clamping, release, mode-change release, and routing with no physical pad.");
 }
 
 static void TestLifecycle(UIView *host) {
