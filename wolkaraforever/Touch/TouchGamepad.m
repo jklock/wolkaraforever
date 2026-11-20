@@ -993,6 +993,11 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
         [view setContentHuggingPriority:label ? UILayoutPriorityDefaultLow : UILayoutPriorityRequired
                                 forAxis:UILayoutConstraintAxisHorizontal];
     }
+    // A UISwitch lays out at its intrinsic width but draws at its own fitting width, which is
+    // wider (61 against 63 points on iOS 26), so its end overhangs the row and the scroll view
+    // clips it square. A small trailing margin leaves that overhang room to be drawn.
+    row.layoutMarginsRelativeArrangement = YES;
+    row.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(0, 0, 0, 6);
 }
 - (void)toggleSettings {
     if (_settings || _editing) { [self finishConfiguration]; return; }

@@ -709,9 +709,31 @@ static void CollectSwitches(UIView *view, NSMutableArray<UISwitch *> *out) {
 }
 // Every switch in the settings sheet is whole and inside the sheet: a long label beside it
 // wraps instead of pushing it past the edge, where it could barely be pressed.
+static CGRect DrawnExtent(UIView *view, UIView *target) {
+    CGRect extent=[view convertRect:view.bounds toView:target];
+    for (UIView *child in view.subviews) if (!child.hidden && child.alpha>0) extent=CGRectUnion(extent,DrawnExtent(child,target));
+    return extent;
+}
+static UIScrollView *EnclosingScroll(UIView *view) {
+    for (UIView *v=view.superview; v; v=v.superview) if ([v isKindOfClass:UIScrollView.class]) return (UIScrollView *)v;
+    return nil;
+}
 static void AssertSettingsSwitchesReachable(UIView *panel) {
     NSMutableArray<UISwitch *> *switches=[NSMutableArray new]; CollectSwitches(panel,switches);
     assert(switches.count>=4);
+    // What a switch draws, not only its frame, stays inside the clipping scroll view: the
+    // switch's track is drawn a little past its bounds, and a clip there squares its end.
+    for (UISwitch *toggle in switches) {
+        UIScrollView *scroll=EnclosingScroll(toggle); if (!scroll) continue;
+        CGRect drawn=DrawnExtent(toggle,scroll), frame=[toggle convertRect:toggle.bounds toView:scroll];
+        CGFloat visibleMax=scroll.contentOffset.x+scroll.bounds.size.width;
+        if (CGRectGetMaxX(drawn)>visibleMax+0.5) {
+            fprintf(stderr,"TOUCH_SETTINGS_SWITCH_OVERHANG: %s frameMaxX=%.1f drawnMaxX=%.1f clipMaxX=%.1f width=%.1f intrinsic=%.1f\n",
+                    toggle.accessibilityIdentifier.UTF8String,CGRectGetMaxX(frame),CGRectGetMaxX(drawn),visibleMax,
+                    toggle.bounds.size.width,toggle.intrinsicContentSize.width);
+            fflush(stderr); assert(0);
+        }
+    }
     CGFloat natural=[UISwitch new].intrinsicContentSize.width;
     for (UISwitch *toggle in switches) {
         CGRect frame=[toggle convertRect:toggle.bounds toView:panel];
