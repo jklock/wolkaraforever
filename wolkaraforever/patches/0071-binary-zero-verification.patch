@@ -1,0 +1,245 @@
+# Verify every pre-entry arena byte using binary replies when the peer supports them.
+--- a/authorization/Debugger/DebugArenaSession.swift
++++ b/authorization/Debugger/DebugArenaSession.swift
+@@ -10,7 +10,7 @@
+ // of every arena has been read back as zero, one zero byte per page is written
+ // and read back.
+ final class DebugArenaSession {
+-    enum Phase { case idle, supported, noAck, detachPolicy, attach, process, challenge, region, preflight, prepare, draining, finalProcess, finalChallenge, detach, cleanup, complete, failed }
++    enum Phase { case idle, supported, noAck, detachPolicy, attach, process, challenge, readEncoding, region, preflight, prepare, draining, finalProcess, finalChallenge, detach, cleanup, complete, failed }
+     enum Reason: Error { case protocolFailure, wrongProcess, wrongChallenge, unsafeRegion, nonzeroMemory, serverFailure, timedOut, cancelled, disconnected }
+     struct Failure: Error { let reason: Reason; let detachConfirmed: Bool }
+     struct Receipt { let pid: UInt32; let challenge: Data; let regions: [DebugArenaRequest.Region] }
+@@ -31,6 +31,10 @@
+     private var outstanding = 0, noAck = false, acknowledged = false, retries = 0, badPackets = 0, consolePackets = 0
+     private var lastPacket = Data(), commandDeadline: TimeInterval = 0, totalDeadline: TimeInterval = 0, lastTime: TimeInterval = 0
+     private var packetSize = 1024, chunk = 480, index = 0
++    private var binaryPreflight = false
++    private var binaryReplyExpected: Bool {
++        binaryPreflight && (phase == .preflight || (phase == .draining && failedIn == .preflight))
++    }
+     private var offset: UInt64 = 0, regionCursor: UInt64 = 0
+     private var replies: [Reply] = [], replied = 0
+     private var attached = false, pendingFailure: Reason?, failedIn: Phase?
+@@ -83,9 +87,11 @@
+                     guard !noAck, badPackets < 2 else { throw Reason.protocolFailure }
+                     badPackets += 1; events.append(.send(Data([45])))
+                 case .packet(let payload):
+-                    guard let text = String(data:payload,encoding:.ascii) else { throw Reason.protocolFailure }
++                    let binary = binaryReplyExpected
++                    let text = binary ? nil : String(data:payload,encoding:.ascii)
++                    guard binary || text != nil else { throw Reason.protocolFailure }
+                     if !noAck { events.append(.send(Data([43]))) }
+-                    if text.hasPrefix("O"), text != "OK" {
++                    if let text, text.hasPrefix("O"), text != "OK" {
+                         consolePackets += 1
+                         guard consolePackets <= 64, text.utf8.count % 2 == 1 else { throw Reason.protocolFailure }
+                         _ = try DebugProtocolWire.unhex(String(text.dropFirst()),count:(text.utf8.count-1)/2)
+@@ -93,7 +99,7 @@
+                     }
+                     guard acknowledged else { throw Reason.protocolFailure }
+                     answerable -= 1; outstanding -= 1
+-                    do { events += try reply(text,now:now) }
++                    do { events += try reply(payload, text:text, now:now) }
+                     catch {
+                         let reason = error as? Reason ?? .protocolFailure
+                         if attached, phase != .detach, phase != .cleanup {
+@@ -108,9 +114,17 @@
+             return events
+         } catch { return finish(.protocolFailure,detached:false) }
+     }
+-    private func reply(_ text: String, now: TimeInterval) throws -> [Event] {
++    private func reply(_ payload: Data, text: String?, now: TimeInterval) throws -> [Event] {
+         if phase == .draining { return outstanding == 0 ? try command("D",phase:.cleanup,now:now) : [] }
+-        if text.hasPrefix("E") { throw Reason.serverFailure }
++        if phase == .preflight && binaryPreflight {
++            guard replied < replies.count, case .zeros(let count) = replies[replied],
++                  payload.count == count else { throw Reason.protocolFailure }
++            guard payload.withUnsafeBytes({ (bytes: UnsafeRawBufferPointer) in bytes.allSatisfy { $0 == 0 } })
++            else { throw Reason.nonzeroMemory }
++            return try advanceBatch(now:now)
++        }
++        guard let text else { throw Reason.protocolFailure }
++        if text.hasPrefix("E") && phase != .readEncoding { throw Reason.serverFailure }
+         switch phase {
+         case .supported:
+             var seen = false
+@@ -147,6 +161,12 @@
+             let final = phase == .finalChallenge
+             guard try DebugProtocolWire.unhex(text,count:32) == request.challenge else { throw Reason.wrongChallenge }
+             if final { return try command("D",phase:.detach,now:now) }
++            // LLDB's zero-length capability query never inspects process memory.
++            return try command("x0,0", phase:.readEncoding, now:now)
++        case .readEncoding:
++            // Only an explicit OK advertises the unprefixed LLDB binary format.
++            // Any other capability reply leaves the complete hex preflight in place.
++            binaryPreflight = text == "OK"
+             index = 0; regionCursor = request.regions[0].address
+             return try command("qMemoryRegionInfo:"+String(regionCursor,radix:16),phase:.region,now:now)
+         case .region:
+@@ -164,20 +184,7 @@
+             case .ok: guard text == "OK" else { throw Reason.serverFailure }
+             case .zeros(let count): guard try DebugProtocolWire.unhex(text,count:count).allSatisfy({ $0 == 0 }) else { throw Reason.nonzeroMemory }
+             }
+-            replied += 1
+-            guard outstanding == 0 else { return [] }
+-            if phase == .prepare {
+-                if index < request.regions.count { return try prepareBatch(now:now) }
+-                return try command("qProcessInfo",phase:.finalProcess,now:now)
+-            }
+-            if offset < request.regions[index].size { return try preflightBatch(now:now) }
+-            index += 1
+-            if index < request.regions.count {
+-                regionCursor = request.regions[index].address
+-                return try command("qMemoryRegionInfo:"+String(regionCursor,radix:16),phase:.region,now:now)
+-            }
+-            // All arenas passed the full preflight before the first write.
+-            index = 0; offset = 0; return try prepareBatch(now:now)
++            return try advanceBatch(now:now)
+         case .detach, .cleanup:
+             guard text == "OK" else { throw Reason.serverFailure }
+             attached = false
+@@ -187,13 +194,30 @@
+         default:throw Reason.protocolFailure
+         }
+     }
++    private func advanceBatch(now: TimeInterval) throws -> [Event] {
++        replied += 1
++        guard outstanding == 0 else { return [] }
++        if phase == .prepare {
++            if index < request.regions.count { return try prepareBatch(now:now) }
++            return try command("qProcessInfo",phase:.finalProcess,now:now)
++        }
++        if offset < request.regions[index].size { return try preflightBatch(now:now) }
++        index += 1
++        if index < request.regions.count {
++            regionCursor = request.regions[index].address
++            return try command("qMemoryRegionInfo:"+String(regionCursor,radix:16),phase:.region,now:now)
++        }
++        // All arenas passed the full preflight before the first write.
++        index = 0; offset = 0; return try prepareBatch(now:now)
++    }
+     // Reads the current arena from offset; every byte must be zero.
+     private func preflightBatch(now: TimeInterval) throws -> [Event] {
+         let range = request.regions[index]
+         var texts: [String] = []; replies = []; replied = 0
++        let read = binaryPreflight ? "x" : "m"
+         while texts.count < Self.readsPerBatch, offset < range.size {
+             let count = Int(min(UInt64(chunk),range.size-offset))
+-            texts.append("m"+String(range.address+offset,radix:16)+","+String(count,radix:16))
++            texts.append(read+String(range.address+offset,radix:16)+","+String(count,radix:16))
+             replies.append(.zeros(count)); offset += UInt64(count)
+         }
+         return try send(texts,phase:.preflight,now:now)
+--- a/tests/test_debug_arena_peer.py
++++ b/tests/test_debug_arena_peer.py
+@@ -16,7 +16,7 @@
+ LAST = 0x1000000
+ 
+ def frame(text,checksum=True):
+-    b = text.encode('ascii')
++    b = text if isinstance(text,bytes) else text.encode('ascii')
+     encoded = b''.join(bytes([125,v^32]) if v in b'$#}*' else bytes([v]) for v in b)
+     return b'$'+encoded+b'#'+(f'{sum(encoded)%256:02x}' if checksum else '00').encode()
+ 
+@@ -68,6 +68,9 @@
+     state={'noack':False,'process_queries':0,'challenge_reads':0,'detach':False}
+     def region(address): return next(base for base,size in REGIONS.items() if base<=address<base+size)
+     def respond(text):
++        if text == 'x0,0':
++            assert state['challenge_reads'] == 1 and not writes and not any(read_next.values())
++            return 'OK' if mode.startswith('binary') else ''
+         if text == 'qSupported': return 'PacketSize='+packet_size+';qXfer:features:read+'
+         if text == 'QStartNoAckMode': return '' if mode == 'unsupported_no_ack' else 'OK'
+         if text == 'QSetDetachOnError:1': return '' if mode == 'unsupported_detach_policy' else 'OK'
+@@ -86,24 +89,37 @@
+             permission = 'rwx' if mode=='unsafe_last' and address==LAST else 'rx'
+             response = f'start:{address:x};size:{REGIONS[address]:x};permissions:{permission};'
+             return response+'name:2f6170702f62696e617279;' if mode=='file_backed' else response
+-        if text.startswith('m'):
++        if text.startswith(('m','x')):
+             address,count = (int(v,16) for v in text[1:].split(','))
+             if address == 0x100000:
+-                assert count==32
++                assert text.startswith('m') and count==32
+                 state['challenge_reads']+=1
+                 if mode=='wrong_challenge' or (mode=='final_challenge' and state['challenge_reads']==2): return 'ff'*32
+                 return CHALLENGE.hex()
+             base = region(address)
+             if writes:
+                 # Read-back: the byte just written.
+-                assert count==1 and address==writes[-1]
++                assert text.startswith('m') and count==1 and address==writes[-1]
+                 readback.append(address)
+                 return '01' if mode=='verify_corrupt' and len(readback)==3 else '00'
+             # Preflight: each arena in order, every byte once.
+             assert count > 0 and address==base+read_next[base] and address+count<=base+REGIONS[base]
+             read_next[base]+=count
++            assert text.startswith('x' if mode.startswith('binary') else 'm')
++            if mode.startswith('binary'):
++                payload = bytes(count)
++                if base==LAST:
++                    if mode=='binary_short': return payload[:-1]
++                    if mode=='binary_empty': return b''
++                    if mode=='binary_long': return payload+b'\0'
++                    if mode=='binary_nonzero': return payload[:-1]+b'\xff'
++                    if mode=='binary_escaped': return b'#'+payload[1:]
++                    if mode=='binary_console': return b'O'+payload[1:]
++                return payload
+             response = '00'*count
+             if mode=='nonzero_last' and base==LAST: response='01'+response[2:]
++            if mode=='malformed_zero' and base==LAST: response='01'+response[2:-1]+'z'
++            if mode=='long_read' and base==LAST: response+='00'
+             if mode=='short_read': response=response[:-2]
+             return response
+         if text.startswith('M'):
+@@ -121,7 +137,7 @@
+         while commands:
+             # Acknowledged commands go one at a time; detaching goes alone.
+             assert len(commands)==1 or (state['noack'] and 'D' not in commands),(mode,commands)
+-            if any(text[0] in 'mM' for text in commands) and len(commands)>1: batches.append(len(commands))
++            if any(text[0] in 'mxM' for text in commands) and len(commands)>1: batches.append(len(commands))
+             acked=not state['noack']
+             responses=[respond(text) for text in commands]
+             if commands==['QStartNoAckMode'] and responses==['OK']: state['noack']=True
+@@ -142,7 +158,7 @@
+             terminal+=finished
+         assert len(terminal)==1,(mode,terminal)
+         result=terminal[0]
+-        if mode in ('success','no_ack_checksums'):
++        if mode in ('success','no_ack_checksums','binary'):
+             assert result.get('success') is True and result['pid']==1234 and result['regions']==2
+             pages=[base+n*PAGE for base,size in REGIONS.items() for n in range(size//PAGE)]
+             assert state['detach'] and writes==pages and readback==pages
+@@ -155,8 +171,16 @@
+             assert preflight and 8<=max(preflight)<=32,preflight
+         else:
+             assert 'failure' in result and not result.get('success')
+-            if mode in ('wrong_pid','wrong_uid','wrong_arch','duplicate_pid','wrong_challenge','unsafe_last','file_backed','nonzero_last','short_read'):
++            if mode in ('wrong_pid','wrong_uid','wrong_arch','duplicate_pid','wrong_challenge','unsafe_last','file_backed','nonzero_last','short_read','malformed_zero','long_read'):
+                 assert not writes and state['detach'] and result['detached'] is True
++            if mode.startswith('binary'):
++                assert not writes and state['detach'] and result['detached'] is True
++                expected = 'protocolFailure' if mode in ('binary_short','binary_empty','binary_long') else 'nonzeroMemory'
++                assert result['failure']==expected
++            if mode in ('short_read','malformed_zero','long_read'):
++                assert result['failure']=='protocolFailure'
++            if mode=='nonzero_last':
++                assert result['failure']=='nonzeroMemory'
+             if mode in ('write_error','verify_corrupt','final_pid','final_challenge'):
+                 assert writes and state['detach'] and result['detached'] is True
+             if mode in ('unsupported_no_ack','unsupported_detach_policy','attach_error','ack_without_ack_mode'):
+@@ -169,9 +193,12 @@
+ 
+ def main():
+     for mode in ['success','wrong_pid','wrong_uid','wrong_arch','duplicate_pid','wrong_challenge','unsafe_last','file_backed',
+-                 'nonzero_last','short_read','write_error','verify_corrupt','final_pid','final_challenge','detach_error','detach_trailing',
++                 'nonzero_last','short_read','malformed_zero','long_read','write_error','verify_corrupt','final_pid','final_challenge','detach_error','detach_trailing',
+                  'attach_error','unsupported_no_ack','unsupported_detach_policy','ack_without_ack_mode']:
+         exchange(mode,fragment=mode=='success')
++    for mode in ('binary','binary_short','binary_empty','binary_long','binary_nonzero','binary_escaped','binary_console'):
++        exchange(mode,fragment=True)
++    exchange('binary',packet_size='8000')
+     exchange(packet_size='8000'); exchange(packet_size='100')
+     assert exchange('no_ack_checksums').get('success') is True
+     for mode in ('checksum','nack','deadline','disconnect','cancel','coalesced','response_without_ack'):

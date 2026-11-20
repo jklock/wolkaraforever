@@ -1,0 +1,63 @@
+# WolkaraForever layer patch 0068 - copy bounded IPv6 packet fragments in bulk
+#
+# Read the length prefix first so the negotiated MTU bounds the allocation.
+# The stream still accepts partial reads and emits complete validated packets.
+--- a/authorization/Transport/CDTunnelWire.swift
++++ b/authorization/Transport/CDTunnelWire.swift
+@@ -92,14 +92,20 @@
+         do {
+             guard data.count <= 65_536 else { throw PairingError.oversized }
+             var events: [Event] = []
+-            for byte in data {
++            var position = data.startIndex
++            while position < data.endIndex {
+                 if let configuration {
+-                    if packet.isEmpty && byte >> 4 != 6 { throw PairingError.malformed }
+-                    packet.append(byte)
+-                    if packet.count == 6 {
++                    if packet.isEmpty && data[position] >> 4 != 6 { throw PairingError.malformed }
++                    // Buffer only the length prefix until the MTU check passes.
++                    let target = packetLength ?? 6
++                    let end = position + min(target - packet.count, data.endIndex - position)
++                    packet.append(contentsOf: data[position..<end])
++                    position = end
++                    if packetLength == nil && packet.count == 6 {
+                         let length = 40 + Int(packet[4]) * 256 + Int(packet[5])
+                         guard length <= configuration.mtu else { throw PairingError.oversized }
+                         packetLength = length
++                        packet.reserveCapacity(length)
+                     }
+                     if packet.count == packetLength {
+                         let bytes = Array(packet.prefix(40))
+@@ -115,6 +121,8 @@
+                         packet = Data(); packetLength = nil
+                     }
+                 } else {
++                    let byte = data[position]
++                    position += 1
+                     handshakeBytes += 1
+                     guard handshakeBytes <= 16_394 else { throw PairingError.oversized }
+                     if let response = try handshake.consume(byte) {
+--- a/tests/test_cd_tunnel.swift
++++ b/tests/test_cd_tunnel.swift
+@@ -60,6 +60,20 @@
+             expect(configs == 1 && outputs == [raw,packet(Data()),raw], "segmented/coalesced stream")
+             reject("EOF terminal") { _ = try stream.consume(raw) }
+         }
++        // A nonzero-index Data slice crosses a packet boundary after the length
++        // prefix is split, and a full-MTU payload must be delivered byte-for-byte.
++        let full = packet(Data((0..<15960).map { UInt8(truncatingIfNeeded: $0) }))
++        let padded = Data([0]) + header + full + raw
++        var sliced = try CDTunnelStream()
++        _ = try sliced.begin()
++        let split = 1 + header.count + 5
++        _ = try sliced.consume(padded[1..<split])
++        let completed = try sliced.consume(padded[split...]).compactMap { event -> Data? in
++            if case .packet(let p) = event { return p }
++            return nil
++        }
++        expect(completed == [full,raw], "full MTU with split prefix and coalesced successor")
++        try sliced.finish()
+         for end in 0..<header.count {
+             var stream = try CDTunnelStream(); _ = try stream.begin()
+             _ = try stream.consume(header.prefix(end))

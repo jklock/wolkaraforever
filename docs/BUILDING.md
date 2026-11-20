@@ -41,6 +41,11 @@ development launch can override it for one run with `--execution-mode=`.
 | Local signing | A page container derived from the application's code pages, signed with your own developer identity on a Mac, copied to the app's `Documents/LocalSigning/` | A signed page container (`SignedImage`) |
 | External JIT | A JIT enabler that attaches at launch, prepares memory, and detaches again | The `DebuggerArena`; the runtime refuses guest entry while anything is still attached |
 
+Before starting the game, Developer service verifies that every byte of its reserved memory is zero.
+It uses binary reads when the debugger supports them and hexadecimal reads otherwise. Both
+formats verify the entire reservation before the first page write. A short or nonzero read
+stops preparation.
+
 Which build offers which mode:
 
 | Build | Developer service | Local signing | External JIT |
