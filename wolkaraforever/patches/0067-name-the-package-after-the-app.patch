@@ -1,0 +1,78 @@
+# WolkaraForever layer patch 0067 - the unsigned package is named after the app
+#
+# Why: the artifact was `Tolkara-unsigned.ipa`, which names the upstream runtime
+# rather than what the user installs, and reads as a second product beside the
+# app. Every path that produces, verifies, documents or publishes it now says
+# `wolkaraforever-unsigned.ipa`. The bundle inside stays `TolkaraDiagnostics.app`,
+# because that is the target and the scheme.
+#
+# Applies to: AGENTS.md, README.md, docs/BUILDING.md, tools/package_ipa.sh,
+# .github/workflows/release.yml.
+# Upstream: candidate.
+
+diff --git a/AGENTS.md b/AGENTS.md
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -52,4 +52,4 @@
+ after entry, input automation and integrity workarounds still apply. See
+ `docs/SOFTWARE_MEMORY.md` for the tested scope and current limits.
+ 
+-The original executable is never modified: it is imported as hash-verified data and never patched or re-signed. Three execution modes exist and each user chooses one. **Developer service** never signs application code: the iPad's developer service prepares memory and detaches before any application code runs. **External JIT** (TolkaraDiagnostics only) never signs application code either: a JIT enabler (the user's sideloading tool, or one such as StikDebug) attaches at launch and prepares memory; the runtime asks it to detach and refuses guest entry while any debugger is attached or the arena is not executable. **Local signing** signs only a page container derived locally from the application's final code pages, with the user's own developer identity; containers and captures stay in ignored build output or on the user's device and are never committed. Otherwise sign only our runtime and helpers. Users build Tolkara themselves; docs present that first. As a secondary convenience for External JIT, a `v*` tag publishes the unsigned generic `Tolkara-unsigned.ipa` (`.github/workflows/release.yml`): only our own code, never application code, assets or signing material, and built with the same inputs a source build uses — including this Mac's public root certificates, which the game validates Battle.net's certificate against and refuses every login without. The same tag publishes `Tolkara-Management.dmg`, the Mac setup app: it carries only our own code and the tagged source (files git tracks or does not ignore), and builds Tolkara on the user's Mac with the user's own team, so it remains a self-build. It may be signed and notarized with the project's Developer ID from repository secrets; it never contains a user's signing material. It runs helper scripts only from built-in profiles; a profile a user adds is validated data and is never executed. An online game's profile carries a `setup.risk` notice that the user must accept before it is set up; keep each statement in it backed by a linked source. Runtime stubs for unresolved imports only where no build-time analysis covered them: in generic builds and for carried libraries' imports; in a build for one executable, that executable's unresolved imports fail. No application-memory inspection beyond loading and verifying the image, no automation or integrity-check workarounds. Keep credentials, signing teams, device identifiers and pairing records out of commits and logs. Never attach an external debugger after guest entry. Do not uninstall the app from a user's device without coordination.
++The original executable is never modified: it is imported as hash-verified data and never patched or re-signed. Three execution modes exist and each user chooses one. **Developer service** never signs application code: the iPad's developer service prepares memory and detaches before any application code runs. **External JIT** (TolkaraDiagnostics only) never signs application code either: a JIT enabler (the user's sideloading tool, or one such as StikDebug) attaches at launch and prepares memory; the runtime asks it to detach and refuses guest entry while any debugger is attached or the arena is not executable. **Local signing** signs only a page container derived locally from the application's final code pages, with the user's own developer identity; containers and captures stay in ignored build output or on the user's device and are never committed. Otherwise sign only our runtime and helpers. Users build Tolkara themselves; docs present that first. As a secondary convenience for External JIT, a `v*` tag publishes the unsigned generic `wolkaraforever-unsigned.ipa` (`.github/workflows/release.yml`): only our own code, never application code, assets or signing material, and built with the same inputs a source build uses — including this Mac's public root certificates, which the game validates Battle.net's certificate against and refuses every login without. The same tag publishes `Tolkara-Management.dmg`, the Mac setup app: it carries only our own code and the tagged source (files git tracks or does not ignore), and builds Tolkara on the user's Mac with the user's own team, so it remains a self-build. It may be signed and notarized with the project's Developer ID from repository secrets; it never contains a user's signing material. It runs helper scripts only from built-in profiles; a profile a user adds is validated data and is never executed. An online game's profile carries a `setup.risk` notice that the user must accept before it is set up; keep each statement in it backed by a linked source. Runtime stubs for unresolved imports only where no build-time analysis covered them: in generic builds and for carried libraries' imports; in a build for one executable, that executable's unresolved imports fail. No application-memory inspection beyond loading and verifying the image, no automation or integrity-check workarounds. Keep credentials, signing teams, device identifiers and pairing records out of commits and logs. Never attach an external debugger after guest entry. Do not uninstall the app from a user's device without coordination.
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -19,7 +19,7 @@
+ account. For External JIT you build it without a signing team
+ (`tools/package_ipa.sh`) and the tool you sideload it with signs it. As a convenience for External JIT only,
+ each [release](https://github.com/tolkara/tolkara/releases) also carries that
+-unsigned build, `Tolkara-unsigned.ipa`, made from the tagged source and holding
++unsigned build, `wolkaraforever-unsigned.ipa`, made from the tagged source and holding
+ only Tolkara's own code; it is not the main way to get Tolkara. Releases also
+ carry Tolkara Management, a Mac app that does the self-build for you: it
+ builds Tolkara on your Mac and signs it with your own account
+diff --git a/docs/BUILDING.md b/docs/BUILDING.md
+--- a/docs/BUILDING.md
++++ b/docs/BUILDING.md
+@@ -211,7 +211,7 @@
+ tools/package_ipa.sh
+ ```
+ 
+-It builds `Tolkara-unsigned.ipa`: the TolkaraDiagnostics target with no signing
++It builds `wolkaraforever-unsigned.ipa`: the TolkaraDiagnostics target with no signing
+ team (only an ad hoc signature that declares the two memory capabilities, so
+ your sideloading tool knows to request them), as a generic build (`NATIVE_GUEST_SHIMS=GENERIC`, one adapter per framework and no
+ `GUEST_EXE`), with External JIT preselected. As a convenience, each `v*`
+diff --git a/tools/package_ipa.sh b/tools/package_ipa.sh
+--- a/tools/package_ipa.sh
++++ b/tools/package_ipa.sh
+@@ -1,7 +1,7 @@
+ #!/bin/bash
+ # The unsigned .ipa a sideloader signs with your Apple ID (ad hoc signed with
+ # no team, only to declare the memory capabilities it should request).
+-# usage: tools/package_ipa.sh [output.ipa]        (default: Tolkara-unsigned.ipa)
++# usage: tools/package_ipa.sh [output.ipa]        (default: wolkaraforever-unsigned.ipa)
+ # Applications are added and started on the iPad in External JIT, preselected:
+ # the sideloading tool (SideStore or similar), or a JIT enabler such as
+ # StikDebug, enables JIT. For Developer service or Local signing with your own
+@@ -10,7 +10,7 @@
+ # the game needs to validate Battle.net: no login can succeed on such a build.
+ # Nothing in this repository's toolchain passes it; the default is YES.
+ set -euo pipefail
+-OUT=${1:-Tolkara-unsigned.ipa}
++OUT=${1:-wolkaraforever-unsigned.ipa}
+ case "$OUT" in /*) ;; *) OUT="$PWD/$OUT";; esac
+ cd "$(dirname "$0")/.."
+ export DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -22,7 +22,7 @@
+ 
+ env:
+   TAG: ${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}
+-  IPA: Tolkara-unsigned.ipa
++  IPA: wolkaraforever-unsigned.ipa
+   DMG: Tolkara-Management.dmg
+   MARKER: "<!-- generated by .github/workflows/release.yml -->"
+ 

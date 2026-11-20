@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-output=${1:-build/ipa/Tolkara-unsigned.ipa}
+output=${1:-build/ipa/wolkaraforever-unsigned.ipa}
 [ "$#" -le 1 ] || { echo "usage: wolkaraforever/tools/package_altstore_ipa.sh [output.ipa]" >&2; exit 2; }
 case "$output" in /*) ;; *) output="$PWD/$output";; esac
 
@@ -14,5 +14,7 @@ case "$output" in /*) ;; *) output="$PWD/$output";; esac
     exit 1
 }
 mkdir -p "$(dirname "$output")"
-TOLKARA_SYSTEM_ROOTS=NO wolkaraforever/tools/package_ipa.sh "$output"
+# The same build a source tree produces, down to the public root certificates: a package
+# without them is refused by verify_ipa.sh, because no login can succeed on it.
+wolkaraforever/tools/package_ipa.sh "$output"
 wolkaraforever/tools/verify_ipa.sh "$output"

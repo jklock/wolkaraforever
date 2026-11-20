@@ -96,8 +96,9 @@ wolkaraforever/tools/install.sh
 5. **Return to the launcher** — the app is relaunched plainly, so an install never leaves a
    development status screen up.
 
-A private device build may use this Mac's public trust roots. `install.sh` refuses
-`TOLKARA_SYSTEM_ROOTS=NO`; that switch belongs to the redistributable unsigned `.ipa`.
+Every build this toolchain produces carries this Mac's public trust roots, because the game
+validates Battle.net's certificate against them and refuses every login without them
+(`BLZ51900003`). `install.sh` and the `.ipa` packaging both refuse `TOLKARA_SYSTEM_ROOTS=NO`.
 
 Installing replaces the app under the same bundle ID and keeps its data, so updating is the same
 command again with the same `local.env`.
@@ -154,23 +155,27 @@ debugger, which must not stay attached to a game.
 ## Build the unsigned External JIT IPA
 
 ```sh
-wolkaraforever/tools/package_altstore_ipa.sh            # verify, then build/ipa/Tolkara-unsigned.ipa
+wolkaraforever/tools/package_altstore_ipa.sh            # verify, then build/ipa/wolkaraforever-unsigned.ipa
 wolkaraforever/tools/package_ipa.sh [output.ipa]        # the engine's own packaging script
 wolkaraforever/tools/verify_ipa.sh <ipa> [report]       # check one before it is sideloaded
 ```
 
 The `.ipa` is `TolkaraDiagnostics`, built generic (one adapter per translated framework, no
 particular application), unsigned, and with External JIT preselected. Only our own code goes in:
-no application code, no signing team, no provisioning profile, and no root certificates copied
-from this Mac (`TOLKARA_SYSTEM_ROOTS=NO`). Your sideloading tool — or a JIT enabler it installs —
-signs the app with your own Apple ID and provides the memory that External JIT needs.
+no application code, no signing team, no provisioning profile. It carries everything a source
+build carries, including this Mac's public root certificates: the game validates Battle.net's
+certificate against macOS's system roots, so a package without them cannot log in in any mode.
+`package_ipa.sh` refuses `TOLKARA_SYSTEM_ROOTS=NO` and `verify_ipa.sh` refuses a package with no
+root list, which is what keeps a sideloaded build and a build from your own Mac the same. Your
+sideloading tool — or a JIT enabler it installs — signs the app with your own Apple ID and
+provides the memory that External JIT needs.
 
 `package_altstore_ipa.sh` refuses a dirty source tree and verifies the result before reporting
 success. A maintainer can publish the same artifact for an existing tag with the manual
-**Experimental IPA** workflow; nothing is built or published on a tag push. `package_ipa.sh`
-writes its default output, and resolves any relative output path, from the repository root. For
-example, `build/ipa/Tolkara-unsigned.ipa` survives the next `prepare.sh` and is the same path a
-release workflow uploads.
+**Experimental IPA** workflow, which builds and verifies it the same way; nothing is built or
+published on a tag push. `package_ipa.sh` writes its default output, and resolves any relative
+output path, from the repository root. For example, `build/ipa/Tolkara-unsigned.ipa` survives
+the next `prepare.sh` and is the same path a release workflow uploads.
 
 ## Test devices
 
