@@ -127,12 +127,6 @@ static NSDictionary<NSString *, NSDictionary *> *TKWolkaraForeverConfigSchema(vo
             // controls would not accept.
             @"WolkaraForeverTouchLayoutV1": @{@"kind": @"arrangement"},
             @"WolkaraForeverProfilesV1": @{@"kind": @"arrangements"},
-            // Battery Saver. Four spellings and three timeouts; anything else is refused on
-            // import, which is the same answer the readers give a hand-edited value.
-            @"WolkaraForeverBatterySaverFrameLimitV1": @{@"kind": @"enum",
-                @"values": @[@"off", @"auto", @"30", @"60"]},
-            @"WolkaraForeverBatterySaverAFKMinutesV1": @{@"kind": @"enum",
-                @"values": @[@0, @2, @5, @10]},
         };
     });
     return schema;

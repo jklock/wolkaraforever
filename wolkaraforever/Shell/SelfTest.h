@@ -50,30 +50,6 @@ extern NSString *const AKSelfTestCurseForge;
 /// exact request the app uses, on device. This is the only check that proves words come back
 /// without a person speaking into the microphone.
 extern NSString *const AKSelfTestSpeechFile;
-/// The Controller Manager page, driven on the installed build: the switch's off default, that
-/// switching it writes WolkaraForever's own key and nothing else, what the page says while
-/// routing waits for a game session, and that switching it back undoes all of it. It presses
-/// no pad and touches no game file; the routing itself still needs a controller in a hand.
-extern NSString *const AKSelfTestControllerManager;
-/// The routing chain itself, on the device and with no hardware: a hidden GCVirtualController
-/// stands in for the physical pad, the manager attaches its real handlers to it, and a second
-/// hidden one stands in for the pad the manager drives. A button, a trigger, a stick and the
-/// D-pad are driven on the first and read back off the second, including a reassignment and
-/// the release. What it cannot cover is a real pad's own hardware and iPadOS handing a reserved
-/// button to this app - those need a pad in a hand.
-extern NSString *const AKSelfTestControllerRouting;
-/// The three situations the feature is defined by, each asserted on its own:
-///   1. no physical controller        - the guest still has Tolkara's own gamepad, and nothing
-///                                      changes about it whether capture is on or off;
-///   2. physical controller, on       - the guest is offered the virtual gamepad and nothing
-///                                      else, and never the pad being read;
-///   3. physical controller, off      - the guest is offered the physical pad again, exactly as
-///                                      before this feature existed.
-extern NSString *const AKSelfTestControllerSituations;
-/// What a pass-through press costs: microseconds from the framework entering the handler to the
-/// adapter writing the value. The requirement is that this is what it is today, so it is a number
-/// rather than an opinion.
-extern NSString *const AKSelfTestControllerLatency;
 
 /// The Add-ons page, built and laid out on the device against a temporary directory. It
 /// proves the page's own controls exist and that nothing is drawn outside the list; it reads
@@ -102,11 +78,6 @@ extern NSString *const AKSelfTestControls;
 // so the verdict is the return value only for the checks that finish synchronously. Read the
 // line, not the return.
 void AKRunSelfTest(NSString *name);
-
-/// The same, with the launcher's home page in hand, for the checks that have to drive a control
-/// on it rather than a page of their own. A plain launch passes its home controller here; the
-/// device matrix, which only has a name, passes nil and those controls are reported as not run.
-void AKRunSelfTestInHomePage(NSString *name, id _Nullable home);
 
 // The name asked for on the command line, or nil. `--selftest=input` and `--selftest input`
 // are both accepted.

@@ -314,16 +314,6 @@ if [ "$device" = 1 ]; then
         # The parts of the device matrix a Mac can drive by itself. What needs a person is
         # listed inside the step's own output rather than left unsaid.
         run_step "the device matrix, so far as a script can go" wolkaraforever/tools/device_matrix.sh || failures=$((failures+1))
-        # The app driving its own Controller Manager code on the installed build: the page and
-        # the front-page card, and the routing chain with a hidden virtual controller standing
-        # in for a pad. Neither needs hardware; both say so in their own output.
-        run_step "the Controller Manager page and card, on the device" wolkaraforever/tools/pilot.sh selftest controller-manager || failures=$((failures+1))
-        run_step "the routing chain, on the device" wolkaraforever/tools/pilot.sh selftest controller-routing || failures=$((failures+1))
-        # The three situations the feature is defined by, named one at a time.
-        run_step "the three controller situations, on the device" wolkaraforever/tools/pilot.sh selftest controller-situations || failures=$((failures+1))
-        # What routing costs. The requirement is that a pass-through press is as fast as it was
-        # before this feature, so the added work is a measured number, not a claim.
-        run_step "what routing costs, on the device" wolkaraforever/tools/pilot.sh selftest controller-latency || failures=$((failures+1))
     else
         failures=$((failures+1))
         step_names+=("the app's own log, from the launch above")

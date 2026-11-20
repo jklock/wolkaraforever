@@ -15,7 +15,6 @@
 #import "../launcher/WoW/Client.h"
 #import "../launcher/WoW/DeviceProfile.h"
 #import "../launcher/WoW/ForeverUI.h"
-#import "../launcher/WoW/BatterySaverPolicy.h"
 #import "../launcher/WoW/Manifest.h"
 #import "../launcher/WoW/Updater.h"
 #import "../launcher/App/LaunchProgressView.h"
@@ -893,14 +892,6 @@ static void TestAddonHub(void) {
 @end
 static NSString *displayFixtureModel;
 static NSString *DisplayFixtureModel(id self, SEL selector) { (void)self; (void)selector; return displayFixtureModel; }
-// The launcher's first-run region comes from the device's own locale, and the simulator's
-// locale is whatever this Mac was configured with. Stand one in for the duration of the
-// check, the same way the model identifier is stood in for above, so the assertion says
-// what it means on any machine instead of agreeing with a hard-coded Europe.
-static NSString *defaultRegionLocale;
-static NSLocale *DefaultRegionLocale(id self, SEL selector) {
-    (void)self; (void)selector; return [NSLocale localeWithLocaleIdentifier:defaultRegionLocale];
-}
 static void TestPhoneDisplayDefaults(void) {
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     NSArray *keys=@[@"WolkaraForeverDeviceProfile",@"WolkaraForeverRenderProfile",@"WolkaraForeverBackingScale",@"WolkaraForeverPhoneDisplayV1"];
@@ -1041,45 +1032,6 @@ static void TestIPadM5RenderProfile(void) {
     // from a manager that never focuses its search field.
     [NSNotificationCenter.defaultCenter addObserverForName:UIKeyboardDidShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { (void)note; keyboardShown=YES; }];
     fixture=[TKFixtureLibrary new];
-    // --- The region a first run starts in, before the user has chosen one
-    // Every device used to start in Europe, and the first install writes that region into
-    // the client's own settings once and never rewrites it - so an account outside Europe
-    // sat at "Connecting" for ever with nothing on screen saying why (issue #16). The
-    // default follows the device now; a region the user chose is never replaced.
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_US"]) isEqual:@"us"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_CA"]) isEqual:@"us"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"pt_BR"]) isEqual:@"us"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_AU"]) isEqual:@"us"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"ko_KR"]) isEqual:@"kr"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"zh_TW"]) isEqual:@"tw"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"zh_HK"]) isEqual:@"tw"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"de_DE"]) isEqual:@"eu"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en_GB"]) isEqual:@"eu"]);
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"ja_JP"]) isEqual:@"eu"]);
-    // A locale with no country at all is the old value rather than a guess.
-    assert([TKWoWDefaultRegion([NSLocale localeWithLocaleIdentifier:@"en"]) isEqual:@"eu"]);
-    assert([TKWoWDefaultRegion(nil) isEqual:@"eu"]);
-    Method currentLocale=class_getClassMethod(NSLocale.class,@selector(currentLocale));
-    IMP originalLocale=method_setImplementation(currentLocale,(IMP)DefaultRegionLocale);
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WoWRegion"];
-    for (NSArray *pair in @[@[@"en_US",@"us"],@[@"ko_KR",@"kr"],@[@"zh_TW",@"tw"],@[@"de_DE",@"eu"]]) {
-        defaultRegionLocale=pair[0];
-        TKDisplayFixtureController *firstRun=[[TKDisplayFixtureController alloc] initWithLibrary:(id)fixture];
-        assert([[firstRun valueForKey:@"region"] isEqual:pair[1]]);
-    }
-    // A region the user did choose is kept, including one the default would not have picked.
-    [NSUserDefaults.standardUserDefaults setObject:@"kr" forKey:@"WoWRegion"];
-    defaultRegionLocale=@"en_US";
-    TKDisplayFixtureController *chosen=[[TKDisplayFixtureController alloc] initWithLibrary:(id)fixture];
-    assert([[chosen valueForKey:@"region"] isEqual:@"kr"]);
-    // A stored value the client cannot use falls back instead of reaching a request.
-    [NSUserDefaults.standardUserDefaults setObject:@"xx" forKey:@"WoWRegion"];
-    chosen=[[TKDisplayFixtureController alloc] initWithLibrary:(id)fixture];
-    assert([[chosen valueForKey:@"region"] isEqual:@"eu"]);
-    method_setImplementation(currentLocale,originalLocale);
-    // The rest of the run starts in Europe, so its region assertions mean what they say
-    // however this Mac is configured and whatever a previous run left behind.
-    [NSUserDefaults.standardUserDefaults setObject:@"eu" forKey:@"WoWRegion"];
     self.window=[[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.controller=[[TKWoWViewController alloc] initWithLibrary:(id)fixture];
     __weak TKWoWFixtureDelegate *weakSelf=self;
@@ -1850,12 +1802,9 @@ static void TestIPadM5RenderProfile(void) {
         @"wow.box.addons": @[@"wow.heading.addons", @"wow.addons.manage",
                              @"wow.addons.directory", @"wow.addons.backup", @"wow.addons.restore"],
         @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.touchpad"],
-        // The profile card: which device, which render scale, and Battery Saver. Nothing here
+        // The profile card: which device, which render scale, and the overlay. Nothing here
         // reads or writes the game's files, and there is no "restore defaults" row: the way
         // back is the Automatic choice in the device sheet, which is where the value lives.
-        // The performance overlay's switch is gone from this card: it is already controllable
-        // while the game runs, and a launcher that wrote the same preference was one owner too
-        // many.
         @"wow.box.profile": @[@"wow.heading.profile", @"wow.performance.deviceProfile",
                               @"wow.performance.renderProfile", @"wow.performance.audioAvoidHAL",
                               @"wow.performance.overlay"],
@@ -1904,10 +1853,7 @@ static void TestIPadM5RenderProfile(void) {
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.manage") configuration].title isEqual:@"Install Addons (Curse & Direct)"]);
     // Every edition reads with its prefix, and the region/locale row reads with both values.
     assert([[(UIButton *)Find(self.controller.view, @"wow.edition") configuration].title isEqual:@"Game Edition: Forever"]);
-    // The region is stored state, and the fixture may have left either one behind; what this
-    // check is about is the row reading both values with the game's locale name.
-    NSString *prefsTitle = [(UIButton *)Find(self.controller.view, @"wow.preferences") configuration].title;
-    assert([prefsTitle hasPrefix:@"Region / Locale: "] && [prefsTitle hasSuffix:@" English"]);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.preferences") configuration].title isEqual:@"Region / Locale: EU English"]);
     // Exactly one supporting line below Play, and no second one reserved for a startup note.
     assert(Find(self.controller.view, @"wow.updates") != nil);
     assert(Find(self.controller.view, @"wow.startup") == nil);
@@ -1928,30 +1874,26 @@ static void TestIPadM5RenderProfile(void) {
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.backup") configuration].title isEqual:@"Backup WoW UI Configuration"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.reset") configuration].title isEqual:@"Reset to Default Wow UI Configuration"]);
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.restore") configuration].title isEqual:@"Restore WoW UI Configuration"]);
-    // The one on/off setting is a switch with fixed words: the control says the
+    // The two on/off settings are switches with fixed words: the control says the
     // state, the label never changes.
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text] isEqual:@"Gamepad UI"]);
-    assert([self toggle:@"wow.performance.gamepad"] != nil);
-    // Battery Saver is a submenu row, not a switch: it owns two choices and both apply to the
-    // next launch, which a switch has no way to say. Both Off is what every installation
-    // starts with.
-    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: Off"]);
-    assert(Find(self.controller.view, @"wow.performance.overlay") == nil);
-    assert(Find(self.controller.view, @"wow.performance.overlay.label") == nil);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.performance.overlay.label") text] isEqual:@"Performance Overlay"]);
+    assert([self toggle:@"wow.performance.gamepad"] != nil && [self toggle:@"wow.performance.overlay"] != nil);
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.settingsFolder") configuration].title isEqual:@"Open Settings Folder"]);
     // --- enabled state on a ready, idle installation
     for (NSString *identifier in @[@"wow.performance.backup", @"wow.performance.reset",
                                    @"wow.performance.restore", @"wow.performance.settingsFolder",
-                                   @"wow.performance.batterySaver",
                                    @"wow.addons.manage", @"wow.voice", @"wow.touchpad",
                                    @"wow.permissions", @"wow.addons.macEver"])
         assert([self row:identifier].enabled);
     assert([self toggle:@"wow.performance.gamepad"].enabled);
+    assert([self toggle:@"wow.performance.overlay"].enabled);
     // A usable switch row reads in the same gold as the button rows, not in
     // white: the two styles used to disagree on the same page.
     assert(CGColorEqualToColor([(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") textColor].CGColor,
                                [(UIButton *)Find(self.controller.view, @"wow.performance.backup") configuration].baseForegroundColor.CGColor));
+    assert(CGColorEqualToColor([(UILabel *)Find(self.controller.view, @"wow.performance.overlay.label") textColor].CGColor,
+                               [(UIButton *)Find(self.controller.view, @"wow.performance.settingsFolder") configuration].baseForegroundColor.CGColor));
 
     // --- The recommendation row opens the Add-On Manager, and never installs silently.
     // The launch checks above leave a recoverable failure on the page; the Launcher Manager's
@@ -2090,78 +2032,19 @@ static void TestIPadM5RenderProfile(void) {
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Interface Mode: iPadOS"]);
 
-    // --- Battery Saver: a submenu with two choices, and both of them apply to the next launch.
-    // The row is not a switch because it holds two values, and a switch has no way to say
-    // "next time" - which is the whole contract.
-    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: Off"]);
-    [[self row:@"wow.performance.batterySaver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
-    UIAlertController *batterySaver = WaitForSheetTitled(self.controller, @"Battery Saver", 20.0);
-    assert(batterySaver != nil);
-    assert([batterySaver.message containsString:@"next time you start the game"]);
-    assert([[batterySaver.actions valueForKey:@"title"] isEqualToArray:(@[@"Frame limit: Off", @"AFK saver: Off", @"Cancel"])]);
-    // A picture for the guide only. This sheet is not a reviewed baseline: its translucent
-    // backdrop carries a frozen picture of the page behind it, and the page's wall clock is not
-    // the thing being checked here - the title, message and action list above are.
-    [self capture:@"battery-saver.png"];
-    UIAlertAction *frameLimitAction = batterySaver.actions[0];
-    [self dismissPresented];
-    RunAction(frameLimitAction);
-    batterySaver = WaitForSheetTitled(self.controller, @"Frame limit", 20.0);
-    assert(batterySaver != nil);
-    // What Automatic means, what reduces it, and when it takes effect, all in the sheet.
-    assert([batterySaver.message containsString:@"60 FPS on power"]);
-    assert([batterySaver.message containsString:@"30 FPS on battery"]);
-    assert([batterySaver.message containsString:@"Low Power Mode"]);
-    assert([batterySaver.message containsString:@"next time you start the game"]);
-    assert([[batterySaver.actions valueForKey:@"title"] isEqualToArray:(@[@"✓ Off", @"Automatic", @"30 FPS", @"60 FPS", @"Cancel"])]);
-    UIAlertAction *thirty = nil;
-    for (UIAlertAction *action in batterySaver.actions) if ([action.title isEqual:@"30 FPS"]) thirty = action;
-    assert(thirty != nil);
-    [self dismissPresented];
-    RunAction(thirty);
-    PumpUntil(^{ return (BOOL)([(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title != nil); }, 5.0);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: 30 FPS · Off"]);
-    // Stored, and not yet in force: nothing has been started, so the launch snapshot the guest
-    // would read is still Off. That is what makes a later change a next-launch change.
-    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverBatterySaverFrameLimitV1"]
-            isEqual:@"30"]);
-    assert(AKBatterySaverLaunchFrameLimit() == AKBatterySaverFrameLimitOff);
-    // ... and taking the snapshot - what the app does immediately before it starts a guest -
-    // is what puts the choice in force for the session.
-    AKBatterySaverCommitLaunchSnapshot();
-    assert(AKBatterySaverLaunchFrameLimit() == AKBatterySaverFrameLimit30);
-    // The AFK choice, from the same submenu.
-    [[self row:@"wow.performance.batterySaver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
-    batterySaver = WaitForSheetTitled(self.controller, @"Battery Saver", 20.0);
-    assert(batterySaver != nil);
-    assert([[batterySaver.actions valueForKey:@"title"] isEqualToArray:(@[@"Frame limit: 30 FPS", @"AFK saver: Off", @"Cancel"])]);
-    UIAlertAction *afkAction = batterySaver.actions[1];
-    [self dismissPresented];
-    RunAction(afkAction);
-    batterySaver = WaitForSheetTitled(self.controller, @"AFK saver", 20.0);
-    assert(batterySaver != nil);
-    assert([batterySaver.message containsString:@"10 FPS"]);
-    assert([batterySaver.message containsString:@"only wakes it"]);
-    assert([[batterySaver.actions valueForKey:@"title"] isEqualToArray:(@[@"✓ Off", @"2 minutes", @"5 minutes", @"10 minutes", @"Cancel"])]);
-    UIAlertAction *fiveMinutes = nil;
-    for (UIAlertAction *action in batterySaver.actions) if ([action.title isEqual:@"5 minutes"]) fiveMinutes = action;
-    assert(fiveMinutes != nil);
-    [self dismissPresented];
-    RunAction(fiveMinutes);
-    Pump(0.4);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: 30 FPS · 5 minutes"]);
-    assert([NSUserDefaults.standardUserDefaults integerForKey:@"WolkaraForeverBatterySaverAFKMinutesV1"] == 5);
-    // Back to Off for everything that follows: the baselines and the remaining steps are of a
-    // page nobody has opted into, which is also the default an installation starts with.
-    AKBatterySaverSetFrameLimit(AKBatterySaverFrameLimitOff);
-    AKBatterySaverSetAFKMinutes(0);
-    [self.controller render];
-    Pump(0.3);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: Off"]);
+    // --- the overlay switch writes the shared store, keeping the layout's own values
+    UISwitch *overlay = [self toggle:@"wow.performance.overlay"];
+    overlay.on = YES; [overlay sendActionsForControlEvents:UIControlEventValueChanged];
+    NSDictionary *layout = [NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverTouchLayoutV1"];
+    assert([layout[@"performanceOverlayEnabled"] boolValue]);
+    assert([layout[@"opacity"] doubleValue] == 0.4 && [layout[@"rearScale"] doubleValue] == 1.2);
+    NSArray *menuPoint = layout[@"positions"][@"menu"];
+    assert(fabs([menuPoint[1] doubleValue] - 0.2) < 0.001);
+    assert(overlay.on && [[(UILabel *)Find(self.controller.view, @"wow.performance.overlay.label") text] isEqual:@"Performance Overlay"]);
+    overlay.on = NO; [overlay sendActionsForControlEvents:UIControlEventValueChanged];
+    assert(![[NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverTouchLayoutV1"][@"performanceOverlayEnabled"] boolValue]);
+    assert(!overlay.on && [[(UILabel *)Find(self.controller.view, @"wow.performance.overlay.label") text] isEqual:@"Performance Overlay"]);
+    overlay.on = YES; [overlay sendActionsForControlEvents:UIControlEventValueChanged];
 
     // --- Open Settings Folder opens Forever's WTF folder and changes nothing
     __block NSURL *folder = nil;
@@ -2636,10 +2519,6 @@ static int backupsBeforePerformance;
     // A product name stays itself in both languages.
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text]
         isEqual:@"Gamepad-Oberfläche"]);
-    // Battery Saver's row, its summary and its "Off" - the three words a German page needs for
-    // a setting that has never been touched.
-    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Akku-Sparmodus: Aus"]);
     // Section headings, which were made before this language existed.
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"SPIELVERWALTUNG"]);
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.profile") text] isEqual:@"LEISTUNGSVERWALTUNG"]);
@@ -3012,21 +2891,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
         (@[@"Verify and repair game files", @"Diagnostics and logs",
-           @"Turn on input diagnostics", @"Use controller touchpad as mouse",
-           @"About and open-source licenses", @"Cancel"])]);
-    // The controller touchpad as the pointer: off until chosen, and the speed only once it is on.
-    assert(!AKControllerTouchpadRelay.shared.enabled);
-    UIAlertAction *touchpadAction = nil;
-    for (UIAlertAction *action in settings.actions)
-        if ([action.title isEqual:@"Use controller touchpad as mouse"]) touchpadAction = action;
-    RunAction(touchpadAction);
-    assert(AKControllerTouchpadRelay.shared.enabled);
-    UIAlertController *touchpadSettings = [self.controller settingsSheet];
-    NSArray *touchpadTitles = [touchpadSettings.actions valueForKey:@"title"];
-    assert([touchpadTitles containsObject:@"Stop using controller touchpad as mouse"]);
-    assert([touchpadTitles containsObject:@"Controller touchpad speed: Normal"]);
-    AKControllerTouchpadRelay.shared.enabled = NO;
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:AKControllerTouchpadPointerDefaultsKey];
+           @"Turn on input diagnostics", @"About and open-source licenses", @"Cancel"])]);
     assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
     __block NSInteger diagnostics = 0;
@@ -3054,10 +2919,6 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.controller.navigationController popToRootViewControllerAnimated:NO];
     assert(self.controller.navigationController.topViewController == self.controller);
 
-    // The Controller Manager page, on its own: placement, the off default, persistence,
-    // the learn/cancel flow at page level, the app language, and no game file touched.
-    [self checkControllerManagerPage];
-
     // --- and no control on the page is dead: every one has a target and an action
     for (NSString *identifier in @[@"wow.edition", @"wow.preferences", @"wow.language",
                                    @"wow.addons.manage", @"wow.addons.directory",
@@ -3069,15 +2930,14 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
                                    @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
                                    @"wow.performance.backup",
                                    @"wow.performance.reset", @"wow.performance.restore",
-                                   @"wow.performance.settingsFolder", @"wow.primary", @"wow.diagnostics",
-                                   @"wow.controllerManager.open"])
+                                   @"wow.performance.settingsFolder", @"wow.primary", @"wow.diagnostics"])
         assert([[self row:identifier] allTargets].count > 0);
-    assert([self toggle:@"wow.performance.gamepad"].allTargets.count > 0);
-    assert([[self row:@"wow.performance.batterySaver"] allTargets].count > 0);
+    for (NSString *identifier in @[@"wow.performance.gamepad", @"wow.performance.overlay"])
+        assert([self toggle:identifier].allTargets.count > 0);
     for (UIBarButtonItem *item in @[gear, refresh])
         assert(item.target != nil && item.action != NULL);
 
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and the recommendation row; the Launcher Manager card (Automatic, iPadOS and iOS on Duo, each resolved from the stored choice, persisted, and no package moved by a switch) and the bundled-package page it opens; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the Battery Saver submenu - both choices, what Automatic means, that neither is in force until the launch snapshot is taken, and that the removed launcher overlay switch is gone; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows, the gamepad switch and the Battery Saver submenu, the primary button, the Diagnostics button, and both navigation items.");
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and the recommendation row; the Launcher Manager card (Automatic, iPadOS and iOS on Duo, each resolved from the stored choice, persisted, and no package moved by a switch) and the bundled-package page it opens; backup, confirmed reset, gamepad config, folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages, all nine Performance rows and both switches, the primary button, the Diagnostics button, and both navigation items.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.
@@ -3099,119 +2959,6 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     }
 }
 
-#pragma mark - The Controller Manager page
-
-// The page is launcher-only in this version, so what it has to prove here is that it opens,
-// that it says what it is doing, that the switch persists to WolkaraForever's own defaults,
-// that the learn flow can be armed and cancelled, that it follows the app language, and that
-// none of it writes a game file. The routing itself is proven by test_controller_manager.sh.
-- (void)checkControllerManagerPage {
-    UIButton *row = [self row:@"wow.controllerManager.open"];
-    assert(row != nil && row.enabled);
-    NSString *configBefore = [self configText];
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    [defaults removeObjectForKey:@"WolkaraForeverControllerRouting"];
-    // The simulator reports a controller of its own, so the fixture says what is connected
-    // instead of depending on it: this check is about the page, not about the machine.
-    AKControllerManager *manager = AKControllerManager.shared;
-    manager.controllersProvider = ^NSArray<GCController *> *{ return @[]; };
-    // The guest façade is a dylib this fixture does not load, so it is announced here; the
-    // interlock itself is proven by test_controller_manager.sh, which refuses without it.
-    [manager noteGuestFacadePresent];
-    manager.enabled = NO;
-
-    // The sixth card, on the front page: its own section, with the switch, what routing is
-    // doing now, and the way into the mappings. Re-rendered here because the page is the next
-    // thing checked and the card must not be left in a stale state.
-    [self.controller render];
-    UISwitch *cardSwitch = [self toggle:@"wow.controllerManager.routing"];
-    assert(cardSwitch != nil && !cardSwitch.on);
-    assert([[(UILabel *)Find(self.controller.view, @"wow.controllerManager.routing.label") text]
-            isEqual:WKLocalized(@"home.controllerManager.routing")]);
-    assert([[(UILabel *)Find(self.controller.view, @"wow.controllerManager.status") text]
-            isEqual:WKLocalized(@"controller.status.disabled")]);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.controllerManager.open")
-             titleForState:UIControlStateNormal] isEqual:WKLocalized(@"home.controllerManager.open")]);
-    // The card's switch is the same setting, not a second one: it writes the manager, the
-    // manager's key, and the card's own status sentence follows.
-    cardSwitch.on = YES;
-    [cardSwitch sendActionsForControlEvents:UIControlEventValueChanged];
-    Pump(0.2);
-    assert([defaults boolForKey:@"WolkaraForeverControllerRouting"] && manager.enabled);
-    // This fixture announced the façade, so the manager is past "waiting for the session" and
-    // the card says there is no controller connected. The "starts when the game starts"
-    // wording is the state where the build carries the adapter but the session has not loaded
-    // it, which is what the device self-test asserts on the installed build.
-    assert([[(UILabel *)Find(self.controller.view, @"wow.controllerManager.status") text]
-            isEqual:WKLocalized(@"controller.status.nocontroller")]);
-    cardSwitch.on = NO;
-    [cardSwitch sendActionsForControlEvents:UIControlEventValueChanged];
-    Pump(0.2);
-    assert(![defaults boolForKey:@"WolkaraForeverControllerRouting"] && !manager.enabled);
-
-    TKWoWControllerManagerViewController *page = [TKWoWControllerManagerViewController new];
-    [page loadViewIfNeeded];
-    [page.view layoutIfNeeded];
-
-    UISwitch *routing = (id)Find(page.view, @"controllerManager.enabled");
-    assert(routing != nil && !routing.on);           // off until the user asks
-    UILabel *status = (id)Find(page.view, @"controllerManager.status");
-    assert([status.text isEqual:WKLocalized(@"controller.status.disabled")]);
-    assert(Find(page.view, @"controllerManager.disclosure") != nil);
-    NSLog(@"CONTROLLER_MANAGER_MODELS: %lu", (unsigned long)AKControllerManager.shared.models.count);
-    assert(![(UIControl *)Find(page.view, @"controllerManager.learn") isEnabled]);   // no controller connected
-    assert(![(UIControl *)Find(page.view, @"controllerManager.reset") isEnabled]);
-    assert(Find(page.view, @"controllerManager.binding.0") == nil);
-
-    // Persistence: the switch writes this app's own key and nothing else.
-    routing.on = YES;
-    [routing sendActionsForControlEvents:UIControlEventValueChanged];
-    Pump(0.2);
-    assert([defaults boolForKey:@"WolkaraForeverControllerRouting"]);
-    assert(AKControllerManager.shared.enabled);
-    assert([status.text isEqual:WKLocalized(@"controller.status.nocontroller")]);
-    routing.on = NO;
-    [routing sendActionsForControlEvents:UIControlEventValueChanged];
-    Pump(0.2);
-    assert(![defaults boolForKey:@"WolkaraForeverControllerRouting"]);
-    assert(!AKControllerManager.shared.enabled);
-
-    // Learn and cancel at page level: arming shows the hint and the way out, cancelling
-    // leaves nothing armed, which is what stops a later press rewriting a profile.
-    [AKControllerManager.shared beginLearningForIdentity:@"fixture.controller"];
-    Pump(0.2);
-    assert(![(UIControl *)Find(page.view, @"controllerManager.cancel") isHidden]);
-    assert(![(UIControl *)Find(page.view, @"controllerManager.hint") isHidden]);
-    [(UIControl *)Find(page.view, @"controllerManager.cancel") sendActionsForControlEvents:UIControlEventTouchUpInside];
-    Pump(0.2);
-    assert(!AKControllerManager.shared.learning);
-    assert([(UIControl *)Find(page.view, @"controllerManager.cancel") isHidden]);
-    assert([(UIControl *)Find(page.view, @"controllerManager.hint") isHidden]);
-
-    // The app language, without reopening the page.
-    WKAppLanguage previous = WKLocalization.shared.language;
-    WKLocalization.shared.language = WKAppLanguageGerman;
-    Pump(0.2);
-    assert([page.title isEqual:@"Controller-Verwaltung"]);
-    assert([[(UILabel *)Find(page.view, @"controllerManager.enabled.label") text]
-            isEqual:@"Physische Controller über den virtuellen Controller leiten"]);
-    WKLocalization.shared.language = previous;
-    Pump(0.2);
-    assert([page.title isEqual:@"Controller Manager"]);
-
-    // Leaving the page disarms the mapper and adopts nothing.
-    [page viewWillDisappear:NO];
-    assert(!AKControllerManager.shared.learning);
-
-    // Not one byte of the game's configuration, and no GamePadConfig file.
-    assert([[self configText] isEqual:configBefore]);
-    assert(![[NSFileManager.defaultManager contentsOfDirectoryAtPath:
-              [fixture.directory stringByAppendingPathComponent:@"WTF"] error:NULL]
-             filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF CONTAINS 'GamePadConfig'"]].count);
-    manager.controllersProvider = nil;
-    NSLog(@"CONTROLLER_MANAGER_PAGE: placement, off default, persistence, learn/cancel, German, no game-file write");
-}
-
 - (void)checkLaunch {
     assert(self.launches==1); self.controller.sessionUsed=YES;
     [self.controller beginStartup];
@@ -3222,8 +2969,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // handler rechecks the same guard.
     for (NSString *identifier in @[@"wow.performance.backup", @"wow.performance.reset",
                                    @"wow.performance.restore", @"wow.performance.settingsFolder",
-                                   @"wow.performance.deviceProfile", @"wow.performance.renderProfile",
-                                   @"wow.performance.batterySaver"])
+                                   @"wow.performance.deviceProfile", @"wow.performance.renderProfile"])
         assert(![self row:identifier].enabled);
     // All text is grey while starting, including the two navigation rows that
     // used to stay gold.
@@ -3236,6 +2982,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     // keeping the white they use when they are usable.
     assert(CGColorEqualToColor([(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") textColor].CGColor,
                                [(UIButton *)Find(self.controller.view, @"wow.addons.macEver") configuration].baseForegroundColor.CGColor));
+    assert(CGColorEqualToColor([(UILabel *)Find(self.controller.view, @"wow.performance.overlay.label") textColor].CGColor,
+                               [(UIButton *)Find(self.controller.view, @"wow.permissions") configuration].baseForegroundColor.CGColor));
     assert(self.controller.navigationController.viewControllers.count==1);
     unsigned before=atomic_load(&requests);
     [self.controller refresh];

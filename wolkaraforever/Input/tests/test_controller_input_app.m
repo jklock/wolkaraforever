@@ -29,7 +29,6 @@
 #import "../launcher/Input/Trigger.h"
 #import "../launcher/Voice/VoiceSettings.h"
 #import "../launcher/Controller/ControllerInspector.h"
-#import "../launcher/WoW/BatterySaverPolicy.h"
 
 #import "../launcher/App/WolkaraForeverLog.h"
 
@@ -415,74 +414,6 @@ static void TestNoRoute(void) {
     InstallSink();
 }
 
-// Battery Saver's AFK dim, from the controller side: a controller button is the one input the
-// AppKit host cannot see, so the rule that "the first action after the dim only wakes" is applied
-// where the app's controller path converges - the router's own entry point. The dim state is the
-// host's and arrives as its notification, which is how the app learns it on a device.
-static void TestBatterySaverWake(void) {
-    Reset();
-    AKVoiceSettings *settings = AKVoiceSettings.shared;
-    settings.enabled = YES;
-    [settings setLearnedElement:@"controller.button.share" forDevice:AKTestDevice];
-    __block NSInteger triggers = 0;
-    AKInputRouter.shared.onTriggerBegan = ^(AKTrigger *trigger, AKInputEvent *event) {
-        (void)trigger; (void)event; triggers++;
-    };
-    __block NSInteger activities = 0;
-    id observer = [NSNotificationCenter.defaultCenter addObserverForName:AKBatterySaverActivityNotification
-                                                                object:nil queue:nil usingBlock:^(NSNotification *note) {
-        (void)note; activities++;
-    }];
-    void (^press)(BOOL) = ^(BOOL down) {
-        [AKInputRouter.shared reportElement:@"controller.button.share" value:(down ? 1 : 0)
-                                    pressed:down device:AKTestDevice source:AKInputSourceController];
-    };
-
-    // Nothing dimmed: a controller action is a command, exactly as before this feature existed.
-    press(YES);
-    Pump(0.1);
-    press(NO);
-    Pump(0.1);
-    CHECK(triggers == 1, @"with nothing dimmed, a controller press reaches its trigger as before, got %ld",
-          (long)triggers);
-    CHECK(activities > 0, @"and reports activity to the AFK coordinator");
-
-    // Dimmed: the first press only wakes. It fires nothing, and the next press is the game's.
-    [NSNotificationCenter.defaultCenter postNotificationName:AKBatterySaverDimDidChangeNotification
-                                                      object:nil
-                                                    userInfo:@{AKBatterySaverDimmedKey: @YES}];
-    NSInteger before = triggers;
-    press(YES);
-    Pump(0.1);
-    CHECK(triggers == before, @"the first controller action after the dim wakes and fires nothing, got %ld",
-          (long)triggers);
-    press(NO);
-    Pump(0.1);
-    press(YES);
-    Pump(0.1);
-    CHECK(triggers == before + 1, @"the next controller action is delivered, got %ld", (long)triggers);
-
-    // Waking is not a state that needs undoing: once the host says the session is awake, the very
-    // next press is the game's again.
-    [NSNotificationCenter.defaultCenter postNotificationName:AKBatterySaverDimDidChangeNotification
-                                                      object:nil
-                                                    userInfo:@{AKBatterySaverDimmedKey: @NO}];
-    press(NO);
-    Pump(0.1);
-    before = triggers;
-    press(YES);
-    Pump(0.1);
-    CHECK(triggers == before + 1, @"awake again, the next press is delivered, got %ld", (long)triggers);
-    press(NO);
-    Pump(0.1);
-
-    AKInputRouter.shared.onTriggerBegan = nil;
-    [NSNotificationCenter.defaultCenter removeObserver:observer];
-    [settings clearMappingForDevice:AKTestDevice];
-    settings.enabled = NO;
-    InstallSink();
-}
-
 // Counters are per run. Resetting must also forget the held state, or one case's press would make
 // the next case's press look like a repeat.
 static void TestCountersReset(void) {
@@ -712,7 +643,6 @@ static void TestTraceEvents(void) {
     TestLatencies();
     TestTraceEvents();
     TestTouchpadPointer();
-    TestBatterySaverWake();
 
     if (failures == 0) {
         printf("CONTROLLER-INPUT PASS: %lu checks\n", (unsigned long)checks);

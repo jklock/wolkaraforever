@@ -30,7 +30,7 @@ xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-a
     launcher/WoW/*.m launcher/App/LaunchProgressView.m launcher/App/WolkaraForeverTheme.m \
     launcher/App/WolkaraForeverLog.m launcher/App/WKLocalization.m launcher/App/WolkaraForeverConfig.m \
     launcher/Voice/*.m launcher/Input/*.m \
-    launcher/Controller/*.m tests/test_wow_launcher_app.m \
+    launcher/Controller/ControllerInspector.m tests/test_wow_launcher_app.m \
     -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics \
     -framework Security -framework UniformTypeIdentifiers -framework GameController \
     -framework AVFAudio -framework Speech -framework WebKit -lz \
@@ -201,12 +201,6 @@ fi
 # The images the fixture drew are in its container, which is where anyone wanting to
 # look at the launcher's pages has to go looking.
 screenshots="$(xcrun simctl get_app_container "$SIM_ID" org.tolkara.tests.wow-launcher data)/Documents"
-# The launcher fixture draws the Battery Saver submenu too, but a sheet's translucent backdrop
-# carries a frozen picture of the page behind it - including the version line's wall clock, which
-# the fixture pins only for the page itself. Compared across two identical iPhone runs the same
-# message region differed by 11/255, so that sheet is asserted by its title, message and action
-# list rather than by a baseline, and its capture in the fixture's Documents is a picture for the
-# guide, not a reviewed layout.
 states=(wow-home.png wow-home-large-text.png addons-popup.png voice-settings.png voice-test.png
         wow-home-de.png wow-addons-de.png wow-voice-de.png wow-voice-test-de.png
         wow-home-de-large-text.png wow-starting.png wow-running.png wow-startup-failed.png

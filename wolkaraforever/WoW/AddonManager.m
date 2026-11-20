@@ -352,40 +352,33 @@ static UIImage *TKAddonPlaceholderIcon(void) {
     // pressed again; an installed row says it is installed; an author who does not allow API
     // downloads gets an action that explains rather than a button that would 403.
     _installButton.hidden=NO;
-    NSString *actionTitle=WKLocalized(@"addons.action.install");
-    BOOL actionEnabled=YES;
     switch (state) {
         case TKAddonInstallStateBusy:
-            actionTitle=WKLocalized(@"addons.action.installing");
-            actionEnabled=NO;
+            [_installButton setTitle:WKLocalized(@"addons.action.installing") forState:UIControlStateNormal];
+            _installButton.enabled=NO;
             break;
         case TKAddonInstallStateInstalled:
-            actionTitle=WKLocalized(@"addons.action.installed");
-            actionEnabled=NO;
+            [_installButton setTitle:WKLocalized(@"addons.action.installed") forState:UIControlStateNormal];
+            _installButton.enabled=NO;
             break;
         case TKAddonInstallStateBrowser:
             [_installButton setTitle:WKLocalized(@"addons.action.open") forState:UIControlStateNormal];
             _installButton.enabled=YES;
             break;
         case TKAddonInstallStateUnavailable:
-            actionTitle=WKLocalized(@"addons.action.unavailable");
-            actionEnabled=NO;
+            [_installButton setTitle:WKLocalized(@"addons.action.unavailable") forState:UIControlStateNormal];
+            _installButton.enabled=NO;
             break;
         case TKAddonInstallStateFailed:
-            actionTitle=WKLocalized(@"addons.action.retry");
-            actionEnabled=YES;
+            [_installButton setTitle:WKLocalized(@"addons.action.retry") forState:UIControlStateNormal];
+            _installButton.enabled=YES;
             break;
         case TKAddonInstallStateIdle:
         default:
-            actionTitle=WKLocalized(@"addons.action.install");
-            actionEnabled=YES;
+            [_installButton setTitle:WKLocalized(@"addons.action.install") forState:UIControlStateNormal];
+            _installButton.enabled=YES;
             break;
     }
-    // The word is set for the disabled state as well: three of these five states disable the
-    // button, and a button carrying only a Normal title shows nothing once it is disabled.
-    [_installButton setTitle:actionTitle forState:UIControlStateNormal];
-    [_installButton setTitle:actionTitle forState:UIControlStateDisabled];
-    _installButton.enabled=actionEnabled;
     NSNumber *identifier=[project[@"id"] isKindOfClass:NSNumber.class]?project[@"id"]:nil;
     _installButton.accessibilityIdentifier=identifier
         ? [NSString stringWithFormat:@"wow.addons.project.%@.install", identifier]
@@ -1185,6 +1178,9 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     // label a person reads, never a raw version id.
     NSString *filterValue = _categoryLabel ?: (_gameVersion.length ? WKLocalizedFormat(@"addons.filters.forever", _gameVersion) : nil);
     [_filterButton setTitle:filterValue?WKLocalizedFormat(@"addons.filters.active",filterValue):WKLocalized(@"addons.filters") forState:UIControlStateNormal];
+    _sortButton.menu=[self sortMenu];
+    _filterButton.menu=[self filterMenu];
+    _columnsButton.menu=[self columnsMenu];
     BOOL ready=[self hasKey] && !_refreshing;
     _sortButton.enabled=ready; _filterButton.enabled=ready; _columnsButton.enabled=ready;
 }
@@ -2499,7 +2495,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             // Without a key there is one row to read and one thing to do; the sort and filter
             // controls would be two more copies of the same sentence, so they wait for a key.
             return @[
-                @{ @"kind": @"browseControls", @"rows": [self hasKey] ? @[ @0, @1, @2, @3 ] : @[ @0 ] },
+                @{ @"kind": @"browseControls", @"rows": [self hasKey] ? @[ @0, @1 ] : @[ @0 ] },
                 @{ @"kind": @"browseResults", @"rows": _results },
             ];
         case TKAddonHubTabMyAddOns:
@@ -2571,9 +2567,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
         }
         else if (indexPath.row==0) { cell.textLabel.text=WKLocalizedFormat(@"addons.sort.current",BrowseSortLabel(_sortField)); cell.detailTextLabel.text=WKLocalizedFormat(@"addons.sort.tapToChange",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")); }
-        else if (indexPath.row==1) { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
-        else if (indexPath.row==2) { cell.textLabel.text=WKLocalized(@"addons.key.change"); cell.detailTextLabel.text=WKLocalized(@"addons.key.change.detail"); cell.accessibilityIdentifier=@"wow.addons.changeKey"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; }
-        else { cell.textLabel.text=WKLocalized(@"addons.key.remove"); cell.detailTextLabel.text=WKLocalized(@"addons.key.remove.detail"); cell.accessibilityIdentifier=@"wow.addons.removeKey"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; }
+        else { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
     } else if ([kind isEqual:@"browseResults"] || [kind isEqual:@"discover"]) {
         NSArray<NSDictionary *> *projects=[kind isEqual:@"discover"] ? entry[@"rows"] : _results;
         if ([kind isEqual:@"browseResults"] && indexPath.row==(NSInteger)_results.count) {
@@ -2718,8 +2712,6 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         if ([kind isEqual:@"browseControls"] && self.tab==TKAddonHubTabBrowse) {
             if (indexPath.row==0) [self presentSortMenuFrom:indexPath];
             else if (indexPath.row==1) [self chooseCategoryFrom:indexPath];
-            else if (indexPath.row==2) [self setupKey];
-            else if (indexPath.row==3) [self confirmRemoveKey];
         }
         return;
     }

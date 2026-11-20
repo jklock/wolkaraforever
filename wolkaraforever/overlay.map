@@ -72,8 +72,6 @@ wolkaraforever/WoW/CASC.h launcher/WoW/CASC.h add
 wolkaraforever/WoW/CASC.m launcher/WoW/CASC.m add
 wolkaraforever/WoW/Client.h launcher/WoW/Client.h add
 wolkaraforever/WoW/Client.m launcher/WoW/Client.m add
-wolkaraforever/WoW/ControllerManagerViewController.h launcher/WoW/ControllerManagerViewController.h add
-wolkaraforever/WoW/ControllerManagerViewController.m launcher/WoW/ControllerManagerViewController.m add
 wolkaraforever/WoW/CurseForgeClient.h launcher/WoW/CurseForgeClient.h add
 wolkaraforever/WoW/CurseForgeClient.m launcher/WoW/CurseForgeClient.m add
 wolkaraforever/WoW/DeviceProfile.h launcher/WoW/DeviceProfile.h add
@@ -156,8 +154,6 @@ wolkaraforever/Touch/AKHostLocalization.m translation/AppKit/AKHostLocalization.
 wolkaraforever/Touch/AKPerformanceOverlay.h translation/AppKit/AKPerformanceOverlay.h add
 wolkaraforever/Touch/AKPerformanceOverlay.m translation/AppKit/AKPerformanceOverlay.m add
 wolkaraforever/Touch/AKTouchEventPump.h translation/AppKit/AKTouchEventPump.h add
-wolkaraforever/Touch/BatterySaverIdle.h translation/AppKit/BatterySaverIdle.h add
-wolkaraforever/Touch/BatterySaverIdle.m translation/AppKit/BatterySaverIdle.m add
 wolkaraforever/Touch/ControllerPointer.h translation/AppKit/ControllerPointer.h add
 wolkaraforever/Touch/ControllerPointer.m translation/AppKit/ControllerPointer.m add
 wolkaraforever/Touch/Fonts.h translation/AppKit/Fonts.h add
@@ -182,7 +178,6 @@ wolkaraforever/Touch/TouchGamepadLayout.h translation/AppKit/TouchGamepadLayout.
 wolkaraforever/Touch/TouchGamepadLayout.m translation/AppKit/TouchGamepadLayout.m add
 wolkaraforever/Touch/TouchHaptics.h translation/AppKit/TouchHaptics.h add
 wolkaraforever/Touch/TouchHaptics.m translation/AppKit/TouchHaptics.m add
-wolkaraforever/Touch/tests/test_battery_saver_idle_app.m tests/test_battery_saver_idle_app.m add
 wolkaraforever/Touch/tests/test_touch_controls_app.m tests/test_touch_controls_app.m replace
 wolkaraforever/Touch/tests/test_touch_gamepad_app.m tests/test_touch_gamepad_app.m add
 #
@@ -201,36 +196,21 @@ wolkaraforever/AppKit/tests/test_appkit_content_view.m tests/test_appkit_content
 wolkaraforever/Bridge/AuthorizationBlockedState.h authorization/App/AuthorizationBlockedState.h add
 wolkaraforever/Bridge/AuthorizationBlockedState.m authorization/App/AuthorizationBlockedState.m add
 wolkaraforever/Bridge/BackgroundPacing.m translation/Metal/BackgroundPacing.m add
-wolkaraforever/Bridge/BatterySaverPolicy.h translation/Metal/BatterySaverPolicy.h add
-wolkaraforever/Bridge/BatterySaverPolicy.h translation/AppKit/BatterySaverPolicy.h add
-wolkaraforever/Bridge/BatterySaverPolicy.h launcher/WoW/BatterySaverPolicy.h add
-wolkaraforever/Bridge/BatterySaverPolicy.m translation/Metal/BatterySaverPolicy.m add
-wolkaraforever/Bridge/BatterySaverPolicy.m translation/AppKit/BatterySaverPolicy.m add
-wolkaraforever/Bridge/BatterySaverPolicy.m launcher/WoW/BatterySaverPolicy.m add
 wolkaraforever/Bridge/DisplayRate.m translation/Metal/DisplayRate.m add
 wolkaraforever/Bridge/EnrollmentReference.swift authorization/Storage/EnrollmentReference.swift add
-# not overlaid yet (source of a pending patch): wolkaraforever/Bridge/GameControllerFacade.m
 wolkaraforever/Bridge/LocalServiceRetry.h authorization/App/LocalServiceRetry.h add
 wolkaraforever/Bridge/LocalServiceRetry.m authorization/App/LocalServiceRetry.m add
 wolkaraforever/Bridge/tests/test_authorization_blocked_state.m tests/test_authorization_blocked_state.m add
-wolkaraforever/Bridge/tests/test_battery_saver_policy.m tests/test_battery_saver_policy.m add
 wolkaraforever/Bridge/tests/test_enrollment_reference.swift tests/test_enrollment_reference.swift add
 wolkaraforever/Bridge/tests/test_local_service_retry.m tests/test_local_service_retry.m add
-wolkaraforever/Bridge/tests/test_metal_pacing.m tests/test_metal_pacing.m add
 wolkaraforever/Bridge/tests/test_packet_service_blocked.swift tests/test_packet_service_blocked.swift add
 wolkaraforever/Bridge/tests/test_packet_service_retry.swift tests/test_packet_service_retry.swift add
 #
-# Controller: what the pad reports, every change to it, and the manager that owns it
+# Controller: what the pad reports, and every change to it (diagnostic)
 wolkaraforever/Controller/ControllerInspector.h launcher/Controller/ControllerInspector.h add
 wolkaraforever/Controller/ControllerInspector.m launcher/Controller/ControllerInspector.m add
-wolkaraforever/Controller/ControllerManager.h launcher/Controller/ControllerManager.h add
-wolkaraforever/Controller/ControllerManager.m launcher/Controller/ControllerManager.m add
-wolkaraforever/Controller/ControllerProfile.h launcher/Controller/ControllerProfile.h add
-wolkaraforever/Controller/ControllerProfile.m launcher/Controller/ControllerProfile.m add
 wolkaraforever/Controller/ControllerWindow.h launcher/Controller/ControllerWindow.h add
 wolkaraforever/Controller/ControllerWindow.m launcher/Controller/ControllerWindow.m add
-wolkaraforever/Controller/tests/test_controller_manager_app.m tests/test_controller_manager_app.m add
-wolkaraforever/Controller/tests/test_gamecontroller_facade_app.m tests/test_gamecontroller_facade_app.m add
 #
 # Voice: what you say, turned into text in the game, and its tests
 wolkaraforever/Voice/AudioSessionCoordinator.h launcher/Voice/AudioSessionCoordinator.h add
