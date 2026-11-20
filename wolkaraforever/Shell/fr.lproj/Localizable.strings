@@ -864,3 +864,10 @@
 "login.cleared.title" = "Données de connexion effacées";
 "login.cleared.message" = "La session web en mémoire et tout ticket de lancement en attente ont été supprimés.";
 "login.failed" = "La connexion ne s’est pas terminée. Annulez et réessayez.";
+"touch.key.savedPassword" = "Mot de passe enregistré";
+"touch.password.save.title" = "Enregistrer votre mot de passe sur cet iPhone ?";
+"touch.password.save.message" = "Il est conservé dans le trousseau de cet appareil derrière Face ID ou votre code, ne quitte jamais l'appareil et est saisi dans le champ du mot de passe du jeu quand vous touchez la clé. Maintenez la clé pour l'oublier.";
+"touch.password.save.placeholder" = "Mot de passe Battle.net";
+"touch.password.save.confirm" = "Enregistrer et se connecter";
+"touch.password.forget" = "Oublier le mot de passe enregistré";
+"touch.password.cancel" = "Annuler";

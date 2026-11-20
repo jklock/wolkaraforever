@@ -14,6 +14,8 @@
 	<string>$(GUEST_RUNTIME)</string>
 	<key>TolkaraPreselectedExecutionMode</key>
 	<string>$(TOLKARA_MODE)</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>WolkaraForever uses Face ID to unlock the game password you chose to save on this device.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>WolkaraForever uses the microphone to turn what you say into text in the game's chat, and for in-game voice chat. Speech recognition runs on this iPad.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

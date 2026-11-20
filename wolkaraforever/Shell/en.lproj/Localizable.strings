@@ -864,3 +864,10 @@
 "login.cleared.title" = "Sign-in data cleared";
 "login.cleared.message" = "The in-memory browser session and any pending launch ticket were removed.";
 "login.failed" = "Sign-in did not finish. Cancel and try again.";
+"touch.key.savedPassword" = "Saved password";
+"touch.password.save.title" = "Save your password on this iPhone?";
+"touch.password.save.message" = "It is kept in this device's Keychain behind Face ID or your passcode, never leaves the device, and is typed into the game's password field when you tap the key. Hold the key to forget it.";
+"touch.password.save.placeholder" = "Battle.net password";
+"touch.password.save.confirm" = "Save and log in";
+"touch.password.forget" = "Forget saved password";
+"touch.password.cancel" = "Cancel";

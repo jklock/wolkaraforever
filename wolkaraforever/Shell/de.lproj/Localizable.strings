@@ -861,3 +861,10 @@
 "login.cleared.title" = "Anmeldedaten gelöscht";
 "login.cleared.message" = "Die Browser-Sitzung im Speicher und jedes ausstehende Startticket wurden entfernt.";
 "login.failed" = "Die Anmeldung wurde nicht abgeschlossen. Abbrechen und erneut versuchen.";
+"touch.key.savedPassword" = "Gespeichertes Passwort";
+"touch.password.save.title" = "Passwort auf diesem iPhone sichern?";
+"touch.password.save.message" = "Es liegt im Schlüsselbund dieses Geräts hinter Face ID oder deinem Code, verlässt das Gerät nie und wird beim Tippen auf den Schlüssel in das Passwortfeld des Spiels eingegeben. Halte den Schlüssel gedrückt, um es zu löschen.";
+"touch.password.save.placeholder" = "Battle.net-Passwort";
+"touch.password.save.confirm" = "Sichern und anmelden";
+"touch.password.forget" = "Gespeichertes Passwort löschen";
+"touch.password.cancel" = "Abbrechen";

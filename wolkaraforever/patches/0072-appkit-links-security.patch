@@ -1,0 +1,16 @@
+# WolkaraForever layer patch 0072 - the touch library links Security
+#
+# Why: the optional saved game password (TouchControls.m) keeps it in the keychain, behind
+# Face ID or the passcode, so the library that carries the touch controls now calls
+# SecItem* and SecAccessControlCreateWithFlags and has to link Security.framework.
+#
+# Applies to: translation/AppKit/ldflags.
+# Upstream: no.
+#
+diff --git a/translation/AppKit/ldflags b/translation/AppKit/ldflags
+index f2eca88..e19d81a 100644
+--- a/translation/AppKit/ldflags
++++ b/translation/AppKit/ldflags
+@@ -1 +1 @@
+--framework UIKit -framework QuartzCore -framework CoreGraphics -framework GameController -Wl,-alias,_OBJC_CLASS_$_AKColor,_OBJC_CLASS_$_NSColor -Wl,-alias,_OBJC_METACLASS_$_AKColor,_OBJC_METACLASS_$_NSColor -Wl,-alias,_OBJC_CLASS_$_AKFont,_OBJC_CLASS_$_NSFont -Wl,-alias,_OBJC_METACLASS_$_AKFont,_OBJC_METACLASS_$_NSFont
++-framework UIKit -framework QuartzCore -framework CoreGraphics -framework GameController -framework Security -Wl,-alias,_OBJC_CLASS_$_AKColor,_OBJC_CLASS_$_NSColor -Wl,-alias,_OBJC_METACLASS_$_AKColor,_OBJC_METACLASS_$_NSColor -Wl,-alias,_OBJC_CLASS_$_AKFont,_OBJC_CLASS_$_NSFont -Wl,-alias,_OBJC_METACLASS_$_AKFont,_OBJC_METACLASS_$_NSFont

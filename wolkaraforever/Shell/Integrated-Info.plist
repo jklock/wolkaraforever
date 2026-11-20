@@ -14,6 +14,8 @@
 	<string>$(TOLKARA_MODE)</string>
 	<key>TKPairingKeychainGroup</key>
 	<string>$(AppIdentifierPrefix)$(TOLKARA_KEYCHAIN_GROUP)</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>WolkaraForever uses Face ID to unlock the game password you chose to save on this device.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Allow World of Warcraft in WolkaraForever to use the microphone for in-game voice chat.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
