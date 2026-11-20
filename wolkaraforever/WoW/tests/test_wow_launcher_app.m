@@ -2962,7 +2962,21 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
         (@[@"Verify and repair game files", @"Diagnostics and logs",
-           @"Turn on input diagnostics", @"About and open-source licenses", @"Cancel"])]);
+           @"Turn on input diagnostics", @"Use controller touchpad as mouse",
+           @"About and open-source licenses", @"Cancel"])]);
+    // The controller touchpad as the pointer: off until chosen, and the speed only once it is on.
+    assert(!AKControllerTouchpadRelay.shared.enabled);
+    UIAlertAction *touchpadAction = nil;
+    for (UIAlertAction *action in settings.actions)
+        if ([action.title isEqual:@"Use controller touchpad as mouse"]) touchpadAction = action;
+    RunAction(touchpadAction);
+    assert(AKControllerTouchpadRelay.shared.enabled);
+    UIAlertController *touchpadSettings = [self.controller settingsSheet];
+    NSArray *touchpadTitles = [touchpadSettings.actions valueForKey:@"title"];
+    assert([touchpadTitles containsObject:@"Stop using controller touchpad as mouse"]);
+    assert([touchpadTitles containsObject:@"Controller touchpad speed: Normal"]);
+    AKControllerTouchpadRelay.shared.enabled = NO;
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:AKControllerTouchpadPointerDefaultsKey];
     assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
     __block NSInteger diagnostics = 0;

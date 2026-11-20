@@ -16,6 +16,7 @@
 #import "../App/LaunchProgressView.h"
 #import "../Controller/ControllerInspector.h"
 #import "../Input/InputRouter.h"
+#import "../Input/ControllerTouchpad.h"
 // The interface-mode rule, from its one definition: the overlay puts this same source in this
 // target, so the launcher and the guest cannot disagree about what "auto" means.
 #import "InterfaceMode.h"
@@ -1378,6 +1379,26 @@ static dispatch_queue_t TKForeverUIQueue(void) {
         [AKInputRouter.shared refreshInterest];
         [AKControllerInspector.shared showPanel:!inputDiagnostics];
     }]];
+    // A DualSense or DualShock 4 touchpad as the game's pointer. Off unless the user turns it on:
+    // with it on, the touchpad's click is the mouse button and can no longer be learned as a
+    // trigger, which is a change nobody should get without asking for it.
+    AKControllerTouchpadRelay *touchpad=AKControllerTouchpadRelay.shared;
+    BOOL touchpadPointer=touchpad.enabled;
+    UIAlertAction *touchpadAction=[UIAlertAction actionWithTitle:(touchpadPointer?WKLocalized(@"home.settings.touchpadPointerOff"):WKLocalized(@"home.settings.touchpadPointerOn"))
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        (void)a;
+        touchpad.enabled=!touchpadPointer;
+    }];
+    touchpadAction.accessibilityIdentifier=@"wow.settings.touchpadPointer";
+    [sheet addAction:touchpadAction];
+    if (touchpadPointer) {
+        UIAlertAction *speedAction=[UIAlertAction actionWithTitle:WKLocalizedFormat(@"home.settings.touchpadSpeed",[self touchpadSpeedName:touchpad.speed])
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            (void)a; [self chooseTouchpadSpeed];
+        }];
+        speedAction.accessibilityIdentifier=@"wow.settings.touchpadSpeed";
+        [sheet addAction:speedAction];
+    }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.about") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a; [self about];
     }]];
