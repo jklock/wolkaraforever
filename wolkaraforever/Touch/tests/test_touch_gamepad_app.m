@@ -703,6 +703,25 @@ static void TestControllerPointer(void) {
 static UIView *GamepadControl(UIView *host, NSString *name) {
     return Find(host, [@"tolkara.gamepad." stringByAppendingString:name]);
 }
+static void CollectSwitches(UIView *view, NSMutableArray<UISwitch *> *out) {
+    if ([view isKindOfClass:UISwitch.class]) { [out addObject:(UISwitch *)view]; return; }
+    for (UIView *child in view.subviews) CollectSwitches(child,out);
+}
+// Every switch in the settings sheet is whole and inside the sheet: a long label beside it
+// wraps instead of pushing it past the edge, where it could barely be pressed.
+static void AssertSettingsSwitchesReachable(UIView *panel) {
+    NSMutableArray<UISwitch *> *switches=[NSMutableArray new]; CollectSwitches(panel,switches);
+    assert(switches.count>=4);
+    CGFloat natural=[UISwitch new].intrinsicContentSize.width;
+    for (UISwitch *toggle in switches) {
+        CGRect frame=[toggle convertRect:toggle.bounds toView:panel];
+        if (toggle.bounds.size.width<natural-0.5 || CGRectGetMaxX(frame)>panel.bounds.size.width+0.5 || CGRectGetMinX(frame)<-0.5) {
+            fprintf(stderr,"TOUCH_SETTINGS_SWITCH_CLIPPED: %s width=%.1f maxX=%.1f panel=%.1f\n",
+                    toggle.accessibilityIdentifier.UTF8String,toggle.bounds.size.width,CGRectGetMaxX(frame),panel.bounds.size.width);
+            fflush(stderr); assert(0);
+        }
+    }
+}
 static void TestTouchControllerTwo(UIView *host, AKPreviewGamepad *manager);
 static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     GCExtendedGamepad *pad=manager.created.controller.extendedGamepad;
@@ -798,9 +817,13 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
         assert(CGRectGetMaxY([panel convertRect:panel.bounds toView:host])<=toolbarTop+0.5);
         assert(fabs(CGRectGetMinY([panel convertRect:panel.bounds toView:host])-CGRectGetMinY(UIEdgeInsetsInsetRect(host.bounds,host.safeAreaInsets))-8)<=0.5);
     }
+    AssertSettingsSwitchesReachable(panel);
     CGRect normalBounds=host.bounds;
+    // A phone in landscape, where the two columns are narrowest beside each other.
+    host.bounds=CGRectMake(0,0,852,393); [host layoutIfNeeded]; AssertSettingsSwitchesReachable(panel);
     host.bounds=CGRectMake(0,0,390,600); [host layoutIfNeeded];
     assert(CGRectContainsRect(host.bounds,[panel convertRect:panel.bounds toView:host]));
+    AssertSettingsSwitchesReachable(panel);
     UIView *done=Find(host,@"wolkaraforever.controls.done");
     assert(done && CGRectContainsRect(panel.bounds,[done convertRect:done.bounds toView:panel]));
     host.bounds=normalBounds; [host layoutIfNeeded];
@@ -1157,7 +1180,15 @@ static void TestFloating(UIView *host, AKPreviewGamepad *manager) {
     [manager toggleSettings];
     // Mobile: the arrangement exists, and both arrangements are switched on.
     mode(AKInterfaceModeIOS);
-    [manager toggleSettings];
+    [manager toggleSettings]; [host layoutIfNeeded];
+    {
+        // The mobile sheet has the two longest rows; none of its switches may hang off the edge.
+        UIView *panel=Find(host,@"wolkaraforever.controls.settings");
+        AssertSettingsSwitchesReachable(panel);
+        CGRect normalBounds=host.bounds;
+        host.bounds=CGRectMake(0,0,852,393); [host layoutIfNeeded]; AssertSettingsSwitchesReachable(panel);
+        host.bounds=normalBounds; [host layoutIfNeeded];
+    }
     UISwitch *sticksOnly=(id)Find(host,@"wolkaraforever.controls.sticksOnly");
     UISwitch *floating=(id)Find(host,@"wolkaraforever.controls.floatingSticks");
     assert(sticksOnly && floating);

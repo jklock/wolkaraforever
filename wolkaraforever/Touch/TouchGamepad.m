@@ -982,6 +982,18 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     label.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium]; label.numberOfLines = 0;
     return label;
 }
+- (void)fitSettingsRow:(UIStackView *)row {
+    // A wrapping label and a switch side by side: the label wraps, the switch keeps its size.
+    // Left equal, a long label wins and pushes its switch past the panel's edge.
+    row.spacing = 12;
+    for (UIView *view in row.arrangedSubviews) {
+        BOOL label = [view isKindOfClass:UILabel.class];
+        [view setContentCompressionResistancePriority:label ? UILayoutPriorityDefaultLow : UILayoutPriorityRequired
+                                              forAxis:UILayoutConstraintAxisHorizontal];
+        [view setContentHuggingPriority:label ? UILayoutPriorityDefaultLow : UILayoutPriorityRequired
+                                forAxis:UILayoutConstraintAxisHorizontal];
+    }
+}
 - (void)toggleSettings {
     if (_settings || _editing) { [self finishConfiguration]; return; }
     // What is on screen may have been changed from the launcher since this overlay was built.
@@ -1025,6 +1037,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
         [_sticksOnlySwitch addTarget:self action:@selector(sticksOnlyChanged:) forControlEvents:UIControlEventValueChanged];
         UIStackView *sticksRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.sticksOnly")],_sticksOnlySwitch]];
         sticksRow.axis = UILayoutConstraintAxisHorizontal; sticksRow.alignment = UIStackViewAlignmentCenter;
+        [self fitSettingsRow:sticksRow];
         [options addArrangedSubview:sticksRow];
         // The floating arrangement belongs to the same interface, so its switch is here too.
         _floatingSwitch = [UISwitch new]; _floatingSwitch.on = _preferences.floatingSticks;
@@ -1033,6 +1046,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
         [_floatingSwitch addTarget:self action:@selector(floatingChanged:) forControlEvents:UIControlEventValueChanged];
         UIStackView *floatingRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.floatingSticks")],_floatingSwitch]];
         floatingRow.axis = UILayoutConstraintAxisHorizontal; floatingRow.alignment = UIStackViewAlignmentCenter;
+        [self fitSettingsRow:floatingRow];
         [options addArrangedSubview:floatingRow];
     }
     // Triggers on the outside is a choice about two controls Simple does not draw, so in Simple
@@ -1045,6 +1059,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [_swapShouldersSwitch addTarget:self action:@selector(swapShouldersChanged:) forControlEvents:UIControlEventValueChanged];
     UIStackView *shouldersRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.outerTriggers")],_swapShouldersSwitch]];
     shouldersRow.axis = UILayoutConstraintAxisHorizontal; shouldersRow.alignment = UIStackViewAlignmentCenter;
+    [self fitSettingsRow:shouldersRow];
     [options addArrangedSubview:shouldersRow];
     _hapticsSwitch = [UISwitch new]; _hapticsSwitch.on = _preferences.hapticsEnabled;
     _hapticsSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.haptics");
@@ -1052,6 +1067,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [_hapticsSwitch addTarget:self action:@selector(hapticsChanged:) forControlEvents:UIControlEventValueChanged];
     UIStackView *hapticsRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.haptics")],_hapticsSwitch]];
     hapticsRow.axis = UILayoutConstraintAxisHorizontal; hapticsRow.alignment = UIStackViewAlignmentCenter;
+    [self fitSettingsRow:hapticsRow];
     [options addArrangedSubview:hapticsRow];
     // The optional performance HUD. It is a display preference, not a layout or
     // input one: turning it on does not move, resize or rebind any control.
@@ -1061,12 +1077,14 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [_overlaySwitch addTarget:self action:@selector(overlayChanged:) forControlEvents:UIControlEventValueChanged];
     UIStackView *overlayRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.overlay.detail")],_overlaySwitch]];
     overlayRow.axis = UILayoutConstraintAxisHorizontal; overlayRow.alignment = UIStackViewAlignmentCenter;
+    [self fitSettingsRow:overlayRow];
     [options addArrangedSubview:overlayRow];
     _editSwitch = [UISwitch new]; _editSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.edit");
     _editSwitch.accessibilityIdentifier = @"wolkaraforever.controls.edit";
     [_editSwitch addTarget:self action:@selector(beginEditing:) forControlEvents:UIControlEventValueChanged];
     UIStackView *editRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.edit")],_editSwitch]];
     editRow.axis = UILayoutConstraintAxisHorizontal; editRow.alignment = UIStackViewAlignmentCenter;
+    [self fitSettingsRow:editRow];
     [options addArrangedSubview:editRow];
     [options addArrangedSubview:[self label:AKHostLocalized(@"touch.settings.edit.detail")]];
     // --- the Touch Controller 2 rows, appended: every row above keeps its place and its name ---
@@ -1077,6 +1095,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [_simpleSwitch addTarget:self action:@selector(simpleLayoutChanged:) forControlEvents:UIControlEventValueChanged];
     UIStackView *simpleRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.simpleLayout")],_simpleSwitch]];
     simpleRow.axis = UILayoutConstraintAxisHorizontal; simpleRow.alignment = UIStackViewAlignmentCenter;
+    [self fitSettingsRow:simpleRow];
     [options addArrangedSubview:simpleRow];
     [options addArrangedSubview:[self label:AKHostLocalized(@"touch.settings.simpleLayout.detail")]];
     // A stick button is a gesture, so it is a switch of its own - off, as it has always been.
@@ -1091,6 +1110,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [_stickButtonsSwitch addTarget:self action:@selector(stickButtonsChanged:) forControlEvents:UIControlEventValueChanged];
     UIStackView *stickButtonsRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.stickButtons")],_stickButtonsSwitch]];
     stickButtonsRow.axis = UILayoutConstraintAxisHorizontal; stickButtonsRow.alignment = UIStackViewAlignmentCenter;
+    [self fitSettingsRow:stickButtonsRow];
     [options addArrangedSubview:stickButtonsRow];
     _addZoneButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [_addZoneButton setTitle:AKHostLocalized(@"touch.settings.abilityZones.add") forState:UIControlStateNormal];
