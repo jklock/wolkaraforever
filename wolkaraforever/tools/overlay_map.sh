@@ -95,6 +95,16 @@ intent() {
             wolkaraforever/Bridge/tests/*) dst=tests/${f#wolkaraforever/Bridge/tests/};;
             wolkaraforever/Bridge/BackgroundPacing.m) dst=translation/Metal/BackgroundPacing.m;;
             wolkaraforever/Bridge/DisplayRate.m) dst=translation/Metal/DisplayRate.m;;
+            # Battery Saver's contract is one source compiled into three images: the launcher,
+            # which writes the choice; the Metal adapter, which paces presentation with it; and
+            # the AppKit adapter, which owns the idle coordinator. A stored value, a launch
+            # snapshot and the frame policy must not be able to mean three different things.
+            wolkaraforever/Bridge/BatterySaverPolicy.*)
+                name=${f#wolkaraforever/Bridge/}
+                echo "$f translation/Metal/$name $(intent "translation/Metal/$name")"
+                echo "$f translation/AppKit/$name $(intent "translation/AppKit/$name")"
+                echo "$f launcher/WoW/$name $(intent "launcher/WoW/$name")"
+                continue;;
             # The enrolment reference belongs with the pairing storage it reads
             # and writes: the app, its tunnel extension and the storage probe all
             # compile authorization/Storage, and the reference is nothing more

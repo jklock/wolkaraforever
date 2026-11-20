@@ -26,6 +26,7 @@
 #import "../WoW/CASC.h"
 #import "../WoW/BattleNetSession.h"
 #import "../WoW/WoWViewController.h"
+#import "../WoW/BatterySaverPolicy.h"
 #import "LaunchProgressView.h"
 #import "NativeGuest.h"
 #import "SignedFileProbe.h"
@@ -912,6 +913,14 @@ static NSString *AKAudioStateDescription(void) {
     if (!self.executionMode) { [self chooseExecutionMode:NO forApp:app]; return; }
     NSString *unavailable=nil;
     if (!TKExecutionModeAvailable(self.executionMode,&unavailable)) { [self alert:@"Execution Mode Unavailable" message:unavailable]; return; }
+    // Battery Saver's two choices apply to this launch and no other. The snapshot is taken
+    // here - immediately before a guest is started, in the one method every start goes
+    // through, including the execution-mode chooser's continuation - so a later change to the
+    // submenu waits for the next launch rather than resizing the session under the player.
+    AKBatterySaverCommitLaunchSnapshot();
+    WKLog("ui", @"battery saver: this launch is frame=%@ afk=%ld min",
+          AKBatterySaverFrameLimitStoredName(AKBatterySaverLaunchFrameLimit()),
+          (long)AKBatterySaverLaunchAFKMinutes());
     if (self.executionMode==TKExecutionModeLocalSigning) { [self launchLocalSigningApp:app]; return; }
     if (self.executionMode==TKExecutionModeExternalJIT) { [self launchExternalJITApp:app]; return; }
 #if TOLKARA_INTEGRATED_AUTH
