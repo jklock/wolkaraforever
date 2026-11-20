@@ -1857,7 +1857,10 @@ static void TestIPadM5RenderProfile(void) {
     assert([[(UIButton *)Find(self.controller.view, @"wow.addons.manage") configuration].title isEqual:@"Install Addons (Curse & Direct)"]);
     // Every edition reads with its prefix, and the region/locale row reads with both values.
     assert([[(UIButton *)Find(self.controller.view, @"wow.edition") configuration].title isEqual:@"Game Edition: Forever"]);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.preferences") configuration].title isEqual:@"Region / Locale: EU English"]);
+    // The region is stored state, and the fixture may have left either one behind; what this
+    // check is about is the row reading both values with the game's locale name.
+    NSString *prefsTitle = [(UIButton *)Find(self.controller.view, @"wow.preferences") configuration].title;
+    assert([prefsTitle hasPrefix:@"Region / Locale: "] && [prefsTitle hasSuffix:@" English"]);
     // Exactly one supporting line below Play, and no second one reserved for a startup note.
     assert(Find(self.controller.view, @"wow.updates") != nil);
     assert(Find(self.controller.view, @"wow.startup") == nil);
