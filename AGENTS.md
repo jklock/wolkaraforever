@@ -15,13 +15,40 @@
 - `platform/`, execution/security code, device tools, release automation, and repository
   policy require maintainer review. See `.github/CODEOWNERS`.
 
+## Never touch the device layer by hand (standing rule, 2026-11-21)
+
+Every line below was already violated on this machine, and each violation is why the rule is
+written here instead of left to judgement. These are prohibitions, not preferences.
+
+- **No raw `xcrun simctl`, `xcrun devicectl`, `simctl`, `devicectl`, `xctrace` or `instruments`.**
+  Simulator and device work goes through `wolkaraforever/tools/` - `simulators.sh`, `pilot.sh`,
+  `install.sh`, `launch.sh`, `run.sh`, `validate.sh`, `check_ui_policy.sh` and the `test_*.sh`
+  suites - and never through the commands those scripts call internals of. "Read-only" is not an
+  exemption: opening a page in a simulator's Safari, taking a screenshot, listing apps or reading
+  a lock state is an operation on the user's device layer like any other.
+- **Never kill, restart, reset or boot anything you did not start.** No `killall` of
+  `com.apple.CoreSimulator.CoreSimulatorService`, no `pkill` of simulator, WebKit, SpringBoard or
+  `devicectl` processes, no `simctl shutdown`/`erase`/`boot`, no simulator reboot, no `kill -9` of
+  a hung Apple service. If one of those is the remedy, that is the user's decision and their hands.
+- **A hang is reported, never repaired.** If a project script wedges, prints nothing, or leaves
+  the terminal silent, stop and say which script, what it printed and what the last command was.
+  Do not substitute `ps`, `pkill`, probes or experiments to unstick it, and do not route around it.
+- **No invented execution mechanisms.** Shell work stays in the terminal, in the project's own
+  scripts. No VS Code tasks, no `create_and_run_task`, no ad-hoc daemons, no wrappers invented for
+  the occasion.
+- **Do not reinterpret a rule you were given.** "Never run anything on my root volume" bans the
+  behaviour; redirecting `TMPDIR` to another disk does not make the behaviour acceptable.
+- **Do not escalate after breaking something.** Damage done by a stray command is not a licence
+  for a bigger command. Report the breakage and stop.
+
 ## Project Structure & Module Organization
 
-- `runtime/`: Mach-O loading, guest memory, native execution (Developer service arena, Local signing page container `SignedImage`, or External JIT arena `DebuggerArena`), carried libraries (`GuestLink`), runtime stubs (`GuestStubs`), interpreter diagnostics.
-- `translation/`: macOS API adapters (AppKit input/windowing, Metal shader handling, audio, Security).
-- `authorization/`: Developer service: bundled pairing, transport, tunnel extension and memory-preparation protocol.
-- `launcher/`: the iPad app. `profiles/`: data-only descriptions of tested applications.
-- `tests/`: C, Objective-C, Swift and Python tests; `testguest/`: our synthetic guest fixture.
+- `platform/runtime/`: Mach-O loading, guest memory, native execution (Developer service arena, Local signing page container `SignedImage`, or External JIT arena `DebuggerArena`), carried libraries (`GuestLink`), runtime stubs (`GuestStubs`), interpreter diagnostics.
+- `platform/translation/`: macOS API adapters (AppKit input/windowing, Metal shader handling, audio, Security).
+- `platform/authorization/`: Developer service: bundled pairing, transport, tunnel extension and memory-preparation protocol.
+- `platform/launcher/`: the iPad app; `platform/management/`: Tolkara Management, the Mac setup app; `platform/profiles/`, `platform/support/`: the application-profile format and shared support code.
+- `platform/tests/`: the engine's C, Objective-C, Swift and Python tests; `platform/testguest/`: the synthetic guest fixture.
+- `addons/`: the bundled WoW add-on source (`WolkaraRoue`). `profiles/`: product-owned profile data, plus one helper script that merges a Mac add-on folder into the selected game container.
 - `wolkaraforever/tools/`: the layer's scripts - prepare, the gate, and the wrappers that run the platform's own build, install, run and test scripts against the prepared tree. The platform's own tools are `platform/tools/` and run inside that tree. `docs/` is user-facing; `docs/agent/` is the operational reference for agents and contributors.
 - `platform/`: upstream tolkara, vendored byte-identical to `upstream/main` and never edited by hand; `wolkaraforever/`: our layer above it. Start at `docs/agent/README.md`.
 - `build/` and `logs/` are ignored outputs. Third-party applications and assets are never committed.
@@ -32,7 +59,9 @@
   exception: they are deliberate source assets, not generated validation output.
 - `docs/agent/REPOSITORY_MAP.md`: canonical map of engine, layer modules, patches, overlays,
   scripts, tests, and WolkaraForever enhancements. Read it before a cross-cutting change.
-- `docs/agent/OPERATIONS.md`: current branching, review, release, tool, and evidence policy.
+- `docs/agent/OPERATIONS.md`: the project-owned tool surface, which tool owns which operation,
+  and the rule that device and game operations go through `wolkaraforever/tools/`. Branching,
+  review, release and evidence policy live in this file and `docs/agent/TESTING.md`.
 - Before every tracked-file change, read the applicable catalog entry. Afterward, refresh the
   catalog with `python3 wolkaraforever/tools/generate_agent_docs.py`, update the applicable
   standalone human guide when behavior changes, and run `check_agent_docs.sh` plus `check_docs.sh`.
@@ -65,8 +94,9 @@ wolkaraforever/tools/push_game.sh --source "/Applications/World of Warcraft"   #
 NATIVE_GUEST_SHIMS=GENERIC wolkaraforever/tools/install.sh   # build for no particular application: one adapter per translation/<Framework>/
 wolkaraforever/tools/package_altstore_ipa.sh   # unsigned generic TolkaraDiagnostics .ipa for External JIT, verified (build/ipa/)
 wolkaraforever/tools/package_ipa.sh        # the same build through the platform's own packaging script
-wolkaraforever/tools/verify_ipa.sh <ipa>   # prove an .ipa is unsigned, External JIT and free of Mac trust roots before sideloading
+wolkaraforever/tools/verify_ipa.sh <ipa>   # prove an .ipa is the unsigned External JIT package, with the build's public roots and no signing team, before sideloading
 wolkaraforever/tools/make_wolkaraforever_icon.py  # redraw the app icon at every size and appearance (needs Google Chrome)
+wolkaraforever/tools/capture_ui_guide.sh  # redraw docs/screenshots/ui-*.jpg from the launcher fixture (matrix iPad)
 
 # The platform's own tools, run inside the prepared tree after prepare.sh.
 build/platform/tools/probe_guest.sh "/path/to/Executable"   # inspect an unchanged executable

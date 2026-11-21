@@ -39,10 +39,15 @@ cp "$ROOT/platform/NOTICE.md" "$APP/NOTICE.md"
 # The sources under test, and only those: the view controllers are exercised by the
 # launcher fixture instead, and pulling them in would drag WolkaraForeverTheme along for
 # nothing.
+#
+# launcher/WoW/BatterySaverPolicy.m is here because launcher/Input/InputRouter.m sends the
+# battery-saver activity and dim notifications, and its symbols have to link. Every fixture that
+# compiles the input router needs it; test_controller_input.sh carries the same two lines.
 xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-deprecated-declarations \
-    -Ilauncher/Input -Ilauncher/Voice -Ilauncher/Controller -Ilauncher/App -Itests \
+    -Ilauncher/Input -Ilauncher/Voice -Ilauncher/Controller -Ilauncher/App -Ilauncher/WoW -Itests \
     launcher/Input/*.m launcher/Voice/Dictation.m launcher/Voice/VoiceSettings.m \
+    launcher/WoW/BatterySaverPolicy.m \
     launcher/Voice/AudioSessionCoordinator.m \
     launcher/Voice/VoiceViewController.m launcher/Voice/VoiceTestViewController.m \
     launcher/Voice/ControllerTouchpadViewController.m \

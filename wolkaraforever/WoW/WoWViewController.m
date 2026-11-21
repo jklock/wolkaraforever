@@ -1422,6 +1422,10 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(networkHealth?@"home.settings.networkHealthOff":@"home.settings.networkHealthOn") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
         NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
         [defaults setBool:!networkHealth forKey:@"WolkaraForever.NetworkHealth.NextLaunch"];
+        // The arming is a decision about the next launch, and the counters it records only exist
+        // during that session: without this line, "I asked for a health run" and "the run
+        // recorded nothing" look the same afterwards.
+        WKLog("network", @"health counters %@ for the next launch", networkHealth?@"disarmed":@"armed");
         if(!networkHealth) [self presentMessage:WKLocalized(@"home.settings.networkHealth.title") message:WKLocalized(@"home.settings.networkHealth.message")];
     }]];
     // Input diagnostics: the one switch that lets the controller inspector write anything at
@@ -1433,6 +1437,7 @@ static dispatch_queue_t TKForeverUIQueue(void) {
         style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a;
         AKControllerInspector.shared.diagnosticsEnabled=!inputDiagnostics;
+        WKLog("ui", @"input diagnostics: %@", !inputDiagnostics?@"on":@"off");
         [AKInputRouter.shared refreshInterest];
         [AKControllerInspector.shared showPanel:!inputDiagnostics];
     }]];
@@ -1928,6 +1933,7 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
         :[@"✓ " stringByAppendingString:automaticTitle] style:UIAlertActionStyleDefault
         handler:^(__unused UIAlertAction *action) {
         [self writeDeviceProfileOverride:nil quality:[self effectiveRenderQuality]];
+        WKLog("ui", @"device profile: automatic (%@)", actual.identifier);
         [self render];
     }]];
     for (TKDeviceProfile *profile in TKDeviceProfile.profiles) {
@@ -1940,6 +1946,10 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
             handler:^(__unused UIAlertAction *action) {
             [self writeDeviceProfileOverride:profile.identifier quality:[self effectiveRenderQuality]];
+            // The profile decides which render scales are offered, so a report that says "the
+            // page was slow" cannot be read without knowing which one was in force.
+            WKLog("ui", @"device profile: preview %@ (%@) over %@", profile.identifier,
+                  TKDeviceProfileSizeDescription(profile), actual.identifier);
             [self render];
             [self presentMessage:WKLocalized(@"home.profile.override.title")
                 message:WKLocalizedFormat(@"home.profile.override.message",profile.displayName,actualName)];

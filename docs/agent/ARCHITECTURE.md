@@ -1,6 +1,6 @@
 # Architecture
 
-> Verified: 2026-11-13 · Source: `3c33543` · Proof: cataloged source and overlay map
+> Verified: 2026-11-21 · Source: `8375cbb` · Proof: cataloged source and overlay map
 
 Tolkara provides the Mach-O loader, guest-memory arena, macOS-to-iPadOS translation libraries, and authorization mechanisms. WolkaraForever layers the branded shell, Forever installation lifecycle, add-on management, touch and controller UX, voice, localization, diagnostics, and safe device tooling over it.
 

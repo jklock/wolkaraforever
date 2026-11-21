@@ -1,6 +1,6 @@
 # Localization and accessibility
 
-> Verified: 2026-11-13 · Source: `3c33543` · Proof: Shell strings and localization checks
+> Verified: 2026-11-21 · Source: `8375cbb` · Proof: Shell strings and localization checks
 
 App language and game language are separate settings. Keep user-visible strings, accessibility labels, alerts, menus, status text, and screenshots consistent with supported locales. Use sentence-case headings and descriptive alt text; do not encode meaning only in color or an image.
 

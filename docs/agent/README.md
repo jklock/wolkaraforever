@@ -1,8 +1,10 @@
 # Agent documentation
 
-> Verified: 2026-11-13 · Source: `3c33543` · Proof: `wolkaraforever/tools/check_agent_docs.sh`
+> Verified: 2026-11-21 · Source: `8375cbb` · Proof: `wolkaraforever/tools/check_agent_docs.sh`
 
 This directory is the operational documentation for agents and contributors. Read it before changing a repository path. Human guides are independent; use the links here only to determine which user page must change with a behavior change.
+
+`platform/AGENTS.md` and `platform/docs/` are the vendored engine's own guides, byte-identical to `upstream/main`. They describe upstream Tolkara, not this fork: where they disagree with this directory about packaging, roots, or workflows, this directory and the root `AGENTS.md` are current.
 
 ## Reading order
 
@@ -20,5 +22,6 @@ Refresh this directory on every tracked-file change. Run `python3 wolkaraforever
 - [Testing](TESTING.md)
 - [Security and policy](SECURITY_AND_POLICY.md)
 - [Human documentation map](HUMAN_DOCUMENTATION_MAP.md)
+- [UI catalog](UI_CATALOG.md)
 - [File catalog](FILE_CATALOG.md)
 - [Roadmap](ROADMAP.md)

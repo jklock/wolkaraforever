@@ -56,11 +56,11 @@ TOOLS = {
     "package_altstore_ipa.sh": ("Packaging tool",
                                 "Refuses a dirty tree, builds the unsigned External JIT .ipa and verifies it"),
     "verify_ipa.sh": ("Packaging verification tool",
-                      "Proves an .ipa is unsigned, External-JIT, extension-free and free of this Mac's trust roots"),
+                      "Proves an .ipa is the unsigned External-JIT package: one app, no profile, no extension, no signing team, and the builder's public root certificates present"),
     "verify_external_jit.sh": ("Device verification tool",
-                               "Verifies an installed build and requires its External-JIT runtime evidence"),
+                               "Verifies the installed app, and with --require-runtime that its External-JIT runtime evidence is present"),
     "test_install.sh": ("Test harness",
-                        "Drives install.sh end to end with stubbed device tools and an isolated configuration"),
+                        "Runs one approved device tool against the separate test app and its own configuration, leaving a real install untouched"),
 }
 
 

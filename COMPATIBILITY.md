@@ -1,6 +1,6 @@
 # Compatibility and support boundary
 
-> Verified: 2026-11-13 · Source: `3c33543`
+> Verified: 2026-11-21 · Source: `8375cbb`
 
 WolkaraForever is a source-built project for an iPad or iPhone that you own and configure with your own Apple Developer account. The supported integrated route requires Developer Mode, current Xcode tooling, and an execution path that can prepare executable memory.
 

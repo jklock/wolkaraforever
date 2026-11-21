@@ -7,7 +7,8 @@
 #include <unistd.h>
 
 static int failures;
-#define CHECK(condition, message) do { if (!(condition)) { fprintf(stderr, "FAIL: %s\n", message); failures++; } } while (0)
+static int checks;
+#define CHECK(condition, message) do { checks++; if (!(condition)) { fprintf(stderr, "FAIL: %s\n", message); failures++; } } while (0)
 
 int main(void) {
     char path[] = "/tmp/wolkaraforever-network-health.XXXXXX";
@@ -43,5 +44,9 @@ int main(void) {
     CHECK(![output containsString:@"payload"], "does not record payloads");
     fclose(log);
     unlink(path);
-    return failures ? 1 : 0;
+    // A suite that printed nothing and exited 0 looked exactly like a suite that never ran; the
+    // sweep printed "== <suite>" and then the next one. Say the verdict, with the count.
+    if (failures) { fprintf(stderr, "NETWORK-HEALTH FAIL: %d of %d checks\n", failures, checks); return 1; }
+    printf("NETWORK-HEALTH PASS: %d checks\n", checks);
+    return 0;
 }

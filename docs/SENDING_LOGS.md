@@ -1,10 +1,10 @@
 # Send us a log when something goes wrong
 
-> Verified: 2026-11-17 · Source: `db5470a`
+> Verified: 2026-11-21 · Source: `8375cbb`
 
 A log is a text file that records what the app was doing. When something fails, the log
 usually says why, and it saves a lot of guessing. You do not need a Mac, a computer cable,
-or any technical knowledge to send one — it is three taps on the iPad.
+or any technical knowledge to send one — it is a few taps on the iPad.
 
 ## The short version
 
@@ -59,8 +59,9 @@ wolkaraforever/tools/device_log.sh 120 error    # only lines matching "error"
 wolkaraforever/tools/pilot.sh log 80            # the launcher's own log
 ```
 
-`device_log.sh` reads `native-guest.log`; `pilot.sh log` reads `wolkaraforever.log`. Both
-need `DEVICE` and `TOLKARA_BUNDLE_ID` set in your `local.env`.
+`device_log.sh` reads `native-guest.log`; `pilot.sh log` reads `wolkaraforever.log`. Both read
+`DEVICE` and `TOLKARA_BUNDLE_ID` from your `local.env`. `device_log.sh` falls back to
+`local.tolkara.app` when the bundle ID is not set there; `pilot.sh` stops and asks for one.
 
 ## What to write with the log
 
@@ -75,8 +76,8 @@ Five short lines are plenty:
    of the log can be found.
 5. **Your setup** — the mode you chose (Developer service, External JIT, or Local signing),
    which game edition, the iPad model and iPadOS version (**Settings → General → About** on
-   the iPad), and the app version from **About and open-source licenses** in the app's
-   Settings.
+   the iPad), and the app version, which is the first line of `wolkaraforever.log` (it reads
+   `--- <app name> <version> (<build>) pid <n> launched ---`).
 
 Screenshots help too, especially for anything visual. Take them before you restart the app
 if you can.
@@ -86,6 +87,30 @@ if you can.
 The logs are technical text: timings, file names, error messages, and what the game asked
 for. They do **not** contain your Apple Account password, payment details, or your pairing
 or signing files.
+
+`wolkaraforever.log` is one line per event, shaped like `10:44:03.912 [ui] …`. The word in
+brackets is the topic, and it is the quickest way to find the part of a log a report is about:
+
+| Topic | What it records |
+| --- | --- |
+| `host` | The app itself: launch, arguments, which screens opened, a failed start |
+| `ui` | What you chose and what the page did: interface mode, layouts, Battery Saver, device and render profiles, backups, the controller touchpad pointer |
+| `wow` | The game check, update progress, verification counts, install state |
+| `battle-login` | The experimental sign-in and the saved password — never the password itself |
+| `voice` | Dictation: learning the button, starting and stopping capture, recognition |
+| `audio` | The audio session and the battery-saving sound path |
+| `input`, `controller-input` | Input routing and controller commands |
+| `language` | The app's language and the game's language |
+| `addons`, `addon-hub` | The add-on store, and the hub's own structured events |
+| `network` | Arming and disarming the anonymous connection-health counters; the counters themselves are written as `[network-health]` lines in the native log |
+| `jit` | External JIT and the enabler's detach |
+| `enrollment` | The developer-service enrollment |
+| `config` | Reading and writing the app's own settings |
+| `selftest` | The app's own device self-tests |
+
+The log rotates at one megabyte: when `wolkaraforever.log` fills, it becomes
+`wolkaraforever.log.1` and a new file starts. Only the current file is listed under **Logs and
+reports**; if support asks for the previous one, get it from the app's folder in the Files app.
 
 You are welcome to open a log and read it before sending — it is plain text. If you would
 rather not share a line that mentions a folder path or a device name, say so and we will tell

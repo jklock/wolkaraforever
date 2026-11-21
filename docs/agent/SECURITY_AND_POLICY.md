@@ -1,6 +1,6 @@
 # Security and policy
 
-> Verified: 2026-11-13 · Source: `3c33543` · Proof: repository policy and security scope
+> Verified: 2026-11-21 · Source: `8375cbb` · Proof: repository policy and security scope
 
 Never commit game data, signing material, provisioning profiles, credentials, pairing records, device identifiers, logs, captures, or generated validation reports. The original executable is never patched or re-signed. Do not add gameplay automation, anti-cheat or license workarounds, post-entry debugger attachment, or application-memory inspection beyond loading and verification.
 

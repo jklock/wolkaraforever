@@ -2,6 +2,7 @@
 
 #import "../Input/ControllerTouchpad.h"
 #import "../App/WKLocalization.h"
+#import "../App/WolkaraForeverLog.h"
 #import "../App/WolkaraForeverTheme.h"
 
 @interface AKControllerTouchpadViewController ()
@@ -80,10 +81,14 @@
 - (void)done { WKDismissPage(self); }
 - (void)enabledChanged:(UISwitch *)sender {
     AKControllerTouchpadRelay.shared.enabled=sender.on;
+    // The pointer takes the touchpad's click away from the game while it is on, and it is saved
+    // on the device: a report about a click that "did nothing" needs to say which way it was.
+    WKLog("ui", @"controller touchpad pointer: %@", sender.on?@"on":@"off");
     [self clearReport];
 }
 - (void)speedChanged:(UISegmentedControl *)sender {
     AKControllerTouchpadRelay.shared.speed=(AKControllerTouchpadSpeed)sender.selectedSegmentIndex;
+    WKLog("ui", @"controller touchpad speed: %ld", (long)sender.selectedSegmentIndex);
 }
 - (void)clearReport {
     BOOL enabled=AKControllerTouchpadRelay.shared.enabled;
