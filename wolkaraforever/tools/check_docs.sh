@@ -1,6 +1,6 @@
 #!/bin/bash
-# Check the fork's documentation: every relative link and image must resolve, and
-# every fork markdown file must be reachable from the documentation index.
+# Check the fork's documentation: every relative link, image and Markdown heading
+# anchor must resolve, and every image a page embeds must exist.
 #
 # Usage: wolkaraforever/tools/check_docs.sh
 #

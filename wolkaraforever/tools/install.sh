@@ -4,7 +4,9 @@
 #   0. guard     refuse to install while the game is running
 #   1. prepare   platform/ + patches + overlay -> build/platform
 #   2. build     through the platform's own install script
-#   3. enroll    the platform's own enroll.sh, which the install prints as its next step
+#   3. after     after_install.sh takes only the chosen execution mode's own step: Developer
+#                service enrolls, Local signing checks the page container, External JIT and an
+#                unchosen mode do nothing
 #   4. verify    the app really is on the device afterwards
 #   5. home      relaunch the normal WolkaraForever launcher and prove it reached home
 #

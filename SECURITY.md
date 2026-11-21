@@ -1,6 +1,6 @@
 # Security
 
-> Verified: 2026-11-13 · Source: `3c33543`
+> Verified: 2026-11-21 · Source: `8375cbb`
 
 Report a vulnerability privately by email to `vk@tolkara.org` or through GitHub’s private vulnerability reporting for this repository. Do not open a public issue for a security problem.
 

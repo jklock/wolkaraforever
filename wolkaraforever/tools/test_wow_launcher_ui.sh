@@ -1,10 +1,20 @@
 #!/bin/bash
 # Our own synthetic UI fixture. No game files, accounts or network requests.
+#
+# Modes:
+#   (nothing)           assert the pages, then compare them with the reviewed baselines
+#                       (`UI_BASELINE_MODE=check|record|off`)
+#   --guide-captures    draw every page and sheet once for `docs/UI_REFERENCE.md` and exit;
+#                       asserts nothing and compares nothing. See
+#                       `wolkaraforever/tools/capture_ui_guide.sh`.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 . wolkaraforever/tools/simulators.sh
+guide=0
+[ "${1:-}" = --guide-captures ] && guide=1
 baseline_mode=${UI_BASELINE_MODE:-check}
+[ "$guide" = 1 ] && baseline_mode=off
 case "$baseline_mode" in check|record|off) ;; *) echo "invalid UI_BASELINE_MODE: $baseline_mode" >&2; exit 2;; esac
 wolkaraforever/tools/prepare.sh
 cd build/platform
@@ -177,8 +187,10 @@ done
 # guard by enough that a slow machine is never killed here and reported as a failure it did not
 # have. A false timeout costs more than a long run.
 VERDICT_TIMEOUT=${VERDICT_TIMEOUT:-960}
+verdict_re='WoW UIKit (PASS:|TIMEOUT|FAIL:)'
+[ "$guide" = 1 ] && verdict_re='WoW UIKit (GUIDE: done|TIMEOUT|FAIL:)'
 for _ in $(seq 1 "$VERDICT_TIMEOUT"); do
-    if grep -qE 'WoW UIKit (PASS:|TIMEOUT|FAIL:)' "$LOG"; then break; fi
+    if grep -qE "$verdict_re" "$LOG"; then break; fi
     sleep 1
 done
 kill "$LAUNCH" 2>/dev/null || true
@@ -193,10 +205,18 @@ if grep -q 'WoW UIKit TIMEOUT' "$LOG"; then
     echo "the launcher fixture hit its own hang guard" >&2
     exit 1
 fi
+if [ "$guide" = 1 ]; then
+    grep -q 'WoW UIKit GUIDE: done' "$LOG" || {
+        echo "the guide capture walk gave no verdict within ${VERDICT_TIMEOUT}s; last lines:" >&2
+        tail -8 "$LOG" >&2
+        exit 1
+    }
+else
 if ! grep -q 'WoW UIKit PASS:' "$LOG"; then
     echo "the launcher fixture gave no verdict within ${VERDICT_TIMEOUT}s; last lines:" >&2
     tail -8 "$LOG" >&2
     exit 1
+fi
 fi
 # The images the fixture drew are in its container, which is where anyone wanting to
 # look at the launcher's pages has to go looking.

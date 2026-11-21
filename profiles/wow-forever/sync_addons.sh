@@ -4,7 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-. tools/localenv.sh; tolkara_load_env
+# The engine's own local.env reader: it reads ./local.env, and this script has just cd'd to the
+# repository root, so the ignored local.env is the one it finds. platform/ is only read.
+. platform/tools/localenv.sh; tolkara_load_env
 
 SOURCE_ROOT="/Volumes/Storage/World of Warcraft"
 DEVICE=${DEVICE:-}

@@ -1,6 +1,6 @@
 # Notices
 
-> Verified: 2026-11-13 · Source: `3c33543`
+> Verified: 2026-11-21 · Source: `8375cbb`
 
 WolkaraForever continues Wolkara by fJavierLasso and uses the Tolkara runtime by Vasilii Kharitonov and Tolkara contributors. The repository retains the applicable MIT license and third-party notices.
 

@@ -1040,7 +1040,12 @@ static void TestIPadM5RenderProfile(void) {
     self.controller.executionMode=TKExecutionModeDeveloperService;
     self.window.rootViewController=[[UINavigationController alloc] initWithRootViewController:self.controller];
     [self.window makeKeyAndVisible];
-    [self performSelector:@selector(changeSelection) withObject:nil afterDelay:0.1];
+    // `--guide-captures` draws the pages for `docs/UI_REFERENCE.md` and stops: the assertion chain
+    // below is what a normal run is, and it is not entered at all in that mode.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--guide-captures"])
+        [self performSelector:@selector(startGuideCaptures) withObject:nil afterDelay:0.6];
+    else
+        [self performSelector:@selector(changeSelection) withObject:nil afterDelay:0.1];
 }
 - (void)changeSelection {
     [self.controller selectProduct:TKWoWProducts()[1]];
@@ -1697,6 +1702,114 @@ static void TestIPadM5RenderProfile(void) {
     if (!presented) return;
     [self.controller dismissViewControllerAnimated:NO completion:nil];
     PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
+}
+#pragma mark - Guide captures
+
+// Pictures of every page and sheet the launcher owns, for `docs/UI_REFERENCE.md`, and the
+// pairs in `docs/screenshots/`. It is a capture walk, not a test: it asserts nothing, starts no
+// guest and runs no update, and it is only entered with `--guide-captures`, so the assertion
+// chain above is byte-for-byte the run it always was. Every image lands in the fixture's own
+// Documents folder beside the reviewed baselines; the wrapper copies the ones the guide uses.
+- (void)startGuideCaptures {
+    PumpUntil(^{ return (BOOL)([self primary].enabled && [[self status] isEqual:@"Ready to play"]); }, 90.0);
+    Pump(0.6);
+    [self capture:@"guide-home.png"];
+
+    [self captureSheetForRow:@"wow.edition" name:@"guide-edition.png" titled:@"Choose your edition"];
+    [self captureSheetForRow:@"wow.preferences" name:@"guide-preferences.png" titled:@"Download preferences"];
+    [self captureSheetForRow:@"wow.language" name:@"guide-language.png" titled:@"App language"];
+    [self captureSheetForRow:@"wow.performance.deviceProfile" name:@"guide-device-profile.png" titled:@"Device profile"];
+    [self captureSheetForRow:@"wow.performance.renderProfile" name:@"guide-render-profile.png" titled:@"Render profile"];
+    [self captureSheetForRow:@"wow.launcher.interfaceMode" name:@"guide-interface-mode.png" titled:@"Interface Mode"];
+    [self captureSheetForRow:@"wow.launcher.layoutCreate" name:@"guide-layout-create.png" titled:@"Create a Controller Layout"];
+    [self captureSheetForRow:@"wow.launcher.interfaceSetup" name:@"guide-layout-editor.png" titled:@"Controller Layout"];
+
+    // The Battery Saver submenu and both of the choices behind it.
+    [self presentRow:@"wow.performance.batterySaver"];
+    UIAlertController *saver = WaitForSheetTitled(self.controller, @"Battery Saver", 20.0);
+    if (saver) {
+        [self capture:@"guide-battery-saver.png"];
+        UIAlertAction *frame = saver.actions.count ? saver.actions[0] : nil;
+        [self dismissPresented];
+        if (frame) {
+            RunAction(frame);
+            if (WaitForSheetTitled(self.controller, @"Frame limit", 20.0)) [self capture:@"guide-frame-limit.png"];
+            [self dismissPresented];
+        }
+        [self presentRow:@"wow.performance.batterySaver"];
+        saver = WaitForSheetTitled(self.controller, @"Battery Saver", 20.0);
+        UIAlertAction *afk = saver.actions.count > 1 ? saver.actions[1] : nil;
+        [self dismissPresented];
+        if (afk) {
+            RunAction(afk);
+            if (WaitForSheetTitled(self.controller, @"AFK saver", 20.0)) [self capture:@"guide-afk-saver.png"];
+            [self dismissPresented];
+        }
+    }
+
+    // The pages the launcher pushes rather than presents.
+    [self presentRow:@"wow.voice"];
+    if ([self settledPresentedController]) [self capture:@"guide-voice-page.png"];
+    [self dismissPresented];
+    [self presentRow:@"wow.touchpad"];
+    if ([self settledPresentedController]) [self capture:@"guide-touchpad-page.png"];
+    [self dismissPresented];
+    [self presentRow:@"wow.addons.manage"];
+    if ([self settledPresentedController]) [self capture:@"guide-addons-myaddons.png"];
+    [self dismissPresented];
+
+    // Settings, with and without a failure (the failure adds "Technical details"), and About.
+    [self openSettingsAndCapture:@"guide-settings.png" failure:nil];
+    [self openSettingsAndCapture:@"guide-settings-failed.png"
+                          failure:@"WolkaraForever could not start the game in this session."];
+    [self captureAboutPage];
+
+    puts("WoW UIKit GUIDE: done");
+    fflush(stdout);
+    exit(0);
+}
+- (void)presentRow:(NSString *)identifier {
+    UIButton *row=[self row:identifier];
+    if (!row) { NSLog(@"guide: no control %@", identifier); return; }
+    [row sendActionsForControlEvents:UIControlEventTouchUpInside];
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController != nil); }, 20.0);
+    Pump(0.5);
+}
+// One sheet, one picture. `titled` is what the app is supposed to have opened, so a row that
+// stopped opening its sheet shows up as a missing guide image rather than as a picture of the
+// page underneath.
+- (void)captureSheetForRow:(NSString *)identifier name:(NSString *)name titled:(NSString *)title {
+    if (!name) return;
+    [self presentRow:identifier];
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, title, 20.0);
+    if (sheet) [self capture:name];
+    else NSLog(@"guide: %@ did not open %@", identifier, title);
+    [self dismissPresented];
+}
+- (void)openSettingsAndCapture:(NSString *)name failure:(NSString *)failure {
+    UIBarButtonItem *gear = self.controller.navigationItem.rightBarButtonItem;
+    [self.controller setValue:failure forKey:@"_startupFailure"];
+    [self.controller render];
+    TapBarItem(gear);
+    if (WaitForSheetTitled(self.controller, @"Settings", 20.0)) [self capture:name];
+    [self dismissPresented];
+    [self.controller setValue:nil forKey:@"_startupFailure"];
+    [self.controller render];
+}
+- (void)captureAboutPage {
+    TapBarItem(self.controller.navigationItem.rightBarButtonItem);
+    UIAlertController *sheet = WaitForSheetTitled(self.controller, @"Settings", 20.0);
+    UIAlertAction *about = nil;
+    for (UIAlertAction *action in sheet.actions)
+        if ([action.title isEqual:@"About and open-source licenses"]) about = action;
+    [self dismissPresented];
+    if (!about) return;
+    RunAction(about);
+    PumpUntil(^{ return (BOOL)(self.controller.navigationController.topViewController != self.controller); }, 10.0);
+    Pump(0.5);
+    [self capture:@"guide-about.png"];
+    [self.controller.navigationController popToRootViewControllerAnimated:NO];
+    Pump(0.4);
 }
 - (NSString *)configText {
     return [NSString stringWithContentsOfFile:[fixture.directory stringByAppendingPathComponent:@"WTF/Config.wtf"]

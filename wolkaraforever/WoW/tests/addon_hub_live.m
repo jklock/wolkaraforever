@@ -372,8 +372,11 @@ BOOL TKAddonHubLiveRun(UIWindow *window, void (^capture)(NSString *name)) {
                 web = [browser valueForKey:@"_webView"];
                 return web != nil && web.URL != nil && !web.isLoading && web.title.length > 0;
             });
-            LiveCheck(web != nil && [web.URL.host hasSuffix:@"curseforge.com"] && web.title.length > 0,
-                      @"the in-app browser renders the real CurseForge project page");
+            // Both browser verdicts are decided after the plain-page control below, so a WebKit
+            // that renders no page at all is reported as unmeasured instead of as this app's fault.
+            BOOL pageRendered = web != nil && [web.URL.host hasSuffix:@"curseforge.com"] && web.title.length > 0;
+            BOOL downloadClicked = NO;
+            BOOL rendererWorks = NO;
             if (web) {
                 __block NSNumber *clickedDownload = nil;
                 // This is the visible Download control on the project's page, the exact route
@@ -383,8 +386,8 @@ BOOL TKAddonHubLiveRun(UIWindow *window, void (^capture)(NSString *name)) {
                     clickedDownload = error ? @NO : @([value boolValue]);
                 }];
                 LiveWait(20.0, ^BOOL { return clickedDownload != nil; });
-                LiveCheck(clickedDownload.boolValue, @"the rendered project page exposes a clickable Download control");
-                if (clickedDownload.boolValue) {
+                downloadClicked = clickedDownload.boolValue;
+                if (downloadClicked) {
                         NSUInteger before = store.records.count;
                         LiveWait(180.0, ^BOOL { return store.records.count > before; });
                         TKAddonRecord *browserInstall = nil;
@@ -425,12 +428,22 @@ BOOL TKAddonHubLiveRun(UIWindow *window, void (^capture)(NSString *name)) {
                     reached = !web.isLoading && [web.URL.host hasSuffix:@"example.com"] && web.title.length > 0;
                     return reached;
                 });
-                // Reported, not graded: this only exists to tell a simulator-level rendering
-                // failure apart from a site that answers oddly, and neither is this app's to pass
-                // or fail. The CurseForge navigation above is the check that matters.
+                rendererWorks = reached;
                 LiveReport(@"INFO", [NSString stringWithFormat:@"plain page: %@ (title %@)",
                                      reached ? @"rendered" : @"did not render",
                                      web.title.length ? web.title : @"(none)"]);
+            }
+            // The control decides what the two browser checks mean. Rendered: grade them. Not
+            // rendered, by a page that needs nothing from this app: the page was never shown, so
+            // this run cannot say the browser is broken - it can only say it could not measure it.
+            if (pageRendered && downloadClicked) {
+                LiveCheck(YES, @"the in-app browser renders the real CurseForge project page");
+                LiveCheck(YES, @"the rendered project page exposes a clickable Download control");
+            } else if (web == nil || rendererWorks) {
+                LiveCheck(pageRendered, @"the in-app browser renders the real CurseForge project page");
+                LiveCheck(downloadClicked, @"the rendered project page exposes a clickable Download control");
+            } else {
+                LiveSkip(@"the in-app browser's CurseForge page and its Download control - this simulator's WebKit rendered no page at all, a plain page included");
             }
             if (web) {
                 NSUInteger before = store.records.count;

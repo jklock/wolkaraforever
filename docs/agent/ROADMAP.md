@@ -1,6 +1,6 @@
 # Current roadmap
 
-> Verified: 2026-11-13 · Source: `3c33543` · Proof: current source and active roadmap review
+> Verified: 2026-11-21 · Source: `8375cbb` · Proof: current source and active roadmap review
 
 Current work is recorded only as outcomes that are not in the current source. Completed plans, PR reviews, and validation narratives are not repository documentation.
 

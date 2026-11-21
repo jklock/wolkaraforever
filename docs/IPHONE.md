@@ -1,6 +1,6 @@
 # Use WolkaraForever on iPhone
 
-> Verified: 2026-11-13 · Source: `3c33543`
+> Verified: 2026-11-21 · Source: `8375cbb`
 
 WolkaraForever can run on an iPhone that meets the [installation requirements](INSTALLATION.md). Plan storage and controls before downloading a game.
 
@@ -39,6 +39,6 @@ system roots. No such line means the build has none.
 ## Troubleshoot safely
 
 Use **Settings → Diagnostics and logs** for the exact error message and for the log itself:
-[Send us a log](SENDING_LOGS.md) has the three steps. Do not delete the app to solve a
+[Send us a log](SENDING_LOGS.md) walks through it. Do not delete the app to solve a
 configuration problem. Read [Compatibility](../COMPATIBILITY.md) before relying on a
 device-specific workflow.
