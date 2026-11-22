@@ -1724,7 +1724,13 @@ static void TestIPadM5RenderProfile(void) {
     [self captureSheetForRow:@"wow.launcher.layoutCreate" name:@"guide-layout-create.png" titled:@"Create a Controller Layout"];
     [self captureSheetForRow:@"wow.launcher.interfaceSetup" name:@"guide-layout-editor.png" titled:@"Controller Layout"];
 
-    // The Battery Saver submenu and both of the choices behind it.
+    // The Battery Saver submenu and both of the choices behind it. The submenu is closed while
+    // the master switch is off, so the guide turns it on for these three pictures and back off
+    // after them: the home page above was drawn in the state a new installation starts in.
+    UISwitch *saverMode = [self toggle:@"wow.performance.batterySaverMode"];
+    BOOL saverModeWas = saverMode.on;
+    saverMode.on = YES; [saverMode sendActionsForControlEvents:UIControlEventValueChanged];
+    Pump(0.3);
     [self presentRow:@"wow.performance.batterySaver"];
     UIAlertController *saver = WaitForSheetTitled(self.controller, @"Battery Saver", 20.0);
     if (saver) {
@@ -1746,6 +1752,10 @@ static void TestIPadM5RenderProfile(void) {
             [self dismissPresented];
         }
     }
+    saverMode = [self toggle:@"wow.performance.batterySaverMode"];
+    saverMode.on = saverModeWas;
+    [saverMode sendActionsForControlEvents:UIControlEventValueChanged];
+    Pump(0.3);
 
     // The pages the launcher pushes rather than presents.
     [self presentRow:@"wow.voice"];
@@ -1915,15 +1925,15 @@ static void TestIPadM5RenderProfile(void) {
         // plus the two whole-folder rows.
         @"wow.box.addons": @[@"wow.heading.addons", @"wow.addons.manage",
                              @"wow.addons.directory", @"wow.addons.backup", @"wow.addons.restore"],
-        @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.touchpad"],
+        @"wow.box.voice": @[@"wow.heading.voice", @"wow.permissions", @"wow.voice", @"wow.touchpad",
+                            @"wow.voice.test"],
         // The profile card: which device, which render scale, and Battery Saver. Nothing here
         // reads or writes the game's files, and there is no "restore defaults" row: the way
         // back is the Automatic choice in the device sheet, which is where the value lives.
-        // The performance overlay's switch is gone from this card: it is already controllable
-        // while the game runs, and a launcher that wrote the same preference was one owner too
-        // many.
+        // Battery Saver is one switch and the submenu it owns; battery-saving sound is no
+        // longer a row because it is a performance fix, not a preference.
         @"wow.box.profile": @[@"wow.heading.profile", @"wow.performance.deviceProfile",
-                              @"wow.performance.renderProfile", @"wow.performance.audioAvoidHAL",
+                              @"wow.performance.renderProfile", @"wow.performance.batterySaverMode",
                               @"wow.performance.batterySaver"],
         @"wow.box.performance": @[@"wow.heading.performance", @"wow.performance.gamepad",
                                   @"wow.performance.backup", @"wow.performance.restore",
@@ -2010,11 +2020,12 @@ static void TestIPadM5RenderProfile(void) {
     // --- enabled state on a ready, idle installation
     for (NSString *identifier in @[@"wow.performance.backup", @"wow.performance.reset",
                                    @"wow.performance.restore", @"wow.performance.settingsFolder",
-                                   @"wow.performance.batterySaver",
                                    @"wow.addons.manage", @"wow.voice", @"wow.touchpad",
+                                   @"wow.voice.test",
                                    @"wow.permissions", @"wow.addons.macEver"])
         assert([self row:identifier].enabled);
     assert([self toggle:@"wow.performance.gamepad"].enabled);
+    assert([self toggle:@"wow.performance.batterySaverMode"].enabled);
     // A usable switch row reads in the same gold as the button rows, not in
     // white: the two styles used to disagree on the same page.
     assert(CGColorEqualToColor([(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") textColor].CGColor,
@@ -2161,10 +2172,10 @@ static void TestIPadM5RenderProfile(void) {
     // to the next launch. Off is full performance, so the submenu is closed until it is on.
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
         isEqual:@"Battery Saver: Off"]);
-    UISwitch *batterySaverMode = [self toggle:@"wow.performance.batterySaverMode"];
-    assert(batterySaverMode != nil && !batterySaverMode.on);
+    UISwitch *batterySaverSwitch = [self toggle:@"wow.performance.batterySaverMode"];
+    assert(batterySaverSwitch != nil && !batterySaverSwitch.on);
     assert(![(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") isEnabled]);
-    batterySaverMode.on = YES; [batterySaverMode sendActionsForControlEvents:UIControlEventValueChanged];
+    batterySaverSwitch.on = YES; [batterySaverSwitch sendActionsForControlEvents:UIControlEventValueChanged];
     Pump(0.3);
     assert([NSUserDefaults.standardUserDefaults boolForKey:@"WolkaraForeverBatterySaverEnabledV1"]);
     assert(AKBatterySaverStoredEnabled());
@@ -2336,8 +2347,10 @@ static int backupsBeforePerformance;
     assert([self gamepadAssignments:config enabled:&enabled] == 1 && enabled);
     // The row means the interface, not only the input layer: the whole set is written, and a
     // client that does not know a name ignores it.
-    for (NSString *cvar in @[ @"GamePadWindow", @"GamePadLook", @"GamePadStick", @"GamePadEmulate" ])
-        assert([config containsString:[NSString stringWithFormat:@"SET %@ \"1\"", cvar]]);
+    for (NSString *cvar in @[ @"GamePadWindow", @"GamePadLook", @"GamePadStick", @"GamePadEmulate" ]) {
+        NSString *line = [NSString stringWithFormat:@"SET %@ \"1\"", cvar];
+        assert([config containsString:line]);
+    }
     assert([config containsString:@"SET accountName \"TESTACCOUNT\""]);
     UISwitch *gamepad = [self toggle:@"wow.performance.gamepad"];
     assert(gamepad.on && [[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text] isEqual:@"Gamepad UI"]);
@@ -2550,27 +2563,20 @@ static int backupsBeforePerformance;
 
 #pragma mark - Battery-saving sound
 
-// The sound path row (patch 0065): a switch, on by default - the game's sound without iOS's HAL, whose
-// Bluetooth plug-in took a quarter of a core on the iPad. It stores YES or NO in the one key both audio adapters read at
-// the game's first sound call (AKAudioModel.h), and nothing else; off is the old path, for audio problems on the iPad.
+// The sound path (patch 0065) is no longer a row: the game's sound without iOS's HAL is a
+// performance fix, not a preference, so the page turns it on for every launch and nothing on
+// the device can put the game back on the HAL path.
 - (void)checkSoundPathRow {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    [defaults removeObjectForKey:@"WolkaraForeverAudioAvoidHAL"];
-    [self.controller render];
-    UISwitch *sound = [self toggle:@"wow.performance.audioAvoidHAL"];
-    assert(sound.on && sound.enabled && sound.allTargets.count > 0);
-    assert([[(UILabel *)Find(self.controller.view, @"wow.performance.audioAvoidHAL.label") text] isEqual:@"Battery-saving sound"]);
-    sound.on = NO; [sound sendActionsForControlEvents:UIControlEventValueChanged];
-    assert([defaults objectForKey:@"WolkaraForeverAudioAvoidHAL"] != nil && ![defaults boolForKey:@"WolkaraForeverAudioAvoidHAL"]);
-    assert(![self toggle:@"wow.performance.audioAvoidHAL"].on);
-    sound.on = YES; [sound sendActionsForControlEvents:UIControlEventValueChanged];
-    assert([defaults boolForKey:@"WolkaraForeverAudioAvoidHAL"] && [self toggle:@"wow.performance.audioAvoidHAL"].on);
-    // A stored value that is not the row's (a string) reads as on, as the adapters read it.
-    [defaults setObject:@"no" forKey:@"WolkaraForeverAudioAvoidHAL"];
-    [self.controller render];
-    assert([self toggle:@"wow.performance.audioAvoidHAL"].on);
-    [defaults removeObjectForKey:@"WolkaraForeverAudioAvoidHAL"];
-    [self.controller render];
+    assert([self toggle:@"wow.performance.audioAvoidHAL"] == nil);
+    assert(Find(self.controller.view, @"wow.performance.audioAvoidHAL") == nil);
+    // A copy stored off while the row existed is turned back on when a page is built.
+    [defaults setBool:NO forKey:@"WolkaraForeverAudioAvoidHAL"];
+    TKWoWViewController *fresh = [[TKWoWViewController alloc]
+        initWithLibrary:(id)[self.controller valueForKey:@"_library"]];
+    [fresh loadViewIfNeeded];
+    assert([defaults boolForKey:@"WolkaraForeverAudioAvoidHAL"]);
+    [fresh.view removeFromSuperview];
 }
 
 #pragma mark - The app's language, and the game's
@@ -3186,7 +3192,6 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(![self row:@"wow.permissions"].enabled);
     assert(![self toggle:@"wow.performance.gamepad"].enabled);
     assert(![self toggle:@"wow.performance.batterySaverMode"].enabled);
-    assert(![self toggle:@"wow.performance.audioAvoidHAL"].enabled);
     // ...and their labels are the same grey as the rows beside them, rather than
     // keeping the white they use when they are usable.
     assert(CGColorEqualToColor([(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") textColor].CGColor,
