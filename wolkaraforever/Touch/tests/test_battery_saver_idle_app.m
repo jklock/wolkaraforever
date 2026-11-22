@@ -21,9 +21,15 @@ static void NoteDim(NSNotification *note) {
 
 int main(void) { @autoreleasepool {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    for (NSString *key in @[AKBatterySaverFrameLimitDefaultsKey, AKBatterySaverAFKMinutesDefaultsKey,
+    for (NSString *key in @[AKBatterySaverEnabledDefaultsKey,
+                             AKBatterySaverFrameLimitDefaultsKey, AKBatterySaverAFKMinutesDefaultsKey,
+                             AKBatterySaverLaunchEnabledDefaultsKey,
                              AKBatterySaverLaunchFrameLimitDefaultsKey, AKBatterySaverLaunchAFKMinutesDefaultsKey])
         [defaults removeObjectForKey:key];
+    // This fixture is a session that opted into battery saving: the coordinator only exists
+    // for one, and its frame policy reports nothing while the master switch is off.
+    AKBatterySaverSetEnabled(YES);
+    AKBatterySaverCommitLaunchSnapshot();
     [NSNotificationCenter.defaultCenter addObserverForName:AKBatterySaverDimDidChangeNotification
                                                     object:nil queue:nil usingBlock:^(NSNotification *note) {
         NoteDim(note);
@@ -59,6 +65,13 @@ int main(void) { @autoreleasepool {
     // --- While dimmed the session is at the dim's fixed rate, not at the selection.
     AKBatterySaverFramePolicy dimmedPolicy = idle.framePolicy;
     assert(dimmedPolicy.capped && dimmedPolicy.framesPerSecond == AKBatterySaverDimFramesPerSecond);
+    // The master switch outranks the dim as well: a session that opted into nothing stays at
+    // full performance even while this coordinator is dimmed.
+    AKBatterySaverSetEnabled(NO);
+    AKBatterySaverCommitLaunchSnapshot();
+    assert(!idle.framePolicy.capped);
+    AKBatterySaverSetEnabled(YES);
+    AKBatterySaverCommitLaunchSnapshot();
 
     // --- The first input after the dim only wakes: it is consumed, and the next one is
     // delivered. Every source the host reports behaves the same way.

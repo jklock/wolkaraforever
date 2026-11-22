@@ -40,6 +40,11 @@
     return self;
 }
 
+// The cheapest form of the same question, for a caller that has not built the element id yet.
+- (BOOL)admitsAnyElement {
+    return _mode != AKInputInterestModeNone;
+}
+
 - (BOOL)admitsElement:(NSString *)element {
     if (!element.length) return NO;
     switch (_mode) {

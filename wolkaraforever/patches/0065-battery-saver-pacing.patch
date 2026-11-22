@@ -4,6 +4,11 @@
 # something has to enforce them. Both are applied at boundaries the adapters already own:
 # the guest's own presentation call, and the host view that receives every input.
 #
+# The submenu is behind one master switch, Battery Saver Mode. Off means full performance and
+# nothing here is installed at all: no presentable call is changed, no observer is registered
+# and no idle coordinator exists. The two stored choices only apply while the switch is on, and
+# the switch reaches the adapters through the same launch snapshot as the choices.
+#
 # Metal. Apple documents three kinds of presentation on a command buffer - immediate, timed
 # and minimum-duration, the last of which "holds the previous drawable for at least the
 # specified duration" (MTLCommandBuffer). A cap is therefore expressible in the guest's own
@@ -48,7 +53,7 @@
  #include <stdatomic.h>
  #include <dlfcn.h>
  #include <os/lock.h>
-@@ -137,6 +138,112 @@
+@@ -137,6 +138,122 @@
  __attribute__((visibility("default"))) void AKEnableMetalFrameStatistics(void) { atomic_store(&s_recordFrames, true); }
  __attribute__((visibility("default"))) void AKDisableMetalFrameStatistics(void) { atomic_store(&s_recordFrames, false); }
  
@@ -144,6 +149,16 @@
 +    return target;
 +}
 +
++// What the layer actually presented, recorded so the next frame is paced from it. Without this,
++// a frame the guest had already timed later than the cap left the layer's target behind at the
++// one it skipped, and the next frame could land closer than the interval: the cap stopped being
++// a cap for as long as the guest ran behind it.
++static void AKBatterySaverRecordPace(id<MTLDrawable> drawable, CFTimeInterval presented) {
++    if(![drawable isKindOfClass:NSObject.class] || ![(NSObject *)drawable respondsToSelector:@selector(layer)]) return;
++    CALayer *layer = [(id<CAMetalDrawable>)drawable layer];
++    if(layer) objc_setAssociatedObject(layer, &paceMarker, @(presented), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
++}
++
 +// Watches the one state that must apply immediately: the AFK dim's fixed 10 FPS.
 +static void AKBatterySaverObserveDim(void) {
 +    [NSNotificationCenter.defaultCenter addObserverForName:AKBatterySaverDimDidChangeNotification
@@ -208,7 +223,7 @@
 +    // earlier than the cap allows, and never earlier than the guest asked for.
 +    CFTimeInterval target=AKBatterySaverPaceTarget(drawable,interval);
 +    if(target>time) { atomic_fetch_add(&s_paceRaised,1); originalPresentAt(command,selector,drawable,target); }
-+    else { atomic_fetch_add(&s_paceKept,1); originalPresentAt(command,selector,drawable,time); }
++    else { atomic_fetch_add(&s_paceKept,1); AKBatterySaverRecordPace(drawable,time); originalPresentAt(command,selector,drawable,time); }
 +}
 +static void observedPresentAfter(id command,SEL selector,id<MTLDrawable> drawable,CFTimeInterval time) {
 +    markCapture(command,drawable); notePresented(command);
@@ -231,8 +246,8 @@
 -    if(!sample && !measure && !hud) return;
 +    // Battery Saver. The choice was snapshotted by the launcher before this guest started,
 +    // so a submenu change cannot alter the session that is playing.
-+    BOOL pacing=AKBatterySaverLaunchFrameLimit()!=AKBatterySaverFrameLimitOff ||
-+                AKBatterySaverLaunchAFKMinutes()>0;
++    BOOL pacing=AKBatterySaverLaunchEnabled() && (AKBatterySaverLaunchFrameLimit()!=AKBatterySaverFrameLimitOff ||
++                                                AKBatterySaverLaunchAFKMinutes()>0);
 +    // Nothing to observe or pace in ordinary play: no presentation hook is installed at all.
 +    if(!sample && !measure && !hud && !pacing) return;
      static dispatch_once_t once;
@@ -272,7 +287,7 @@
 +        // an AFK timeout: with the option off there is no layer, no timer and no change to any
 +        // input path. The dim is a view over the game surface - never a change to the
 +        // display's brightness, to idleTimerDisabled, to the session or to the game.
-+        if (AKBatterySaverLaunchAFKMinutes() > 0) {
++        if (AKBatterySaverLaunchEnabled() && AKBatterySaverLaunchAFKMinutes() > 0) {
 +            _batterySaver = [[AKBatterySaverIdle alloc] initWithHostView:self];
 +            __weak AKHostView *weakSelf = self;
 +            _batterySaver.configurationActive = ^BOOL {

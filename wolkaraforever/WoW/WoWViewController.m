@@ -5,6 +5,7 @@
 #import "BattleNetSession.h"
 #import "AddonManager.h"
 #import "../Voice/VoiceViewController.h"
+#import "../Voice/VoiceTestViewController.h"
 #import "../Voice/ControllerTouchpadViewController.h"
 #import "../App/WolkaraForeverLog.h"
 #import "../App/WolkaraForeverTheme.h"
@@ -269,7 +270,7 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     UIStackView *_gridRow1, *_gridRow2, *_gridRow3, *_topRow;
     UILabel *_stateLabel, *_detailLabel, *_versionLabel;
     UIButton *_editionButton, *_preferencesButton, *_languageButton, *_browserLoginButton, *_addonsButton, *_addonsDirectoryButton,
-        *_voiceButton, *_touchpadButton, *_permissionsButton, *_primaryButton,
+        *_voiceButton, *_voiceTestButton, *_touchpadButton, *_permissionsButton, *_primaryButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
         *_renderProfileButton, *_deviceProfileButton, *_batterySaverButton, *_interfaceModeButton,
         *_addonsBackupButton, *_addonsRestoreButton,
@@ -277,7 +278,7 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     // The section headings, by their box's identifier, so a language change can rewrite
     // them where they were made instead of rebuilding the page.
     NSMutableDictionary<NSString *, UILabel *> *_headings;
-    TKWoWSwitchRow *_gamepadRow, *_soundRow;
+    TKWoWSwitchRow *_gamepadRow, *_batterySaverModeRow;
     UIButton *_interfaceSetupButton;
     // Set while the layout-import picker is up, so a document chosen there is read as a layout
     // backup and never mistaken for the UI restore's snapshot.
@@ -424,6 +425,11 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     _refreshItem.accessibilityIdentifier=@"wow.refresh";
     self.navigationItem.leftBarButtonItem=_refreshItem;
 
+    // Battery-saving sound is no longer a choice. It is a performance fix - the game's own
+    // mixer instead of iOS's Bluetooth audio HAL, which took a quarter of a core - so it is on
+    // for every launch, including one that switched it off while it was still a row.
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:AKAudioAvoidHALDefaultsKey];
+
     // Identity and the play surface share the top of the page; the four
     // sections sit in boxes underneath both, so the whole page fits without
     // scrolling on an iPad instead of a column that has to be scrolled.
@@ -454,24 +460,22 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     // action - and it is the only place those switches can be changed.
     _permissionsButton=[self button:@"wow.permissions" action:@selector(openPermissions)];
     _voiceButton=[self button:@"wow.voice" action:@selector(manageVoice)];
+    _voiceTestButton=[self button:@"wow.voice.test" action:@selector(testVoice)];
     _touchpadButton=[self button:@"wow.touchpad" action:@selector(configureTouchpad)];
     _backupButton=[self button:@"wow.performance.backup" action:@selector(backupUI)];
     _resetButton=[self button:@"wow.performance.reset" action:@selector(resetGraphics)];
     _restoreButton=[self button:@"wow.performance.restore" action:@selector(restoreUI)];
     _gamepadRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.gamepad"
         target:self action:@selector(gamepadChanged:)];
-    // Battery Saver is a submenu, not a switch: it owns two choices and both of them apply to
-    // the *next* launch, which a switch has no way to say. The performance overlay's launcher
-    // switch is deliberately gone - it is already controllable while the game runs, from the
-    // in-game settings page, and a second writer of the same preference was one owner too many.
+    // Battery Saver is one switch and one submenu. The switch is the decision - off is full
+    // performance, and nothing in the submenu is installed - while the submenu keeps the two
+    // choices that only matter when it is on. Both apply to the *next* launch, which is why the
+    // switch must not pretend to change this session.
+    _batterySaverModeRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.batterySaverMode"
+        target:self action:@selector(batterySaverModeChanged:)];
     _batterySaverButton=[self button:@"wow.performance.batterySaver" action:@selector(chooseBatterySaver)];
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
-    // Battery-saving sound (patch 0065): the game's sound without iOS's HAL, whose Bluetooth plug-in took a quarter of a
-    // core on the iPad. On by default; off is the old path, for audio problems. Both audio adapters read it at the game's
-    // first sound call (AKAudioModel.h).
-    _soundRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.audioAvoidHAL"
-        target:self action:@selector(soundPathChanged:)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
     // The interface this launcher drives. One setting, one row: it writes the single key the
     // guest reads and never touches an installed package.
@@ -495,9 +499,9 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
         rows:@[_addonsButton,_addonsDirectoryButton,_addonsBackupButton,_addonsRestoreButton]];
     UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
-        rows:@[_permissionsButton,_voiceButton,_touchpadButton]];
+        rows:@[_permissionsButton,_voiceButton,_touchpadButton,_voiceTestButton]];
     UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
-        rows:@[_deviceProfileButton,_renderProfileButton,_soundRow,_batterySaverButton]];
+        rows:@[_deviceProfileButton,_renderProfileButton,_batterySaverModeRow,_batterySaverButton]];
     // The gamepad switch is the first decision in the UI card: it changes whether the game
     // exposes its controller interface. Backup precedes Restore because restore replaces data.
     UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
@@ -900,7 +904,7 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     _headings[@"wow.box.performance"].text=WKLocalized(@"home.box.performance").uppercaseString;
     _headings[@"wow.box.launcherManager"].text=WKLocalized(@"home.box.launcherManager").uppercaseString;
     [_gamepadRow applyTitle:WKLocalized(@"home.performance.gamepad")];
-    [_soundRow applyTitle:WKLocalized(@"home.performance.audioAvoidHAL")];
+    [_batterySaverModeRow applyTitle:WKLocalized(@"home.performance.batterySaverMode")];
     _browserLoginButton.accessibilityLabel=WKLocalized(@"login.row");
     [_diagnosticsButton setTitle:WKLocalized(@"home.diagnostics") forState:UIControlStateNormal];
     _updatesLabel.text=WKLocalized(@"home.updates.note");
@@ -1020,6 +1024,11 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     [self configureButton:_touchpadButton title:WKLocalized(@"home.touchpad.configuration") filled:NO];
     _touchpadButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _touchpadButton.enabled=_voiceButton.enabled;
+    // The same mapping, exercised end to end: a box the transcript lands in, driven by the
+    // button the user mapped, so dictation can be tried without starting the game.
+    [self configureButton:_voiceTestButton title:WKLocalized(@"home.voice.test") filled:NO];
+    _voiceTestButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _voiceTestButton.enabled=_voiceButton.enabled;
     [self configureButton:_permissionsButton title:WKLocalized(@"home.permissions") filled:NO];
     _permissionsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     // Navigation to Settings is available whenever the page is usable; a
@@ -1032,10 +1041,17 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     // WolkaraForever runtime feature and follows the launcher's non-busy rule.
     NSString *foreverDirectory=[self foreverWorkingDirectory];
     BOOL foreverReady=foreverDirectory && !_busy && !_starting && !_running && !_sessionUsed && !_uiOperation;
-    // Do not redraw the switch back to its old Config.wtf value while its write is in flight.
-    // That made a successful tap visibly undo itself, despite the later write succeeding.
-    if (!_gamepadChangePending)
-        _gamepadEnabled=foreverDirectory?[TKForeverUI gamepadEnabledInWorkingDirectory:foreverDirectory]:NO;
+    // The switch shows the launcher's own stored choice, not the client's file: the game
+    // rewrites Config.wtf when it exits, so reading the row back from it lost the choice the
+    // person had just made. An installation that enabled this before the key existed adopts
+    // what its file already says, once.
+    if (!_gamepadChangePending) {
+        NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
+        if (foreverDirectory && [defaults objectForKey:TKForeverUIGamepadDefaultsKey]==nil &&
+            [TKForeverUI gamepadEnabledInWorkingDirectory:foreverDirectory])
+            [TKForeverUI setStoredGamepadUI:YES];
+        _gamepadEnabled=foreverDirectory?[TKForeverUI storedGamepadUI]:NO;
+    }
     for (UIButton *button in @[_backupButton,_resetButton,_restoreButton,_settingsFolderButton]) {
         button.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
         button.enabled=foreverReady;
@@ -1084,15 +1100,17 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     [self configureButton:_renderProfileButton title:WKLocalizedFormat(@"home.performance.renderProfile",[self renderProfileDescription]) filled:NO];
     _renderProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _renderProfileButton.enabled=preferencesIdle;
-    _soundRow.enabled=preferencesIdle;
-    _soundRow.toggle.on=AKAudioAvoidHALIn(NSUserDefaults.standardUserDefaults);
-    // Battery Saver reads its two stored choices on every pass, so a sheet that changed one is
+    // Battery Saver reads its stored choices on every pass, so a sheet that changed one is
     // summarised on the row immediately. It follows the same idle rule: a decision about how the
     // next session is paced is not taken while this one is starting or running.
+    BOOL batterySaverOn=AKBatterySaverStoredEnabled();
+    _batterySaverModeRow.enabled=preferencesIdle;
+    _batterySaverModeRow.toggle.on=batterySaverOn;
     [self configureButton:_batterySaverButton
         title:WKLocalizedFormat(@"home.performance.batterySaver",[self batterySaverSummary]) filled:NO];
     _batterySaverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _batterySaverButton.enabled=preferencesIdle;
+    // The two choices are what the switch turns on, so they are only usable while it is on.
+    _batterySaverButton.enabled=preferencesIdle && batterySaverOn;
     _editionButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _preferencesButton.enabled=_editionButton.enabled;
     _languageButton.enabled=_editionButton.enabled;
@@ -1216,7 +1234,7 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     _refreshItem.enabled=!_busy && !_sessionUsed && !_starting && !_running;
     for (UIButton *button in @[_editionButton,_preferencesButton,_addonsButton,_macEverButton,_addonsDirectoryButton,
                                 _addonsBackupButton,_addonsRestoreButton,
-                                _permissionsButton,_voiceButton,_touchpadButton,_backupButton,_resetButton,
+                                _permissionsButton,_voiceButton,_voiceTestButton,_touchpadButton,_backupButton,_resetButton,
                                 _restoreButton,_settingsFolderButton,_interfaceModeButton,
                                 _batterySaverButton,
                                 _layoutCreateButton,_interfaceSetupButton,_layoutRestoreButton,_layoutBackupButton])
@@ -1461,6 +1479,11 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 - (void)manageVoice {
     [self presentPage:[AKVoiceViewController new]];
 }
+// The same settings, exercised: a box the transcript lands in, driven by the button the user
+// mapped, so it can be tried without starting the game.
+- (void)testVoice {
+    [self presentPage:[AKVoiceTestViewController new]];
+}
 - (void)configureTouchpad {
     [self presentPage:[AKControllerTouchpadViewController new]];
 }
@@ -1700,7 +1723,7 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     __weak TKWoWViewController *weakSelf=self;
     dispatch_async(TKForeverUIQueue(), ^{
         NSError *error=nil;
-        BOOL stored=[TKForeverUI setGamepad:want inWorkingDirectory:directory error:&error];
+        BOOL stored=[TKForeverUI setGamepadUI:want inWorkingDirectory:directory error:&error];
         dispatch_async(dispatch_get_main_queue(), ^{
             TKWoWViewController *self=weakSelf; if(!self) return;
             self->_gamepadChangePending=NO;
@@ -1741,18 +1764,33 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     return WKLocalized(@"home.batterySaver.off");
 }
 - (NSString *)batterySaverSummary {
+    // Off is the whole answer while the mode is off: none of the choices inside is installed,
+    // whatever they say, so naming them would describe a session that will not happen.
+    if (!AKBatterySaverStoredEnabled()) return WKLocalized(@"home.batterySaver.off");
     AKBatterySaverFrameLimit limit=AKBatterySaverStoredFrameLimit();
     NSInteger minutes=AKBatterySaverStoredAFKMinutes();
-    // Both off is the state every installation starts in, and it reads as one word rather
-    // than "Off · Off".
-    if (limit==AKBatterySaverFrameLimitOff && minutes==0) return WKLocalized(@"home.batterySaver.off");
+    // On with neither choice made is a real state - the mode is on and nothing is limited -
+    // and it says so rather than "Off · Off".
+    if (limit==AKBatterySaverFrameLimitOff && minutes==0) return WKLocalized(@"home.batterySaver.on");
     return [NSString stringWithFormat:@"%@ · %@",[self batterySaverFrameText:limit],[self batterySaverAFKText:minutes]];
 }
-// One submenu with two decisions, both of which take effect at the next launch. A cap that
-// started the moment it was chosen would change the pacing of the session under the player's
-// hands, and the guest has already been given its pacing for this run.
+// One master switch, and both of the choices it owns take effect at the next launch. A cap
+// that started the moment it was chosen would change the pacing of the session under the
+// player's hands, and the guest has already been given its pacing for this run.
+- (void)batterySaverModeChanged:(UISwitch *)sender {
+    if (_busy || _starting || _running || _sessionUsed) {
+        sender.on=AKBatterySaverStoredEnabled();
+        return;
+    }
+    AKBatterySaverSetEnabled(sender.on);
+    WKLog("ui", @"battery saver mode: %@", sender.on?@"on":@"off (full performance)");
+    [self render];
+}
+// The submenu behind the switch: the two choices, in one place, and nothing that can be
+// changed while the mode is off.
 - (void)chooseBatterySaver {
     if (_busy || _starting || _running || _sessionUsed) return;
+    if (!AKBatterySaverStoredEnabled()) return;
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.batterySaver.title")
         message:WKLocalized(@"home.batterySaver.message")
         preferredStyle:UIAlertControllerStyleActionSheet];
@@ -1801,13 +1839,9 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     }
     [self presentSheet:sheet anchor:_batterySaverButton];
 }
-// Battery-saving sound: one key, YES or NO, read by both audio adapters at the next game's first sound call.
-- (void)soundPathChanged:(UISwitch *)sender {
-    if (_busy || _starting || _running || _sessionUsed) { sender.on=AKAudioAvoidHALIn(NSUserDefaults.standardUserDefaults); return; }
-    [NSUserDefaults.standardUserDefaults setBool:sender.on forKey:AKAudioAvoidHALDefaultsKey];
-    WKLog("ui", @"battery-saving sound: %@", sender.on?@"on (the HAL avoided)":@"off (iOS's HAL, the old path)");
-    [self render];
-}
+// Battery-saving sound is no longer a switch on this page. It is a performance fix, not a
+// preference, so -viewDidLoad turns it on for every launch; the row that used to offer it had
+// only one sensible position left.
 // This is selected before starting Forever. The guest backing scale is fixed
 // when its display bridge loads, so changing it never tears down a live game.
 #pragma mark - Device profile and render profile
@@ -2526,6 +2560,15 @@ static NSString *ElementLabel(NSString *element) {
 - (void)beginStartup {
     [self loadViewIfNeeded];
     [self prepareRenderProfileForStartup];
+    // The game rewrites its own Config.wtf when it exits, so a Gamepad UI choice made before
+    // the last session can be gone by now. The launcher's stored copy is the owner, and the
+    // file is put back immediately before every start, whichever launch path this is.
+    NSString *directory=[self foreverWorkingDirectory];
+    if (directory) {
+        NSError *error=nil;
+        if (![TKForeverUI applyStoredGamepadUIInWorkingDirectory:directory error:&error])
+            WKLog("ui", @"gamepad UI: not applied before start: %@", error.localizedDescription?:@"unknown reason");
+    }
     [self cancel]; _starting=YES; _running=NO; _startupFailure=nil;
     _detailLabel.text=WKLocalized(@"home.status.starting.detail");
     _diagnosticsButton.hidden=YES;

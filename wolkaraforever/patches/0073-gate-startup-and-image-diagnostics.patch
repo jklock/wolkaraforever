@@ -1,0 +1,70 @@
+# WolkaraForever layer patch 0073 - keep startup and image tracing out of play
+#
+# Why: a device capture from 2026-11-22 held 18,013 lines for one session, and 16,488 of them
+# were two diagnostics nobody had asked for. 13,304 were one line per guest initializer, written
+# synchronously to unbuffered stderr on the path that starts the game; 3,184 were one line per
+# NSBitmapImageRep, written on the thread that loads textures while the world streams in. Neither
+# changes game behavior; both remain available when explicitly requested.
+#
+# Applies to: runtime/NativeGuest.m
+#             translation/AppKit/Images.m
+# Upstream: candidate.
+
+diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
+--- a/runtime/NativeGuest.m
++++ b/runtime/NativeGuest.m
+@@ -49,9 +49,18 @@
+ #include <stdarg.h>
+ #include <stdatomic.h>
+ #include <sys/stat.h>
+ #include <mach/mach_time.h>
+ static atomic_bool initialization_attempted;
+ static unsigned software_cpu_limit;
++// One line per initializer is tracing, not operation: the client records more than thirteen
++// thousand of them, and every line is a synchronous, unbuffered stderr write on the path that
++// is trying to start the game. Kept behind a switch because this sequence is the first thing
++// to read when an initializer crashes.
++static bool trace_initializers(void) {
++    static bool enabled; static dispatch_once_t once;
++    dispatch_once(&once, ^{ const char *value=getenv("TOLKARA_TRACE_INITIALIZERS"); enabled=value && *value; });
++    return enabled;
++}
+ // ng_startup_step: a new step restarts its clock; counting within it does not.
+ static os_unfair_lock startup_lock=OS_UNFAIR_LOCK_INIT;
+ static NGStartupStep startup_step;
+@@ -2032,7 +2040,7 @@
+             for(uint64_t i=1;i<guest.image.initializer_count;i++) {
+                 uintptr_t function=(uintptr_t)gi_placed_initializer(&guest.image,guest.slide,i);
+                 if (!inside((void *)function,4) || (function&3)) { LOG("[native] invalid initializer %llu=%p\n",(unsigned long long)i,(void *)function); ok=false; goto done; }
+-                LOG("[native] initializer %llu preferred=%#llx native=%p\n",(unsigned long long)i,(unsigned long long)(function-guest.slide),(void *)function);
++                if (trace_initializers()) LOG("[native] initializer %llu preferred=%#llx native=%p\n",(unsigned long long)i,(unsigned long long)(function-guest.slide),(void *)function);
+                 ((void (*)(int,const char **,const char **,const char **))function)(argc,argv,env,apple);
+                 startup_count(i+1);
+             }
+diff --git a/translation/AppKit/Images.m b/translation/AppKit/Images.m
+--- a/translation/AppKit/Images.m
++++ b/translation/AppKit/Images.m
+@@ -1,6 +1,14 @@
+ #import "Images.h"
+ #include <limits.h>
+ #include <math.h>
++// Bitmap construction is part of the image path, not a step with a result; one line per bitmap
++// is a synchronous stderr write inside texture loading. Kept behind a switch for when the image
++// path itself is what is being investigated.
++static bool trace_images(void) {
++    static bool enabled; static dispatch_once_t once;
++    dispatch_once(&once, ^{ const char *value=getenv("TOLKARA_TRACE_IMAGES"); enabled=value && *value; });
++    return enabled;
++}
+ CGPathRef AKCreateCursorPath(CGImageRef image, CGSize size, CGPoint hotSpot) {
+     if(!image || !isfinite(size.width) || !isfinite(size.height) || size.width<=0 || size.height<=0 || !isfinite(hotSpot.x) || !isfinite(hotSpot.y))return NULL;
+     // Keep conversion bounded even for malformed or oversized guest images.
+@@ -44,7 +52,7 @@
+     CGImageRef _snapshot;
+ }
+ - (instancetype)initWithBitmapDataPlanes:(unsigned char **)planes pixelsWide:(NSInteger)width pixelsHigh:(NSInteger)height bitsPerSample:(NSInteger)bits samplesPerPixel:(NSInteger)samples hasAlpha:(BOOL)alpha isPlanar:(BOOL)planar colorSpaceName:(NSString *)space bitmapFormat:(NSUInteger)format bytesPerRow:(NSInteger)rowBytes bitsPerPixel:(NSInteger)pixelBits {
+-    AKLog(@"bitmap %ldx%ld bits=%ld samples=%ld alpha=%d planar=%d format=%lu stride=%ld pixelBits=%ld space=%@",(long)width,(long)height,(long)bits,(long)samples,alpha,planar,(unsigned long)format,(long)rowBytes,(long)pixelBits,space);
++    if(trace_images()) AKLog(@"bitmap %ldx%ld bits=%ld samples=%ld alpha=%d planar=%d format=%lu stride=%ld pixelBits=%ld space=%@",(long)width,(long)height,(long)bits,(long)samples,alpha,planar,(unsigned long)format,(long)rowBytes,(long)pixelBits,space);
+     // Packed 8-bit RGB(A), including caller-owned planes; RGB may be padded to
+     // 32 bits a pixel. Reject other formats explicitly instead of returning
+     // storage with an incompatible layout.

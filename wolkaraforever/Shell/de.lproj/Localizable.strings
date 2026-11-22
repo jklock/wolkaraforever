@@ -118,6 +118,7 @@
 "home.performance.settingsFolder" = "Einstellungsordner öffnen";
 "home.performance.gamepad" = "Gamepad-Oberfläche";
 "home.performance.batterySaver" = "Akku-Sparmodus: %@";
+"home.performance.batterySaverMode" = "Akku-Sparmodus";
 "home.batterySaver.title" = "Akku-Sparmodus";
 "home.batterySaver.message" = "Beide Einstellungen gelten ab dem nächsten Spielstart.";
 "home.batterySaver.frameLimit" = "Bildrate: %@";
@@ -133,8 +134,8 @@
 "home.batterySaver.afk.5" = "5 Minuten";
 "home.batterySaver.afk.10" = "10 Minuten";
 "home.batterySaver.off" = "Aus";
+"home.batterySaver.on" = "An";
 "home.performance.renderProfile" = "Renderprofil: %@";
-"home.performance.audioAvoidHAL" = "Akkuschonender Ton";
 "home.performance.deviceProfile" = "Geräteprofil: %@";
 "home.render.performance" = "Leistung";
 "home.render.balanced" = "Ausgewogen";

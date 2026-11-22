@@ -118,6 +118,7 @@
 "home.performance.settingsFolder" = "Open Settings Folder";
 "home.performance.gamepad" = "Gamepad UI";
 "home.performance.batterySaver" = "Battery Saver: %@";
+"home.performance.batterySaverMode" = "Battery Saver Mode";
 "home.batterySaver.title" = "Battery Saver";
 "home.batterySaver.message" = "Both of these take effect the next time you start the game.";
 "home.batterySaver.frameLimit" = "Frame limit: %@";
@@ -133,8 +134,8 @@
 "home.batterySaver.afk.5" = "5 minutes";
 "home.batterySaver.afk.10" = "10 minutes";
 "home.batterySaver.off" = "Off";
+"home.batterySaver.on" = "On";
 "home.performance.renderProfile" = "Render profile: %@";
-"home.performance.audioAvoidHAL" = "Battery-saving sound";
 "home.performance.deviceProfile" = "Device profile: %@";
 "home.render.performance" = "Performance";
 "home.render.balanced" = "Balanced";

@@ -48,6 +48,12 @@ typedef NS_ENUM(NSInteger, AKInputInterestMode) {
 // pressable and are admitted only in diagnostic mode.
 - (BOOL)admitsElement:(NSString *)element;
 
+// Whether anything at all can be admitted. Reading it allocates nothing, so a continuous
+// callback - a stick, a d-pad, a touch-pad - can ask it before it formats an element id and a
+// detail string that -admitsElement: would then reject. In ordinary play the answer is NO, and
+// the saving is two string allocations per sample at the pad's own rate.
+- (BOOL)admitsAnyElement;
+
 @end
 
 // Whether an element id names something a person can press.

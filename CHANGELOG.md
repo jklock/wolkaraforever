@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+- **Performance.** Controller sticks and d-pads no longer format an element id and a detail
+  string for every raw sample when nothing is interested in them, stick values are reported in
+  half-unit steps again, and the diagnostic panel updates once per batch instead of once per
+  event. A pass that had 13,304 startup-initializer lines and 3,184 one-line-per-bitmap traces
+  in a single log is now quiet: both are available behind `TOLKARA_TRACE_INITIALIZERS` and
+  `TOLKARA_TRACE_IMAGES`.
+- **Battery Saver Mode.** The frame limit and the AFK dim now sit behind one switch. Off is full
+  performance: no cap, no dim, and no presentation hook installed at all. An installation that
+  had already chosen either option keeps it, and its switch starts on.
+- **Battery-saving sound** is always on and is no longer a setting; it is a performance fix, not
+  a battery preference.
+- **Gamepad UI** now keeps its state in the launcher, writes the game's full `GamePad*` set, and
+  puts it back immediately before every start, so an in-game rewrite of `Config.wtf` cannot lose
+  it.
+- **Test Voice & Dictation** is back at the end of the Input Manager card.
 - **Every control has a picture and two pages.** [What every control
   does](docs/UI_REFERENCE.md) lists every row, switch, button and sheet with what it does and how to
   use it, and every launcher page and sheet now has a picture drawn by the project's own fixture

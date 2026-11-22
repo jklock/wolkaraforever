@@ -7,10 +7,14 @@
 #define AK_BATTERY_SAVER_HAS_UIKIT 1
 #endif
 
+NSString *const AKBatterySaverEnabledDefaultsKey = @"WolkaraForeverBatterySaverEnabledV1";
 NSString *const AKBatterySaverFrameLimitDefaultsKey = @"WolkaraForeverBatterySaverFrameLimitV1";
 NSString *const AKBatterySaverAFKMinutesDefaultsKey = @"WolkaraForeverBatterySaverAFKMinutesV1";
+NSString *const AKBatterySaverLaunchEnabledDefaultsKey = @"WolkaraForeverBatterySaverLaunchEnabledV1";
 NSString *const AKBatterySaverLaunchFrameLimitDefaultsKey = @"WolkaraForeverBatterySaverLaunchFrameLimitV1";
 NSString *const AKBatterySaverLaunchAFKMinutesDefaultsKey = @"WolkaraForeverBatterySaverLaunchAFKMinutesV1";
+// One-time marker, so the migration below runs once and a later deliberate "Off" stays off.
+static NSString *const AKBatterySaverModeMigratedKey = @"WolkaraForeverBatterySaverModeMigratedV1";
 
 NSString *const AKBatterySaverFrameLimitOffName = @"off";
 NSString *const AKBatterySaverFrameLimitAutomaticName = @"auto";
@@ -61,6 +65,30 @@ AKBatterySaverFrameLimit AKBatterySaverStoredFrameLimit(void) {
         [NSUserDefaults.standardUserDefaults objectForKey:AKBatterySaverFrameLimitDefaultsKey]);
 }
 
+BOOL AKBatterySaverStoredEnabled(void) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    // The two choices existed before the master switch did. An installation that had already
+    // selected a frame limit or an AFK timeout asked for battery saving, and must not lose that
+    // when the submenu moves behind a switch it has never been told about. An installation that
+    // changed neither starts in full performance - the default this feature is meant to have.
+    if (![defaults boolForKey:AKBatterySaverModeMigratedKey]) {
+        BOOL asked = AKBatterySaverStoredFrameLimit() != AKBatterySaverFrameLimitOff ||
+                     AKBatterySaverStoredAFKMinutes() != 0;
+        if (asked) [defaults setBool:YES forKey:AKBatterySaverEnabledDefaultsKey];
+        [defaults setBool:YES forKey:AKBatterySaverModeMigratedKey];
+    }
+    return [defaults boolForKey:AKBatterySaverEnabledDefaultsKey];
+}
+
+void AKBatterySaverSetEnabled(BOOL enabled) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    // Marking the migration done here is what makes the choice stick: without it, a person who
+    // switched the mode off while a frame limit was still stored would find it back on at the
+    // next read.
+    [defaults setBool:YES forKey:AKBatterySaverModeMigratedKey];
+    [defaults setBool:enabled forKey:AKBatterySaverEnabledDefaultsKey];
+}
+
 NSInteger AKBatterySaverStoredAFKMinutes(void) {
     return AKBatterySaverAFKMinutesFromStored(
         [NSUserDefaults.standardUserDefaults objectForKey:AKBatterySaverAFKMinutesDefaultsKey]);
@@ -81,9 +109,14 @@ void AKBatterySaverSetAFKMinutes(NSInteger minutes) {
 
 void AKBatterySaverCommitLaunchSnapshot(void) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setBool:AKBatterySaverStoredEnabled() forKey:AKBatterySaverLaunchEnabledDefaultsKey];
     [defaults setObject:AKBatterySaverFrameLimitStoredName(AKBatterySaverStoredFrameLimit())
                  forKey:AKBatterySaverLaunchFrameLimitDefaultsKey];
     [defaults setInteger:AKBatterySaverStoredAFKMinutes() forKey:AKBatterySaverLaunchAFKMinutesDefaultsKey];
+}
+
+BOOL AKBatterySaverLaunchEnabled(void) {
+    return [NSUserDefaults.standardUserDefaults boolForKey:AKBatterySaverLaunchEnabledDefaultsKey];
 }
 
 AKBatterySaverFrameLimit AKBatterySaverLaunchFrameLimit(void) {
@@ -98,13 +131,19 @@ NSInteger AKBatterySaverLaunchAFKMinutes(void) {
 
 #pragma mark - Resolution
 
-AKBatterySaverFramePolicy AKBatterySaverFramePolicyMake(AKBatterySaverFrameLimit limit,
+AKBatterySaverFramePolicy AKBatterySaverFramePolicyMake(BOOL enabled,
+                                                       AKBatterySaverFrameLimit limit,
                                                        BOOL externalPower,
                                                        BOOL lowPowerMode,
                                                        NSProcessInfoThermalState thermal,
                                                        BOOL dimmed) {
     AKBatterySaverFramePolicy off = { NO, 0.0 };
-    // The AFK dim outranks everything else, including Off. The two controls are separate:
+    // The master switch is first, and it outranks the dim as well. Off means full performance:
+    // the game's own presentation call, untouched, and nothing that settles the panel when the
+    // player walks away. That is the whole meaning of the setting, so no other argument can
+    // reintroduce a cap.
+    if (!enabled) return off;
+    // The AFK dim outranks everything the two choices say. The two controls are separate:
     // a person can leave the frame limit alone and still ask for the screen to settle when
     // nobody is playing, and a dimmed session is then held at a fixed low rate whatever the
     // selection says. Waking restores the selection.
@@ -149,7 +188,8 @@ BOOL AKBatterySaverDeviceHasExternalPower(void) {
 }
 
 AKBatterySaverFramePolicy AKBatterySaverResolvedPolicy(BOOL dimmed) {
-    return AKBatterySaverFramePolicyMake(AKBatterySaverLaunchFrameLimit(),
+    return AKBatterySaverFramePolicyMake(AKBatterySaverLaunchEnabled(),
+                                         AKBatterySaverLaunchFrameLimit(),
                                          AKBatterySaverDeviceHasExternalPower(),
                                          NSProcessInfo.processInfo.isLowPowerModeEnabled,
                                          NSProcessInfo.processInfo.thermalState,

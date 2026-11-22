@@ -152,6 +152,44 @@ static BOOL TKWriteConfig(NSString *path, NSString *text, NSError **error) {
     return [self setGamepad:YES inWorkingDirectory:directory error:error];
 }
 
+NSString *const TKForeverUIGamepadDefaultsKey = @"WolkaraForeverGamepadUI";
+
++ (NSDictionary<NSString *, NSString *> *)gamepadUICVarsEnabled:(BOOL)enabled {
+    // Disabling writes only the master switch. The rest stay as they are: the session no
+    // longer asks for the interface, and deleting the client's own settings would lose what
+    // it chose for itself.
+    if (!enabled) return @{ @"GamePadEnable": @"0" };
+    // `GamePadEnable` is the master the client reads at start. The others are the console
+    // interface's own switches, written together so the row means the gamepad interface and
+    // not only the input layer. A name the client does not know is ignored by the client; it
+    // is never a reason to write half of what the row promised.
+    return @{ @"GamePadEnable": @"1",
+              @"GamePadWindow": @"1",
+              @"GamePadLook": @"1",
+              @"GamePadStick": @"1",
+              @"GamePadEmulate": @"1" };
+}
+
++ (BOOL)storedGamepadUI {
+    id stored = [NSUserDefaults.standardUserDefaults objectForKey:TKForeverUIGamepadDefaultsKey];
+    return [stored isKindOfClass:NSNumber.class] ? [stored boolValue] : NO;
+}
+
++ (void)setStoredGamepadUI:(BOOL)enabled {
+    [NSUserDefaults.standardUserDefaults setBool:enabled forKey:TKForeverUIGamepadDefaultsKey];
+}
+
++ (BOOL)setGamepadUI:(BOOL)enabled inWorkingDirectory:(NSString *)directory error:(NSError **)error {
+    if (![self setCVars:[self gamepadUICVarsEnabled:enabled] inWorkingDirectory:directory error:error]) return NO;
+    [self setStoredGamepadUI:enabled];
+    return YES;
+}
+
++ (BOOL)applyStoredGamepadUIInWorkingDirectory:(NSString *)directory error:(NSError **)error {
+    return [self setCVars:[self gamepadUICVarsEnabled:self.storedGamepadUI]
+        inWorkingDirectory:directory error:error];
+}
+
 + (BOOL)setGamepad:(BOOL)enabled inWorkingDirectory:(NSString *)directory error:(NSError **)error {
     NSString *wtf = [self wtfDirectoryInWorkingDirectory:directory create:YES error:error];
     if (!wtf) return NO;

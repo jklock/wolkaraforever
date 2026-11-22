@@ -115,6 +115,7 @@
 "home.performance.settingsFolder" = "Ouvrir le dossier des réglages";
 "home.performance.gamepad" = "Interface manette";
 "home.performance.batterySaver" = "Économiseur de batterie : %@";
+"home.performance.batterySaverMode" = "Mode économiseur de batterie";
 "home.batterySaver.title" = "Économiseur de batterie";
 "home.batterySaver.message" = "Ces deux réglages s’appliquent au prochain lancement du jeu.";
 "home.batterySaver.frameLimit" = "Limite d’images : %@";
@@ -130,8 +131,9 @@
 "home.batterySaver.afk.5" = "5 minutes";
 "home.batterySaver.afk.10" = "10 minutes";
 "home.batterySaver.off" = "Désactivé";
+"home.batterySaver.on" = "Activé";
 "home.performance.renderProfile" = "Profil de rendu : %@";
-"home.performance.audioAvoidHAL" = "Son économe en batterie";
+
 "home.performance.deviceProfile" = "Profil de l’appareil : %@";
 "home.render.performance" = "Performances";
 "home.render.balanced" = "Équilibré";

@@ -107,7 +107,9 @@ int main(int argc, const char *argv[]) {
     @autoreleasepool {
         assert(argc == 2);
         NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-        for (NSString *key in @[AKBatterySaverFrameLimitDefaultsKey, AKBatterySaverAFKMinutesDefaultsKey,
+        for (NSString *key in @[AKBatterySaverEnabledDefaultsKey,
+                                 AKBatterySaverFrameLimitDefaultsKey, AKBatterySaverAFKMinutesDefaultsKey,
+                                 AKBatterySaverLaunchEnabledDefaultsKey,
                                  AKBatterySaverLaunchFrameLimitDefaultsKey, AKBatterySaverLaunchAFKMinutesDefaultsKey])
             [defaults removeObjectForKey:key];
 
@@ -139,12 +141,19 @@ int main(int argc, const char *argv[]) {
             withMinimumDouble = YES;
             duration = 0.2;     // the game asked for longer than the cap: it must be kept
             longer = YES;
+        } else if ([mode isEqual:@"disabled"]) {
+            // A frame limit is stored, but the master switch is off: nothing may be installed
+            // and the game's own presentation call must be the one that runs.
+            AKBatterySaverSetFrameLimit(AKBatterySaverFrameLimit30);
+            capped = NO;
         } else {
             fprintf(stderr, "unknown mode %s\n", argv[1]);
             return 2;
         }
         // The snapshot is what the guest reads: taken before the adapter installs its hooks,
-        // exactly as the launcher takes it before starting a guest.
+        // exactly as the launcher takes it before starting a guest. Every mode but "disabled"
+        // also turns the master switch on - the limit alone is no longer enough to apply.
+        if (![mode isEqual:@"disabled"]) AKBatterySaverSetEnabled(YES);
         AKBatterySaverCommitLaunchSnapshot();
 
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();

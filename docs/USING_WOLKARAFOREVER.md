@@ -52,9 +52,9 @@ Use **UI Manager** before large interface changes. **Gamepad UI** is first; its 
 
 ## Save battery while you play
 
-Open **Performance Manager → Battery Saver**. Both choices there apply the next time you start the game: a setting that took effect mid-session would change the pacing under your hands, so the row's summary is what the next launch will use and changing it never disturbs a game that is already running. Nothing in this menu edits the game's own settings.
+Open **Performance Manager → Battery Saver Mode**. The switch is the decision: **off** is full performance, with nothing limited and nothing installed on the game's presentation path. Turn it on to make the choices in the row below it apply; that submenu is closed while the switch is off. Everything there applies the next time you start the game: a setting that took effect mid-session would change the pacing under your hands, so the row's summary is what the next launch will use and changing it never disturbs a game that is already running. Nothing in this menu edits the game's own settings.
 
-**Frame limit** is **Off** by default. **Automatic** is 60 frames per second on power and 30 on battery; **30 FPS** and **60 FPS** are fixed rates. iPadOS's Low Power Mode, or a device that is running hot, lowers any cap to 30 FPS. The cap is applied to the presentation of the frames the game already renders, so it costs nothing when it is Off.
+**Frame limit** is **Off** by default. **Automatic** is 60 frames per second on power and 30 on battery; **30 FPS** and **60 FPS** are fixed rates. iPadOS's Low Power Mode, or a device that is running hot, lowers any cap to 30 FPS. The cap is applied to the presentation of the frames the game already renders, so it costs nothing when it is Off or when Battery Saver Mode is off.
 
 **AFK saver** is **Off** by default. After the chosen time without input the screen dims and the game is held at 10 FPS. The first touch, key, mouse action or controller action only wakes it — it is not delivered to the game, so reaching for the tablet does not also move the camera or fire a spell. Dimming pauses whenever something is being held, whenever the in-game touch configuration is open, and whenever WolkaraForever is not in front. It never changes screen brightness, the device's auto-lock, the session or the game's files.
 
@@ -72,7 +72,7 @@ A DualSense or DualShock 4 touchpad can move the game's pointer. In **Input Mana
 
 ## Battery-saving sound
 
-**Battery-saving sound** in **Performance Manager** is on by default, in every interface mode. The game's sound plays as before, without loading iOS's audio device layer into the game, whose Bluetooth part kept a quarter of a processor core busy for the whole game. If the sound ever misbehaves (silence, crackles, or no sound after you connect headphones), turn it off; the change applies from the next game start.
+**Battery-saving sound** is always on, in every interface mode. It is a performance fix rather than a preference, so there is no longer a switch for it. The game's sound plays as before, without loading iOS's audio device layer into the game, whose Bluetooth part kept a quarter of a processor core busy for the whole game.
 
 If a phone call interrupts Forever, returning to the game restores its active audio session when iPadOS says playback may resume. If sound does not return, keep the app installed and send its log rather than reinstalling; [Send us a log](SENDING_LOGS.md) explains how.
 

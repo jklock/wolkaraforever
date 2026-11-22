@@ -84,14 +84,14 @@ button that starts, installs or repairs the game.
 | --- | --- | --- |
 | **Device profile: Automatic — …** | Which measured device profile the page draws for, and therefore which render scales are offered. | Opens [Device profile](#device-profile). Automatic follows the device it is running on. |
 | **Render profile: Performance** | How much the game draws at, from Performance through Balanced to Quality. | Opens [Render profile](#render-profile). |
-| **Battery-saving sound** (switch) | Plays the game's sound without loading iOS's audio device layer into the game. On by default. | Switch it off if sound misbehaves (silence, crackles, no sound after headphones). The change applies from the next game start. |
-| **Battery Saver: Off** | The frame limit and the AFK timer, both applied by the next game start. | Opens [Battery Saver](#battery-saver). |
+| **Battery Saver Mode** (switch) | Whether any battery-saving choice applies at all. **Off** is full performance: no frame limit, no AFK dim, and nothing installed on the game's presentation path. | Switch on, then choose inside [Battery Saver](#battery-saver). The submenu is closed while this is off. |
+| **Battery Saver: Off** | The frame limit and the AFK timer behind the switch, both applied by the next game start. | Opens [Battery Saver](#battery-saver). |
 
 ### UI Manager card
 
 | Option | What it does | How to use it |
 | --- | --- | --- |
-| **Gamepad UI** (switch) | Whether the game exposes its gamepad interface, by writing `GamePadEnable` in the game's `Config.wtf`. It is the first choice in this card because everything else depends on it. | Switch on when you want the controller's interface; switch off for the keyboard/mouse one. |
+| **Gamepad UI** (switch) | Whether the game exposes its gamepad interface. The launcher keeps the choice itself and writes the game's `GamePad*` settings into `Config.wtf`, again immediately before every start, because the game rewrites that file when it exits. | Switch on when you want the controller's interface; switch off for the keyboard/mouse one. |
 | **Backup WoW UI Configuration** | Saves the game's interface settings (`WTF` and `Interface`) into one ZIP under `WTF/Backups`. | Tap before a large change. |
 | **Restore WoW UI Configuration** | Puts a saved interface back, after taking a safety copy of what is there now. | Tap, pick a backup, confirm. |
 | **Reset to Default Wow UI Configuration** | Removes only the game's graphics and display settings, after taking a safety copy. | Tap and confirm **Reset graphics**. It does not touch add-ons, key bindings or your installation. |
@@ -181,8 +181,10 @@ page says so.
 
 ![The Battery Saver submenu](screenshots/ui-battery-saver.jpg)
 
-Two choices, both saved and applied by the **next** game start — a change never disturbs a game that
-is already running. Nothing here writes a game setting.
+One switch on the home page, and two choices behind it. **Battery Saver Mode** off means full
+performance: nothing below is installed, and the submenu cannot be changed. Everything is applied
+by the **next** game start — a change never disturbs a game that is already running. Nothing here
+writes a game setting.
 
 | Option | What it does |
 | --- | --- |
@@ -193,7 +195,8 @@ is already running. Nothing here writes a game setting.
 
 ![AFK saver](screenshots/ui-afk-saver.jpg)
 
-The row on the home page reads back both, for example `Battery Saver: Automatic · 5 minutes`.
+The row under the switch reads back the choices, for example `Battery Saver: Automatic · 5 minutes`,
+`Battery Saver: On` while none is made, or `Battery Saver: Off`.
 
 ## Device profile
 

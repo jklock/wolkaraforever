@@ -11,7 +11,9 @@
 #include <assert.h>
 
 static void ClearStored(void) {
-    for (NSString *key in @[AKBatterySaverFrameLimitDefaultsKey, AKBatterySaverAFKMinutesDefaultsKey,
+    for (NSString *key in @[AKBatterySaverEnabledDefaultsKey,
+                             AKBatterySaverFrameLimitDefaultsKey, AKBatterySaverAFKMinutesDefaultsKey,
+                             AKBatterySaverLaunchEnabledDefaultsKey,
                              AKBatterySaverLaunchFrameLimitDefaultsKey, AKBatterySaverLaunchAFKMinutesDefaultsKey])
         [NSUserDefaults.standardUserDefaults removeObjectForKey:key];
 }
@@ -21,6 +23,11 @@ int main(void) {
         NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
         ClearStored();
 
+        // --- The master switch is the first decision. Absent means off, and off is full
+        // performance, which is what an installation that never opened the submenu gets.
+        assert(!AKBatterySaverStoredEnabled());
+        assert(!AKBatterySaverLaunchEnabled());
+
         // --- Nothing chosen, nothing capped. This is what every existing installation does,
         // and it is the state the default has to reproduce exactly: no delay, no changed call.
         assert(AKBatterySaverStoredFrameLimit() == AKBatterySaverFrameLimitOff);
@@ -29,8 +36,16 @@ int main(void) {
         assert(!off.capped);
         assert(AKBatterySaverFramePolicyInterval(off) == 0.0);
         // Off is Off even where something else is constraining the device.
-        assert(!AKBatterySaverFramePolicyMake(AKBatterySaverFrameLimitOff, NO, YES,
+        assert(!AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimitOff, NO, YES,
                                               NSProcessInfoThermalStateCritical, NO).capped);
+        // The master switch outranks every other input: no cap, and no dim either. A session
+        // that opted into nothing must not settle when the player walks away.
+        assert(!AKBatterySaverFramePolicyMake(NO, AKBatterySaverFrameLimit60, YES, NO,
+                                              NSProcessInfoThermalStateNominal, NO).capped);
+        assert(!AKBatterySaverFramePolicyMake(NO, AKBatterySaverFrameLimitAutomatic, NO, NO,
+                                              NSProcessInfoThermalStateCritical, YES).capped);
+        assert(AKBatterySaverFramePolicyInterval(AKBatterySaverFramePolicyMake(
+            NO, AKBatterySaverFrameLimit30, YES, NO, NSProcessInfoThermalStateNominal, NO)) == 0.0);
 
         // --- Every stored spelling this build offers, and every one it does not.
         assert(AKBatterySaverFrameLimitFromStored(@"off") == AKBatterySaverFrameLimitOff);
@@ -74,38 +89,40 @@ int main(void) {
         assert(AKBatterySaverStoredFrameLimit() == AKBatterySaverFrameLimit60);
 
         // --- Automatic means the charger decides: 60 FPS on power, 30 on battery.
+        AKBatterySaverSetEnabled(YES);
+        assert(AKBatterySaverStoredEnabled());
         AKBatterySaverFramePolicy plugged = AKBatterySaverFramePolicyMake(
-            AKBatterySaverFrameLimitAutomatic, YES, NO, NSProcessInfoThermalStateNominal, NO);
+            YES, AKBatterySaverFrameLimitAutomatic, YES, NO, NSProcessInfoThermalStateNominal, NO);
         assert(plugged.capped && plugged.framesPerSecond == 60.0);
         AKBatterySaverFramePolicy unplugged = AKBatterySaverFramePolicyMake(
-            AKBatterySaverFrameLimitAutomatic, NO, NO, NSProcessInfoThermalStateNominal, NO);
+            YES, AKBatterySaverFrameLimitAutomatic, NO, NO, NSProcessInfoThermalStateNominal, NO);
         assert(unplugged.capped && unplugged.framesPerSecond == 30.0);
 
         // --- Low Power Mode and a hot device lower a rate above 30 to 30, never raise one,
         // and never touch Off.
-        assert(AKBatterySaverFramePolicyMake(AKBatterySaverFrameLimitAutomatic, YES, YES,
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimitAutomatic, YES, YES,
                                               NSProcessInfoThermalStateNominal, NO).framesPerSecond == 30.0);
-        assert(AKBatterySaverFramePolicyMake(AKBatterySaverFrameLimit60, YES, YES,
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit60, YES, YES,
                                               NSProcessInfoThermalStateNominal, NO).framesPerSecond == 30.0);
-        assert(AKBatterySaverFramePolicyMake(AKBatterySaverFrameLimit60, YES, NO,
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit60, YES, NO,
                                               NSProcessInfoThermalStateSerious, NO).framesPerSecond == 30.0);
-        assert(AKBatterySaverFramePolicyMake(AKBatterySaverFrameLimit60, YES, NO,
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit60, YES, NO,
                                               NSProcessInfoThermalStateCritical, NO).framesPerSecond == 30.0);
         // Fair is not hot enough, and Low Power Mode cannot raise 30.
-        assert(AKBatterySaverFramePolicyMake(AKBatterySaverFrameLimit60, YES, NO,
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit60, YES, NO,
                                               NSProcessInfoThermalStateFair, NO).framesPerSecond == 60.0);
-        assert(AKBatterySaverFramePolicyMake(AKBatterySaverFrameLimit30, YES, YES,
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit30, YES, YES,
                                               NSProcessInfoThermalStateCritical, NO).framesPerSecond == 30.0);
 
         // --- The AFK dim outranks the selection: a fixed 10 FPS, whatever was chosen, and it
         // applies even with the frame limit Off - the two controls are separate decisions.
         AKBatterySaverFramePolicy dimmed = AKBatterySaverFramePolicyMake(
-            AKBatterySaverFrameLimit60, YES, NO, NSProcessInfoThermalStateNominal, YES);
+            YES, AKBatterySaverFrameLimit60, YES, NO, NSProcessInfoThermalStateNominal, YES);
         assert(dimmed.capped && dimmed.framesPerSecond == AKBatterySaverDimFramesPerSecond);
-        assert(AKBatterySaverFramePolicyMake(AKBatterySaverFrameLimit30, NO, YES,
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit30, NO, YES,
                                               NSProcessInfoThermalStateCritical, YES).framesPerSecond == 10.0);
         AKBatterySaverFramePolicy dimmedOff = AKBatterySaverFramePolicyMake(
-            AKBatterySaverFrameLimitOff, YES, NO, NSProcessInfoThermalStateNominal, YES);
+            YES, AKBatterySaverFrameLimitOff, YES, NO, NSProcessInfoThermalStateNominal, YES);
         assert(dimmedOff.capped && dimmedOff.framesPerSecond == AKBatterySaverDimFramesPerSecond);
 
         // --- The interval a presentation is held for: 1/60, 1/30, 1/10; nothing when Off.
@@ -118,9 +135,12 @@ int main(void) {
         // says now, and a session started before a change keeps its own choice.
         assert(AKBatterySaverLaunchFrameLimit() == AKBatterySaverFrameLimitOff);
         assert(AKBatterySaverLaunchAFKMinutes() == 0);
+        assert(!AKBatterySaverLaunchEnabled());
+        AKBatterySaverSetEnabled(YES);
         AKBatterySaverSetFrameLimit(AKBatterySaverFrameLimitAutomatic);
         AKBatterySaverSetAFKMinutes(10);
         AKBatterySaverCommitLaunchSnapshot();
+        assert(AKBatterySaverLaunchEnabled());
         assert(AKBatterySaverLaunchFrameLimit() == AKBatterySaverFrameLimitAutomatic);
         assert(AKBatterySaverLaunchAFKMinutes() == 10);
         // The user changes the submenu while the game runs.
@@ -128,8 +148,10 @@ int main(void) {
         AKBatterySaverSetAFKMinutes(0);
         assert(AKBatterySaverLaunchFrameLimit() == AKBatterySaverFrameLimitAutomatic);
         assert(AKBatterySaverLaunchAFKMinutes() == 10);
-        // The next launch picks the new choice up.
+        // The next launch picks the new choice up, including turning the mode off.
+        AKBatterySaverSetEnabled(NO);
         AKBatterySaverCommitLaunchSnapshot();
+        assert(!AKBatterySaverLaunchEnabled());
         assert(AKBatterySaverLaunchFrameLimit() == AKBatterySaverFrameLimitOff);
         assert(AKBatterySaverLaunchAFKMinutes() == 0);
 
