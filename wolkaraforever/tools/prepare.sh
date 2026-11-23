@@ -42,6 +42,24 @@ done
 printf '%s\n' "$$" > "$lock/pid"
 trap 'rm -rf "$lock"' EXIT HUP INT TERM
 
+# WOLKARA_PREPARE_REUSE=1 keeps an existing tree when nothing it is made from has changed: the
+# committed platform/, every file of ours outside it (tracked or new, ignored ones excepted), the
+# local signing values and the environment the project generator reads. The simulator suites that
+# build their own fixture app ask for it - each runs this script first, and rebuilding an identical tree for every one of them
+# cost minutes per run. Nothing else asks, so a build, an install or a package always starts from
+# a fresh tree exactly as before.
+fingerprint=$({
+    git rev-parse HEAD:platform
+    git ls-files -z -co --exclude-standard -- . ':!platform' | sort -z | xargs -0 shasum 2> /dev/null || true
+    cat local.env platform/local.env 2> /dev/null || true
+    env | grep -E '^(TOLKARA_|DEVELOPMENT_TEAM=|GUEST_|NATIVE_GUEST_)' | sort || true
+} | shasum | cut -d' ' -f1)
+if [ "${WOLKARA_PREPARE_REUSE:-}" = 1 ] && [ -d "$dest" ] \
+    && [ "$(cat "$dest/.prepared-from" 2> /dev/null)" = "$fingerprint" ]; then
+    echo "prepare: $dest reused, nothing it is made from has changed"
+    exit 0
+fi
+
 # Clearing the previous tree can lose a race with something writing into it - Spotlight,
 # or a build that has just finished and is still closing files - and `rm -rf` then fails
 # with "Directory not empty". That used to abort the whole install, which is a confusing
@@ -68,5 +86,6 @@ bash wolkaraforever/tools/apply.sh "$dest"
 # the only symptom was that its calls did nothing.
 (cd "$dest" && bash tools/generate.sh)
 
+printf '%s\n' "$fingerprint" > "$dest/.prepared-from"
 pinned=$(git rev-parse --short upstream/main 2>/dev/null || echo unknown)
 echo "prepare: $dest ready (platform $pinned)"

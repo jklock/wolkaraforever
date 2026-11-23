@@ -8,7 +8,7 @@ Run the narrowest owning test first. `check_layers.sh` validates layer assembly;
 
 `test_emulation.sh` prepares the tree and runs `check_layers.sh`, the platform's own sanitizer suite, and then every layer `test_*.sh` except the `*ui.sh` ones, the sweep itself, and the `test_install.sh` dispatcher. A layer suite failing fails the run; otherwise the platform suite's status is what it reports, and `validate.sh` judges that against `known_platform_failures.txt`.
 
-Run one preparing script at a time. Every simulator suite, `check_layers.sh` and `validate.sh` re-create `build/platform`, so two started together delete each other's tree: the survivor fails with `getcwd: cannot access parent directories` and `ld: open() failed ... build/wow-launcher/compare_ui_baselines`. That is a self-inflicted red, not a product failure, and it is reproduced by pairing `check_layers.sh` with `check_ui_policy.sh` (2026-11-21).
+Run one preparing script at a time. Every simulator suite, `check_layers.sh` and `validate.sh` prepare `build/platform` (the simulator suites keep an unchanged tree, but re-create it when anything changed), so two started together can delete each other's tree: the survivor fails with `getcwd: cannot access parent directories` and `ld: open() failed ... build/wow-launcher/compare_ui_baselines`. That is a self-inflicted red, not a product failure, and it is reproduced by pairing `check_layers.sh` with `check_ui_policy.sh` (2026-11-21).
 
 Required simulator matrix: iPhone Duo and iPad Pro 13-inch (M5). The physical iPad Pro 12.9-inch (5th generation) is optional unless a specific claim requires it. Every simulator suite resolves its device through `wolkaraforever/tools/simulators.sh`, which refuses an off-matrix name or UDID.
 

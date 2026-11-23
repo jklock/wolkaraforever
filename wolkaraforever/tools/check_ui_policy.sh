@@ -20,7 +20,7 @@ test -x wolkaraforever/tools/record_ui_baselines.sh
 test -f wolkaraforever/tools/compare_ui_baselines.swift
 test -d wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo
 test -d wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5
-rg -q 'WKPopupMaximumScreenFraction.*0\.85|0\.85' wolkaraforever/Shell/WolkaraForeverTheme.m
+grep -Eq 'WKPopupMaximumScreenFraction.*0\.85|0\.85' wolkaraforever/Shell/WolkaraForeverTheme.m
 
 if [ -n "$review" ]; then
     review_path=$review
@@ -28,12 +28,16 @@ if [ -n "$review" ]; then
         echo "check_ui_policy: no review record at $review_path (pass the record's path)" >&2
         exit 1
     }
-    rg -q '^# UI review:' "$review_path"
-    rg -q '^## Classification' "$review_path"
-    rg -q '^## End-user action' "$review_path"
-    rg -q '^## Risks and boundary' "$review_path"
+    grep -Eq '^# UI review:' "$review_path"
+    grep -Eq '^## Classification' "$review_path"
+    grep -Eq '^## End-user action' "$review_path"
+    grep -Eq '^## Risks and boundary' "$review_path"
 fi
 
-SIMULATOR=iphone UI_BASELINE_MODE=check wolkaraforever/tools/test_wow_launcher_ui.sh
-SIMULATOR=ipad UI_BASELINE_MODE=check wolkaraforever/tools/test_wow_launcher_ui.sh
+# UI_POLICY_SIMULATORS narrows the check to some of the matrix, so the two devices can be checked
+# on separate machines (the hosted Validate workflow does, one device per machine: a machine
+# booting both simulators stopped responding there). Unset, both are checked here, in turn.
+for simulator in ${UI_POLICY_SIMULATORS:-iphone ipad}; do
+    SIMULATOR=$simulator UI_BASELINE_MODE=check wolkaraforever/tools/test_wow_launcher_ui.sh
+done
 echo "UI policy: PASS"

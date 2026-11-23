@@ -1,0 +1,148 @@
+# Everything validate.sh runs except the iPad rows, on GitHub's machines, split into its own
+# groups (validate.sh --group) and run side by side. Never automatic: start it from the Actions
+# tab with "Run workflow" for any branch or tag. Pull requests run only ci.yml's gates.
+
+name: Validate (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or commit to validate"
+        required: true
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  group:
+    name: ${{ matrix.group }}${{ matrix.simulator && format(' ({0})', matrix.simulator) || '' }}
+    # The matrix simulators run iOS 27.2, which ships with Xcode 27.
+    runs-on: xcode-27
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Five jobs - as many as start at once - sized to take about as long as each other.
+          - { group: mac,            boot: "" }
+          # The launcher group runs once per device, each on its own machine: a machine booting
+          # both simulators crawled and then stopped responding (four runs ended "cancelled"
+          # with no log). Each job checks its device's UI policy and baselines, and its pages.
+          - { group: launcher,       boot: "iphone", simulator: iphone }
+          - { group: launcher,       boot: "ipad",   simulator: ipad }
+          - { group: simulator,      boot: "ipad" }
+          - { group: simulator-translation-addons, boot: "ipad" }
+    env:
+      # The device a launcher job checks; the other groups use the default matrix device.
+      SIMULATOR: ${{ matrix.simulator || 'ipad' }}
+      UI_POLICY_SIMULATORS: ${{ matrix.simulator || 'iphone ipad' }}
+      # These Macs run with System Integrity Protection off, so macOS neither kills unsigned
+      # code nor refuses a tampered page: the three platform tests that check that are skipped
+      # here, with the reason, and run on a normal Mac (patch 0075).
+      TOLKARA_SKIP_SIGNING_ENFORCEMENT: "1"
+      # The same iPad on the same iOS draws these pages' rows 8 px further left here than on a
+      # Mac, where they match the baselines; their pixels are compared on a Mac only.
+      UI_BASELINE_UNCOMPARED: >-
+        ipad-pro-13-m5/addons-popup.png
+        ipad-pro-13-m5/wow-addons-de.png
+        ipad-pro-13-m5/wow-addons-recommended-wolkararoue.png
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      # The run's own page names the commit that started it, which for a call from another
+      # workflow is that workflow's commit, not the one tested. So each job says which it tested.
+      - name: Tested commit
+        run: |
+          echo "tested commit: $(git rev-parse HEAD) (${{ inputs.ref }})" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # These machines have 7 GB and 3 cores, and a booting simulator starts some 800 processes.
+      # Spotlight indexing the fresh disk at the same time was the second-largest process when a
+      # job ran out of memory and was cancelled, so it is turned off; nothing here searches with it.
+      - name: Turn off Spotlight
+        run: sudo mdutil -a -i off > /dev/null || true
+
+      # The first xcodebuild on a fresh machine loads Xcode's plugins; run while a simulator was
+      # booting, it took up to seven minutes, so it runs here, before any boot.
+      - name: Use Xcode 27
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_27*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Fetch the pinned upstream tree
+        run: |
+          pin=$(git log --grep='^git-subtree-dir: platform$' -n 1 --format=%B | sed -n 's/^git-subtree-split: //p')
+          test -n "$pin" || { echo "No pinned platform commit recorded"; exit 1; }
+          git remote add upstream https://github.com/tolkara/tolkara.git
+          git fetch --quiet upstream "$pin"
+          git update-ref refs/remotes/upstream/main "$pin"
+
+      - name: Install XcodeGen and LuaJIT
+        run: brew install xcodegen luajit
+
+      - name: Matrix simulators
+        run: wolkaraforever/tools/setup_simulators.sh --apply
+
+      # A simulator's first boot keeps the machine busy for minutes and slows everything beside
+      # it, so the quick setup above runs first and the boot starts in the background, where it
+      # overlaps validate.sh preparing the tree; each suite still waits for its simulator.
+      - name: Start booting the simulators this group uses
+        if: matrix.boot != ''
+        run: |
+          . wolkaraforever/tools/simulators.sh
+          for simulator in ${{ matrix.boot }}; do simulator_start_boot "$simulator"; done
+
+      # Lines a minute with the machine's memory, swap, load, process count and largest processes,
+      # beside validate.sh's own output. A hosted machine has stopped responding mid-run and the
+      # job ended "cancelled" with no word: on 2026-11-22 these showed it before one such stop,
+      # with its load climbing from 96 to 825 in nine minutes and almost no free memory.
+      - name: validate.sh --group ${{ matrix.group }}
+        run: |
+          echo "machine: $(( $(sysctl -n hw.memsize) / 1073741824 )) GB memory, $(sysctl -n hw.ncpu) cores"
+          (
+            while sleep 60; do
+              free=$(vm_stat | awk '/Pages free/ {gsub(/\./,"",$3); print int($3*16384/1048576)}')
+              echo "machine: $(date -u +%H:%M:%S) free ${free:-?} MB, swap $(sysctl -n vm.swapusage | awk '{print $6}'), load $(sysctl -n vm.loadavg | tr -d '{}'), $(ps -A | wc -l | tr -d ' ') processes"
+              ps -Ao rss=,comm= -m | head -4 | awk '{printf "machine:   %5d MB  %s\n", $1/1024, $2}'
+            done
+          ) &
+          watch=$!
+          rc=0
+          wolkaraforever/tools/validate.sh --group ${{ matrix.group }} --out "$RUNNER_TEMP/validation.md" || rc=$?
+          kill "$watch" 2>/dev/null || true
+          exit "$rc"
+
+      # When a launcher page differs from its baseline, the pictures say why: what this machine
+      # drew, beside the reviewed baselines, kept with the run.
+      - name: Keep the launcher pictures when a page differs
+        if: ${{ failure() && matrix.group == 'launcher' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/launcher-pictures/drawn" "$RUNNER_TEMP/launcher-pictures/baselines"
+          . wolkaraforever/tools/simulators.sh
+          drawn="$(simulator_app_documents org.tolkara.tests.wow-launcher "$SIMULATOR")"
+          cp "$drawn"/*.png "$RUNNER_TEMP/launcher-pictures/drawn/" 2>/dev/null || echo "no pictures in $drawn"
+          case "$SIMULATOR" in iphone) device=iphone-duo;; *) device=ipad-pro-13-m5;; esac
+          cp wolkaraforever/WoW/tests/ui-baselines/launcher/$device/*.png "$RUNNER_TEMP/launcher-pictures/baselines/"
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() && matrix.group == 'launcher' }}
+        with:
+          name: launcher-pictures-${{ matrix.simulator }}
+          path: ${{ runner.temp }}/launcher-pictures
+          retention-days: 14
+      - name: Report
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f "$RUNNER_TEMP/validation.md" ]; then
+            # In the run's summary to read, and in the log, which the API and the logs download can reach.
+            cat "$RUNNER_TEMP/validation.md" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "validate.sh wrote no report" >> "$GITHUB_STEP_SUMMARY"
+          fi

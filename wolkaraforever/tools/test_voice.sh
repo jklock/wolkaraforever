@@ -15,11 +15,14 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 . wolkaraforever/tools/simulators.sh
-wolkaraforever/tools/prepare.sh
+. wolkaraforever/tools/fixtures.sh
+# An unchanged prepared tree is reused (prepare.sh), so a second suite does not rebuild it.
+WOLKARA_PREPARE_REUSE=1 wolkaraforever/tools/prepare.sh
 cd build/platform
 # The matrix iPad, or the matrix iPhone with `SIMULATOR=iphone`; anything else is refused.
 simulator_use "${SIMULATOR:-ipad}"
-xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
+# A first boot on a fresh machine can take minutes, so this step gets longer than the rest.
+FIXTURE_STEP_LIMIT=900 fixture_step "boot of $SIM_NAME" xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 
 APP=build/voice-tests/VoiceTests.app
 mkdir -p "$APP"
@@ -43,7 +46,7 @@ cp "$ROOT/platform/NOTICE.md" "$APP/NOTICE.md"
 # launcher/WoW/BatterySaverPolicy.m is here because launcher/Input/InputRouter.m sends the
 # battery-saver activity and dim notifications, and its symbols have to link. Every fixture that
 # compiles the input router needs it; test_controller_input.sh carries the same two lines.
-xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -O1 -g \
+fixture_compile xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-deprecated-declarations \
     -Ilauncher/Input -Ilauncher/Voice -Ilauncher/Controller -Ilauncher/App -Ilauncher/WoW -Itests \
     launcher/Input/*.m launcher/Voice/Dictation.m launcher/Voice/VoiceSettings.m \
@@ -76,17 +79,15 @@ cat > "$APP/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - "$APP" > /dev/null
-xcrun simctl install "$SIM_ID" "$APP"
-LOG=$(mktemp)
-trap 'rm -f "$LOG"' EXIT
-# The suite exits by itself; the timeout is only so a hang cannot look like a pass.
-xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.voice 2>&1 | tee "$LOG" &
-LAUNCH=$!
-for _ in $(seq 1 60); do
-    if grep -qE 'VOICE (PASS|FAIL)' "$LOG"; then break; fi
-    sleep 1
-done
-kill "$LAUNCH" 2>/dev/null || true
+fixture_refuse_if_running org.tolkara.tests.voice || exit 1
+fixture_step "install of $APP" xcrun simctl install "$SIM_ID" "$APP"
+# In the prepared tree, not the system temp folder: the simulator's app cannot write there, and
+# its output would be lost.
+LOG=build/voice-tests/run.log
+# The suite exits by itself; the limit is only so a hang cannot look like a pass. Its output
+# comes from files and its own system log, not the console relay, which drops the end of a run
+# (fixtures.sh).
+FIXTURE_STEP_LIMIT=60 fixture_launch "$LOG" org.tolkara.tests.voice || true
 grep -E '^FAIL' "$LOG" | head -40 || true
 if grep -q 'VOICE PASS' "$LOG"; then
     grep 'VOICE PASS' "$LOG"

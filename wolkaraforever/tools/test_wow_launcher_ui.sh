@@ -11,12 +11,14 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 . wolkaraforever/tools/simulators.sh
+. wolkaraforever/tools/fixtures.sh
 guide=0
 [ "${1:-}" = --guide-captures ] && guide=1
 baseline_mode=${UI_BASELINE_MODE:-check}
 [ "$guide" = 1 ] && baseline_mode=off
 case "$baseline_mode" in check|record|off) ;; *) echo "invalid UI_BASELINE_MODE: $baseline_mode" >&2; exit 2;; esac
-wolkaraforever/tools/prepare.sh
+# An unchanged prepared tree is reused (prepare.sh), so a second suite does not rebuild it.
+WOLKARA_PREPARE_REUSE=1 wolkaraforever/tools/prepare.sh
 cd build/platform
 # The matrix iPad, or the matrix iPhone with `SIMULATOR=iphone`. There is no fallback to
 # whatever else this Mac happens to have: the page is laid out for both form factors, so a
@@ -28,13 +30,14 @@ simulator_use "${SIMULATOR:-ipad}"
 # runs second reports failures it does not have. Refusing to start is honest; a bogus red lane is
 # not.
 simulator_ui_lock test_wow_launcher_ui
-xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
+# A first boot on a fresh machine can take minutes, so this step gets longer than the rest.
+FIXTURE_STEP_LIMIT=900 fixture_step "boot of $SIM_NAME" xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/wow-launcher/WoWFixture.app
 mkdir -p "$APP"
 # The launcher is not a page on its own: it opens the add-on and voice pages, so the
 # fixture has to link them. It did not, and the link had been failing since the voice
 # pages were added - the fixture only ever got as far as the missing symbols.
-xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -O1 -g \
+fixture_compile xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-deprecated-declarations \
     -Ilauncher/App -Ilauncher/Voice -Ilauncher/Input -Ilauncher/Controller -Ilauncher/WoW -Itests \
     launcher/WoW/*.m launcher/App/LaunchProgressView.m launcher/App/WolkaraForeverTheme.m \
@@ -99,8 +102,9 @@ xcrun actool launcher/Assets.xcassets --compile "$APP" \
 codesign --force --sign - "$APP" > /dev/null
 # The fixture deliberately creates corrupt/legacy metadata states. Start its synthetic app with
 # a fresh container so one aborted fixture cannot become evidence for the next matrix run.
+fixture_refuse_if_running org.tolkara.tests.wow-launcher || exit 1
 xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.wow-launcher > /dev/null 2>&1 || true
-xcrun simctl install "$SIM_ID" "$APP"
+fixture_step "install of $APP" xcrun simctl install "$SIM_ID" "$APP"
 # `simctl install` can return before the new bundle is what the simulator launches, and a run
 # then measures the *previous* build. Both halves of that were measured on 2026-11-12: a launch
 # that reported "did not return a process handle" on the iPhone Duo, and an iPad run that
@@ -120,8 +124,9 @@ fixture_installed() {
 for attempt in 1 2 3 4 5; do
     fixture_installed && break
     printf '[wrapper] the installed fixture is not the one just built; installing again (attempt %s)\n' "$attempt"
+    fixture_refuse_if_running org.tolkara.tests.wow-launcher || exit 1
     xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.wow-launcher > /dev/null 2>&1 || true
-    xcrun simctl install "$SIM_ID" "$APP"
+    fixture_step "install of $APP" xcrun simctl install "$SIM_ID" "$APP"
     sleep 1
 done
 fixture_installed || { echo "the fixture on the simulator is not the one just built" >&2; exit 1; }
@@ -150,25 +155,28 @@ for _ in $(seq 1 40); do
     xcrun simctl listapps "$SIM_ID" 2>/dev/null | grep -q org.tolkara.tests.wow-launcher && break
     sleep 0.5
 done
-# The fixture exits after its assertions, but simctl can leave the console stream open after
-# the process exits. Watch the fixture's explicit verdict so this automated wrapper cannot hang.
-launch_fixture() {
-    xcrun simctl launch --terminate-running-process --console "$SIM_ID" \
-        org.tolkara.tests.wow-launcher "$@" 2>&1 | tee -a "$LOG" &
-    LAUNCH=$!
-    # The fixture's own first line, written before any assertion runs.
-    for _ in $(seq 1 40); do
-        grep -q 'launcher fixture .* launched' "$LOG" && return 0
-        kill -0 "$LAUNCH" 2>/dev/null || break
-        sleep 0.25
-    done
-    return 1
-}
+# The fixture exits after its assertions and guards itself against a hang, printing its own
+# verdict: PASS, TIMEOUT, or FAIL, which it prints itself when an assertion does not hold. Its
+# output comes from files and its own system log rather than the console relay, which drops the
+# end of a run and could stay open after the process exited (fixtures.sh), so the wait ends when
+# the process does.
+#
+# How long to wait for the process to end. The fixture's own hang guard fires well before this,
+# so it only has to outlast that guard by enough that a slow machine is never stopped here and
+# reported as a failure it did not have. A false timeout costs more than a long run.
+VERDICT_TIMEOUT=${VERDICT_TIMEOUT:-960}
+# The pages show times (the home page's "Checked 06:13"), and the simulator takes its time zone
+# from the Mac it runs on, so the same pinned moment drew a different hour on every machine and
+# no baseline could match two of them. The fixture runs in UTC, and the baselines are recorded
+# in UTC.
+export SIMCTL_CHILD_TZ=UTC
 attempt=1
-while ! launch_fixture "$@"; do
+while :; do
+    FIXTURE_STEP_LIMIT=$VERDICT_TIMEOUT fixture_launch "$LOG.attempt" org.tolkara.tests.wow-launcher "$@" || true
+    cat "$LOG.attempt" >> "$LOG" 2> /dev/null || true
+    # The fixture's own first line, written before any assertion runs.
+    grep -q 'launcher fixture .* launched' "$LOG.attempt" && break
     printf '[wrapper] launch attempt %s never started the fixture\n' "$attempt" >> "$LOG"
-    kill "$LAUNCH" 2>/dev/null || true
-    wait "$LAUNCH" 2>/dev/null || true
     if [ "$attempt" -ge 3 ]; then
         echo "the fixture could not be launched in 3 attempts" >&2
         exit 1
@@ -176,25 +184,7 @@ while ! launch_fixture "$@"; do
     attempt=$((attempt + 1))
     sleep 2
 done
-# The fixture guards itself against a hang and prints its own verdict (PASS, TIMEOUT, or FAIL,
-# which it now prints itself when an assertion does not hold). Wait only until one of those
-# arrives. Before the fixture owned its failure the wrapper waited out this whole window on a
-# run that had already finished: abort() leaves simctl's console stream open, so nothing here
-# could tell "still running" from "died at line 2891".
-#
-# How long the runner waits for the fixture's answer. The fixture carries its own hang guard and
-# prints TIMEOUT when it fires, and this loop breaks on that too - so this only has to outlast the
-# guard by enough that a slow machine is never killed here and reported as a failure it did not
-# have. A false timeout costs more than a long run.
-VERDICT_TIMEOUT=${VERDICT_TIMEOUT:-960}
-verdict_re='WoW UIKit (PASS:|TIMEOUT|FAIL:)'
-[ "$guide" = 1 ] && verdict_re='WoW UIKit (GUIDE: done|TIMEOUT|FAIL:)'
-for _ in $(seq 1 "$VERDICT_TIMEOUT"); do
-    if grep -qE "$verdict_re" "$LOG"; then break; fi
-    sleep 1
-done
-kill "$LAUNCH" 2>/dev/null || true
-wait "$LAUNCH" 2>/dev/null || true
+rm -f "$LOG.attempt" "$LOG.attempt.stdout" "$LOG.attempt.stderr"
 # simctl can report success even if an assertion terminated the fixture, so the verdict decides.
 # Say which one it gave, so a failure is a sentence rather than an exit code.
 if grep -q 'WoW UIKit FAIL:' "$LOG"; then
@@ -252,6 +242,19 @@ elif [ "$baseline_mode" = check ]; then
     # comparison reads about 2.8 million pixels per page, and an unoptimised build took over
     # a minute per device.
     xcrun swiftc -O "$ROOT/wolkaraforever/tools/compare_ui_baselines.swift" -framework CoreGraphics -framework ImageIO -o "$comparator"
-    "$comparator" "$baseline" "$screenshots" "${states[@]}"
+    # UI_BASELINE_UNCOMPARED names pages (device/page.png) a machine is known to draw unlike
+    # a Mac, so their pixels are not compared there; every other page still is, and the
+    # fixture's own checks of those pages still ran. The hosted Validate workflow sets it for
+    # the iPad's add-ons pages: measured on 2026-11-22, the same iPad Pro 13-inch (M5) on the
+    # same iOS 27.2 drew their rows 8 px further left on GitHub's virtual Mac than on a Mac,
+    # where they match the baselines.
+    compared=()
+    for state in "${states[@]}"; do
+        case " ${UI_BASELINE_UNCOMPARED:-} " in
+            *" $baseline_device/$state "*) echo "not compared on this machine: $baseline_device/$state (UI_BASELINE_UNCOMPARED)" ;;
+            *) compared+=("$state") ;;
+        esac
+    done
+    "$comparator" "$baseline" "$screenshots" "${compared[@]}"
 fi
 echo "screenshots: $screenshots"

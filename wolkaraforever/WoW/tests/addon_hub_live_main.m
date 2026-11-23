@@ -56,8 +56,19 @@ static UIImage *RenderWindow(UIWindow *window) {
       options:(UISceneConnectionOptions *)options {
     (void)session; (void)options;
     WKLogStart();
-    WKLog("test", @"add-on hub live run starting");
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
+}
+
+// The run starts once the scene is in front, not while it is still connecting: iOS brings a scene
+// forward only after `willConnectToSession` returns, and a run held inside it kept the app in the
+// background - a blank screen, and a web page WebKit treats as hidden, whose timers it pauses (the
+// site's download countdown never fired).
+- (void)sceneDidBecomeActive:(UIScene *)scene {
+    (void)scene;
+    static BOOL started = NO;
+    if (started) return;
+    started = YES;
+    WKLog("test", @"add-on hub live run starting");
     // A budget, not a measurement: the longest live pass - search, three installs, a browser
     // download, a cancel and the launcher's own restore - measured under three minutes, so a run
     // still going after this is stuck rather than slow, and says so instead of hanging.

@@ -15,16 +15,19 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 . wolkaraforever/tools/simulators.sh
-wolkaraforever/tools/prepare.sh
+. wolkaraforever/tools/fixtures.sh
+# An unchanged prepared tree is reused (prepare.sh), so a second suite does not rebuild it.
+WOLKARA_PREPARE_REUSE=1 wolkaraforever/tools/prepare.sh
 cd build/platform
 simulator_use "${SIMULATOR:-ipad}"
-xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
+# A first boot on a fresh machine can take minutes, so this step gets longer than the rest.
+FIXTURE_STEP_LIMIT=900 fixture_step "boot of $SIM_NAME" xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 
 APP=build/controller-input-tests/ControllerInputTests.app
 mkdir -p "$APP"
 # The sources under test, and only those. The view controllers are exercised by the voice and
 # launcher fixtures; pulling them in would drag the theme along for nothing.
-xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -O1 -g \
+fixture_compile xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-deprecated-declarations \
     -Ilauncher/Input -Ilauncher/Voice -Ilauncher/Controller -Ilauncher/App -Ilauncher/WoW -Itests \
     launcher/Input/*.m launcher/Voice/VoiceSettings.m launcher/WoW/BatterySaverPolicy.m \
@@ -50,17 +53,15 @@ cat > "$APP/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - "$APP" > /dev/null
-xcrun simctl install "$SIM_ID" "$APP"
-LOG=$(mktemp)
-trap 'rm -f "$LOG"' EXIT
-# The suite exits by itself; the timeout is only so a hang cannot look like a pass.
-xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.controller-input 2>&1 | tee "$LOG" &
-LAUNCH=$!
-for _ in $(seq 1 60); do
-    if grep -qE 'CONTROLLER-INPUT (PASS|FAIL)' "$LOG"; then break; fi
-    sleep 1
-done
-kill "$LAUNCH" 2>/dev/null || true
+fixture_refuse_if_running org.tolkara.tests.controller-input || exit 1
+fixture_step "install of $APP" xcrun simctl install "$SIM_ID" "$APP"
+# In the prepared tree, not the system temp folder: the simulator's app cannot write there, and
+# its output would be lost.
+LOG=build/controller-input-tests/run.log
+# The suite exits by itself; the limit is only so a hang cannot look like a pass. Its output
+# comes from files and its own system log, not the console relay, which drops the end of a run
+# (fixtures.sh).
+FIXTURE_STEP_LIMIT=60 fixture_launch "$LOG" org.tolkara.tests.controller-input || true
 grep -E '^FAIL' "$LOG" | head -40 || true
 if grep -q 'CONTROLLER-INPUT PASS' "$LOG"; then
     grep 'CONTROLLER-INPUT PASS' "$LOG"
