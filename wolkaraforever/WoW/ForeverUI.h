@@ -24,6 +24,24 @@ FOUNDATION_EXPORT NSString *const TKForeverUIEdition;
 // `"1"` or `"0"`, everything else byte-identical.
 + (BOOL)setGamepad:(BOOL)enabled inWorkingDirectory:(NSString *)directory error:(NSError **)error;
 
+// The Gamepad UI: one stored choice, applied to the client's own GamePad* settings.
+//
+// The game normalises and rewrites its Config.wtf when it exits, so a launcher that read the
+// switch back from that file could lose the choice it had just made. The launcher's defaults
+// key is the owner; the file is written when the switch moves and again immediately before
+// every start, from every launch path.
+FOUNDATION_EXPORT NSString *const TKForeverUIGamepadDefaultsKey;   // "WolkaraForeverGamepadUI"
++ (BOOL)storedGamepadUI;
++ (void)setStoredGamepadUI:(BOOL)enabled;
+/// The client CVar that turns its gamepad interface on or off. Exactly one name: this client
+/// persists its own `GamePad*` camera settings and no enable flag, so the flag is the only
+/// assignment this app owns; the rest are left as the client wrote them.
++ (NSDictionary<NSString *, NSString *> *)gamepadUICVarsEnabled:(BOOL)enabled;
+/// Writes the stored choice through -setCVars:, which reads the file back and verifies it.
++ (BOOL)setGamepadUI:(BOOL)enabled inWorkingDirectory:(NSString *)directory error:(NSError **)error;
+/// Reads the stored choice and writes it. Called before every start.
++ (BOOL)applyStoredGamepadUIInWorkingDirectory:(NSString *)directory error:(NSError **)error;
+
 // Writes exactly one `SET <name> "<value>"` for each entry, removes every other
 // assignment of those names, and leaves every other line byte-identical. Reads
 // the file back and fails unless exactly one assignment per name is present with

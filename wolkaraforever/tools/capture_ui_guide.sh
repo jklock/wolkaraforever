@@ -20,8 +20,8 @@ cd "$(dirname "$0")/../.."
 
 # The images the guide embeds. A name that the walk did not draw fails this script, so a page that
 # stopped opening cannot leave the guide pointing at a picture of the page underneath it.
-names=(home edition preferences language device-profile render-profile battery-saver frame-limit
-       afk-saver interface-mode layout-create layout-editor voice-page touchpad-page
+names=(home edition preferences language device-profile render-profile battery-saver
+       interface-mode layout-create layout-editor voice-page touchpad-page
        addons-myaddons settings settings-failed about)
 
 output=$(wolkaraforever/tools/test_wow_launcher_ui.sh --guide-captures)

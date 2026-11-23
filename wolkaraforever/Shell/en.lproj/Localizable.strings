@@ -117,13 +117,13 @@
 "home.performance.restore" = "Restore WoW UI Configuration";
 "home.performance.settingsFolder" = "Open Settings Folder";
 "home.performance.gamepad" = "Gamepad UI";
-"home.performance.batterySaver" = "Battery Saver: %@";
+"home.performance.batterySaverMode" = "Battery Saver Mode";
+"home.performance.batterySaverOptions" = "Battery Saver Options";
 "home.batterySaver.title" = "Battery Saver";
-"home.batterySaver.message" = "Both of these take effect the next time you start the game.";
-"home.batterySaver.frameLimit" = "Frame limit: %@";
+"home.batterySaver.options.note" = "These apply while Battery Saver Mode is on, and take effect the next time you start the game. The choices are remembered either way.";
+"batterySaver.selected" = "Selected";
 "home.batterySaver.frameLimit.title" = "Frame limit";
-"home.batterySaver.frameLimit.message" = "Automatic is 60 FPS on power and 30 FPS on battery. Low Power Mode, or a device that is running hot, lowers any cap to 30 FPS. Applies the next time you start the game.";
-"home.batterySaver.afk" = "AFK saver: %@";
+"home.batterySaver.frameLimit.message" = "Automatic is 60 FPS on power and 30 FPS on battery. Low Power Mode lowers any cap to 30 FPS; device temperature never changes it. Applies the next time you start the game.";
 "home.batterySaver.afk.title" = "AFK saver";
 "home.batterySaver.afk.message" = "After this long without input, the screen dims and the game is held at 10 FPS. The first touch, key, mouse action or controller action only wakes it. Applies the next time you start the game.";
 "home.batterySaver.frame.automatic" = "Automatic";
@@ -134,7 +134,6 @@
 "home.batterySaver.afk.10" = "10 minutes";
 "home.batterySaver.off" = "Off";
 "home.performance.renderProfile" = "Render profile: %@";
-"home.performance.audioAvoidHAL" = "Battery-saving sound";
 "home.performance.deviceProfile" = "Device profile: %@";
 "home.render.performance" = "Performance";
 "home.render.balanced" = "Balanced";
@@ -652,7 +651,6 @@
 /* ---- Voice and dictation ---- */
 "voice.title" = "Key / Controller Button Configuration";
 "voice.test.title" = "Test Voice";
-"voice.test.open" = "Test Dictation";
 "voice.intro" = "Nothing here happens on its own. Until this is switched on and a button is set, the microphone is never opened and no controller behaves any differently.";
 "voice.heading.voice" = "Voice";
 "voice.enabled" = "Use a button to talk";

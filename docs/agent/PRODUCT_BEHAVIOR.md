@@ -2,13 +2,13 @@
 
 > Verified: 2026-11-21 · Source: `8375cbb` · Proof: launcher source, localized strings, and focused suites
 
-WolkaraForever lets a user choose a Forever region and game language; download, resume, verify, repair, and update game data; then start the unchanged executable through an available execution mode. The launcher also supports app localization, interface-mode selection, opt-in experimental Battle.net browser login (including one saved game password on the device), add-ons, UI recovery, keyboard/controller/touch input, dictation, Battery Saver (frame limit and AFK dim), measured device render profiles, battery-saving sound, and diagnostics.
+WolkaraForever lets a user choose a Forever region and game language; download, resume, verify, repair, and update game data; then start the unchanged executable through an available execution mode. The launcher also supports app localization, interface-mode selection, opt-in experimental Battle.net browser login (including one saved game password on the device), add-ons, UI recovery, keyboard/controller/touch input, dictation, Battery Saver Mode (one master switch over a frame limit and an AFK dim), measured device render profiles, an always-on battery-saving sound path, and diagnostics.
 
 | Behavior | Human guide |
 | --- | --- |
 | Install, signing, first launch | [Installation](../INSTALLATION.md) |
 | Build assembly, execution modes, run commands, packaging | [Build and run WolkaraForever](../BUILDING.md) |
-| Game lifecycle, languages, experimental browser login, add-ons, recovery, controls, voice, Battery Saver, battery-saving sound | [Using WolkaraForever](../USING_WOLKARAFOREVER.md) |
+| Game lifecycle, languages, experimental browser login, add-ons, recovery, controls, voice, Battery Saver Mode, the battery-saving sound path | [Using WolkaraForever](../USING_WOLKARAFOREVER.md) |
 | Phone-specific interface and constraints | [iPhone](../IPHONE.md) |
 | Supported boundary and issue reports | [Compatibility](../../COMPATIBILITY.md) |
 

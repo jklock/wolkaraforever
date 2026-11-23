@@ -15,6 +15,7 @@
 
 #include <float.h>
 #include <math.h>
+#include <stdatomic.h>
 
 #import "../App/WolkaraForeverLog.h"
 
@@ -57,10 +58,12 @@ NSString *AKControllerIdentity(GCController *pad) {
 // defined before the implementation, and a category on somebody else's class is the wrong
 // tool for a private method.
 @interface AKControllerInspector ()
+// Mirrors -[AKInputInterest admitsAnyElement] for the snapshot in -interest, so a stick or
+// touch-pad callback can return before it formats anything. Written only from -setInterest:.
+@property (nonatomic, readonly) BOOL admitsAnyElement;
 - (void)markDevice:(NSString *)device name:(NSString *)name source:(NSString *)source;
 - (void)noteElement:(NSString *)element value:(double)value pressed:(BOOL)pressed detail:(nullable NSString *)detail;
 - (void)noteDiagnosticElement:(NSString *)element value:(double)value pressed:(BOOL)pressed detail:(nullable NSString *)detail;
-- (void)noteAxis:(NSString *)element value:(double)value;
 - (void)noteIgnoredEvent;
 - (void)noteHandoffSince:(NSTimeInterval)began;
 - (void)submitContinuous:(NSString *)element value:(double)value pressed:(BOOL)pressed
@@ -84,6 +87,7 @@ static void AKCIReport(AKControllerInspector *inspector, NSString *device, NSStr
                        NSString *source, NSString *element, double value, BOOL pressed,
                        NSString *detail) {
     if (!inspector) return;
+    if (!inspector.admitsAnyElement) { [inspector noteIgnoredEvent]; return; }
     AKInputInterest *interest = inspector.interest;
     if (![interest admitsElement:element]) { [inspector noteIgnoredEvent]; return; }
     NSTimeInterval began = NSProcessInfo.processInfo.systemUptime;
@@ -100,6 +104,7 @@ static void AKCIReport(AKControllerInspector *inspector, NSString *device, NSStr
 static void AKCIReportAxis(AKControllerInspector *inspector, NSString *device, NSString *name,
                            NSString *source, NSString *element, double value) {
     if (!inspector) return;
+    if (!inspector.admitsAnyElement) { [inspector noteIgnoredEvent]; return; }
     AKInputInterest *interest = inspector.interest;
     if (![interest admitsElement:element]) { [inspector noteIgnoredEvent]; return; }
     [inspector submitContinuous:element value:value pressed:(value != 0)
@@ -120,6 +125,7 @@ static void AKCIReportAxis(AKControllerInspector *inspector, NSString *device, N
 static void AKCIButton(AKControllerInspector *inspector, NSString *device, NSString *name,
                        NSString *element, double value, BOOL pressed) {
     if (!inspector) return;
+    if (!inspector.admitsAnyElement) { [inspector noteIgnoredEvent]; return; }
     AKInputInterest *interest = inspector.interest;
     if (![interest admitsElement:element]) { [inspector noteIgnoredEvent]; return; }
 
@@ -154,9 +160,21 @@ static void AKCIButton(AKControllerInspector *inspector, NSString *device, NSStr
     // Coalescing state for continuous inputs. Guarded by @synchronized(self) because it is
     // written from GameController's threads and drained on the main queue.
     NSMutableDictionary<NSString *, NSDictionary *> *_pendingContinuous;
+    NSMutableArray<NSString *> *_panelPending;
+    BOOL _panelScheduled;
     BOOL _flushScheduled;
     AKTimingSamples *_callbackTiming, *_handoffTiming;
-    NSUInteger _admitted, _ignored, _coalesced;
+    // Written from GameController's threads and read by the diagnostics UI, so these are atomic
+    // rather than an unsynchronised `x += 1`: the counter is not worth a lock, and a lost update
+    // on a diagnostic path is a wrong number nobody can see.
+    _Atomic NSUInteger _admitted, _ignored, _coalesced;
+}
+
+// The snapshot is immutable once published, so a plain pointer read is the whole answer and it
+// allocates nothing. This is the check a stick sample makes before it formats anything.
+- (BOOL)admitsAnyElement {
+    AKInputInterest *interest = _interest;
+    return interest != nil && interest.admitsAnyElement;
 }
 
 - (NSString *)currentDevice { return _currentDevice; }
@@ -165,9 +183,9 @@ static void AKCIButton(AKControllerInspector *inspector, NSString *device, NSStr
 
 - (AKTimingSamples *)callbackTiming { return _callbackTiming; }
 - (AKTimingSamples *)handoffTiming { return _handoffTiming; }
-- (NSUInteger)admittedEvents { return _admitted; }
-- (NSUInteger)ignoredEvents { return _ignored; }
-- (NSUInteger)coalescedEvents { return _coalesced; }
+- (NSUInteger)admittedEvents { return atomic_load(&_admitted); }
+- (NSUInteger)ignoredEvents { return atomic_load(&_ignored); }
+- (NSUInteger)coalescedEvents { return atomic_load(&_coalesced); }
 
 // Diagnostics are a stored preference, not a transient flag: an engineer who switches them on
 // expects them to survive the relaunch that follows a crash, and a user who switches them off
@@ -191,16 +209,16 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
 - (void)resetDiagnostics {
     [_callbackTiming reset];
     [_handoffTiming reset];
-    _admitted = 0; _ignored = 0; _coalesced = 0;
-    [_axisBuckets removeAllObjects];
+    atomic_store(&_admitted, 0); atomic_store(&_ignored, 0); atomic_store(&_coalesced, 0);
+    @synchronized (self) { [_axisBuckets removeAllObjects]; }
 }
 
-- (void)noteIgnoredEvent { _ignored += 1; }
+- (void)noteIgnoredEvent { atomic_fetch_add(&_ignored, 1); }
 
 - (void)noteHandoffSince:(NSTimeInterval)began {
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
     if (began > 0 && now >= began) [_handoffTiming record:(now - began) * 1000.0];
-    _admitted += 1;
+    atomic_fetch_add(&_admitted, 1);
 }
 
 - (void)submitContinuous:(NSString *)element value:(double)value pressed:(BOOL)pressed
@@ -209,12 +227,20 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
     NSTimeInterval began = NSProcessInfo.processInfo.systemUptime;
     BOOL schedule = NO;
     @synchronized (self) {
+        // A stick is a river of floats at the pad's own rate. Only a change of bucket is news:
+        // the half-unit steps -2, -1, 0, 1, 2 are what -noteAxis: did, and that method had lost
+        // its caller, so every sample allocated a dictionary and a formatted line to describe a
+        // position the panel had already been told.
+        NSInteger bucket = (NSInteger)lround(value * AKCIAxisBucket);
+        NSNumber *last = _axisBuckets[element];
+        if (last && last.integerValue == bucket) { atomic_fetch_add(&_coalesced, 1); return; }
+        _axisBuckets[element] = @(bucket);
         if (!_pendingContinuous) _pendingContinuous = [NSMutableDictionary dictionary];
         _pendingContinuous[element] = @{ @"value": @(value), @"pressed": @(pressed),
                                          @"device": device ?: @"", @"name": name ?: @"",
                                          @"source": source ?: @"", @"detail": detail ?: @"",
                                          @"began": @(began) };
-        _coalesced += 1;
+        atomic_fetch_add(&_coalesced, 1);
         if (!_flushScheduled) { _flushScheduled = YES; schedule = YES; }
     }
     if (!schedule) return;
@@ -597,6 +623,11 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
         GCControllerDirectionPad *dpad = profile.dpads[name];
         dpad.valueChangedHandler = ^(GCControllerDirectionPad *input, float x, float y) {
             (void)input;
+            // A pad's sticks are direction pads, and a dual-stick pad reports two of them at the
+            // pad's own rate - up to 1 kHz wired. In ordinary play nothing here is admitted, and
+            // formatting the element and the detail before asking was two allocations per sample
+            // for an answer that was always no.
+            if (!weakSelf.admitsAnyElement) { [weakSelf noteIgnoredEvent]; return; }
             // The direction is the name; where the thumb actually is goes in the
             // detail. As a name it changed with every movement, so nothing learned
             // from one press could ever match the next one.
@@ -633,6 +664,7 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
                 // simply has no movement to send until the finger moves.
                 BOOL down = fabsf(x) > FLT_EPSILON || fabsf(y) > FLT_EPSILON;
                 [AKControllerTouchpadRelay.shared touch:point down:down x:x y:y];
+                if (!weakSelf.admitsAnyElement) { [weakSelf noteIgnoredEvent]; return; }
                 AKCIReport(weakSelf, device, deviceName, @"touchpad",
                            AKInputElementForTouchpad(name, down ? @"moved" : @"up"),
                            down ? 1 : 0, down,
@@ -662,18 +694,21 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
             touchpad.touchDown = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
                 (void)input; (void)buttonValue;
                 [AKControllerTouchpadRelay.shared touch:point down:YES x:x y:y];
+                if (!weakSelf.admitsAnyElement) { [weakSelf noteIgnoredEvent]; return; }
                 AKCIReport(weakSelf, device, deviceName, @"touchpad", down, 1, YES,
                            [NSString stringWithFormat:@"x=%.2f y=%.2f button=%d", x, y, buttonPressed]);
             };
             touchpad.touchUp = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
                 (void)input; (void)buttonValue;
                 [AKControllerTouchpadRelay.shared touch:point down:NO x:x y:y];
+                if (!weakSelf.admitsAnyElement) { [weakSelf noteIgnoredEvent]; return; }
                 AKCIReport(weakSelf, device, deviceName, @"touchpad", up, 0, NO,
                            [NSString stringWithFormat:@"x=%.2f y=%.2f button=%d", x, y, buttonPressed]);
             };
             touchpad.touchMoved = ^(GCControllerTouchpad *input, float x, float y, float buttonValue, BOOL buttonPressed) {
                 (void)input; (void)buttonValue; (void)buttonPressed;
                 [AKControllerTouchpadRelay.shared touch:point down:YES x:x y:y];
+                if (!weakSelf.admitsAnyElement) { [weakSelf noteIgnoredEvent]; return; }
                 AKCIReport(weakSelf, device, deviceName, @"touchpad", moved, 0, NO,
                            [NSString stringWithFormat:@"x=%.2f y=%.2f", x, y]);
             };
@@ -737,10 +772,15 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
 
 - (void)noteElement:(NSString *)element value:(double)value pressed:(BOOL)pressed detail:(nullable NSString *)detail {
     NSTimeInterval began = NSProcessInfo.processInfo.systemUptime;
-    NSString *line = [NSString stringWithFormat:@"%@ %@=%.2f", element, pressed ? @"pressed" : @"value", value];
-    if (detail.length) line = [line stringByAppendingFormat:@" %@", detail];
     [self noteAdmission:began];
-    [self reportLine:line element:element value:value pressed:pressed];
+    // The line exists for the log or the panel, and in ordinary play neither is on. Building it
+    // first was an allocation per event for output nobody had asked to see.
+    if (self.diagnosticsEnabled || self.panelVisible) {
+        NSString *line = [NSString stringWithFormat:@"%@ %@=%.2f", element, pressed ? @"pressed" : @"value", value];
+        if (detail.length) line = [line stringByAppendingFormat:@" %@", detail];
+        [self recordLine:line];
+    }
+    if (self.onInput) self.onInput(element, value, pressed);
 }
 
 // The same event, as the trace only. Used for a button the command ingress has already taken:
@@ -755,23 +795,9 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
     [self recordLine:line];
 }
 
-- (void)noteAxis:(NSString *)element value:(double)value {
-    NSInteger bucket = (NSInteger)lround(value * AKCIAxisBucket);
-    NSNumber *last = _axisBuckets[element];
-    if (last && last.integerValue == bucket) return;
-    _axisBuckets[element] = @(bucket);
-    [self reportLine:[NSString stringWithFormat:@"%@=%.2f", element, value]
-              element:element value:value pressed:(bucket != 0)];
-}
-
 - (void)noteAdmission:(NSTimeInterval)began {
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
     if (began > 0 && now >= began) [_callbackTiming record:(now - began) * 1000.0];
-}
-
-- (void)reportLine:(NSString *)line element:(NSString *)element value:(double)value pressed:(BOOL)pressed {
-    [self recordLine:line];
-    if (self.onInput) self.onInput(element, value, pressed);
 }
 
 // The panel's own history and the log, without pretending to be an input. Some of
@@ -783,13 +809,30 @@ static NSString *const AKCIDiagnosticsKey = @"WolkaraForeverInputDiagnostics";
 //   * The panel is updated only while it is on screen. The old code enqueued a main-queue block
 //     for a panel that did not exist, once per event, which is a quarter of the work in that
 //     run's log for no output at all.
+//
+// A burst (one flush can carry several axes) is now one block and one relayout, not one each.
 - (void)recordLine:(NSString *)line {
     if (self.diagnosticsEnabled) AKCILog(@"%@", line);
     if (!self.panelVisible) return;
+    BOOL schedule = NO;
+    @synchronized (self) {
+        if (!_panelPending) _panelPending = [NSMutableArray array];
+        [_panelPending addObject:line];
+        if (!_panelScheduled) { _panelScheduled = YES; schedule = YES; }
+    }
+    if (!schedule) return;
     dispatch_async(dispatch_get_main_queue(), ^{
+        NSArray<NSString *> *lines = nil;
+        @synchronized (self) {
+            lines = self->_panelPending;
+            self->_panelPending = nil;
+            self->_panelScheduled = NO;
+        }
         if (!self->_panel) return;
-        [self->_history addObject:line];
-        while (self->_history.count > AKCIHistoryLimit) [self->_history removeObjectAtIndex:0];
+        for (NSString *each in lines) {
+            [self->_history addObject:each];
+            while (self->_history.count > AKCIHistoryLimit) [self->_history removeObjectAtIndex:0];
+        }
         self->_panel.text = [self->_history componentsJoinedByString:@"\n"];
         [self->_panel sizeToFit];
     });

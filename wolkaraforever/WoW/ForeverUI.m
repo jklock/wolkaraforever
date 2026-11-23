@@ -152,6 +152,37 @@ static BOOL TKWriteConfig(NSString *path, NSString *text, NSError **error) {
     return [self setGamepad:YES inWorkingDirectory:directory error:error];
 }
 
+NSString *const TKForeverUIGamepadDefaultsKey = @"WolkaraForeverGamepadUI";
+
++ (NSDictionary<NSString *, NSString *> *)gamepadUICVarsEnabled:(BOOL)enabled {
+    // Measured on the iPad on 2026-11-22. The client's own Config.wtf carries its GamePad*
+    // settings - the camera pitch and yaw speeds, the back-pedal threshold, the combat
+    // face-movement angle - and no enable flag at all: the flag is the one line the client
+    // drops when it rewrites the file on exit. So exactly one assignment is ours, the master
+    // switch. The four the client wrote are its own settings and are never touched here.
+    return @{ @"GamePadEnable": enabled ? @"1" : @"0" };
+}
+
++ (BOOL)storedGamepadUI {
+    id stored = [NSUserDefaults.standardUserDefaults objectForKey:TKForeverUIGamepadDefaultsKey];
+    return [stored isKindOfClass:NSNumber.class] ? [stored boolValue] : NO;
+}
+
++ (void)setStoredGamepadUI:(BOOL)enabled {
+    [NSUserDefaults.standardUserDefaults setBool:enabled forKey:TKForeverUIGamepadDefaultsKey];
+}
+
++ (BOOL)setGamepadUI:(BOOL)enabled inWorkingDirectory:(NSString *)directory error:(NSError **)error {
+    if (![self setCVars:[self gamepadUICVarsEnabled:enabled] inWorkingDirectory:directory error:error]) return NO;
+    [self setStoredGamepadUI:enabled];
+    return YES;
+}
+
++ (BOOL)applyStoredGamepadUIInWorkingDirectory:(NSString *)directory error:(NSError **)error {
+    return [self setCVars:[self gamepadUICVarsEnabled:self.storedGamepadUI]
+        inWorkingDirectory:directory error:error];
+}
+
 + (BOOL)setGamepad:(BOOL)enabled inWorkingDirectory:(NSString *)directory error:(NSError **)error {
     NSString *wtf = [self wtfDirectoryInWorkingDirectory:directory create:YES error:error];
     if (!wtf) return NO;

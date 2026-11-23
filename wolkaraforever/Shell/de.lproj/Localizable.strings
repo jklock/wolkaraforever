@@ -117,13 +117,13 @@
 "home.performance.restore" = "WoW-Oberflächenkonfiguration wiederherstellen";
 "home.performance.settingsFolder" = "Einstellungsordner öffnen";
 "home.performance.gamepad" = "Gamepad-Oberfläche";
-"home.performance.batterySaver" = "Akku-Sparmodus: %@";
+"home.performance.batterySaverMode" = "Akku-Sparmodus";
+"home.performance.batterySaverOptions" = "Akku-Sparmodus-Optionen";
 "home.batterySaver.title" = "Akku-Sparmodus";
-"home.batterySaver.message" = "Beide Einstellungen gelten ab dem nächsten Spielstart.";
-"home.batterySaver.frameLimit" = "Bildrate: %@";
+"home.batterySaver.options.note" = "Diese Einstellungen gelten, wenn der Akku-Sparmodus an ist, und ab dem nächsten Spielstart. Die Auswahl bleibt so oder so gespeichert.";
+"batterySaver.selected" = "Ausgewählt";
 "home.batterySaver.frameLimit.title" = "Bildrate begrenzen";
-"home.batterySaver.frameLimit.message" = "Automatisch sind 60 FPS am Strom und 30 FPS im Akkubetrieb. Der Energiesparmodus oder ein heißes Gerät senkt jede Grenze auf 30 FPS. Gilt ab dem nächsten Spielstart.";
-"home.batterySaver.afk" = "Leerlauf sparen: %@";
+"home.batterySaver.frameLimit.message" = "Automatisch sind 60 FPS am Strom und 30 FPS im Akkubetrieb. Der Energiesparmodus senkt jede Grenze auf 30 FPS; die Gerätetemperatur ändert sie nie. Gilt ab dem nächsten Spielstart.";
 "home.batterySaver.afk.title" = "Leerlauf sparen";
 "home.batterySaver.afk.message" = "Nach dieser Zeit ohne Eingabe wird der Bildschirm gedimmt und das Spiel auf 10 FPS begrenzt. Die erste Berührung, Taste, Maus- oder Controller-Eingabe weckt es nur. Gilt ab dem nächsten Spielstart.";
 "home.batterySaver.frame.automatic" = "Automatisch";
@@ -134,7 +134,6 @@
 "home.batterySaver.afk.10" = "10 Minuten";
 "home.batterySaver.off" = "Aus";
 "home.performance.renderProfile" = "Renderprofil: %@";
-"home.performance.audioAvoidHAL" = "Akkuschonender Ton";
 "home.performance.deviceProfile" = "Geräteprofil: %@";
 "home.render.performance" = "Leistung";
 "home.render.balanced" = "Ausgewogen";
@@ -650,7 +649,6 @@
 /* ---- Voice and dictation ---- */
 "voice.title" = "Tasten und Controller-Buttons belegen";
 "voice.test.title" = "Sprache testen";
-"voice.test.open" = "Diktat testen";
 "voice.intro" = "Nichts hier geschieht von selbst. Solange die Funktion nicht eingeschaltet und eine Taste belegt ist, wird das Mikrofon nie geöffnet und kein Controller verhält sich anders.";
 "voice.heading.voice" = "Sprache";
 "voice.enabled" = "Taste zum Sprechen verwenden";

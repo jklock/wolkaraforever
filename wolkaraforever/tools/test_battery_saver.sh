@@ -49,7 +49,7 @@ xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroo
     -o build/battery-saver/test_metal_pacing
 # One process cannot be two configurations - the presentation swizzles are installed once - so
 # each case is its own run.
-for case in off immediate30 immediate30-fallback attime30 minimum30 minimum-longer; do
+for case in off disabled immediate30 immediate30-fallback attime30 attime30-late minimum30 minimum-longer; do
     xcrun simctl spawn "$SIM_ID" "$PWD/build/battery-saver/test_metal_pacing" "$case"
 done
 

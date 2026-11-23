@@ -84,14 +84,14 @@ button that starts, installs or repairs the game.
 | --- | --- | --- |
 | **Device profile: Automatic — …** | Which measured device profile the page draws for, and therefore which render scales are offered. | Opens [Device profile](#device-profile). Automatic follows the device it is running on. |
 | **Render profile: Performance** | How much the game draws at, from Performance through Balanced to Quality. | Opens [Render profile](#render-profile). |
-| **Battery-saving sound** (switch) | Plays the game's sound without loading iOS's audio device layer into the game. On by default. | Switch it off if sound misbehaves (silence, crackles, no sound after headphones). The change applies from the next game start. |
-| **Battery Saver: Off** | The frame limit and the AFK timer, both applied by the next game start. | Opens [Battery Saver](#battery-saver). |
+| **Battery Saver Mode** (switch) | Whether any battery-saving choice applies at all. **Off** is full performance: no frame limit, no AFK dim, and nothing installed on the game's presentation path. | Switch on, then choose on [Battery Saver options](#battery-saver). |
+| **Battery Saver Options** | Opens the page holding the frame limit and the AFK saver. It opens whether the switch above is on or off, and the choices are remembered either way. | Opens [Battery Saver Options](#battery-saver). |
 
 ### UI Manager card
 
 | Option | What it does | How to use it |
 | --- | --- | --- |
-| **Gamepad UI** (switch) | Whether the game exposes its gamepad interface, by writing `GamePadEnable` in the game's `Config.wtf`. It is the first choice in this card because everything else depends on it. | Switch on when you want the controller's interface; switch off for the keyboard/mouse one. |
+| **Gamepad UI** (switch) | Whether the game exposes its gamepad interface. The launcher keeps the choice itself and writes `GamePadEnable` into `Config.wtf`, again immediately before every start, because the game rewrites that file when it exits. The game's own gamepad camera settings are never touched. | Switch on when you want the controller's interface; switch off for the keyboard/mouse one. |
 | **Backup WoW UI Configuration** | Saves the game's interface settings (`WTF` and `Interface`) into one ZIP under `WTF/Backups`. | Tap before a large change. |
 | **Restore WoW UI Configuration** | Puts a saved interface back, after taking a safety copy of what is there now. | Tap, pick a backup, confirm. |
 | **Reset to Default Wow UI Configuration** | Removes only the game's graphics and display settings, after taking a safety copy. | Tap and confirm **Reset graphics**. It does not touch add-ons, key bindings or your installation. |
@@ -179,21 +179,19 @@ page says so.
 
 ## Battery Saver
 
-![The Battery Saver submenu](screenshots/ui-battery-saver.jpg)
+![Battery Saver options](screenshots/ui-battery-saver.jpg)
 
-Two choices, both saved and applied by the **next** game start — a change never disturbs a game that
-is already running. Nothing here writes a game setting.
+A page of its own, opened from **Battery Saver Options** on the home page. It opens whether
+**Battery Saver Mode** is on or off: the choices are remembered on their own, and they are what the
+switch applies. Everything here takes effect on the **next** game start — a change never disturbs a
+game that is already running. Nothing here writes a game setting.
 
-| Option | What it does |
+| Choice | What it does |
 | --- | --- |
-| **Frame limit: Off** | Off, **Automatic** (60 frames per second on power, 30 on battery), **30 FPS** or **60 FPS**. Low Power Mode, or a device running hot, lowers any cap to 30. The cap is applied to the frames the game already renders, so **Off** costs nothing. |
-| **AFK saver: Off** | Off, 2, 5 or 10 minutes. After that long without input the screen dims and the game is held at 10 frames per second. The first touch, key, mouse action or controller action only wakes it — it is not delivered to the game. Dimming pauses while anything is held, while the in-game touch configuration is open, and while the app is not in front. |
+| **Frame limit** | Off, **Automatic** (60 frames per second on power, 30 on battery), **30 FPS** or **60 FPS**. Low Power Mode lowers any cap to 30; device temperature never changes it. The cap is applied to the frames the game already renders, so **Off** costs nothing. |
+| **AFK saver** | Off, 2, 5 or 10 minutes. After that long without input the screen dims and the game is held at 10 frames per second. The first touch, key, mouse action or controller action only wakes it — it is not delivered to the game. Dimming pauses while anything is held, while the in-game touch configuration is open, and while the app is not in front. |
 
-![Frame limit](screenshots/ui-frame-limit.jpg)
-
-![AFK saver](screenshots/ui-afk-saver.jpg)
-
-The row on the home page reads back both, for example `Battery Saver: Automatic · 5 minutes`.
+The current choice in each group is marked with a check.
 
 ## Device profile
 

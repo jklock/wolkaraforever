@@ -24,12 +24,17 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - Keys and spellings
 
+/// Whether Battery Saver Mode is on at all. Off is full performance: no frame limit, no AFK
+/// dim, and no presentation hook installed. The default for an installation that never chose
+/// the old independent options.
+FOUNDATION_EXPORT NSString *const AKBatterySaverEnabledDefaultsKey;      // "WolkaraForeverBatterySaverEnabledV1"
 /// The frame limit the user selected: "off", "auto", "30" or "60".
 FOUNDATION_EXPORT NSString *const AKBatterySaverFrameLimitDefaultsKey;   // "WolkaraForeverBatterySaverFrameLimitV1"
 /// The idle timeout in minutes: 0 (off), 2, 5 or 10.
 FOUNDATION_EXPORT NSString *const AKBatterySaverAFKMinutesDefaultsKey;   // "WolkaraForeverBatterySaverAFKMinutesV1"
 /// The snapshot taken when the launcher starts a guest. Read by the adapters, written by
 /// the launcher and by nothing else.
+FOUNDATION_EXPORT NSString *const AKBatterySaverLaunchEnabledDefaultsKey;
 FOUNDATION_EXPORT NSString *const AKBatterySaverLaunchFrameLimitDefaultsKey;
 FOUNDATION_EXPORT NSString *const AKBatterySaverLaunchAFKMinutesDefaultsKey;
 
@@ -62,11 +67,13 @@ FOUNDATION_EXPORT NSString *AKBatterySaverFrameLimitStoredName(AKBatterySaverFra
 FOUNDATION_EXPORT NSInteger AKBatterySaverAFKMinutesFromStored(id _Nullable value);
 
 /// What the submenu currently says. Validated on every read.
+FOUNDATION_EXPORT BOOL AKBatterySaverStoredEnabled(void);
 FOUNDATION_EXPORT AKBatterySaverFrameLimit AKBatterySaverStoredFrameLimit(void);
 FOUNDATION_EXPORT NSInteger AKBatterySaverStoredAFKMinutes(void);
 
 /// Write the selection. Validated before it is stored, so a caller cannot save a value the
 /// readers would refuse.
+FOUNDATION_EXPORT void AKBatterySaverSetEnabled(BOOL enabled);
 FOUNDATION_EXPORT void AKBatterySaverSetFrameLimit(AKBatterySaverFrameLimit limit);
 FOUNDATION_EXPORT void AKBatterySaverSetAFKMinutes(NSInteger minutes);
 
@@ -76,6 +83,7 @@ FOUNDATION_EXPORT void AKBatterySaverCommitLaunchSnapshot(void);
 
 /// What this guest was started with. Off and 0 when no snapshot was ever written, which is
 /// also what a fixture that never ran the launcher sees.
+FOUNDATION_EXPORT BOOL AKBatterySaverLaunchEnabled(void);
 FOUNDATION_EXPORT AKBatterySaverFrameLimit AKBatterySaverLaunchFrameLimit(void);
 FOUNDATION_EXPORT NSInteger AKBatterySaverLaunchAFKMinutes(void);
 
@@ -92,16 +100,19 @@ typedef struct AKBatterySaverFramePolicy {
 /// The rule, on its own, with every input named. No device, no defaults database and no
 /// clock, so a corpus of inputs can be checked without one.
 ///
+///   enabled    - NO is full performance: the game's own presentation call, no cap, no dim,
+///                whatever the other arguments say. The master switch outranks all of them.
 ///   Automatic  - 60 FPS on external power, 30 FPS on battery.
 ///   30 / 60    - that rate.
-///   any cap    - Low Power Mode, or a Serious/Critical thermal state, lowers a rate above
-///                30 FPS to 30 FPS. Off stays Off.
+///   any cap    - Low Power Mode lowers a rate above 30 FPS to 30 FPS. Device temperature is
+///                deliberately not an input: a hot iPad must not quietly change the pacing the
+///                player chose. Off stays Off.
 ///   dimmed     - the AFK dim is in force: a fixed 10 FPS, whatever else says. The game is
 ///                not being looked at, and the panel does not need to be redrawn for it.
-FOUNDATION_EXPORT AKBatterySaverFramePolicy AKBatterySaverFramePolicyMake(AKBatterySaverFrameLimit limit,
+FOUNDATION_EXPORT AKBatterySaverFramePolicy AKBatterySaverFramePolicyMake(BOOL enabled,
+                                                                         AKBatterySaverFrameLimit limit,
                                                                          BOOL externalPower,
                                                                          BOOL lowPowerMode,
-                                                                         NSProcessInfoThermalState thermal,
                                                                          BOOL dimmed);
 
 /// The same rule, reading the live device: the launch snapshot, the charger, Low Power Mode

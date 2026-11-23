@@ -107,7 +107,9 @@ int main(int argc, const char *argv[]) {
     @autoreleasepool {
         assert(argc == 2);
         NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-        for (NSString *key in @[AKBatterySaverFrameLimitDefaultsKey, AKBatterySaverAFKMinutesDefaultsKey,
+        for (NSString *key in @[AKBatterySaverEnabledDefaultsKey,
+                                 AKBatterySaverFrameLimitDefaultsKey, AKBatterySaverAFKMinutesDefaultsKey,
+                                 AKBatterySaverLaunchEnabledDefaultsKey,
                                  AKBatterySaverLaunchFrameLimitDefaultsKey, AKBatterySaverLaunchAFKMinutesDefaultsKey])
             [defaults removeObjectForKey:key];
 
@@ -115,6 +117,7 @@ int main(int argc, const char *argv[]) {
         BOOL capped = YES;
         BOOL withMinimumDouble = NO;
         BOOL longer = NO;
+        BOOL lateRequests = NO;
         CFTimeInterval duration = 0.0;
         NSString *mode = [NSString stringWithUTF8String:argv[1]];
         if ([mode isEqual:@"off"]) {
@@ -128,6 +131,14 @@ int main(int argc, const char *argv[]) {
         } else if ([mode isEqual:@"attime30"]) {
             AKBatterySaverSetFrameLimit(AKBatterySaverFrameLimit30);
             path = PathAtTime;
+        } else if ([mode isEqual:@"attime30-late"]) {
+            // A guest that has already timed a frame later than the cap, which is the case a
+            // real game reaches whenever it runs behind. The frame is kept, and the *next* one
+            // must still be a full interval after what was actually presented - not after the
+            // target the kept frame skipped.
+            AKBatterySaverSetFrameLimit(AKBatterySaverFrameLimit30);
+            path = PathAtTime;
+            lateRequests = YES;
         } else if ([mode isEqual:@"minimum30"]) {
             AKBatterySaverSetFrameLimit(AKBatterySaverFrameLimit30);
             path = PathMinimum;
@@ -139,12 +150,19 @@ int main(int argc, const char *argv[]) {
             withMinimumDouble = YES;
             duration = 0.2;     // the game asked for longer than the cap: it must be kept
             longer = YES;
+        } else if ([mode isEqual:@"disabled"]) {
+            // A frame limit is stored, but the master switch is off: nothing may be installed
+            // and the game's own presentation call must be the one that runs.
+            AKBatterySaverSetFrameLimit(AKBatterySaverFrameLimit30);
+            capped = NO;
         } else {
             fprintf(stderr, "unknown mode %s\n", argv[1]);
             return 2;
         }
         // The snapshot is what the guest reads: taken before the adapter installs its hooks,
-        // exactly as the launcher takes it before starting a guest.
+        // exactly as the launcher takes it before starting a guest. Every mode but "disabled"
+        // also turns the master switch on - the limit alone is no longer enough to apply.
+        if (![mode isEqual:@"disabled"]) AKBatterySaverSetEnabled(YES);
         AKBatterySaverCommitLaunchSnapshot();
 
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
@@ -174,6 +192,10 @@ int main(int argc, const char *argv[]) {
             id<MTLCommandBuffer> buffer = [queue commandBuffer];
             assert(buffer != nil);
             sRequestedTime = CACurrentMediaTime();
+            // Every seventh frame the guest asks for a time 50 ms after the last presentation,
+            // which is later than the cap allows: that frame is kept at the guest's own time.
+            if (lateRequests && (index % 7) == 3 && sTargets.count)
+                sRequestedTime = sTargets.lastObject.doubleValue + 0.05;
             switch (path) {
                 case PathImmediate: [buffer presentDrawable:drawable]; break;
                 case PathAtTime: [buffer presentDrawable:drawable atTime:sRequestedTime]; break;
@@ -238,6 +260,7 @@ int main(int argc, const char *argv[]) {
             // is later than the cap allows - and is raised when it is earlier.
             assert(raised + kept == (uint64_t)frames);
             assert(raised > 0);
+            if (lateRequests) assert(kept > 0);
             for (NSUInteger index = 0; index < sTargets.count; index++)
                 assert(sTargets[index].doubleValue >= sRequested[index].doubleValue);
             for (NSUInteger index = 1; index < sTargets.count; index++)
