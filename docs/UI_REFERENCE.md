@@ -85,7 +85,7 @@ button that starts, installs or repairs the game.
 | **Device profile: Automatic — …** | Which measured device profile the page draws for, and therefore which render scales are offered. | Opens [Device profile](#device-profile). Automatic follows the device it is running on. |
 | **Render profile: Performance** | How much the game draws at, from Performance through Balanced to Quality. | Opens [Render profile](#render-profile). |
 | **Battery Saver Mode** (switch) | Whether any battery-saving choice applies at all. **Off** is full performance: no frame limit, no AFK dim, and nothing installed on the game's presentation path. | Switch on, then choose on [Battery Saver options](#battery-saver). |
-| **Battery Saver options** | Opens the page holding the frame limit and the AFK saver. It opens whether the switch above is on or off, and the choices are remembered either way. | Opens [Battery Saver options](#battery-saver). |
+| **Battery Saver Options** | Opens the page holding the frame limit and the AFK saver. It opens whether the switch above is on or off, and the choices are remembered either way. | Opens [Battery Saver Options](#battery-saver). |
 
 ### UI Manager card
 
@@ -181,7 +181,7 @@ page says so.
 
 ![Battery Saver options](screenshots/ui-battery-saver.jpg)
 
-A page of its own, opened from **Battery Saver options** on the home page. It opens whether
+A page of its own, opened from **Battery Saver Options** on the home page. It opens whether
 **Battery Saver Mode** is on or off: the choices are remembered on their own, and they are what the
 switch applies. Everything here takes effect on the **next** game start — a change never disturbs a
 game that is already running. Nothing here writes a game setting.

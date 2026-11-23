@@ -118,7 +118,7 @@
 "home.performance.settingsFolder" = "Open Settings Folder";
 "home.performance.gamepad" = "Gamepad UI";
 "home.performance.batterySaverMode" = "Battery Saver Mode";
-"home.performance.batterySaverOptions" = "Battery Saver options";
+"home.performance.batterySaverOptions" = "Battery Saver Options";
 "home.batterySaver.title" = "Battery Saver";
 "home.batterySaver.options.note" = "These apply while Battery Saver Mode is on, and take effect the next time you start the game. The choices are remembered either way.";
 "batterySaver.selected" = "Selected";

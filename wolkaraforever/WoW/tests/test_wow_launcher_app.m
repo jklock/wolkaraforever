@@ -1984,7 +1984,7 @@ static void TestIPadM5RenderProfile(void) {
     // Battery Saver is one switch, and the choices behind it are a page of their own. Off is full
     // performance, but the page still opens: the choices are remembered either way.
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver options"]);
+        isEqual:@"Battery Saver Options"]);
     UISwitch *batterySaverMode = [self toggle:@"wow.performance.batterySaverMode"];
     assert(batterySaverMode != nil && !batterySaverMode.on);
     assert([(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") isEnabled]);
@@ -2148,7 +2148,7 @@ static void TestIPadM5RenderProfile(void) {
     // door, not a summary: its title never changes, and it opens whether the switch is on or off,
     // because the choices are remembered independently of the mode that applies them.
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver options"]);
+        isEqual:@"Battery Saver Options"]);
     UISwitch *batterySaverSwitch = [self toggle:@"wow.performance.batterySaverMode"];
     assert(batterySaverSwitch != nil && !batterySaverSwitch.on);
     assert([(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") isEnabled]);
@@ -2184,7 +2184,7 @@ static void TestIPadM5RenderProfile(void) {
     assert(AKBatterySaverStoredFrameLimit() == AKBatterySaverFrameLimit30);
     assert(AKBatterySaverStoredAFKMinutes() == 5);
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver options"]);
+        isEqual:@"Battery Saver Options"]);
     batterySaverSwitch = [self toggle:@"wow.performance.batterySaverMode"];
     batterySaverSwitch.on = YES; [batterySaverSwitch sendActionsForControlEvents:UIControlEventValueChanged];
     Pump(0.3);
@@ -2204,7 +2204,7 @@ static void TestIPadM5RenderProfile(void) {
     [self.controller render];
     Pump(0.3);
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver options"]);
+        isEqual:@"Battery Saver Options"]);
     assert(![self toggle:@"wow.performance.batterySaverMode"].on);
 
     // --- Open Settings Folder opens Forever's WTF folder and changes nothing

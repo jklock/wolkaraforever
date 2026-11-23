@@ -12,7 +12,7 @@
   `TOLKARA_TRACE_IMAGES`.
 - **Battery Saver Mode.** The frame limit and the AFK dim now sit behind one switch. Off is full
   performance: no cap, no dim, and no presentation hook installed at all. The two choices live on
-  a page of their own (**Battery Saver options**) that opens whether the switch is on or off, and
+  a page of their own (**Battery Saver Options**) that opens whether the switch is on or off, and
   they are remembered either way. An installation that had already chosen either option keeps it,
   and its switch starts on.
 - **Battery-saving sound** is always on and is no longer a setting; it is a performance fix, not
