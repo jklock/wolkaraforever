@@ -19,5 +19,11 @@ xcuserdata/
 DerivedData/
 local.env
 local.test.env
+/audit-addon-manager.md
+/audit-voice-controller-manager.md
+/audit-controller-touchpad-manager.md
+/audit-touch-controls-manager.md
+/audit-performance-manager.md
+/audit-controller-layout-manager.md
 __pycache__/
 Tolkara.xcodeproj/
