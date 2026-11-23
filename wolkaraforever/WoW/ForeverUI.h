@@ -33,8 +33,9 @@ FOUNDATION_EXPORT NSString *const TKForeverUIEdition;
 FOUNDATION_EXPORT NSString *const TKForeverUIGamepadDefaultsKey;   // "WolkaraForeverGamepadUI"
 + (BOOL)storedGamepadUI;
 + (void)setStoredGamepadUI:(BOOL)enabled;
-/// The client CVars that turn its gamepad/console interface on or off. Enabling writes the
-/// full set, so the game does not have to infer that the rest of its own interface was meant.
+/// The client CVar that turns its gamepad interface on or off. Exactly one name: this client
+/// persists its own `GamePad*` camera settings and no enable flag, so the flag is the only
+/// assignment this app owns; the rest are left as the client wrote them.
 + (NSDictionary<NSString *, NSString *> *)gamepadUICVarsEnabled:(BOOL)enabled;
 /// Writes the stored choice through -setCVars:, which reads the file back and verifies it.
 + (BOOL)setGamepadUI:(BOOL)enabled inWorkingDirectory:(NSString *)directory error:(NSError **)error;

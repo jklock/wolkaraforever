@@ -155,19 +155,12 @@ static BOOL TKWriteConfig(NSString *path, NSString *text, NSError **error) {
 NSString *const TKForeverUIGamepadDefaultsKey = @"WolkaraForeverGamepadUI";
 
 + (NSDictionary<NSString *, NSString *> *)gamepadUICVarsEnabled:(BOOL)enabled {
-    // Disabling writes only the master switch. The rest stay as they are: the session no
-    // longer asks for the interface, and deleting the client's own settings would lose what
-    // it chose for itself.
-    if (!enabled) return @{ @"GamePadEnable": @"0" };
-    // `GamePadEnable` is the master the client reads at start. The others are the console
-    // interface's own switches, written together so the row means the gamepad interface and
-    // not only the input layer. A name the client does not know is ignored by the client; it
-    // is never a reason to write half of what the row promised.
-    return @{ @"GamePadEnable": @"1",
-              @"GamePadWindow": @"1",
-              @"GamePadLook": @"1",
-              @"GamePadStick": @"1",
-              @"GamePadEmulate": @"1" };
+    // Measured on the iPad on 2026-11-22. The client's own Config.wtf carries its GamePad*
+    // settings - the camera pitch and yaw speeds, the back-pedal threshold, the combat
+    // face-movement angle - and no enable flag at all: the flag is the one line the client
+    // drops when it rewrites the file on exit. So exactly one assignment is ours, the master
+    // switch. The four the client wrote are its own settings and are never touched here.
+    return @{ @"GamePadEnable": enabled ? @"1" : @"0" };
 }
 
 + (BOOL)storedGamepadUI {

@@ -11,13 +11,15 @@
   in a single log is now quiet: both are available behind `TOLKARA_TRACE_INITIALIZERS` and
   `TOLKARA_TRACE_IMAGES`.
 - **Battery Saver Mode.** The frame limit and the AFK dim now sit behind one switch. Off is full
-  performance: no cap, no dim, and no presentation hook installed at all. An installation that
-  had already chosen either option keeps it, and its switch starts on.
+  performance: no cap, no dim, and no presentation hook installed at all. The two choices live on
+  a page of their own (**Battery Saver options**) that opens whether the switch is on or off, and
+  they are remembered either way. An installation that had already chosen either option keeps it,
+  and its switch starts on.
 - **Battery-saving sound** is always on and is no longer a setting; it is a performance fix, not
   a battery preference.
-- **Gamepad UI** now keeps its state in the launcher, writes the game's full `GamePad*` set, and
-  puts it back immediately before every start, so an in-game rewrite of `Config.wtf` cannot lose
-  it.
+- **Gamepad UI** now keeps its state in the launcher and writes `GamePadEnable` again immediately
+  before every start, so an in-game rewrite of `Config.wtf` cannot lose it; the game's own gamepad
+  camera settings are left exactly as it wrote them.
 - **Test Voice & Dictation** is back at the end of the Input Manager card.
 - **Every control has a picture and two pages.** [What every control
   does](docs/UI_REFERENCE.md) lists every row, switch, button and sheet with what it does and how to

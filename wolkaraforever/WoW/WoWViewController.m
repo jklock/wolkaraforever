@@ -14,6 +14,7 @@
 #import "DeviceProfile.h"
 #import "DownloadStatus.h"
 #import "ForeverUI.h"
+#import "BatterySaverOptionsViewController.h"
 #import "Updater.h"
 #import "../App/LaunchProgressView.h"
 #import "../Controller/ControllerInspector.h"
@@ -467,13 +468,14 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     _restoreButton=[self button:@"wow.performance.restore" action:@selector(restoreUI)];
     _gamepadRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.gamepad"
         target:self action:@selector(gamepadChanged:)];
-    // Battery Saver is one switch and one submenu. The switch is the decision - off is full
-    // performance, and nothing in the submenu is installed - while the submenu keeps the two
-    // choices that only matter when it is on. Both apply to the *next* launch, which is why the
-    // switch must not pretend to change this session.
+    // Battery Saver is one switch and one page. The switch is the decision - off is full
+    // performance, and nothing in the options is installed - while the page keeps the two
+    // choices that only matter when it is on. The page is reachable either way: the choices are
+    // remembered on their own, and setting them up is not something that should require the
+    // feature to be on first. Both apply to the *next* launch.
     _batterySaverModeRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.batterySaverMode"
         target:self action:@selector(batterySaverModeChanged:)];
-    _batterySaverButton=[self button:@"wow.performance.batterySaver" action:@selector(chooseBatterySaver)];
+    _batterySaverButton=[self button:@"wow.performance.batterySaver" action:@selector(openBatterySaverOptions)];
     _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
     _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
     _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
@@ -1100,17 +1102,16 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     [self configureButton:_renderProfileButton title:WKLocalizedFormat(@"home.performance.renderProfile",[self renderProfileDescription]) filled:NO];
     _renderProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _renderProfileButton.enabled=preferencesIdle;
-    // Battery Saver reads its stored choices on every pass, so a sheet that changed one is
-    // summarised on the row immediately. It follows the same idle rule: a decision about how the
-    // next session is paced is not taken while this one is starting or running.
-    BOOL batterySaverOn=AKBatterySaverStoredEnabled();
+    // Battery Saver Mode is one switch, and the options behind it are a page of their own. The
+    // page is never closed by the switch: the choices it holds are remembered either way. Both
+    // follow the page's idle rule - a decision about how the next session is paced is not taken
+    // while this one is starting or running.
     _batterySaverModeRow.enabled=preferencesIdle;
-    _batterySaverModeRow.toggle.on=batterySaverOn;
+    _batterySaverModeRow.toggle.on=AKBatterySaverStoredEnabled();
     [self configureButton:_batterySaverButton
-        title:WKLocalizedFormat(@"home.performance.batterySaver",[self batterySaverSummary]) filled:NO];
+        title:WKLocalized(@"home.performance.batterySaverOptions") filled:NO];
     _batterySaverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    // The two choices are what the switch turns on, so they are only usable while it is on.
-    _batterySaverButton.enabled=preferencesIdle && batterySaverOn;
+    _batterySaverButton.enabled=preferencesIdle;
     _editionButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     _preferencesButton.enabled=_editionButton.enabled;
     _languageButton.enabled=_editionButton.enabled;
@@ -1743,40 +1744,9 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 }
 #pragma mark - Battery Saver
 
-// The two values as the row says them. Each fragment is translated on its own, so no language
-// has to be taught a sentence for a combination it has never seen.
-- (NSString *)batterySaverFrameText:(AKBatterySaverFrameLimit)limit {
-    switch (limit) {
-        case AKBatterySaverFrameLimitAutomatic: return WKLocalized(@"home.batterySaver.frame.automatic");
-        case AKBatterySaverFrameLimit30: return WKLocalized(@"home.batterySaver.frame.30");
-        case AKBatterySaverFrameLimit60: return WKLocalized(@"home.batterySaver.frame.60");
-        case AKBatterySaverFrameLimitOff: break;
-    }
-    return WKLocalized(@"home.batterySaver.off");
-}
-- (NSString *)batterySaverAFKText:(NSInteger)minutes {
-    switch (minutes) {
-        case 2: return WKLocalized(@"home.batterySaver.afk.2");
-        case 5: return WKLocalized(@"home.batterySaver.afk.5");
-        case 10: return WKLocalized(@"home.batterySaver.afk.10");
-        default: break;
-    }
-    return WKLocalized(@"home.batterySaver.off");
-}
-- (NSString *)batterySaverSummary {
-    // Off is the whole answer while the mode is off: none of the choices inside is installed,
-    // whatever they say, so naming them would describe a session that will not happen.
-    if (!AKBatterySaverStoredEnabled()) return WKLocalized(@"home.batterySaver.off");
-    AKBatterySaverFrameLimit limit=AKBatterySaverStoredFrameLimit();
-    NSInteger minutes=AKBatterySaverStoredAFKMinutes();
-    // On with neither choice made is a real state - the mode is on and nothing is limited -
-    // and it says so rather than "Off · Off".
-    if (limit==AKBatterySaverFrameLimitOff && minutes==0) return WKLocalized(@"home.batterySaver.on");
-    return [NSString stringWithFormat:@"%@ · %@",[self batterySaverFrameText:limit],[self batterySaverAFKText:minutes]];
-}
-// One master switch, and both of the choices it owns take effect at the next launch. A cap
-// that started the moment it was chosen would change the pacing of the session under the
-// player's hands, and the guest has already been given its pacing for this run.
+// One master switch, and the two choices it owns take effect at the next launch. A cap that
+// started the moment it was chosen would change the pacing of the session under the player's
+// hands, and the guest has already been given its pacing for this run.
 - (void)batterySaverModeChanged:(UISwitch *)sender {
     if (_busy || _starting || _running || _sessionUsed) {
         sender.on=AKBatterySaverStoredEnabled();
@@ -1786,58 +1756,11 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     WKLog("ui", @"battery saver mode: %@", sender.on?@"on":@"off (full performance)");
     [self render];
 }
-// The submenu behind the switch: the two choices, in one place, and nothing that can be
-// changed while the mode is off.
-- (void)chooseBatterySaver {
+// The choices are a page of their own, not a menu, and they are reachable whether the mode is on
+// or off: they are remembered on their own and are what the switch turns on.
+- (void)openBatterySaverOptions {
     if (_busy || _starting || _running || _sessionUsed) return;
-    if (!AKBatterySaverStoredEnabled()) return;
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.batterySaver.title")
-        message:WKLocalized(@"home.batterySaver.message")
-        preferredStyle:UIAlertControllerStyleActionSheet];
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalizedFormat(@"home.batterySaver.frameLimit",
-        [self batterySaverFrameText:AKBatterySaverStoredFrameLimit()]) style:UIAlertActionStyleDefault
-        handler:^(__unused UIAlertAction *action) { [self chooseBatterySaverFrameLimit]; }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalizedFormat(@"home.batterySaver.afk",
-        [self batterySaverAFKText:AKBatterySaverStoredAFKMinutes()]) style:UIAlertActionStyleDefault
-        handler:^(__unused UIAlertAction *action) { [self chooseBatterySaverAFK]; }]];
-    [self presentSheet:sheet anchor:_batterySaverButton];
-}
-- (void)chooseBatterySaverFrameLimit {
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.batterySaver.frameLimit.title")
-        message:WKLocalized(@"home.batterySaver.frameLimit.message")
-        preferredStyle:UIAlertControllerStyleActionSheet];
-    AKBatterySaverFrameLimit current=AKBatterySaverStoredFrameLimit();
-    for (NSNumber *each in @[@(AKBatterySaverFrameLimitOff),@(AKBatterySaverFrameLimitAutomatic),
-                             @(AKBatterySaverFrameLimit30),@(AKBatterySaverFrameLimit60)]) {
-        AKBatterySaverFrameLimit limit=each.integerValue;
-        NSString *title=[self batterySaverFrameText:limit];
-        if (limit==current) title=[@"✓ " stringByAppendingString:title];
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
-            handler:^(__unused UIAlertAction *action) {
-            AKBatterySaverSetFrameLimit(limit);
-            WKLog("ui", @"battery saver: frame limit %@",AKBatterySaverFrameLimitStoredName(limit));
-            [self render];
-        }]];
-    }
-    [self presentSheet:sheet anchor:_batterySaverButton];
-}
-- (void)chooseBatterySaverAFK {
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.batterySaver.afk.title")
-        message:WKLocalized(@"home.batterySaver.afk.message")
-        preferredStyle:UIAlertControllerStyleActionSheet];
-    NSInteger current=AKBatterySaverStoredAFKMinutes();
-    for (NSNumber *each in @[@0,@2,@5,@10]) {
-        NSInteger minutes=each.integerValue;
-        NSString *title=[self batterySaverAFKText:minutes];
-        if (minutes==current) title=[@"✓ " stringByAppendingString:title];
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
-            handler:^(__unused UIAlertAction *action) {
-            AKBatterySaverSetAFKMinutes(minutes);
-            WKLog("ui", @"battery saver: afk saver %ld min",(long)minutes);
-            [self render];
-        }]];
-    }
-    [self presentSheet:sheet anchor:_batterySaverButton];
+    [self presentPage:[AKBatterySaverOptionsViewController new]];
 }
 // Battery-saving sound is no longer a switch on this page. It is a performance fix, not a
 // preference, so -viewDidLoad turns it on for every launch; the row that used to offer it had

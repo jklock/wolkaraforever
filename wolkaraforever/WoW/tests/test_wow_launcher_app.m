@@ -1724,38 +1724,11 @@ static void TestIPadM5RenderProfile(void) {
     [self captureSheetForRow:@"wow.launcher.layoutCreate" name:@"guide-layout-create.png" titled:@"Create a Controller Layout"];
     [self captureSheetForRow:@"wow.launcher.interfaceSetup" name:@"guide-layout-editor.png" titled:@"Controller Layout"];
 
-    // The Battery Saver submenu and both of the choices behind it. The submenu is closed while
-    // the master switch is off, so the guide turns it on for these three pictures and back off
-    // after them: the home page above was drawn in the state a new installation starts in.
-    UISwitch *saverMode = [self toggle:@"wow.performance.batterySaverMode"];
-    BOOL saverModeWas = saverMode.on;
-    saverMode.on = YES; [saverMode sendActionsForControlEvents:UIControlEventValueChanged];
-    Pump(0.3);
+    // The Battery Saver options, as the page they are. The page opens with the switch off, which
+    // is the state the home page above was drawn in, so nothing has to be turned on for it.
     [self presentRow:@"wow.performance.batterySaver"];
-    UIAlertController *saver = WaitForSheetTitled(self.controller, @"Battery Saver", 20.0);
-    if (saver) {
-        [self capture:@"guide-battery-saver.png"];
-        UIAlertAction *frame = saver.actions.count ? saver.actions[0] : nil;
-        [self dismissPresented];
-        if (frame) {
-            RunAction(frame);
-            if (WaitForSheetTitled(self.controller, @"Frame limit", 20.0)) [self capture:@"guide-frame-limit.png"];
-            [self dismissPresented];
-        }
-        [self presentRow:@"wow.performance.batterySaver"];
-        saver = WaitForSheetTitled(self.controller, @"Battery Saver", 20.0);
-        UIAlertAction *afk = saver.actions.count > 1 ? saver.actions[1] : nil;
-        [self dismissPresented];
-        if (afk) {
-            RunAction(afk);
-            if (WaitForSheetTitled(self.controller, @"AFK saver", 20.0)) [self capture:@"guide-afk-saver.png"];
-            [self dismissPresented];
-        }
-    }
-    saverMode = [self toggle:@"wow.performance.batterySaverMode"];
-    saverMode.on = saverModeWas;
-    [saverMode sendActionsForControlEvents:UIControlEventValueChanged];
-    Pump(0.3);
+    if ([self settledPresentedController]) [self capture:@"guide-battery-saver.png"];
+    [self dismissPresented];
 
     // The pages the launcher pushes rather than presents.
     [self presentRow:@"wow.voice"];
@@ -1851,6 +1824,8 @@ static void TestIPadM5RenderProfile(void) {
          "SET GamePadEnable \"0\"\n"
          "SET GamePadEnable \"0\"\n"
          "SET GamePadConfig \"Addons\"\n"
+         "SET GamePadCameraYawSpeed \"1.5\"\n"
+         "SET GamePadBackPedalThreshold \"0.9\"\n"
          "SET uiScale \"1\"\n"
          "SET unknownSetting \"keep\"\n"
          "SET cameraDistance \"1.5\"\n");
@@ -2006,13 +1981,13 @@ static void TestIPadM5RenderProfile(void) {
     // state, the label never changes.
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text] isEqual:@"Gamepad UI"]);
     assert([self toggle:@"wow.performance.gamepad"] != nil);
-    // Battery Saver is one switch and one submenu behind it. Off is full performance: nothing
-    // inside is installed, and the submenu cannot be changed while it is off.
+    // Battery Saver is one switch, and the choices behind it are a page of their own. Off is full
+    // performance, but the page still opens: the choices are remembered either way.
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: Off"]);
+        isEqual:@"Battery Saver options"]);
     UISwitch *batterySaverMode = [self toggle:@"wow.performance.batterySaverMode"];
     assert(batterySaverMode != nil && !batterySaverMode.on);
-    assert(![(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") isEnabled]);
+    assert([(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") isEnabled]);
     assert(Find(self.controller.view, @"wow.performance.audioAvoidHAL") == nil);
     assert(Find(self.controller.view, @"wow.performance.overlay") == nil);
     assert(Find(self.controller.view, @"wow.performance.overlay.label") == nil);
@@ -2020,6 +1995,7 @@ static void TestIPadM5RenderProfile(void) {
     // --- enabled state on a ready, idle installation
     for (NSString *identifier in @[@"wow.performance.backup", @"wow.performance.reset",
                                    @"wow.performance.restore", @"wow.performance.settingsFolder",
+                                   @"wow.performance.batterySaver",
                                    @"wow.addons.manage", @"wow.voice", @"wow.touchpad",
                                    @"wow.voice.test",
                                    @"wow.permissions", @"wow.addons.macEver"])
@@ -2168,81 +2144,58 @@ static void TestIPadM5RenderProfile(void) {
     assert([[(UIButton *)Find(self.controller.view, @"wow.launcher.interfaceMode") configuration].title
         isEqual:@"Interface Mode: iPadOS"]);
 
-    // --- Battery Saver: one switch, and the two choices it owns behind it. Both of them apply
-    // to the next launch. Off is full performance, so the submenu is closed until it is on.
+    // --- Battery Saver: one switch, and the two choices on a page of their own. The page is a
+    // door, not a summary: its title never changes, and it opens whether the switch is on or off,
+    // because the choices are remembered independently of the mode that applies them.
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: Off"]);
+        isEqual:@"Battery Saver options"]);
     UISwitch *batterySaverSwitch = [self toggle:@"wow.performance.batterySaverMode"];
     assert(batterySaverSwitch != nil && !batterySaverSwitch.on);
-    assert(![(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") isEnabled]);
+    assert([(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") isEnabled]);
+    [[self row:@"wow.performance.batterySaver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    Pump(0.6);
+    UIViewController *saverFrame = self.controller.presentedViewController;
+    assert([saverFrame isKindOfClass:UINavigationController.class]);
+    UIViewController *saverPage = ((UINavigationController *)saverFrame).viewControllers.firstObject;
+    assert([saverPage isKindOfClass:NSClassFromString(@"AKBatterySaverOptionsViewController")]);
+    assert([saverPage.navigationItem.title isEqual:@"BATTERY SAVER"]);
+    // Both groups, the current choice marked, and every row usable with the mode off.
+    UIButton *limitOff = (id)Find(saverPage.view, @"batterySaver.limit.off");
+    assert(limitOff != nil && [[limitOff.configuration title] isEqual:@"✓ Off"]);
+    assert([[(UIButton *)Find(saverPage.view, @"batterySaver.limit.30") configuration].title isEqual:@"30 FPS"]);
+    assert([[(UIButton *)Find(saverPage.view, @"batterySaver.afk.off") configuration].title isEqual:@"✓ Off"]);
+    assert([[(UIButton *)Find(saverPage.view, @"batterySaver.afk.5") configuration].title isEqual:@"5 minutes"]);
+    [self capture:@"battery-saver.png"];
+    // Choosing writes the stored value at once, and moves the mark.
+    [(UIButton *)Find(saverPage.view, @"batterySaver.limit.30") sendActionsForControlEvents:UIControlEventTouchUpInside];
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverBatterySaverFrameLimitV1"]
+            isEqual:@"30"]);
+    assert([[(UIButton *)Find(saverPage.view, @"batterySaver.limit.30") configuration].title isEqual:@"✓ 30 FPS"]);
+    assert([[(UIButton *)Find(saverPage.view, @"batterySaver.limit.off") configuration].title isEqual:@"Off"]);
+    [(UIButton *)Find(saverPage.view, @"batterySaver.afk.5") sendActionsForControlEvents:UIControlEventTouchUpInside];
+    assert([NSUserDefaults.standardUserDefaults integerForKey:@"WolkaraForeverBatterySaverAFKMinutesV1"] == 5);
+    assert([[(UIButton *)Find(saverPage.view, @"batterySaver.afk.5") configuration].title isEqual:@"✓ 5 minutes"]);
+    // Stored, and not yet in force: nothing has been started, so the launch snapshot the guest
+    // would read is still off.
+    assert(!AKBatterySaverLaunchEnabled());
+    TapBarItem(saverPage.navigationItem.leftBarButtonItem);
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
+    // The choices survive the mode being off: they are what the switch turns on.
+    assert(AKBatterySaverStoredFrameLimit() == AKBatterySaverFrameLimit30);
+    assert(AKBatterySaverStoredAFKMinutes() == 5);
+    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
+        isEqual:@"Battery Saver options"]);
+    batterySaverSwitch = [self toggle:@"wow.performance.batterySaverMode"];
     batterySaverSwitch.on = YES; [batterySaverSwitch sendActionsForControlEvents:UIControlEventValueChanged];
     Pump(0.3);
     assert([NSUserDefaults.standardUserDefaults boolForKey:@"WolkaraForeverBatterySaverEnabledV1"]);
     assert(AKBatterySaverStoredEnabled());
-    // On with neither choice made is a state of its own, and it says so.
-    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: On"]);
-    [[self row:@"wow.performance.batterySaver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
-    UIAlertController *batterySaver = WaitForSheetTitled(self.controller, @"Battery Saver", 20.0);
-    assert(batterySaver != nil);
-    assert([batterySaver.message containsString:@"next time you start the game"]);
-    assert([[batterySaver.actions valueForKey:@"title"] isEqualToArray:(@[@"Frame limit: Off", @"AFK saver: Off", @"Cancel"])]);
-    // A picture for the guide only. This sheet is not a reviewed baseline: its translucent
-    // backdrop carries a frozen picture of the page behind it, and the page's wall clock is not
-    // the thing being checked here - the title, message and action list above are.
-    [self capture:@"battery-saver.png"];
-    UIAlertAction *frameLimitAction = batterySaver.actions[0];
-    [self dismissPresented];
-    RunAction(frameLimitAction);
-    batterySaver = WaitForSheetTitled(self.controller, @"Frame limit", 20.0);
-    assert(batterySaver != nil);
-    // What Automatic means, what reduces it, and when it takes effect, all in the sheet.
-    assert([batterySaver.message containsString:@"60 FPS on power"]);
-    assert([batterySaver.message containsString:@"30 FPS on battery"]);
-    assert([batterySaver.message containsString:@"Low Power Mode"]);
-    assert([batterySaver.message containsString:@"next time you start the game"]);
-    assert([[batterySaver.actions valueForKey:@"title"] isEqualToArray:(@[@"✓ Off", @"Automatic", @"30 FPS", @"60 FPS", @"Cancel"])]);
-    UIAlertAction *thirty = nil;
-    for (UIAlertAction *action in batterySaver.actions) if ([action.title isEqual:@"30 FPS"]) thirty = action;
-    assert(thirty != nil);
-    [self dismissPresented];
-    RunAction(thirty);
-    PumpUntil(^{ return (BOOL)([(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title != nil); }, 5.0);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: 30 FPS · Off"]);
-    // Stored, and not yet in force: nothing has been started, so the launch snapshot the guest
-    // would read is still Off. That is what makes a later change a next-launch change.
-    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverBatterySaverFrameLimitV1"]
-            isEqual:@"30"]);
-    assert(AKBatterySaverLaunchFrameLimit() == AKBatterySaverFrameLimitOff);
-    assert(!AKBatterySaverLaunchEnabled());
-    // ... and taking the snapshot - what the app does immediately before it starts a guest -
-    // is what puts the choice in force for the session.
+    // Taking the snapshot - what the app does immediately before it starts a guest - is what puts
+    // the choice in force for the session.
     AKBatterySaverCommitLaunchSnapshot();
     assert(AKBatterySaverLaunchEnabled());
     assert(AKBatterySaverLaunchFrameLimit() == AKBatterySaverFrameLimit30);
-    // The AFK choice, from the same submenu.
-    [[self row:@"wow.performance.batterySaver"] sendActionsForControlEvents:UIControlEventTouchUpInside];
-    batterySaver = WaitForSheetTitled(self.controller, @"Battery Saver", 20.0);
-    assert(batterySaver != nil);
-    assert([[batterySaver.actions valueForKey:@"title"] isEqualToArray:(@[@"Frame limit: 30 FPS", @"AFK saver: Off", @"Cancel"])]);
-    UIAlertAction *afkAction = batterySaver.actions[1];
-    [self dismissPresented];
-    RunAction(afkAction);
-    batterySaver = WaitForSheetTitled(self.controller, @"AFK saver", 20.0);
-    assert(batterySaver != nil);
-    assert([batterySaver.message containsString:@"10 FPS"]);
-    assert([batterySaver.message containsString:@"only wakes it"]);
-    assert([[batterySaver.actions valueForKey:@"title"] isEqualToArray:(@[@"✓ Off", @"2 minutes", @"5 minutes", @"10 minutes", @"Cancel"])]);
-    UIAlertAction *fiveMinutes = nil;
-    for (UIAlertAction *action in batterySaver.actions) if ([action.title isEqual:@"5 minutes"]) fiveMinutes = action;
-    assert(fiveMinutes != nil);
-    [self dismissPresented];
-    RunAction(fiveMinutes);
-    Pump(0.4);
-    assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: 30 FPS · 5 minutes"]);
-    assert([NSUserDefaults.standardUserDefaults integerForKey:@"WolkaraForeverBatterySaverAFKMinutesV1"] == 5);
+    assert(AKBatterySaverLaunchAFKMinutes() == 5);
     // Back to Off for everything that follows: the baselines and the remaining steps are of a
     // page nobody has opted into, which is also the default an installation starts with.
     AKBatterySaverSetFrameLimit(AKBatterySaverFrameLimitOff);
@@ -2251,7 +2204,7 @@ static void TestIPadM5RenderProfile(void) {
     [self.controller render];
     Pump(0.3);
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Battery Saver: Off"]);
+        isEqual:@"Battery Saver options"]);
     assert(![self toggle:@"wow.performance.batterySaverMode"].on);
 
     // --- Open Settings Folder opens Forever's WTF folder and changes nothing
@@ -2345,12 +2298,11 @@ static int backupsBeforePerformance;
     NSString *config = [self configText];
     BOOL enabled = NO;
     assert([self gamepadAssignments:config enabled:&enabled] == 1 && enabled);
-    // The row means the interface, not only the input layer: the whole set is written, and a
-    // client that does not know a name ignores it.
-    for (NSString *cvar in @[ @"GamePadWindow", @"GamePadLook", @"GamePadStick", @"GamePadEmulate" ]) {
-        NSString *line = [NSString stringWithFormat:@"SET %@ \"1\"", cvar];
-        assert([config containsString:line]);
-    }
+    // The row means the interface, and it is one cvar: this client persists its own GamePad*
+    // settings and no enable flag, so the write must leave those settings exactly as they were.
+    assert([config containsString:@"SET GamePadCameraYawSpeed \"1.5\""]);
+    assert([config containsString:@"SET GamePadBackPedalThreshold \"0.9\""]);
+    assert(![config containsString:@"GamePadWindow"]);
     assert([config containsString:@"SET accountName \"TESTACCOUNT\""]);
     UISwitch *gamepad = [self toggle:@"wow.performance.gamepad"];
     assert(gamepad.on && [[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text] isEqual:@"Gamepad UI"]);
@@ -2726,10 +2678,12 @@ static int backupsBeforePerformance;
     // A product name stays itself in both languages.
     assert([[(UILabel *)Find(self.controller.view, @"wow.performance.gamepad.label") text]
         isEqual:@"Gamepad-Oberfläche"]);
-    // Battery Saver's row, its summary and its "Off" - the three words a German page needs for
-    // a setting that has never been touched.
+    // Battery Saver's mode switch and the row that opens its options: the words a German page
+    // needs for a setting that has never been touched.
     assert([[(UIButton *)Find(self.controller.view, @"wow.performance.batterySaver") configuration].title
-        isEqual:@"Akku-Sparmodus: Aus"]);
+        isEqual:@"Akku-Sparmodus-Optionen"]);
+    assert([[(UILabel *)Find(self.controller.view, @"wow.performance.batterySaverMode.label") text]
+        isEqual:@"Akku-Sparmodus"]);
     // Section headings, which were made before this language existed.
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.edition") text] isEqual:@"SPIELVERWALTUNG"]);
     assert([[(UILabel *)Find(self.controller.view, @"wow.heading.profile") text] isEqual:@"LEISTUNGSVERWALTUNG"]);
@@ -3151,7 +3105,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     for (UIBarButtonItem *item in @[gear, refresh])
         assert(item.target != nil && item.action != NULL);
 
-    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and the recommendation row; the Launcher Manager card (Automatic, iPadOS and iOS on Duo, each resolved from the stored choice, persisted, and no package moved by a switch) and the bundled-package page it opens; backup, confirmed reset, gamepad config (the stored choice and the whole GamePad* set), folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; Battery Saver Mode and the submenu it owns - both choices, what Automatic means, that neither is in force until the launch snapshot is taken, and that off installs nothing; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages and the dictation test, all nine Performance rows, the gamepad switch and the Battery Saver submenu, the primary button, the Diagnostics button, and both navigation items.");
+    puts("WoW UIKit PASS: automatic check/update, offline retry, edition race, background cancellation, verified launch, inline preparation/failure/session end, no duplicate launches and bundled licenses; home page headings, rows, order, identifiers, labels, enabled states and the recommendation row; the Launcher Manager card (Automatic, iPadOS and iOS on Duo, each resolved from the stored choice, persisted, and no package moved by a switch) and the bundled-package page it opens; backup, confirmed reset, gamepad config (the stored choice, one GamePadEnable assignment, the client's own GamePad settings untouched), folder picker and restore flow; device profile (automatic, preview and the way back), render profile with the quality a device was measured at, no game-file write from either; Battery Saver Mode and the options page it owns - both choices, what Automatic means, that the choices are remembered with the mode off, that neither is in force until the launch snapshot is taken, and that off installs nothing; the app language as a setting of its own (config ownership and migration, the row, immediate German and immediate English, no raw keys, the one-time German game-language offer through the validated locale writer, and German at the largest text size); and every control on the home page pressed - the edition sheet, download preferences and its Region sub-sheet, the app language row, all three add-on rows, the add-on folder browser, the permissions row, both voice pages and the dictation test, all nine Performance rows, the gamepad switch and the Battery Saver options page, the primary button, the Diagnostics button, and both navigation items.");
     fflush(stdout);
     if (![NSProcessInfo.processInfo.arguments containsObject:@"--preview"]) exit(0);
     // Leave a ready home for visual inspection; no real download or guest runs.

@@ -114,14 +114,13 @@
 "home.performance.restore" = "Restaurer l’interface de WoW";
 "home.performance.settingsFolder" = "Ouvrir le dossier des réglages";
 "home.performance.gamepad" = "Interface manette";
-"home.performance.batterySaver" = "Économiseur de batterie : %@";
 "home.performance.batterySaverMode" = "Mode économiseur de batterie";
+"home.performance.batterySaverOptions" = "Options de l’économiseur de batterie";
 "home.batterySaver.title" = "Économiseur de batterie";
-"home.batterySaver.message" = "Ces deux réglages s’appliquent au prochain lancement du jeu.";
-"home.batterySaver.frameLimit" = "Limite d’images : %@";
+"home.batterySaver.options.note" = "Ces réglages s’appliquent quand le mode économiseur de batterie est activé, et au prochain lancement du jeu. Les choix sont mémorisés dans tous les cas.";
+"batterySaver.selected" = "Sélectionné";
 "home.batterySaver.frameLimit.title" = "Limite d’images par seconde";
 "home.batterySaver.frameLimit.message" = "Automatique, c’est 60 i/s sur secteur et 30 i/s sur batterie. Le mode Économie d’énergie ou un appareil chaud ramène toute limite à 30 i/s. S’applique au prochain lancement du jeu.";
-"home.batterySaver.afk" = "Économiseur d’inactivité : %@";
 "home.batterySaver.afk.title" = "Économiseur d’inactivité";
 "home.batterySaver.afk.message" = "Après ce délai sans entrée, l’écran s’assombrit et le jeu est limité à 10 i/s. La première touche, touche de clavier, action de souris ou de manette ne fait que le réveiller. S’applique au prochain lancement du jeu.";
 "home.batterySaver.frame.automatic" = "Automatique";
@@ -131,7 +130,6 @@
 "home.batterySaver.afk.5" = "5 minutes";
 "home.batterySaver.afk.10" = "10 minutes";
 "home.batterySaver.off" = "Désactivé";
-"home.batterySaver.on" = "Activé";
 "home.performance.renderProfile" = "Profil de rendu : %@";
 
 "home.performance.deviceProfile" = "Profil de l’appareil : %@";

@@ -62,6 +62,8 @@ wolkaraforever/WoW/AddonStore.h launcher/WoW/AddonStore.h add
 wolkaraforever/WoW/AddonStore.m launcher/WoW/AddonStore.m add
 wolkaraforever/WoW/AddonUpdateResolver.h launcher/WoW/AddonUpdateResolver.h add
 wolkaraforever/WoW/AddonUpdateResolver.m launcher/WoW/AddonUpdateResolver.m add
+wolkaraforever/WoW/BatterySaverOptionsViewController.h launcher/WoW/BatterySaverOptionsViewController.h add
+wolkaraforever/WoW/BatterySaverOptionsViewController.m launcher/WoW/BatterySaverOptionsViewController.m add
 wolkaraforever/WoW/BattleNetBrowser.h launcher/WoW/BattleNetBrowser.h add
 wolkaraforever/WoW/BattleNetBrowser.m launcher/WoW/BattleNetBrowser.m add
 wolkaraforever/WoW/BattleNetSavedPassword.h launcher/WoW/BattleNetSavedPassword.h add
