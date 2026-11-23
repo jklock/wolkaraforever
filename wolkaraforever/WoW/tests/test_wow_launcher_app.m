@@ -127,6 +127,20 @@ static UIView *Find(UIView *view, NSString *identifier) {
     return nil;
 }
 // Every spinner in a window, so a capture can hold still the one part of a page that moves.
+// Every scroll view under a view, so a capture can hide their indicators: iOS flashes a scroll
+// indicator for a moment whenever a list appears or moves, and whether a draw catches it is
+// down to timing. Measured on 2026-11-22 on a hosted runner: the iPhone's German add-ons page
+// differed by an 8-pixel bar at its right edge, top to bottom, from the same page a run before.
+// The indicator views themselves are hidden for the draw, not the scroll view's
+// showsVerticalScrollIndicator: turning that off relaid a list out, and the iPad drew its last row
+// ("Backup Controller Layout") differently on every page that showed it (2026-11-22).
+static void CollectScrollIndicators(UIView *view, NSMutableArray<UIView *> *into) {
+    if ([view isKindOfClass:UIScrollView.class]) {
+        for (UIView *subview in view.subviews)
+            if ([NSStringFromClass(subview.class) containsString:@"ScrollIndicator"]) [into addObject:subview];
+    }
+    for (UIView *subview in view.subviews) CollectScrollIndicators(subview, into);
+}
 static void CollectActivityIndicators(UIView *view, NSMutableArray<UIActivityIndicatorView *> *into) {
     if ([view isKindOfClass:UIActivityIndicatorView.class]) [into addObject:(UIActivityIndicatorView *)view];
     for (UIView *child in view.subviews) CollectActivityIndicators(child, into);
@@ -1413,6 +1427,13 @@ static void TestIPadM5RenderProfile(void) {
     Pump(0.7);
     UINavigationController *frame=[self settledPresentedController];
     assert(frame!=nil && [frame.topViewController isKindOfClass:AKVoiceTestViewController.class]);
+    // The push onto this page is animated, and the draw holds the layer tree's clock at zero, so
+    // a push still under way is drawn at its first frame - the page it came from. On 2026-11-22
+    // a hosted runner had not finished it by the fixed 0.7 s above, and the iPad's voice test
+    // page came out almost entirely different. Wait for the push itself to end.
+    PumpUntil(^{
+        return (BOOL)(frame.transitionCoordinator==nil && frame.topViewController.viewIfLoaded.window!=nil);
+    }, 5.0);
     [self.window layoutIfNeeded];
     [self capture:@"voice-test.png"];
     [(AKVoiceTestViewController *)frame.topViewController done];
@@ -1652,6 +1673,10 @@ static void TestIPadM5RenderProfile(void) {
             [animating addObject:spinner];
         }
     }
+    NSMutableArray<UIView *> *indicators=[NSMutableArray array];
+    CollectScrollIndicators(self.window, indicators);
+    NSMutableArray<NSNumber *> *indicatorsHidden=[NSMutableArray array];
+    for (UIView *indicator in indicators) { [indicatorsHidden addObject:@(indicator.hidden)]; indicator.hidden=YES; }
     [self.window layoutIfNeeded];
     // Hold the layer tree's clock still for the draw. The launch page spins a ring and steps
     // an elapsed-time counter from Core Animation, and without this the picture is taken at
@@ -1668,6 +1693,7 @@ static void TestIPadM5RenderProfile(void) {
         (void)context; [self.window drawViewHierarchyInRect:self.window.bounds afterScreenUpdates:YES];
     }];
     root.speed=savedSpeed; root.timeOffset=savedOffset;
+    for (NSUInteger index=0; index<indicators.count; index++) indicators[index].hidden=indicatorsHidden[index].boolValue;
     [animating makeObjectsPerformSelector:@selector(startAnimating)];
     for (NSUInteger index=0; index<spinners.count; index++) spinners[index].hidesWhenStopped=hides[index].boolValue;
     if (realCheckedAt) {

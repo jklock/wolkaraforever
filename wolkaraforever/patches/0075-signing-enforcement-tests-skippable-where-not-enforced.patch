@@ -1,0 +1,72 @@
+# The code-signing enforcement tests can be left out where the host does not enforce it
+#
+# Why: three platform tests check that macOS itself refuses code: unsigned arm64 code is
+# killed, and a tampered page is refused (test_sign_guest_local's test_macos_dlopen and
+# test_macos_executable_runs, test_build_signed_container's
+# test_tampered_container_never_runs). GitHub's macOS runners run with System Integrity
+# Protection disabled, so macOS enforces neither, and the three fail there whatever the
+# code does - measured on 2026-11-22 in a pristine platform checkout with no layer
+# applied: "csrutil status: disabled", and the unsigned control exits 7 instead of being
+# killed. tools/test_emulation.sh stops at the second of them, so nothing after it ran.
+#
+# TOLKARA_SKIP_SIGNING_ENFORCEMENT=1 reports those three as skipped, with the reason.
+# Only a run on such a host sets it (the repository's hosted Validate workflow does); a
+# normal Mac runs all three as before. Every other signing test still runs everywhere.
+#
+# Applies to: tests/test_sign_guest_local.py, tests/test_build_signed_container.py.
+# Upstream: candidate.
+
+--- a/tests/test_build_signed_container.py
++++ b/tests/test_build_signed_container.py
+@@ -11,6 +11,12 @@ import sys
+ import tempfile
+ import unittest
+ 
++# Set where the host does not enforce code signing - a hosted CI Mac runs with System
++# Integrity Protection off, so it neither kills unsigned arm64 code nor refuses a tampered
++# page - and these tests check exactly that enforcement. A normal Mac runs them.
++SKIP_ENFORCEMENT = os.environ.get('TOLKARA_SKIP_SIGNING_ENFORCEMENT') == '1'
++ENFORCEMENT_REASON = 'this host does not enforce code signing (TOLKARA_SKIP_SIGNING_ENFORCEMENT=1)'
++
+ ROOT = pathlib.Path(__file__).resolve().parents[1]
+ BASE, PAGE = 0x100000000, 0x4000
+ RET = struct.pack('<I', 0xD65F03C0)
+@@ -232,6 +238,7 @@ class EndToEndTests(unittest.TestCase):
+         self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+         self.assertIn('different executable', result.stdout)
+ 
++    @unittest.skipIf(SKIP_ENFORCEMENT, ENFORCEMENT_REASON)
+     def test_tampered_container_never_runs(self):
+         # A byte no runtime check reads (zero pad after the container's own load
+         # commands, inside the signed __TEXT): only code signing can catch it.
+--- a/tests/test_sign_guest_local.py
++++ b/tests/test_sign_guest_local.py
+@@ -28,6 +28,12 @@ import tempfile
+ import types
+ import unittest
+ 
++# Set where the host does not enforce code signing - a hosted CI Mac runs with System
++# Integrity Protection off, so it neither kills unsigned arm64 code nor refuses a tampered
++# page - and these tests check exactly that enforcement. A normal Mac runs them.
++SKIP_ENFORCEMENT = os.environ.get('TOLKARA_SKIP_SIGNING_ENFORCEMENT') == '1'
++ENFORCEMENT_REASON = 'this host does not enforce code signing (TOLKARA_SKIP_SIGNING_ENFORCEMENT=1)'
++
+ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ SOURCE = os.path.join(ROOT, 'tools', 'sign_guest_local.m')
+ KEYCHAIN_TESTS = os.environ.get('TOLKARA_SIGN_KEYCHAIN_TESTS') == '1'
+@@ -909,6 +915,7 @@ class AdhocTests(Base):
+             self.assertIn('Signature=adhoc', r.out)
+             self.assertEqual(r.out.splitlines()[-1], 'ad-hoc signature: hashes and coverage OK (no signer to verify)')
+ 
++    @unittest.skipIf(SKIP_ENFORCEMENT, ENFORCEMENT_REASON)
+     def test_macos_dlopen(self):
+         out = self.sign(B.mac_dylib, '--adhoc')
+         r = run([B.host, out])
+@@ -919,6 +926,7 @@ class AdhocTests(Base):
+         tampered = self.path('tampered.dylib', flip(read(out), first_text_section(read(out))))
+         self.assertNotEqual(run([B.host, tampered]).returncode, 0)
+ 
++    @unittest.skipIf(SKIP_ENFORCEMENT, ENFORCEMENT_REASON)
+     def test_macos_executable_runs(self):
+         out = self.sign(B.mac_exe, '--adhoc', name='exe')
+         r = run([out])

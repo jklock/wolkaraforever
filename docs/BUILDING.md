@@ -21,6 +21,13 @@ never edited by hand; `wolkaraforever/tools/` is the layer that prepares and dri
 3. The engine's project generator runs **after** the overlay, so layer files that arrive with
    the overlay are compiled rather than silently resolved to nil at runtime.
 
+The simulator suites that build their own fixture app (the touch, voice, controller, launcher
+pages and add-on hub suites) run `prepare.sh` with `WOLKARA_PREPARE_REUSE=1`, which keeps an existing
+`build/platform/` when nothing it is made from has changed (the committed `platform/`, every file
+of ours outside it, the local signing values and the generator's environment), so a second suite
+does not rebuild an identical tree. Builds, installs and packages never set it and always start
+from a fresh tree.
+
 `build/platform/` is ignored output and can be deleted at any time. Because the layer half comes
 from the working tree, `prepare.sh` says so out loud when the tree is dirty; `validate.sh` refuses
 to produce evidence on a dirty tree.
@@ -202,6 +209,40 @@ deletes one. Do not create a simulator, and do not substitute a nearby device: a
 find its matrix device fails and says so. A simulator result is not evidence about physical Metal,
 authorization, or performance; say which device ran when you report a result.
 
+## Run the suites
+
+`wolkaraforever/tools/validate.sh` runs the suites on this Mac and writes a local report;
+`--full` adds the slow platform suites and `--device` the iPad. `--group <name>` runs one part of
+the same list (`mac`, `launcher`, `simulator` or `simulator-translation-addons`), so the parts can
+run on separate machines at once.
+
+On GitHub, the **Validate (manual)** workflow does exactly that: from the Actions tab, **Run
+workflow** with a branch or tag, and each group runs on its own machine, side by side, with a
+report per group in the run's summary. Each job's summary starts with `tested commit:` and the
+commit it checked out, which is the one to quote for a pull request: when another workflow calls
+this one, the run's page shows the caller's commit instead. The launcher group runs once per device there, each on
+its own machine (`UI_POLICY_SIMULATORS` narrows the UI policy check to one device), because a
+hosted machine booting both simulators stopped responding. When a launcher page differs from its
+baseline there, the run keeps what that machine drew beside the baselines, as an artifact. A hosted machine
+has 7 GB and 3 cores, and a booting simulator starts some 800 processes, so the workflow turns
+off Spotlight, which was indexing the fresh disk during the boot. A machine can
+still stop responding while it boots a simulator, and its job then ends "cancelled" with no
+reason given; that is the machine, not a test, and **Re-run failed jobs** reruns just that job.
+Each job logs its free memory, load and largest processes once a minute, so such a stop leaves a
+trace. The workflow never runs by itself; pull requests run only the repository checks. The iPad
+rows are not part of it, since they need the iPad. What differs on a hosted machine is set by
+the workflow:
+
+- `TOLKARA_SKIP_SIGNING_ENFORCEMENT=1`: GitHub's Macs run with System Integrity Protection off,
+  so macOS does not enforce code signing there; the three platform tests that check that
+  enforcement report skipped. On a normal Mac they run.
+- `UI_BASELINE_UNCOMPARED`: the iPad's three add-ons pages draw their rows 8 px further left on
+  GitHub's virtual Mac than on a Mac, where they match the baselines, so their pixels are not
+  compared there; the fixture's checks of those pages still run, and every other page is
+  compared.
+- The launcher pages are drawn in UTC everywhere (the fixture sets it), so their reviewed
+  baselines match on any machine, whatever its time zone.
+
 ## Troubleshooting
 
 | Problem | What to do |
@@ -212,6 +253,8 @@ authorization, or performance; say which device ran when you report a result.
 | Developer service is "not ready" | The enrollment is missing: run `wolkaraforever/tools/install.sh` again with `TOLKARA_MODE=developer-service`, which enrolls for you. |
 | The app says a page container is missing | Build with `TOLKARA_MODE=local-signing`, or copy the container for this executable's SHA-256 into `Documents/LocalSigning/`. |
 | The app says External JIT is unavailable | That is the `Tolkara` build. External JIT is offered by the unsigned `TolkaraDiagnostics` `.ipa`. |
+| A simulator suite fails with `time limit: '…'` | That step (a compile, a boot, an install or a launch) hung, and the suite failed there rather than wait for ever. Nothing is killed: the message gives the hung process's pid, and it is left running for you to deal with (a hang is reported, never repaired). Rerun; a first boot and a compile get 15 minutes (`FIXTURE_COMPILE_LIMIT` for the compile), launching a fixture and checking that it is not already running `FIXTURE_LAUNCH_LIMIT` (300 by default), every other step `FIXTURE_STEP_LIMIT` seconds (300 by default). |
+| A simulator suite fails with `fixture: … is already running on this simulator (pid …)` | A copy of that test app is still running, perhaps from a `--stay` session or an earlier run that hit its time limit. The suite leaves a running app alone rather than end it: quit it yourself, then run the suite again. |
 | A `devicectl` call hangs | Lock the iPad, unlock it, confirm trust and Developer Mode, then rerun `wolkaraforever/tools/preflight.sh`. |
 
 Read [Compatibility](../COMPATIBILITY.md) for the support boundary, and

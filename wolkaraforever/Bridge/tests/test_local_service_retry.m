@@ -54,9 +54,12 @@ int main(void) { @autoreleasepool {
         pumpUntil(^BOOL{return completed>0;}); stale(TKLocalServiceReady,@"late"); settle();
         assert(attempts==1 && completed==1);
     }
-    // Cancelling while a retry is scheduled also prevents that attempt.
+    // Cancelling while a retry is scheduled also prevents that attempt. The interval is long
+    // enough that the cancel always lands first: at 0.03 s a loaded machine (a hosted runner
+    // under the sanitizers, 2026-11-21) ran the scheduled retry before the cancel, and the
+    // check read two attempts where the code had done nothing wrong.
     attempts=completed=waiting=0;
-    retry=[[TKLocalServiceRetry alloc] initWithTimeout:1 interval:0.03 attempt:^(TKLocalServiceReply reply) {
+    retry=[[TKLocalServiceRetry alloc] initWithTimeout:1 interval:0.5 attempt:^(TKLocalServiceReply reply) {
         attempts++; reply(TKLocalServiceUnavailable,@"offline");
     }];
     [retry startWithWaiting:^{waiting++;} completion:^(BOOL ready,NSString *report) {

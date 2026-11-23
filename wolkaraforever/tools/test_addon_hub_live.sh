@@ -27,6 +27,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 . wolkaraforever/tools/simulators.sh
+. wolkaraforever/tools/fixtures.sh
 root=$PWD
 
 # CoreSimulator has occasionally left container operations waiting forever. A live test must
@@ -46,7 +47,8 @@ simctl() {
     wait "$child"
 }
 
-wolkaraforever/tools/prepare.sh
+# An unchanged prepared tree is reused (prepare.sh), so a second suite does not rebuild it.
+WOLKARA_PREPARE_REUSE=1 wolkaraforever/tools/prepare.sh
 cd build/platform
 simulator_use "${SIMULATOR:-ipad}"
 simctl bootstatus "$SIM_ID" -b > /dev/null
@@ -138,6 +140,7 @@ printf '## Title: Live Imported\n## Version: 3.0\n## Author: Nobody\n## Interfac
 printf -- '-- lua\n' > "$staging/Core.lua"
 ( cd build/addon-hub-live/staging && zip -qr "$APP_ABS/LiveAddon.zip" LiveImported )
 codesign --force --sign - "$APP" > /dev/null
+fixture_refuse_if_running org.tolkara.tests.addon-hub-live || exit 1
 simctl uninstall "$SIM_ID" org.tolkara.tests.addon-hub-live > /dev/null 2>&1 || true
 simctl install "$SIM_ID" "$APP"
 # The page pulls in the launcher's voice source, which asks for the microphone at launch, and a
@@ -164,11 +167,13 @@ record_pid=$!
 sleep 2
 started=$(date +%s)
 
-# The key goes in the app's environment, not on disk. `--terminate-running-process` so a previous
-# run cannot be what answers.
-WK_LIVE_API_KEY="${WK_LIVE_API_KEY:-}" xcrun simctl launch --console-pty \
-    --terminate-running-process "$SIM_ID" org.tolkara.tests.addon-hub-live --live-addons \
-    > "$console" 2>&1 &
+# The key goes in the app's environment, not on disk. fixture_launch terminates a previous run,
+# so it cannot be what answers, and reads the app's output from files and its own system log
+# rather than the console relay, which drops the end of a run (fixtures.sh). It runs in the
+# background so the loop below can answer the app while it runs; the console file is written
+# when the app exits.
+WK_LIVE_API_KEY="${WK_LIVE_API_KEY:-}" FIXTURE_STEP_LIMIT=330 \
+    fixture_launch "$console" org.tolkara.tests.addon-hub-live --live-addons > /dev/null 2>&1 &
 launch_pid=$!
 documents="$(simctl get_app_container "$SIM_ID" org.tolkara.tests.addon-hub-live data)/Documents"
 browser_at=""
