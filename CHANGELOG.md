@@ -14,7 +14,8 @@
   performance: no cap, no dim, and no presentation hook installed at all. The two choices live on
   a page of their own (**Battery Saver Options**) that opens whether the switch is on or off, and
   they are remembered either way. An installation that had already chosen either option keeps it,
-  and its switch starts on.
+  and its switch starts on. Device temperature no longer lowers the cap: only Low Power Mode does,
+  and only because the user turned it on.
 - **Battery-saving sound** is always on and is no longer a setting; it is a performance fix, not
   a battery preference.
 - **Gamepad UI** now keeps its state in the launcher and writes `GamePadEnable` again immediately

@@ -188,7 +188,7 @@ game that is already running. Nothing here writes a game setting.
 
 | Choice | What it does |
 | --- | --- |
-| **Frame limit** | Off, **Automatic** (60 frames per second on power, 30 on battery), **30 FPS** or **60 FPS**. Low Power Mode, or a device running hot, lowers any cap to 30. The cap is applied to the frames the game already renders, so **Off** costs nothing. |
+| **Frame limit** | Off, **Automatic** (60 frames per second on power, 30 on battery), **30 FPS** or **60 FPS**. Low Power Mode lowers any cap to 30; device temperature never changes it. The cap is applied to the frames the game already renders, so **Off** costs nothing. |
 | **AFK saver** | Off, 2, 5 or 10 minutes. After that long without input the screen dims and the game is held at 10 frames per second. The first touch, key, mouse action or controller action only wakes it — it is not delivered to the game. Dimming pauses while anything is held, while the in-game touch configuration is open, and while the app is not in front. |
 
 The current choice in each group is marked with a check.

@@ -135,7 +135,6 @@ AKBatterySaverFramePolicy AKBatterySaverFramePolicyMake(BOOL enabled,
                                                        AKBatterySaverFrameLimit limit,
                                                        BOOL externalPower,
                                                        BOOL lowPowerMode,
-                                                       NSProcessInfoThermalState thermal,
                                                        BOOL dimmed) {
     AKBatterySaverFramePolicy off = { NO, 0.0 };
     // The master switch is first, and it outranks the dim as well. Off means full performance:
@@ -161,12 +160,10 @@ AKBatterySaverFramePolicy AKBatterySaverFramePolicyMake(BOOL enabled,
         case AKBatterySaverFrameLimit30: fps = 30.0; break;
         case AKBatterySaverFrameLimitOff: return off;
     }
-    // Low Power Mode is the user telling the whole device to spend less. A Serious or
-    // Critical thermal state is the device saying the same thing with more authority.
-    // Neither raises a rate: 30 stays 30.
-    BOOL constrained = lowPowerMode || thermal == NSProcessInfoThermalStateSerious ||
-                       thermal == NSProcessInfoThermalStateCritical;
-    if (constrained && fps > 30.0) fps = 30.0;
+    // Low Power Mode is the user telling the whole device to spend less. Device temperature is
+    // deliberately not consulted: a hot iPad must not quietly change the pacing the player chose,
+    // and a cap that appears by itself reads as a stutter rather than as a decision. 30 stays 30.
+    if (lowPowerMode && fps > 30.0) fps = 30.0;
     AKBatterySaverFramePolicy policy = { YES, fps };
     return policy;
 }
@@ -192,7 +189,6 @@ AKBatterySaverFramePolicy AKBatterySaverResolvedPolicy(BOOL dimmed) {
                                          AKBatterySaverLaunchFrameLimit(),
                                          AKBatterySaverDeviceHasExternalPower(),
                                          NSProcessInfo.processInfo.isLowPowerModeEnabled,
-                                         NSProcessInfo.processInfo.thermalState,
                                          dimmed);
 }
 

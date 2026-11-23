@@ -1677,7 +1677,9 @@ static void TestVoiceScreens(UIWindow *window) {
     UILabel *mapping = (id)Find(settings.view, @"voice.mapping");
     CHECK((mapping.text.length > 0), @"and it says what is mapped, got nothing");
     CHECK((Find(settings.view, @"voice.map") != nil), @"and it has the Map button");
-    CHECK((Find(settings.view, @"voice.test") != nil), @"and keeps the dictation test inside button configuration");
+    // One door to the dictation test: the home page's own row. The settings page used to keep a
+    // second one, which meant the same page was reachable from two places that could disagree.
+    CHECK((Find(settings.view, @"voice.test") == nil), @"and no second dictation test inside button configuration");
     // Disabled options are not actionable, but they remain readable: otherwise the page
     // looks broken before the player has found the master switch.
     for (NSString *key in @[@"mappingCard", @"modeCard", @"afterCard", @"wordsCard"]) {

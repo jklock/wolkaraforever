@@ -57,6 +57,7 @@
 - (void)repairInstallation;
 - (void)manageAddons;
 - (void)manageVoice;
+- (void)testVoice;
 - (void)performGraphicsReset:(NSString *)directory;
 - (void)render;
 - (void)choosePreference:(BOOL)region;
@@ -1399,19 +1400,22 @@ static void TestIPadM5RenderProfile(void) {
     UINavigationController *frame=[self settledPresentedController];
     assert(frame!=nil && [frame.topViewController isKindOfClass:AKVoiceViewController.class]);
     [self.window layoutIfNeeded];
+    // The dictation test has its own row on the home page; the settings page must not keep a
+    // second copy of the same door.
+    assert(Find(frame.topViewController.view, @"voice.test") == nil);
     [self capture:@"voice-settings.png"];
-    UIButton *test=(id)Find(frame.topViewController.view,@"voice.test");
-    assert(test!=nil);
-    [test sendActionsForControlEvents:UIControlEventTouchUpInside];
-    [self performSelector:@selector(captureVoiceTest) withObject:nil afterDelay:0.7];
+    [(AKVoiceViewController *)frame.topViewController done];
+    [self performSelector:@selector(captureVoiceTest) withObject:nil afterDelay:0.9];
 }
 - (void)captureVoiceTest {
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
+    [[self row:@"wow.voice.test"] sendActionsForControlEvents:UIControlEventTouchUpInside];
+    Pump(0.7);
     UINavigationController *frame=[self settledPresentedController];
     assert(frame!=nil && [frame.topViewController isKindOfClass:AKVoiceTestViewController.class]);
     [self.window layoutIfNeeded];
     [self capture:@"voice-test.png"];
-    [frame popViewControllerAnimated:NO];
-    [(AKVoiceViewController *)frame.topViewController done];
+    [(AKVoiceTestViewController *)frame.topViewController done];
     [self performSelector:@selector(checkNoRecheck) withObject:nil afterDelay:0.9];
 }
 - (void)checkNoRecheck {
@@ -2825,12 +2829,15 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.window layoutIfNeeded];
     [self assertGermanOnlyInView:page.view page:@"voice settings"];
     [self capture:@"wow-voice-de.png"];
-    UIButton *test=(id)Find(page.view,@"voice.test");
-    assert(test!=nil);
-    [test sendActionsForControlEvents:UIControlEventTouchUpInside];
-    [self performSelector:@selector(checkGermanVoiceTest) withObject:nil afterDelay:0.8];
+    // The dictation test has one door, the home page's own row, in German too.
+    assert(Find(page.view, @"voice.test") == nil);
+    [(AKVoiceViewController *)page done];
+    [self performSelector:@selector(checkGermanVoiceTest) withObject:nil afterDelay:0.9];
 }
 - (void)checkGermanVoiceTest {
+    PumpUntil(^{ return (BOOL)(self.controller.presentedViewController == nil); }, 20.0);
+    [self.controller testVoice];
+    Pump(0.7);
     UINavigationController *frame = [self settledPresentedController];
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
@@ -2839,9 +2846,8 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.window layoutIfNeeded];
     [self assertGermanOnlyInView:page.view page:@"voice test"];
     [self capture:@"wow-voice-test-de.png"];
-    [frame popViewControllerAnimated:NO];
-    [self.controller dismissViewControllerAnimated:NO completion:nil];
-    [self performSelector:@selector(openGermanSettings) withObject:nil afterDelay:0.4];
+    [(AKVoiceTestViewController *)page done];
+    [self performSelector:@selector(openGermanSettings) withObject:nil afterDelay:0.6];
 }
 - (void)openGermanSettings {
     [self.controller settings];

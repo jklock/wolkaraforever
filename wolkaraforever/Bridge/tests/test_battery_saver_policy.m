@@ -35,17 +35,14 @@ int main(void) {
         AKBatterySaverFramePolicy off = AKBatterySaverResolvedPolicy(NO);
         assert(!off.capped);
         assert(AKBatterySaverFramePolicyInterval(off) == 0.0);
-        // Off is Off even where something else is constraining the device.
-        assert(!AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimitOff, NO, YES,
-                                              NSProcessInfoThermalStateCritical, NO).capped);
+        // Off is Off even in Low Power Mode.
+        assert(!AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimitOff, NO, YES, NO).capped);
         // The master switch outranks every other input: no cap, and no dim either. A session
         // that opted into nothing must not settle when the player walks away.
-        assert(!AKBatterySaverFramePolicyMake(NO, AKBatterySaverFrameLimit60, YES, NO,
-                                              NSProcessInfoThermalStateNominal, NO).capped);
-        assert(!AKBatterySaverFramePolicyMake(NO, AKBatterySaverFrameLimitAutomatic, NO, NO,
-                                              NSProcessInfoThermalStateCritical, YES).capped);
+        assert(!AKBatterySaverFramePolicyMake(NO, AKBatterySaverFrameLimit60, YES, NO, NO).capped);
+        assert(!AKBatterySaverFramePolicyMake(NO, AKBatterySaverFrameLimitAutomatic, NO, NO, YES).capped);
         assert(AKBatterySaverFramePolicyInterval(AKBatterySaverFramePolicyMake(
-            NO, AKBatterySaverFrameLimit30, YES, NO, NSProcessInfoThermalStateNominal, NO)) == 0.0);
+            NO, AKBatterySaverFrameLimit30, YES, NO, NO)) == 0.0);
 
         // --- Every stored spelling this build offers, and every one it does not.
         assert(AKBatterySaverFrameLimitFromStored(@"off") == AKBatterySaverFrameLimitOff);
@@ -92,37 +89,28 @@ int main(void) {
         AKBatterySaverSetEnabled(YES);
         assert(AKBatterySaverStoredEnabled());
         AKBatterySaverFramePolicy plugged = AKBatterySaverFramePolicyMake(
-            YES, AKBatterySaverFrameLimitAutomatic, YES, NO, NSProcessInfoThermalStateNominal, NO);
+            YES, AKBatterySaverFrameLimitAutomatic, YES, NO, NO);
         assert(plugged.capped && plugged.framesPerSecond == 60.0);
         AKBatterySaverFramePolicy unplugged = AKBatterySaverFramePolicyMake(
-            YES, AKBatterySaverFrameLimitAutomatic, NO, NO, NSProcessInfoThermalStateNominal, NO);
+            YES, AKBatterySaverFrameLimitAutomatic, NO, NO, NO);
         assert(unplugged.capped && unplugged.framesPerSecond == 30.0);
 
-        // --- Low Power Mode and a hot device lower a rate above 30 to 30, never raise one,
-        // and never touch Off.
-        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimitAutomatic, YES, YES,
-                                              NSProcessInfoThermalStateNominal, NO).framesPerSecond == 30.0);
-        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit60, YES, YES,
-                                              NSProcessInfoThermalStateNominal, NO).framesPerSecond == 30.0);
-        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit60, YES, NO,
-                                              NSProcessInfoThermalStateSerious, NO).framesPerSecond == 30.0);
-        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit60, YES, NO,
-                                              NSProcessInfoThermalStateCritical, NO).framesPerSecond == 30.0);
-        // Fair is not hot enough, and Low Power Mode cannot raise 30.
-        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit60, YES, NO,
-                                              NSProcessInfoThermalStateFair, NO).framesPerSecond == 60.0);
-        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit30, YES, YES,
-                                              NSProcessInfoThermalStateCritical, NO).framesPerSecond == 30.0);
+        // --- Low Power Mode lowers a rate above 30 to 30 and never raises one. Device
+        // temperature is not an input at all: the policy cannot see it, which is the point -
+        // a hot iPad does not quietly change the pacing the player chose.
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimitAutomatic, YES, YES, NO).framesPerSecond == 30.0);
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit60, YES, YES, NO).framesPerSecond == 30.0);
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit60, YES, NO, NO).framesPerSecond == 60.0);
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit30, YES, YES, NO).framesPerSecond == 30.0);
 
         // --- The AFK dim outranks the selection: a fixed 10 FPS, whatever was chosen, and it
         // applies even with the frame limit Off - the two controls are separate decisions.
         AKBatterySaverFramePolicy dimmed = AKBatterySaverFramePolicyMake(
-            YES, AKBatterySaverFrameLimit60, YES, NO, NSProcessInfoThermalStateNominal, YES);
+            YES, AKBatterySaverFrameLimit60, YES, NO, YES);
         assert(dimmed.capped && dimmed.framesPerSecond == AKBatterySaverDimFramesPerSecond);
-        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit30, NO, YES,
-                                              NSProcessInfoThermalStateCritical, YES).framesPerSecond == 10.0);
+        assert(AKBatterySaverFramePolicyMake(YES, AKBatterySaverFrameLimit30, NO, YES, YES).framesPerSecond == 10.0);
         AKBatterySaverFramePolicy dimmedOff = AKBatterySaverFramePolicyMake(
-            YES, AKBatterySaverFrameLimitOff, YES, NO, NSProcessInfoThermalStateNominal, YES);
+            YES, AKBatterySaverFrameLimitOff, YES, NO, YES);
         assert(dimmedOff.capped && dimmedOff.framesPerSecond == AKBatterySaverDimFramesPerSecond);
 
         // --- The interval a presentation is held for: 1/60, 1/30, 1/10; nothing when Off.

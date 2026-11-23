@@ -104,15 +104,15 @@ typedef struct AKBatterySaverFramePolicy {
 ///                whatever the other arguments say. The master switch outranks all of them.
 ///   Automatic  - 60 FPS on external power, 30 FPS on battery.
 ///   30 / 60    - that rate.
-///   any cap    - Low Power Mode, or a Serious/Critical thermal state, lowers a rate above
-///                30 FPS to 30 FPS. Off stays Off.
+///   any cap    - Low Power Mode lowers a rate above 30 FPS to 30 FPS. Device temperature is
+///                deliberately not an input: a hot iPad must not quietly change the pacing the
+///                player chose. Off stays Off.
 ///   dimmed     - the AFK dim is in force: a fixed 10 FPS, whatever else says. The game is
 ///                not being looked at, and the panel does not need to be redrawn for it.
 FOUNDATION_EXPORT AKBatterySaverFramePolicy AKBatterySaverFramePolicyMake(BOOL enabled,
                                                                          AKBatterySaverFrameLimit limit,
                                                                          BOOL externalPower,
                                                                          BOOL lowPowerMode,
-                                                                         NSProcessInfoThermalState thermal,
                                                                          BOOL dimmed);
 
 /// The same rule, reading the live device: the launch snapshot, the charger, Low Power Mode
