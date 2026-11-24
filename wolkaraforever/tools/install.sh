@@ -229,7 +229,38 @@ SHIM
     PATH="$destination_shim:$PATH"
     export PATH
 fi
-tools/install.sh ${args[@]+"${args[@]}"}
+# The platform installer correctly keeps the full xcodebuild transcript in
+# logs/install-*.log, but that made a normal device build look hung for minutes.
+# Relay its latest meaningful line at a bounded interval while it runs. This is
+# observation only: a slow or stuck build is never killed or otherwise repaired
+# here, and its complete transcript remains the platform's log.
+platform_install_with_progress() {
+    local pid log newest latest="" last=""
+    tools/install.sh ${args[@]+"${args[@]}"} &
+    pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 15
+        newest=""
+        for log in logs/install-*.log; do
+            [ -f "$log" ] || continue
+            [ -z "$newest" ] || [ "$log" -nt "$newest" ] || continue
+            newest=$log
+        done
+        if [ -z "$newest" ]; then
+            echo "   build still running; waiting for the platform build log"
+            continue
+        fi
+        latest=$(tail -n 1 "$newest" 2>/dev/null || true)
+        if [ -n "$latest" ] && [ "$latest" != "$last" ]; then
+            echo "   build: $latest"
+            last=$latest
+        else
+            echo "   build still running; latest output is in $newest"
+        fi
+    done
+    wait "$pid"
+}
+platform_install_with_progress
 
 # The platform-side pre-deployment gate checks this too.  Keep a second check
 # here so --build-only proves the exact artifact before anybody chooses to
