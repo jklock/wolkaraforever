@@ -242,19 +242,6 @@ elif [ "$baseline_mode" = check ]; then
     # comparison reads about 2.8 million pixels per page, and an unoptimised build took over
     # a minute per device.
     xcrun swiftc -O "$ROOT/wolkaraforever/tools/compare_ui_baselines.swift" -framework CoreGraphics -framework ImageIO -o "$comparator"
-    # UI_BASELINE_UNCOMPARED names pages (device/page.png) a machine is known to draw unlike
-    # a Mac, so their pixels are not compared there; every other page still is, and the
-    # fixture's own checks of those pages still ran. The hosted Validate workflow sets it for
-    # the iPad's add-ons pages: measured on 2026-11-22, the same iPad Pro 13-inch (M5) on the
-    # same iOS 27.2 drew their rows 8 px further left on GitHub's virtual Mac than on a Mac,
-    # where they match the baselines.
-    compared=()
-    for state in "${states[@]}"; do
-        case " ${UI_BASELINE_UNCOMPARED:-} " in
-            *" $baseline_device/$state "*) echo "not compared on this machine: $baseline_device/$state (UI_BASELINE_UNCOMPARED)" ;;
-            *) compared+=("$state") ;;
-        esac
-    done
-    "$comparator" "$baseline" "$screenshots" "${compared[@]}"
+    "$comparator" "$baseline" "$screenshots" "${states[@]}"
 fi
 echo "screenshots: $screenshots"

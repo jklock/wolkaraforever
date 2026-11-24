@@ -46,12 +46,6 @@ jobs:
       # code nor refuses a tampered page: the three platform tests that check that are skipped
       # here, with the reason, and run on a normal Mac (patch 0075).
       TOLKARA_SKIP_SIGNING_ENFORCEMENT: "1"
-      # The same iPad on the same iOS draws these pages' rows 8 px further left here than on a
-      # Mac, where they match the baselines; their pixels are compared on a Mac only.
-      UI_BASELINE_UNCOMPARED: >-
-        ipad-pro-13-m5/addons-popup.png
-        ipad-pro-13-m5/wow-addons-de.png
-        ipad-pro-13-m5/wow-addons-recommended-wolkararoue.png
     steps:
       - uses: actions/checkout@v5
         with:
