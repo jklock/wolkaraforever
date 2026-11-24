@@ -252,7 +252,11 @@ platform_install_with_progress() {
         fi
         latest=$(tail -n 1 "$newest" 2>/dev/null || true)
         if [ -n "$latest" ] && [ "$latest" != "$last" ]; then
-            echo "   build: $latest"
+            if [ "${#latest}" -gt 240 ]; then
+                echo "   build: ${latest:0:240}..."
+            else
+                echo "   build: $latest"
+            fi
             last=$latest
         else
             echo "   build still running; latest output is in $newest"

@@ -535,6 +535,14 @@ grep -q "NO LAUNCH FROM THIS RUN IS IN THIS LOG (0 before it, 0 now)" "$work/out
 check $? "a stale app log must stay stale evidence"
 grep -q "integer expression expected" "$work/out.txt" && check 1 "the stale-log count must remain numeric"
 
+# A fatal from an older launch must not turn the current validation into a false alarm.
+export WOLKAREFOREVER_FAKE_APPLOG=$'[fatal] an older launch failed\n[ui] home: the launcher is up'
+run_pilot "$work/sessions/stale-fatal" log
+grep -q "a historical fatal is in this log; it is not evidence about this run" "$work/out.txt"
+check $? "a historical fatal must be labelled as historical"
+grep -q '^== it says something fatal' "$work/out.txt" && check 1 "a historical fatal must not be reported as this run's failure"
+unset WOLKAREFOREVER_FAKE_APPLOG
+
 if [ "$failures" -eq 0 ]; then
     echo "PILOT PASS: $checks checks"
     exit 0
