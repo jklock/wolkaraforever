@@ -541,6 +541,12 @@ cmd_install() {
     record_what_was_running
     stop_app "$force"
     step "building and installing"
+    # install.sh relays the platform build log while Xcode works. Keep that
+    # output visible here too; hiding it in the session file made a healthy
+    # long build indistinguishable from a wedged command.
+    run_install() {
+        "$root/wolkaraforever/tools/install.sh" 2>&1 | tee "$SESSION/install.log"
+    }
     # No --replace-running: this script has already stopped what was running, so
     # anything running now started in between and must not be killed for us.
     #
@@ -550,10 +556,10 @@ cmd_install() {
     # application could not be determined" - with the app installed and healthy, which the app's own
     # log shows. Retried once, and only for that message: anything else is a real failure and is
     # reported with its output rather than as a bare exit code.
-    if ! "$root/wolkaraforever/tools/install.sh" > "$SESSION/install.log" 2>&1; then
+    if ! run_install; then
         if grep -q "process identifier of the launched application could not be determined" "$SESSION/install.log"; then
             say "the enrolment's process lookup raced the app's own exit; installing once more"
-            "$root/wolkaraforever/tools/install.sh" > "$SESSION/install.log" 2>&1 || {
+            run_install || {
                 tail -20 "$SESSION/install.log"
                 die "install failed twice, and not on the race the first time"
             }
