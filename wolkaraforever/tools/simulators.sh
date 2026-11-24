@@ -92,6 +92,25 @@ simulator_use() {
     printf '%s: %s (%s)\n' "$(basename "${BASH_SOURCE[1]:-script}" .sh)" "$SIM_NAME" "$SIM_ID" >&2
 }
 
+# For a fresh machine with nothing booted, such as a hosted CI runner: a first boot takes minutes,
+# so the Validate workflow starts it early, in the background, and each suite still waits for its
+# simulator to finish booting. Not for a Mac someone is using: it boots a device, which on a
+# person's Mac is their decision.
+#
+# simulator_start_boot [ipad|iphone]   starts booting that matrix simulator and returns at once.
+simulator_start_boot() {
+    simulator_use "${1:-${SIMULATOR:-ipad}}"
+    nohup xcrun simctl boot "$SIM_ID" > /dev/null 2>&1 &
+}
+
+# simulator_app_documents <bundle id> [ipad|iphone]   prints that app's Documents folder on the
+# matrix simulator, where the fixtures leave the pictures they drew.
+simulator_app_documents() {
+    local udid
+    udid=$(simulator_udid "${2:-${SIMULATOR:-ipad}}") || return 2
+    printf '%s/Documents\n' "$(xcrun simctl get_app_container "$udid" "$1" data 2>/dev/null)"
+}
+
 # One UI suite per simulator, enforced. Two suites on the same device install over each other's
 # app, take the foreground from each other and interleave their sheets; whatever runs second then
 # reports failures it does not have. Measured twice: on 2026-11-13 a touch-controls suite launched

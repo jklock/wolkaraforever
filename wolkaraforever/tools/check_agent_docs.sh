@@ -47,7 +47,7 @@ if ! diff -ru "$tmp/before" "$tmp/after" >/dev/null; then
     exit 1
 fi
 
-if rg -n '\]\([^)]*docs/agent/' README.md docs COMPATIBILITY.md CHANGELOG.md SECURITY.md NOTICE.md CONTRIBUTORS.md 2>/dev/null; then
+if grep -rnE '\]\([^)]*docs/agent/' README.md docs COMPATIBILITY.md CHANGELOG.md SECURITY.md NOTICE.md CONTRIBUTORS.md 2>/dev/null; then
     echo "check_agent_docs: human documentation links to agent documentation" >&2
     exit 1
 fi

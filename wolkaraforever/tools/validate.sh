@@ -11,11 +11,22 @@
 # logs/validation/. It refuses to run on a dirty worktree unless told to, and says so
 # in the report when it is.
 #
-#   wolkaraforever/tools/validate.sh [--allow-dirty] [--full] [--device] [--ui-review <record>] [--out <path>]
+#   wolkaraforever/tools/validate.sh [--allow-dirty] [--full] [--device] [--group <name>] [--ui-review <record>] [--out <path>]
 #
 #   --full    also run the platform suites (test_emulation.sh, test_translation_sim.sh),
 #             which are the slow ones
 #   --device  also install and pilot on the connected iPad, and record what came back
+#   --group   run only the steps of one group, --full ones included, so the groups can run
+#             side by side on separate machines and still be this script's own list:
+#               mac                            the Mac-side checks and suites, and the
+#                                              platform's emulation suite (no simulator)
+#               launcher                       the launcher UI policy, baselines and pages
+#               simulator                      the touch, voice, controller and audio
+#                                              fixtures, and the quick --full simulator suites
+#                                              (content view, Metal pacing, Keychain)
+#               simulator-translation-addons   the translation adapters and the add-on hub
+#             They are sized to take about as long as each other on a hosted runner.
+#             The device steps belong to no group: they need the iPad.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
 root=$PWD
@@ -26,6 +37,7 @@ full=0
 device=0
 ui_review=""
 out=""
+group=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --allow-dirty) allow_dirty=1;;
@@ -33,10 +45,18 @@ while [ $# -gt 0 ]; do
         --device) device=1;;
         --ui-review) shift; ui_review=${1:-};;
         --out) shift; out=${1:-};;
+        --group) shift; group=${1:-};;
         *) echo "unknown option: $1" >&2; exit 2;;
     esac
     shift
 done
+
+case "$group" in
+    ""|mac|launcher|simulator|simulator-translation-addons) ;;
+    *) echo "unknown group: $group (mac, launcher, simulator, simulator-translation-addons)" >&2; exit 2;;
+esac
+# A group runs every step it holds, the --full ones included, and never the device.
+if [ -n "$group" ]; then full=1; device=0; fi
 
 sha=$(git rev-parse HEAD)
 short=$(git rev-parse --short HEAD)
@@ -52,6 +72,7 @@ if [ -z "$out" ]; then
     else
         out="logs/validation/$short.md"
     fi
+    [ -z "$group" ] || out="${out%.md}-$group.md"
 fi
 
 if [ -n "$dirty" ] && [ "$allow_dirty" != 1 ]; then
@@ -100,6 +121,7 @@ device_description() {
     echo
     echo "- Commit: \`$sha\` (branch \`$branch\`)"
     echo "- Recorded: $(date -u '+%Y-%m-%d %H:%M:%SZ')"
+    [ -z "$group" ] || echo "- Group: \`$group\` only - the other groups' steps are not in this file"
     if [ -n "$dirty" ]; then
         echo "- **Working tree: dirty** - the results below are not this commit alone:"
         echo
@@ -147,8 +169,23 @@ declare -a step_names=()
 declare -a step_results=()
 declare -a step_bodies=()
 
+# Which group a step belongs to, by the command it runs (see --group above).
+step_group() {
+    case "$*" in
+        *check_ui_policy.sh*|*test_wow_launcher_ui.sh*) echo launcher ;;
+        *test_touch_*|*test_voice.sh*|*test_controller_input.sh*|*test_audio_sim.sh*|\
+        *test_appkit_content_view.sh*|*test_background_pacing_sim.sh*|*test_enrollment_reference_sim.sh*) echo simulator ;;
+        *test_translation_sim.sh*|*test_addon_hub_live.sh*) echo simulator-translation-addons ;;
+        *tools/pilot.sh*|*device_matrix.sh*) echo device ;;
+        *) echo mac ;;
+    esac
+}
+# True when the step is to run: no group was asked for, or it is the step's group.
+in_group() { [ -z "${group:-}" ] || [ "$(step_group "$@")" = "$group" ]; }
+
 run_step() {
     local name=$1; shift
+    [ -z "${group:-}" ] || in_group "$@" || return 0
     printf '\n== %s\n' "$name"
     : > "$log"
     "$@" >> "$log" 2>&1
@@ -176,6 +213,7 @@ sed -E 's/^[[:space:]]*#?[[:space:]]*//; s/[[:space:]]+(-|—).*$//' wolkarafore
     | grep -E '^[a-zA-Z_][a-zA-Z0-9_.]*$' | sort -u > "$known_failures"
 run_platform_suite() {
     local name=$1; shift
+    [ -z "${group:-}" ] || in_group "$@" || return 0
     printf '\n== %s\n' "$name"
     : > "$log"
     "$@" >> "$log" 2>&1
@@ -271,12 +309,13 @@ run_step "a running app is recognised, not assumed" wolkaraforever/tools/tests/t
 run_step "the test-app dispatcher stays on the test app" wolkaraforever/tools/tests/test_test_install.sh || failures=$((failures+1))
 run_step "an .ipa is refused unless it is the External-JIT one" wolkaraforever/tools/tests/test_verify_ipa.sh || failures=$((failures+1))
 run_step "a silent device cannot hang a devicectl call" wolkaraforever/tools/tests/test_xcrun_device_timeout.sh || failures=$((failures+1))
+run_step "the simulator suites' fixture helpers (launch, time limits, reuse)" wolkaraforever/tools/tests/test_fixtures.sh || failures=$((failures+1))
 run_step "External-JIT log classification" wolkaraforever/tools/tests/test_classify_external_jit.sh || failures=$((failures+1))
 run_step "the bundled add-on is what its reviewed sources produce" wolkaraforever/tools/test_addon_package.sh || failures=$((failures+1))
 run_step "the mobile add-on's Lua, saves and game API" wolkaraforever/tools/test_mobile_addon.sh || failures=$((failures+1))
 if [ -n "${DEVELOPMENT_TEAM:-}" ]; then
     run_step "the signed app builds for the device" wolkaraforever/tools/install.sh --build-only || failures=$((failures+1))
-else
+elif [ -z "$group" ] || [ "$group" = mac ]; then
     step_names+=("signed device app build")
     step_results+=("NOT RUN (DEVELOPMENT_TEAM unset)")
     step_bodies+=("Not run: local.env has no DEVELOPMENT_TEAM. This source/simulator validation does not claim a signed device build.")
@@ -287,7 +326,12 @@ if [ "$full" = 1 ]; then
     # the platform must not, and must still be printed every time so it stays visible.
     # Layer suites already have explicit rows; the wrapper would run them again and
     # could misclassify a layer failure alongside the known platform failure.
-    run_platform_suite "platform emulation suite" bash build/platform/tools/test_emulation.sh || failures=$((failures+1))
+    # The suite runs from the prepared tree, which an earlier row has usually made; on its own
+    # (--group mac, before any suite has prepared) nothing may have, so it prepares first,
+    # reusing an unchanged tree.
+    run_platform_suite "platform emulation suite" \
+        bash -c 'WOLKARA_PREPARE_REUSE=1 wolkaraforever/tools/prepare.sh && bash build/platform/tools/test_emulation.sh' \
+        || failures=$((failures+1))
     run_platform_suite "translation adapters (simulator)" wolkaraforever/tools/test_translation_sim.sh || failures=$((failures+1))
     # The simulator suites that had no row. `test_launcher_matrix.sh --check` is deliberately
     # not listed: it runs test_wow_launcher_ui.sh on both matrix devices, which the
@@ -320,7 +364,7 @@ if [ "$device" = 1 ]; then
         step_results+=("NOT RUN")
         step_bodies+=("Not run: the install or launch above failed, so a log read now would be written by an older build. Nothing here is evidence about this commit.")
     fi
-else
+elif [ -z "$group" ]; then
     step_names+=("device run (--device)")
     step_results+=("NOT RUN")
     step_bodies+=("Not run: pass --device with an iPad connected.")

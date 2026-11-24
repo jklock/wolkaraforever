@@ -5,12 +5,15 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 . wolkaraforever/tools/simulators.sh
-wolkaraforever/tools/prepare.sh
+. wolkaraforever/tools/fixtures.sh
+# An unchanged prepared tree is reused (prepare.sh), so a second suite does not rebuild it.
+WOLKARA_PREPARE_REUSE=1 wolkaraforever/tools/prepare.sh
 cd build/platform
 # The matrix iPad, or the matrix iPhone with `SIMULATOR=iphone`; anything else is refused.
 simulator_use "${SIMULATOR:-ipad}"
 simulator_ui_lock test_touch_gamepad_ui
-xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
+# A first boot on a fresh machine can take minutes, so this step gets longer than the rest.
+FIXTURE_STEP_LIMIT=900 fixture_step "boot of $SIM_NAME" xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/touch-gamepad-fixture/TouchGamepad.app
 mkdir -p "$APP"
 # The app's own language tables, as the app ships them: the gamepad's settings panel is
@@ -20,7 +23,7 @@ for LANGUAGE in en de; do
     cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$APP/$LANGUAGE.lproj/"
 done
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
-xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
+fixture_compile xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations \
     translation/AppKit/TouchGamepad.m translation/AppKit/TouchGamepadLayout.m translation/AppKit/TouchHaptics.m \
     translation/AppKit/InterfaceMode.m translation/AppKit/LayoutStore.m translation/AppKit/AKHostLocalization.m \
@@ -45,10 +48,11 @@ cat > "$APP/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - "$APP" > /dev/null
-xcrun simctl install "$SIM_ID" "$APP"
+fixture_refuse_if_running org.tolkara.tests.touch-gamepad || exit 1
+fixture_step "install of $APP" xcrun simctl install "$SIM_ID" "$APP"
 if [[ " $* " == *" --stay "* ]]; then
     # Visual inspection is explicit so the documented test command cannot hang.
-    xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-gamepad "$@"
+    xcrun simctl launch --console "$SIM_ID" org.tolkara.tests.touch-gamepad "$@"
 else
     if [[ " $* " != *" --self-test "* && " $* " != *" --self-test-input "* ]]; then
         set -- --self-test "$@"
@@ -57,8 +61,8 @@ else
     # mobile one the launcher selects with WolkaraForeverInterfaceModeV1.
     for MODE in "" "--mobile-interface"; do
         LOG="build/touch-gamepad-fixture/self-test${MODE:+-mobile}.log"
-        # simctl may report success even when the app aborts an assertion.
-        xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-gamepad "$@" $MODE 2>&1 | tee "$LOG"
+        # simctl may report success even when the app aborts an assertion, so the log decides.
+        fixture_launch "$LOG" org.tolkara.tests.touch-gamepad "$@" $MODE
         grep -Eq 'TOUCH_GAMEPAD_(LIFECYCLE|INPUT)_PASS:' "$LOG"
     done
 fi

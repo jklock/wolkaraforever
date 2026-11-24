@@ -19,7 +19,8 @@ cd "$(dirname "$0")/../.."
 simulator_use "${SIMULATOR:-ipad}"
 wolkaraforever/tools/prepare.sh
 cd build/platform
-BUNDLE="${TOLKARA_BUNDLE_ID}.storageprobe"
+# The same default as install.sh, so a Mac without local.env (or a hosted runner) can run it.
+BUNDLE="${TOLKARA_BUNDLE_ID:-local.tolkara.app}.storageprobe"
 DERIVED=build/storageprobe-enrollment
 # This Mac's Xcode keeps products in a shared build directory, and other worktrees
 # build there at the same time. The probe gets its own, so a run can neither read

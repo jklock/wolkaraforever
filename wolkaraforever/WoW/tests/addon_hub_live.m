@@ -359,7 +359,7 @@ BOOL TKAddonHubLiveRun(UIWindow *window, void (^capture)(NSString *name)) {
         {
             TKAddonBrowserHandoff *handoff = [TKAddonBrowserHandoff new];
             handoff.projectID = @61284;
-            handoff.projectSlug = @"details-damage-meter";
+            handoff.projectSlug = @"details";
             handoff.projectName = @"Details! Damage Meter";
             LiveCheck(handoff.projectURL != nil, @"a public project page is addressable");
             [page presentHandoff:handoff forRecord:nil];
@@ -380,8 +380,10 @@ BOOL TKAddonHubLiveRun(UIWindow *window, void (^capture)(NSString *name)) {
             if (web) {
                 __block NSNumber *clickedDownload = nil;
                 // This is the visible Download control on the project's page, the exact route
-                // shown to the player. It is not an API or a guessed download URL.
-                [web evaluateJavaScript:@"(function(){var a=Array.from(document.querySelectorAll('a[href]')).find(function(x){return /\\/wow\\/addons\\/details(?:-damage-meter)?\\/download\\/[0-9]+(?:[?#]|$)/i.test(x.href);}); if(!a)return false; a.click(); return true;})()"
+                // shown to the player. It is not an API or a guessed download URL. CurseForge
+                // renders it as a button with no link now, so the button is pressed by its label;
+                // a /download/<file> link, the form it used to take, is still taken first.
+                [web evaluateJavaScript:@"(function(){var all=Array.from(document.querySelectorAll('a[href],button'));var a=all.find(function(x){return /\\/wow\\/addons\\/details\\/download\\/[0-9]+(?:[?#]|$)/i.test(x.href||'');})||all.find(function(x){return (x.innerText||'').trim()==='Download'&&x.offsetParent!==null;}); if(!a)return false; a.click(); return true;})()"
                       completionHandler:^(id value, NSError *error) {
                     clickedDownload = error ? @NO : @([value boolValue]);
                 }];

@@ -1,0 +1,52 @@
+# The tunnel-manager timer test steps its clock only after the timer has acted
+#
+# Why: tests/test_tunnel_manager.swift drives TunnelConnectionManager's real 0.1 s
+# DispatchSource timer with an injected clock, stepping it through 1, 3, 7, 15, 23 and
+# 31 seconds on a fixed schedule, one step every 0.15 s. The stream only times out after
+# its timer has seen each step in turn (five retransmissions, then the timeout), so the
+# test assumed the timer fires at least once in every 0.15 s window. A busy host that
+# coalesces timers skips a step: the stream never reaches its last retry, no timeout
+# comes, and the test stops on "automatic timer drives TCP".
+#
+# Measured on 2026-11-22 on GitHub's macOS runners (Xcode 27.2): the unchanged test
+# passed 3 runs of 3 on an idle machine and failed 3 runs of 3 inside
+# tools/test_emulation.sh, where the tests before it keep the machine busy. With this
+# patch it passed 5 of 5 on its own and inside the suite.
+#
+# The code under test is unchanged and was not at fault: with a real clock a late timer
+# simply sees a later time, and nothing is skipped. The test now steps the clock only once
+# the timer has acted on the step before - each retransmission is one more packet on the
+# link - so it still exercises the real timer, whatever the host's timer cadence. The
+# wait at the end is a hang guard, no longer a timing assertion.
+#
+# Applies to: tests/test_tunnel_manager.swift.
+# Upstream: candidate.
+
+--- a/tests/test_tunnel_manager.swift
++++ b/tests/test_tunnel_manager.swift
+@@ -108,11 +108,22 @@
+                     failures += 1; manager.cancel()
+                 }
+             }
+-            for (index,t) in [1.0,3,7,15,23,31].enumerated() {
+-                queue.asyncAfter(deadline:.now()+Double(index+1)*0.15) { clock = t }
++            // Advance the injected clock one retransmission step at a time, and only after
++            // the timer has acted on the step before: each retransmission is one more packet
++            // on the link. A fixed schedule assumed the 0.1 s timer fires at least once every
++            // 0.15 s; a host that coalesces timers skipped a step, the stream never reached
++            // its last retry, and no timeout came.
++            let steps: [Double] = [1,3,7,15,23,31]
++            var step = 0
++            func advance() {
++                guard step < steps.count else { return }
++                if link.packets.count >= step + 1 { clock = steps[step]; step += 1 }
++                queue.asyncAfter(deadline:.now()+0.02) { advance() }
+             }
++            advance()
+         }
+-        check(done.wait(timeout:.now()+3) == .success,"automatic timer drives TCP")
++        // A hang guard, not a timing assertion: every step waits for the timer, however late.
++        check(done.wait(timeout:.now()+20) == .success,"automatic timer drives TCP")
+         print("Tunnel manager: serial callbacks, reentrant cancellation/failure, independent streams and automatic timeout passed")
+     }
+ }

@@ -1,0 +1,68 @@
+# The BC fallback stages a blit upload once, even when the driver calls back into it
+#
+# Why: with the fallback engaged, a buffer-to-texture blit into a converted BC texture
+# is redirected to a staging buffer of CPU-decoded texels. Both forms of that copy are
+# hooked - the plain one and the one with options - and a driver may implement one by
+# calling the other. Apple's paravirtual GPU does: the plain call came back in through
+# the hooked options form with the staging buffer as its source, was staged a second
+# time, and the already-decoded texels were decoded again as if they were BC blocks.
+# tests/test_bc_textures.m (TOLKARA_BC_FALLBACK=on) stopped on "converted texture
+# differs by 255" in its Private-texture blit.
+#
+# Measured on 2026-11-22 on GitHub's macOS runners (Apple Paravirtual device, Xcode
+# 27.2): with tracing, one copyFromBuffer staged two uploads and decoded twice; with
+# this patch it stages one, decodes once, and the whole fallback test passes. The
+# fallback is meant for GPUs without BC (the test plays an A16 iPhone), so any driver
+# that forwards one form to the other would have corrupted those textures the same way.
+#
+# The guard is the pattern the file already uses for its texture hooks: while a staged
+# upload is handed to the driver, a copy that comes back in passes straight through.
+#
+# Applies to: translation/Metal/BCTextures.m.
+# Upstream: candidate.
+
+--- a/translation/Metal/BCTextures.m
++++ b/translation/Metal/BCTextures.m
+@@ -460,15 +460,24 @@ static bool stageUpload(id encoder, id<MTLBuffer> buffer, NSUInteger offset, NSU
+     @synchronized (uploads) { [uploads addObject:upload]; }
+     return true;
+ }
++// Set while a staged upload is handed to the driver. A driver may implement one form of the
++// buffer-to-texture copy by calling the other (Apple's paravirtual GPU sends the plain form
++// through the options form), which is hooked too: without this, the call came back in with
++// the staging buffer as its source, was staged a second time, and the decoded texels were
++// decoded again as if they were BC blocks.
++static _Thread_local unsigned insideStagedUpload;
+ typedef void (*BufferToTexture)(id, SEL, id, NSUInteger, NSUInteger, NSUInteger, MTLSize, id, NSUInteger, NSUInteger, MTLOrigin);
+ static void copyBufferToTexture(id encoder, SEL selector, id<MTLBuffer> buffer, NSUInteger offset, NSUInteger bytesPerRow,
+                                 NSUInteger bytesPerImage, MTLSize size, id<MTLTexture> texture, NSUInteger slice, NSUInteger level, MTLOrigin origin) {
+     BufferToTexture real = (BufferToTexture)original(encoder, selector);
+     AKBCTextureInfo *info = infoOf(texture);
+-    if (!info) { real(encoder, selector, buffer, offset, bytesPerRow, bytesPerImage, size, texture, slice, level, origin); return; }
++    if (!info || insideStagedUpload) { real(encoder, selector, buffer, offset, bytesPerRow, bytesPerImage, size, texture, slice, level, origin); return; }
+     id<MTLBuffer> staging; NSUInteger row, image;
+-    if (stageUpload(encoder, buffer, offset, bytesPerRow, bytesPerImage, &size, texture, level, origin, info, &staging, &row, &image))
++    if (stageUpload(encoder, buffer, offset, bytesPerRow, bytesPerImage, &size, texture, level, origin, info, &staging, &row, &image)) {
++        insideStagedUpload++;
+         real(encoder, selector, staging, 0, row, image, size, texture, slice, level, origin);
++        insideStagedUpload--;
++    }
+ }
+ typedef void (*BufferToTextureOptions)(id, SEL, id, NSUInteger, NSUInteger, NSUInteger, MTLSize, id, NSUInteger, NSUInteger, MTLOrigin, MTLBlitOption);
+ static void copyBufferToTextureOptions(id encoder, SEL selector, id<MTLBuffer> buffer, NSUInteger offset, NSUInteger bytesPerRow,
+@@ -476,10 +485,13 @@ static void copyBufferToTextureOptions(id encoder, SEL selector, id<MTLBuffer> b
+                                        MTLOrigin origin, MTLBlitOption options) {
+     BufferToTextureOptions real = (BufferToTextureOptions)original(encoder, selector);
+     AKBCTextureInfo *info = infoOf(texture);
+-    if (!info) { real(encoder, selector, buffer, offset, bytesPerRow, bytesPerImage, size, texture, slice, level, origin, options); return; }
++    if (!info || insideStagedUpload) { real(encoder, selector, buffer, offset, bytesPerRow, bytesPerImage, size, texture, slice, level, origin, options); return; }
+     id<MTLBuffer> staging; NSUInteger row, image;
+-    if (stageUpload(encoder, buffer, offset, bytesPerRow, bytesPerImage, &size, texture, level, origin, info, &staging, &row, &image))
++    if (stageUpload(encoder, buffer, offset, bytesPerRow, bytesPerImage, &size, texture, level, origin, info, &staging, &row, &image)) {
++        insideStagedUpload++;
+         real(encoder, selector, staging, 0, row, image, size, texture, slice, level, origin, options);
++        insideStagedUpload--;
++    }
+ }
+ 
+ // Texture to texture: both converted to the same texel size, or neither.

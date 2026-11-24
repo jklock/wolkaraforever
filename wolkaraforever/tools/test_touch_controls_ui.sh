@@ -5,12 +5,15 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 . wolkaraforever/tools/env.sh
 . wolkaraforever/tools/simulators.sh
-wolkaraforever/tools/prepare.sh
+. wolkaraforever/tools/fixtures.sh
+# An unchanged prepared tree is reused (prepare.sh), so a second suite does not rebuild it.
+WOLKARA_PREPARE_REUSE=1 wolkaraforever/tools/prepare.sh
 cd build/platform
 # The matrix iPad, or the matrix iPhone with `SIMULATOR=iphone`; anything else is refused.
 simulator_use "${SIMULATOR:-ipad}"
 simulator_ui_lock test_touch_controls_ui
-xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
+# A first boot on a fresh machine can take minutes, so this step gets longer than the rest.
+FIXTURE_STEP_LIMIT=900 fixture_step "boot of $SIM_NAME" xcrun simctl bootstatus "$SIM_ID" -b > /dev/null
 APP=build/touch-controls-fixture/TouchControls.app
 mkdir -p "$APP"
 # The app's own language tables, in the layout the app has them. The keyboard and the overlay are
@@ -22,7 +25,7 @@ for LANGUAGE in en de; do
     cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$APP/$LANGUAGE.lproj/"
 done
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
-xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
+fixture_compile xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations \
     -Itranslation/AKSupport -Itranslation/AppKit translation/AKSupport/AKSupport.m \
     translation/AppKit/*.m translation/AppKit/*.c tests/test_touch_controls_app.m \
@@ -51,11 +54,12 @@ codesign --force --sign - "$APP" > /dev/null
 # with a stale container the self-test fails in the 64-edit draft loop (a draft that is not the
 # one it typed), and on a clean one the same build passes on both interfaces, on both simulators,
 # and a pristine main checkout with the same stale container fails in the same place.
+fixture_refuse_if_running org.tolkara.tests.touch-controls || exit 1
 xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.touch-controls 2> /dev/null || true
-xcrun simctl install "$SIM_ID" "$APP"
+fixture_step "install of $APP" xcrun simctl install "$SIM_ID" "$APP"
 if [[ " $* " == *" --stay "* ]]; then
     # Visual inspection is explicit so the documented test command cannot hang.
-    xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls "$@"
+    xcrun simctl launch --console "$SIM_ID" org.tolkara.tests.touch-controls "$@"
 else
     if [[ " $* " != *" --self-test "* ]]; then
         set -- --self-test "$@"
@@ -64,20 +68,20 @@ else
     # mobile one the launcher selects with WolkaraForeverInterfaceModeV1.
     for MODE in "" "--mobile-interface"; do
         LOG="build/touch-controls-fixture/self-test${MODE:+-mobile}.log"
-        # simctl may report success even when the app aborts an assertion.
-        xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls "$@" $MODE 2>&1 | tee "$LOG"
+        # simctl may report success even when the app aborts an assertion, so the log decides.
+        fixture_launch "$LOG" org.tolkara.tests.touch-controls "$@" $MODE
         grep -q 'TOUCH_UI_SELF_TEST_PASS:' "$LOG"
         # The Composer's card and a real guest, in the same interface: the assertions the state
         # machine's own fixture cannot make because it has no window.
         CLOG="build/touch-controls-fixture/composer${MODE:+-mobile}.log"
-        xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls --composer-test $MODE 2>&1 | tee "$CLOG"
+        fixture_launch "$CLOG" org.tolkara.tests.touch-controls --composer-test $MODE
         grep -q 'TOUCH_UI_SELF_TEST_PASS: the Composer card' "$CLOG"
         # The same card at an accessibility text size: it has to grow rather than clip, and the
         # editor has to keep its height. UIKit reads the category from this launch argument, so
         # this is the player's own setting, not a stub.
         ALOG="build/touch-controls-fixture/composer${MODE:+-mobile}-dynamic-type.log"
-        xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.touch-controls \
-            --composer-test $MODE -UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL 2>&1 | tee "$ALOG"
+        fixture_launch "$ALOG" org.tolkara.tests.touch-controls \
+            --composer-test $MODE -UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL
         grep -q 'TOUCH_UI_SELF_TEST_PASS: the Composer card' "$ALOG"
         grep -q 'chat composer: Dynamic Type UICTContentSizeCategoryAccessibility' "$ALOG"
     done
@@ -92,7 +96,7 @@ for LANGUAGE in en de fr; do
     mkdir -p "$COMPOSER/$LANGUAGE.lproj"
     cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$COMPOSER/$LANGUAGE.lproj/"
 done
-xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
+fixture_compile xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations \
     -Itranslation/AppKit -Itranslation/AKSupport translation/AKSupport/AKSupport.m \
     translation/AppKit/ChatComposer.m tests/test_chat_composer_app.m \
@@ -117,10 +121,11 @@ PLIST
 codesign --force --sign - "$COMPOSER" > /dev/null
 # Same reason as the card's fixture above: the state machine's own defaults have to start empty,
 # or the migration case reads a mode a previous run chose.
+fixture_refuse_if_running org.tolkara.tests.chat-composer || exit 1
 xcrun simctl uninstall "$SIM_ID" org.tolkara.tests.chat-composer 2> /dev/null || true
-xcrun simctl install "$SIM_ID" "$COMPOSER"
+fixture_step "install of $COMPOSER" xcrun simctl install "$SIM_ID" "$COMPOSER"
 COMPOSER_LOG="build/touch-controls-fixture/chat-composer.log"
-xcrun simctl launch --terminate-running-process --console "$SIM_ID" org.tolkara.tests.chat-composer 2>&1 | tee "$COMPOSER_LOG"
+fixture_launch "$COMPOSER_LOG" org.tolkara.tests.chat-composer
 grep -q 'CHAT_COMPOSER PASS:' "$COMPOSER_LOG"
 # Structured events, asserted from outside the process that printed them: every terminal
 # outcome and every entry source has to be visible in the log, and the stale-callback rule has
