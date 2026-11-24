@@ -55,6 +55,11 @@ extern NSString *const AKSelfTestSpeechFile;
 /// proves the page's own controls exist and that nothing is drawn outside the list; it reads
 /// and writes nothing of the user's.
 extern NSString *const AKSelfTestAddonsPage;
+/// The provider reads, using the CurseForge key this app already has in its Keychain: Discover's
+/// sections, Browse's first page, and the project row drawn from it. It writes nothing, installs
+/// nothing, and never logs, echoes or copies the key; with no key saved it fails one check and
+/// stops.
+extern NSString *const AKSelfTestProvider;
 
 /// The pointer-latency counters, printed as one line each and then cleared. This is what the
 /// three pointer sweeps read; the counters are aggregation-only, so this is the only place the

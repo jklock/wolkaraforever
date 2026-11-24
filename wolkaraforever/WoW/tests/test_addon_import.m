@@ -1,4 +1,5 @@
 #import "AddonStore.h"
+#import "AddonHubLog.h"
 #include <stdio.h>
 
 #define CHECK(condition, message) do { if (!(condition)) { fprintf(stderr, "FAIL: %s (%s)\n", message, error.localizedDescription.UTF8String ?: "no error"); return 1; } } while (0)
@@ -188,10 +189,126 @@ int TestRealAddonImport(const char *fixtures, const char *temporary) {
               "and the package that was there before is back");
         CHECK(recovered.manifestFormat == 3, "and the retried migration completes");
 
+        // --- a manifest this build does not write is shown and never downgraded
+        // A newer build's file is the one thing a read must not "repair": the records stay
+        // visible so the page can describe them, every mutation is refused, and the bytes on
+        // disk are exactly what the newer build left.
+        NSString *futureRoot = [root stringByAppendingPathComponent:@"Future/Interface/AddOns"];
+        CHECK([fm createDirectoryAtPath:[futureRoot stringByAppendingPathComponent:@"FutureAddon"]
+                withIntermediateDirectories:YES attributes:nil error:&error], "create a newer-format installation");
+        CHECK([@"## Title: Future Addon\n## Version: 9\n## Interface: 16001\n"
+                writeToFile:[[futureRoot stringByAppendingPathComponent:@"FutureAddon"]
+                    stringByAppendingPathComponent:@"FutureAddon.toc"]
+                atomically:YES encoding:NSUTF8StringEncoding error:&error], "with a package");
+        NSString *futureManifest = @"{\"format\":4,\"product\":\"wowf\",\"gameVersion\":\"1.60.1\","
+            "\"revision\":7,\"packages\":[{\"identifier\":\"FutureAddon\",\"uuid\":\"future-1\","
+            "\"name\":\"Future Addon\",\"version\":\"9\",\"folders\":[\"FutureAddon\"],"
+            "\"pinned\":false,\"disabled\":false}],\"groups\":[],\"links\":[]}";
+        NSString *futureManifestPath = [futureRoot stringByAppendingPathComponent:@".wolkaraforever-addons.json"];
+        CHECK([futureManifest writeToFile:futureManifestPath atomically:YES encoding:NSUTF8StringEncoding error:&error],
+              "write a format-4 manifest");
+        NSData *futureBytes = [NSData dataWithContentsOfFile:futureManifestPath];
+        TKAddonStore *future = [[TKAddonStore alloc] initWithAddOnsDirectory:futureRoot product:@"wowf" gameVersion:@"1.60.1"];
+        CHECK(future.manifestReadOnly, "a manifest from a newer build is read-only here");
+        CHECK(future.records.count == 1 && future.records.firstObject.managed, "and its package is still listed");
+        CHECK(![future setPinned:YES record:ManagedRecord(future) error:&error],
+              "and every mutation is refused rather than downgrading the file");
+        CHECK([futureBytes isEqual:[NSData dataWithContentsOfFile:futureManifestPath]],
+              "leaving the newer build's bytes untouched");
+
         // Clean only this fixture's private support directories, never another import.
         CHECK([fm removeItemAtPath:support error:&error], "remove fixture staging and backups");
         CHECK([fm removeItemAtPath:legacySupport error:&error], "remove the legacy support folder");
-        puts("ADDON IMPORT PASS: real ZIP -> Objective-C bridge -> store -> provider identity, migration, transactional update, rollback, unmanaged folders");
+        // A read-only manifest never creates a support folder, so there is usually nothing here.
+        NSString *futureSupport = [future valueForKey:@"support"];
+        CHECK(![fm fileExistsAtPath:futureSupport] || [fm removeItemAtPath:futureSupport error:&error],
+              "remove the newer-format support folder if one was made");
+        puts("ADDON IMPORT PASS: real ZIP -> Objective-C bridge -> store -> provider identity, migration, transactional update, rollback, unmanaged folders, a newer manifest read-only");
+        return 0;
+    }
+}
+
+// The suite's first act: nothing this process does is recorded unless a test turns it on. The
+// switch is stored, so a run that failed before its cleanup would otherwise leave the next run
+// writing into the machine's own log.
+void TestAddonHubLogOff(void) {
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:TKAddonHubDiagnosticsEnabledKey];
+    TKAddonHubSetDiagnosticsEnabled(NO);
+    TKAddonHubLogFlush();
+}
+
+// The manager's action-event contract, asserted where it can be: no file, no network, no app.
+//
+// Off by default is the whole point of the switch - a shipped run must record nothing - so this
+// asserts the disabled path first, and only then turns it on and reads the pair back through a
+// sink. The prohibited data is passed in deliberately: a URL with a token, a home directory and
+// a free-form value. If any of it reaches a line, this fails.
+int TestAddonHubContract(void) {
+    @autoreleasepool {
+        NSError *error = nil;
+        NSMutableArray<NSString *> *lines = [NSMutableArray array];
+        TKAddonHubSetSink(^(NSString *line) { @synchronized (lines) { [lines addObject:line]; } });
+        // --- off by default: nothing is built, nothing is written
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:TKAddonHubDiagnosticsEnabledKey];
+        TKAddonHubSetDiagnosticsEnabled(NO);
+        TKAddonHubLogFlush();
+        [lines removeAllObjects];
+        CHECK(!TKAddonHubDiagnosticsEnabled(), "logging is off by default");
+        CHECK(TKAddonHubActionBegin(TKAddonHubActionUpdate, nil) == nil, "the disabled path allocates no token");
+        TKAddonHubLog(TKAddonHubEventArchive, @{ TKAddonHubKeyIdentifier: @"Fixture" });
+        TKAddonHubLogFlush();
+        CHECK(lines.count == 0, "and writes nothing at all");
+
+        // --- enabled: one pair, in order, with the contract's own fields
+        TKAddonHubSetDiagnosticsEnabled(YES);
+        TKAddonHubLogFlush();
+        [lines removeAllObjects];
+        CHECK(TKAddonHubDiagnosticsEnabled(), "the switch is read back");
+        CHECK([NSUserDefaults.standardUserDefaults boolForKey:TKAddonHubDiagnosticsEnabledKey], "and it is stored");
+        TKAddonHubActionToken *token = TKAddonHubActionBegin(TKAddonHubActionUpdate, @{
+            TKAddonHubKeyIdentifier: @"Fixture",
+            TKAddonHubKeyProvider: TKAddonProvenanceAPI,
+            // Deliberately prohibited values, in keys this log does not have.
+            @"url": @"https://media.forgecdn.net/files/1/2/x.zip?token=secret",
+            @"path": @"/Users/someone/Library/x",
+            TKAddonHubKeyReason: @"a:b",
+        });
+        CHECK(token != nil, "the enabled path returns a token");
+        TKAddonHubActionFinish(token, TKAddonHubOutcomeFailed, TKAddonHubFailureProvider,
+                               @{ TKAddonHubKeyCount: @1 });
+        TKAddonHubLogFlush();
+        CHECK(lines.count == 2, "start and end are one pair");
+        if (lines.count == 2) {
+            CHECK([lines[0] containsString:@"event=action"], "the start line is an action event");
+            CHECK([lines[0] containsString:@"action=update"], "the start line names the action");
+            CHECK([lines[0] containsString:@"outcome=started"], "and that it started");
+            CHECK([lines[0] containsString:@"provider=api identifier=Fixture"], "and its safe fields");
+            CHECK([lines[1] containsString:@"outcome=failed"], "the end line names the outcome");
+            CHECK([lines[1] containsString:@"failure=provider"], "and the failure class");
+            CHECK([lines[1] containsString:@"action=update"], "the end line still names the action");
+            CHECK([lines[1] containsString:@"duration="], "and how long it took");
+            CHECK([lines[1] containsString:@"count=1"], "and the fields it was given at the end");
+            CHECK([lines[0] containsString:@"reason=-"], "a value with an unexpected shape is not printed");
+        }
+        for (NSString *line in lines) {
+            for (NSString *prohibited in @[@"http", @"secret", @"/Users", @"token", @"Library"]) {
+                CHECK([line rangeOfString:prohibited].location == NSNotFound,
+                      "no URL, path, token or free text in any line");
+            }
+        }
+
+        // --- the failure class reads the domain and the status, never the message
+        CHECK(TKAddonHubFailureClassForError(nil) == TKAddonHubFailureNone, "no error means no class");
+        CHECK(TKAddonHubFailureClassForError([NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut userInfo:nil]) == TKAddonHubFailureNetwork, "a timeout is a network failure");
+        CHECK(TKAddonHubFailureClassForError([NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]) == TKAddonHubFailureCancelled, "a cancellation is its own class");
+        CHECK(TKAddonHubFailureClassForError([NSError errorWithDomain:@"WolkaraForever.CurseForge" code:1 userInfo:nil]) == TKAddonHubFailureProvider, "a provider refusal is the provider");
+        CHECK(TKAddonHubFailureClassForError([NSError errorWithDomain:@"WolkaraForever.AddOns" code:1 userInfo:nil]) == TKAddonHubFailureStore, "a store refusal is the store");
+
+        // Leave the process as it was found, so a later suite in the same run writes nothing.
+        TKAddonHubSetDiagnosticsEnabled(NO);
+        TKAddonHubLogFlush();
+        TKAddonHubSetSink(nil);
+        puts("ADDON HUB CONTRACT PASS: off by default, no token while off, start/end pair with outcome, failure class and duration, no URL, path, key or free text");
         return 0;
     }
 }

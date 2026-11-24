@@ -121,11 +121,22 @@ updates.
 | **Verify and repair game files** | Re-verifies every recorded game file and re-downloads the ones that are wrong, keeping your settings and add-ons. | Tap while the game is not running. It only appears when a game is installed and nothing is running. |
 | **Diagnostics and logs** | Opens the Diagnostics page: the runtime checks, the local-route tests, the session-ending tests, and **Logs and reports** — every `.log` and `.txt` in the app's Documents folder, newest first. | Tap, then pick a file to read or share it. See [Send us a log](SENDING_LOGS.md). |
 | **Arm network health for next launch** | Records anonymous TCP health counters for the next game launch, for at most 15 minutes, then disarms itself. | Tap once. The row then reads **Disarm network health for next launch**, and tapping it cancels the recording. |
-| **Turn on input diagnostics** | Writes the controller inspector's event log during play. Off by default. | Tap to turn it on; the panel appears. Tap again to turn it off. |
+| **Add-On Manager diagnostics** | Opens the [Add-On Manager diagnostics](#add-on-manager-diagnostics) page: the development switches that make the add-on manager and the controller inspector explain themselves, plus the name of the log they write to. | Tap. Nothing on the sheet itself records anything; each switch is off by default and says what it records. |
 | **About and open-source licenses** | Opens [About](#about). | Tap. |
 | **Technical details** | Shows the exact reason for the last failure — the same sentence that is in the log. | Only offered after a failure. Tap, then copy the text. |
 
 ![The Settings sheet](screenshots/ui-settings.jpg)
+
+### Add-On Manager diagnostics
+
+Two development switches, each with the sentence that says what it records, and the name of the
+file both write to. The Settings sheet itself records nothing.
+
+| Option | What it records |
+| --- | --- |
+| **Record Add-On Manager events** | Off by default. When it is on, each action the add-on manager takes is written as one pair of lines: the action, its outcome (finished, failed, cancelled or refused), the kind of failure that ended it and how long it took, together with the provider kind, the package identifier and a short archive digest. It records no web addresses, file paths, API keys, cookies, page content or archive contents. While it is off, nothing is built and nothing is written. |
+| **Input diagnostics** | Writes the controller inspector's event log during play. Off by default and remembered on this iPad; the inspector writes nothing while it is off. |
+| **Log file** | The name of the file the lines go to. Read or share it from **Diagnostics and logs**; Documents holds the current log and the previous one. |
 
 ## About
 
@@ -268,7 +279,7 @@ One page with three tabs, a search field and a toolbar that changes with the tab
 | **Discover** | Three provider lists — **Featured**, **Latest**, **Popular**. |
 | **Browse** | Provider search, with **Sort**, **Filters**, **Columns** and paging. |
 | Search field | Filters **My Add-ons**, or is the query on **Browse**. |
-| **+** (top right) | Imports a ZIP add-on from the Files picker. |
+| **+** (top right) | Imports a ZIP add-on from the Files picker. Before the picker opens, a sentence says what it accepts (one add-on folder with its `.toc`), that the archive is checked before anything is written, and that the import is recorded so the page can update, disable or remove it. |
 | ⟳ (top right) | Re-reads the installed add-ons and asks the provider about every linked package. |
 | ⚙️ (top right) | **Change CurseForge key…** and **Remove key**. Removal asks first and deletes the key from this device's Keychain only. |
 | **Update All** | Asks the provider about every eligible package and updates the ones with a newer file. It finishes when each archive has been written, so the rows settle together. |

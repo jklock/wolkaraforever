@@ -12,7 +12,7 @@ WolkaraForever lets a user choose a Forever region and game language; download, 
 | Phone-specific interface and constraints | [iPhone](../IPHONE.md) |
 | Supported boundary and issue reports | [Compatibility](../../COMPATIBILITY.md) |
 
-The launcher records only managed add-ons for removal, stages updates and restores before replacement, and its optional network diagnostics record no addresses, ports, host names, payloads, credentials, or game data. An API key is device-local and optional; browser or Files acquisition remains available where appropriate.
+The launcher records only managed add-ons for removal, stages updates and restores before replacement, and its optional network diagnostics record no addresses, ports, host names, payloads, credentials, or game data. An API key is device-local and optional; browser or Files acquisition remains available where appropriate. The Add-On Manager's own event log is off by default, is switched on only from **Settings → Add-On Manager diagnostics**, records an action's outcome, failure class and duration plus the provider kind, package identifier and a short archive digest, and never records a web address, file path, key, cookie, page content or archive content.
 
 A plain launch starts the game in the route the build carries: the `Tolkara` build uses Developer service, and the `TolkaraDiagnostics` package preselects External JIT. The route is stored on first use, and the shipped home page has no chooser and no library screen; the chooser and the library's **Execution Mode** button exist only on the development screens reached by a non-plain launch. `TOLKARA_MODE` and `--execution-mode=` are how a build and a development run choose the route.
 

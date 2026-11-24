@@ -117,10 +117,28 @@ typedef NS_ENUM(NSInteger, TKAddonUpdateState) {
 // provider). Safe to call before the view is loaded.
 - (void)reloadBundledPackage;
 
-// The actions a managed package offers: disable/restore, pin/unpin, remove, cancel. Exposed so
-// the device self-test can assert that removal is reachable without a second pair of hands on
-// the iPad; the page presents this same sheet when a row is tapped.
+// The sheets a package's own actions open: its detail/manage sheet, the project link sheet, the
+// group membership sheet, and the confirmation that removes it. They are built here so the page,
+// the simulator fixture and the device self-test exercise the same controls; presenting one is
+// the caller's job, and building the removal confirmation deletes nothing.
+//
+// A `UIAlertAction`'s handler cannot be invoked from a test, so what the fixture and the
+// self-test assert is the sheet as it is offered - its title, its explanation, and every action
+// with its title and style - while the store calls behind those actions are covered by their own
+// tests.
 - (UIAlertController *)manageSheetForRecord:(TKAddonRecord *)record;
+- (UIAlertController *)linkSheetForRecord:(TKAddonRecord *)record;
+// Nil when there is no group to join; the page then says so instead of presenting an empty sheet.
+- (nullable UIAlertController *)groupSheetForRecord:(TKAddonRecord *)record;
+- (UIAlertController *)removalConfirmationForRecord:(TKAddonRecord *)record;
+// The sentence that explains the Files import, shown before the picker opens, and the confirmation
+// a multi-package update shows: its title, the sentence and the list of names it will replace.
+- (UIAlertController *)importExplanationSheet;
+- (UIAlertController *)bulkConfirmationForRecords:(NSArray<TKAddonRecord *> *)records
+                                            title:(NSString *)title
+                                             verb:(NSString *)verb;
+// A provider failure as a person sees it: the reason, and one acknowledgement.
+- (UIAlertController *)providerErrorAlert:(NSError *)error;
 @end
 
 // The whole add-on folder, as one ZIP and back again.

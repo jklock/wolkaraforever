@@ -885,6 +885,8 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 // Packages the run had to leave to the in-app browser, reported when it finishes.
 @property(nonatomic) NSUInteger bulkNeedsBrowser;
 @property(nonatomic, copy) NSString *bulkStatus;
+// The bulk run's action token, so cancel and the summary line end the same pair that started it.
+@property(nonatomic, strong) TKAddonHubActionToken *bulkAction;
 @end
 
 @implementation TKWoWAddonManagerViewController
@@ -906,7 +908,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _startInBrowse=recommendation==TKAddonRecommendationMacEver;
     _tab=_startInBrowse?TKAddonHubTabBrowse:TKAddonHubTabMyAddOns;
     _recommendedProjectID=recommendation==TKAddonRecommendationMacEver?@1733200:nil;
-    _addOnsDirectory=directory.copy; _edition=edition.copy; _addons=@[]; self.title=WKLocalized(@"addons.title").uppercaseString;
+    _addOnsDirectory=directory.copy; _edition=edition.copy; _addons=@[];
     _store=[[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wowf" gameVersion:TKForeverGameVersion]; _results=@[]; _sortField=TKCurseForgeDefaultSortField(); _sortOrder=@"desc";
     _credentials=[TKAddonCredentialStore new];
     _gameVersion=TKForeverGameVersion;
@@ -934,6 +936,11 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     self.tableView.backgroundColor=WKInk();
     self.tableView.separatorStyle=UITableViewCellSeparatorStyleNone;
     self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
+    // The title belongs to the loaded page, not to the initializer, and it is set on the
+    // navigation item rather than through -[UIViewController setTitle:]: on the installed build
+    // that setter faulted (SIGSEGV, objc_retain at 0x2) while the third page of the same class
+    // was being created on 2026-11-23, with a valid title in the argument register.
+    self.navigationItem.title=WKLocalized(@"addons.title").uppercaseString;
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:WKLocalized(@"common.done") style:UIBarButtonItemStyleDone target:self action:@selector(done)];
     self.navigationItem.leftBarButtonItem.tintColor=WKGold();
     _refreshItem=[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh target:self action:@selector(refreshMetadata)];
@@ -1013,6 +1020,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _mode.translatesAutoresizingMaskIntoConstraints=NO;
     [header addSubview:_mode];
     _search=[UISearchBar new]; _search.placeholder=WKLocalized(@"addons.search"); _search.searchBarStyle=UISearchBarStyleMinimal; _search.delegate=self;
+    _search.accessibilityIdentifier=@"wow.addons.search";
     _search.translatesAutoresizingMaskIntoConstraints=NO;
     [header addSubview:_search];
 
@@ -1205,13 +1213,16 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 // the user changed another input.
 - (void)refreshMetadata {
     if (_refreshing || self.bulkUpdating) return;
-    if (_tab==TKAddonHubTabDiscover) { [self fetchDiscover]; return; }
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionRefresh, @{
+        TKAddonHubKeyState: _tab==TKAddonHubTabBrowse?@"browse":(_tab==TKAddonHubTabDiscover?@"discover":@"myaddons") });
+    if (_tab==TKAddonHubTabDiscover) { [self fetchDiscover]; TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone, nil); return; }
     if (_tab==TKAddonHubTabBrowse) {
-        if (![self hasKey]) { [self setupKey]; return; }
+        if (![self hasKey]) { [self setupKey]; TKAddonHubActionFinish(action, TKAddonHubOutcomeRefused, TKAddonHubFailureConfiguration, nil); return; }
         _refreshing=YES; [self updateToolbar];
         [self reloadAddons];
         [self checkForUpdates];
         _refreshing=NO; [self updateToolbar];
+        TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone, nil);
         return;
     }
     // My Add-ons: Refresh recalculates every record's state from the store and asks the provider
@@ -1220,6 +1231,8 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     [self checkForUpdates];
     [self updateToolbar];
     [self.tableView reloadData];
+    TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone,
+        @{ TKAddonHubKeyCount: @(_store.records.count) });
 }
 - (void)refreshBrowseMetadata {
     if (_refreshing || self.bulkUpdating) return;
@@ -1245,6 +1258,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
             (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
             if (self.sortField==field) self.sortOrder=[self.sortOrder isEqual:@"asc"]?@"desc":@"asc";
             else { self.sortField=field; self.sortOrder=option.defaultsToAscending?@"asc":@"desc"; }
+            [self recordChoice:TKAddonHubActionSort state:@"field"];
             [self updateToolbar]; [self beginBrowse];
         }];
         action.state=field==_sortField?UIMenuElementStateOn:UIMenuElementStateOff;
@@ -1252,12 +1266,14 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     }
     UIAction *ascending=[UIAction actionWithTitle:WKLocalized(@"addons.sort.ascending") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
-        self.sortOrder=@"asc"; [self updateToolbar]; [self beginBrowse];
+        self.sortOrder=@"asc"; [self recordChoice:TKAddonHubActionSort state:@"ascending"];
+        [self updateToolbar]; [self beginBrowse];
     }];
     ascending.state=[_sortOrder isEqual:@"asc"]?UIMenuElementStateOn:UIMenuElementStateOff;
     UIAction *descending=[UIAction actionWithTitle:WKLocalized(@"addons.sort.descending") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
-        self.sortOrder=@"desc"; [self updateToolbar]; [self beginBrowse];
+        self.sortOrder=@"desc"; [self recordChoice:TKAddonHubActionSort state:@"descending"];
+        [self updateToolbar]; [self beginBrowse];
     }];
     descending.state=[_sortOrder isEqual:@"desc"]?UIMenuElementStateOn:UIMenuElementStateOff;
     return [UIMenu menuWithTitle:WKLocalized(@"addons.sort.title") children:@[
@@ -1269,27 +1285,32 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     __weak TKWoWAddonManagerViewController *weakSelf=self;
     UIAction *allVersions=[UIAction actionWithTitle:WKLocalized(@"addons.filters.allVersions") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
-        self.gameVersion=nil; [self updateToolbar]; [self beginBrowse];
+        self.gameVersion=nil; [self recordChoice:TKAddonHubActionFilter state:@"all-versions"];
+        [self updateToolbar]; [self beginBrowse];
     }];
     allVersions.state=_gameVersion.length?UIMenuElementStateOff:UIMenuElementStateOn;
     // The human name for the version filter, not the API's own gameVersion id and not a
     // hard-coded "1.60.1 (Forever)". The tier's version is data; only its label is a sentence.
     UIAction *forever=[UIAction actionWithTitle:WKLocalizedFormat(@"addons.filters.forever",TKForeverGameVersion) image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
-        self.gameVersion=TKForeverGameVersion; [self updateToolbar]; [self beginBrowse];
+        self.gameVersion=TKForeverGameVersion; [self recordChoice:TKAddonHubActionFilter state:@"forever"];
+        [self updateToolbar]; [self beginBrowse];
     }];
     forever.state=[_gameVersion isEqual:TKForeverGameVersion]?UIMenuElementStateOn:UIMenuElementStateOff;
     UIAction *allCategories=[UIAction actionWithTitle:WKLocalized(@"addons.filters.allCategories") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
-        self.categoryID=nil; self.categoryLabel=nil; [self updateToolbar]; [self beginBrowse];
+        self.categoryID=nil; self.categoryLabel=nil; [self recordChoice:TKAddonHubActionFilter state:@"all-categories"];
+        [self updateToolbar]; [self beginBrowse];
     }];
     allCategories.state=_categoryID?UIMenuElementStateOff:UIMenuElementStateOn;
     UIAction *choose=[UIAction actionWithTitle:_categoryLabel?WKLocalizedFormat(@"addons.filters.category",_categoryLabel):WKLocalized(@"addons.filters.chooseCategory") image:nil identifier:nil handler:^(UIAction *a) {
-        (void)a; [weakSelf chooseCategoryFrom:nil];
+        (void)a; [weakSelf recordChoice:TKAddonHubActionFilter state:@"choose-category"];
+        [weakSelf chooseCategoryFrom:nil];
     }];
     UIAction *clear=[UIAction actionWithTitle:WKLocalized(@"addons.filters.clear") image:nil identifier:nil handler:^(UIAction *a) {
         (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
         self.gameVersion=TKForeverGameVersion; self.categoryID=nil; self.categoryLabel=nil;
+        [self recordChoice:TKAddonHubActionFilter state:@"clear"];
         [self updateToolbar]; [self beginBrowse];
     }];
     return [UIMenu menuWithTitle:WKLocalized(@"addons.filters") children:@[
@@ -1307,6 +1328,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
             (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
             self.columns = (self.columns & column) ? (self.columns & ~column) : (self.columns | column);
             [NSUserDefaults.standardUserDefaults setObject:@(self.columns) forKey:TKAddonColumnsKey];
+            [self recordChoice:TKAddonHubActionColumns state:@"toggle"];
             [self updateToolbar]; [self.tableView reloadData];
         }];
         action.state=(_columns & column)?UIMenuElementStateOn:UIMenuElementStateOff;
@@ -1316,6 +1338,11 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 }
 - (void)done { WKDismissPage(self); }
 - (void)selectTab:(TKAddonHubTab)tab {
+    // One pair per tab change: the control that started it, the tab it chose, and whether the
+    // tab's own work finished. `state` carries the destination because a tab name is not a
+    // package and has no other safe field.
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionTab, @{
+        TKAddonHubKeyState: tab==TKAddonHubTabBrowse?@"browse":(tab==TKAddonHubTabDiscover?@"discover":@"myaddons") });
     _tab=tab;
     _mode.selectedSegmentIndex=(NSInteger)tab;
     if (tab==TKAddonHubTabBrowse) {
@@ -1328,6 +1355,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     }
     [self updateToolbar];
     [self.tableView reloadData];
+    TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone, nil);
 }
 - (void)changeMode:(UISegmentedControl *)sender {
     NSInteger index=MAX((NSInteger)0,MIN((NSInteger)TKAddonHubTabBrowse,sender.selectedSegmentIndex));
@@ -1335,15 +1363,21 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 }
 - (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar {
     [searchBar resignFirstResponder];
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionSearch,
+        @{ TKAddonHubKeyState: _tab==TKAddonHubTabMyAddOns?@"myaddons":@"browse" });
     // The search field is the same control on every tab and means the same thing on two of them:
     // it narrows what is drawn. On Browse it is a query the provider answers.
     if (_tab==TKAddonHubTabMyAddOns) {
         _installedQuery=searchBar.text?:@"";
         [self.tableView reloadData];
         [self updateToolbar];
+        TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone,
+            @{ TKAddonHubKeyCount: @(self.visibleRecords.count) });
         return;
     }
     [self beginBrowse];
+    TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone,
+        @{ TKAddonHubKeyCount: @(_results.count) });
 }
 - (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText {
     (void)searchBar;
@@ -1360,26 +1394,36 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
 // return a project with a similar name is not the project the row names, and a reply carrying
 // another id is refused rather than shown.
 - (void)fetchRecommendedProject {
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionBrowse, @{
+        TKAddonHubKeyState: @"recommendation",
+        TKAddonHubKeyIdentifier: _recommendedProjectID ? [_recommendedProjectID stringValue] : @"unknown" });
     NSString *key=[_credentials curseForgeKey:NULL];
-    if (!key.length) { _browseStatus=WKLocalized(@"addons.enterKey.long"); _results=@[]; _totalCount=0; [self.tableView reloadData]; return; }
+    if (!key.length) { _browseStatus=WKLocalized(@"addons.enterKey.long"); _results=@[]; _totalCount=0; [self.tableView reloadData]; TKAddonHubActionFinish(action, TKAddonHubOutcomeRefused, TKAddonHubFailureConfiguration, nil); return; }
     _results=@[]; _totalCount=0; _browseStatus=WKLocalized(@"addons.loading"); _loadingMore=YES; [self.tableView reloadData];
     TKCurseForgeClient *client=[[TKCurseForgeClient alloc] initWithAPIKey:key];
     NSUInteger generation=(_browseGeneration+=1);
     NSNumber *projectID=_recommendedProjectID;
     [client projectForModID:projectID completion:^(id value,NSError *error){
         dispatch_async(dispatch_get_main_queue(),^{
-            if (generation != self.browseGeneration) return;
+            if (generation != self.browseGeneration) {
+                TKAddonHubActionFinish(action, TKAddonHubOutcomeCancelled, TKAddonHubFailureCancelled, nil);
+                return;
+            }
             self.loadingMore=NO;
-            if (error) { self.browseStatus=error.localizedDescription; }
+            if (error) { self.browseStatus=error.localizedDescription; TKAddonHubActionFinish(action, TKAddonHubOutcomeFailed, TKAddonHubFailureClassForError(error), nil); }
             else if ([value isKindOfClass:NSDictionary.class]) {
                 NSNumber *returned=[value[@"id"] isKindOfClass:NSNumber.class]?value[@"id"]:nil;
                 if ([returned isEqual:projectID]) {
                     self.results=@[value]; self.totalCount=1;
                     self.browseStatus=WKLocalizedFormat(@"addons.projectsShown",1UL,1UL);
+                    TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone, nil);
                 } else {
                     self.results=@[]; self.totalCount=0;
                     self.browseStatus=WKLocalized(@"addons.recommended.unexpected");
+                    TKAddonHubActionFinish(action, TKAddonHubOutcomeFailed, TKAddonHubFailureProvider, nil);
                 }
+            } else {
+                TKAddonHubActionFinish(action, TKAddonHubOutcomeFailed, TKAddonHubFailureProvider, nil);
             }
             self.refreshing=NO;
             [self updateToolbar];
@@ -1388,8 +1432,10 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     }];
 }
 - (void)fetchPageAtIndex:(NSUInteger)index append:(BOOL)append {
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(append?TKAddonHubActionLoadMore:TKAddonHubActionBrowse,
+        @{ TKAddonHubKeyCount: @(index) });
     NSString *key=[_credentials curseForgeKey:NULL];
-    if (!key.length) { _browseStatus=WKLocalized(@"addons.enterKey.long"); _results=@[]; _totalCount=0; [self.tableView reloadData]; return; }
+    if (!key.length) { _browseStatus=WKLocalized(@"addons.enterKey.long"); _results=@[]; _totalCount=0; [self.tableView reloadData]; TKAddonHubActionFinish(action, TKAddonHubOutcomeRefused, TKAddonHubFailureConfiguration, nil); return; }
     if (append) _browseStatus=WKLocalized(@"addons.loadingMore");
     else { _results=@[]; _totalCount=0; _browseStatus=WKLocalized(@"addons.loading"); }
     _loadingMore=YES; [self.tableView reloadData];
@@ -1402,9 +1448,15 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
             // Writing it anyway is how results and categories end up disagreeing with the
             // provider after a refresh. The generation is bumped for every request, including
             // the appends, so a late page one cannot land on top of a new page zero.
-            if (generation != self.browseGeneration) return;
+            if (generation != self.browseGeneration) {
+                TKAddonHubActionFinish(action, TKAddonHubOutcomeCancelled, TKAddonHubFailureCancelled, nil);
+                return;
+            }
             self.loadingMore=NO;
-            if (error) { self.browseStatus=error.localizedDescription; }
+            if (error) {
+                self.browseStatus=error.localizedDescription;
+                TKAddonHubActionFinish(action, TKAddonHubOutcomeFailed, TKAddonHubFailureClassForError(error), nil);
+            }
             else {
                 NSArray *page=[value[@"data"] isKindOfClass:NSArray.class]?value[@"data"]:@[];
                 self.results=append?[self.results arrayByAddingObjectsFromArray:page]:page;
@@ -1413,6 +1465,8 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
                 self.totalCount=total?total.unsignedIntegerValue:MAX(self.results.count,page.count);
                 self.browseStatus=WKLocalizedFormat(@"addons.projectsShown",
                     (unsigned long)self.results.count,(unsigned long)MAX(self.totalCount,self.results.count));
+                TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone,
+                    @{ TKAddonHubKeyCount: @(page.count) });
             }
             if (!append) { self.refreshing=NO; }
             [self updateToolbar];
@@ -1442,11 +1496,12 @@ static NSString *BrowseSortLabel(NSInteger field) {
         [sheet addAction:[UIAlertAction actionWithTitle:field==_sortField?[@"✓ " stringByAppendingString:title]:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action;
             if (self.sortField==field) self.sortOrder=[self.sortOrder isEqual:@"asc"]?@"desc":@"asc";
             else { self.sortField=field; self.sortOrder=option.defaultsToAscending?@"asc":@"desc"; }
+            [self recordChoice:TKAddonHubActionSort state:@"field"];
             [self updateToolbar];
             [self beginBrowse];
         }]];
     }
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalizedFormat(@"addons.sort.directionValue",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.sortOrder=[self.sortOrder isEqual:@"asc"]?@"desc":@"asc"; [self beginBrowse];}]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalizedFormat(@"addons.sort.directionValue",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.sortOrder=[self.sortOrder isEqual:@"asc"]?@"desc":@"asc"; [self recordChoice:TKAddonHubActionSort state:@"direction"]; [self beginBrowse];}]];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     [self presentSheet:sheet from:indexPath];
 }
@@ -1480,14 +1535,15 @@ static NSString *BrowseSortLabel(NSInteger field) {
 }
 - (void)presentCategoryMenuFrom:(NSIndexPath *)indexPath {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.filters.categoryTitle") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    [sheet addAction:[UIAlertAction actionWithTitle:_categoryID?WKLocalized(@"addons.filters.allCategories"):[@"✓ " stringByAppendingString:WKLocalized(@"addons.filters.allCategories")] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.categoryID=nil; self.categoryLabel=nil; [self beginBrowse];}]];
+    [sheet addAction:[UIAlertAction actionWithTitle:_categoryID?WKLocalized(@"addons.filters.allCategories"):[@"✓ " stringByAppendingString:WKLocalized(@"addons.filters.allCategories")] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.categoryID=nil; self.categoryLabel=nil; [self recordChoice:TKAddonHubActionFilter state:@"all-categories"]; [self beginBrowse];}]];
     for (NSDictionary *category in _categories) {
-        [sheet addAction:[UIAlertAction actionWithTitle:[category[@"id"] isEqual:_categoryID]?[@"✓ " stringByAppendingString:category[@"name"]]:category[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.categoryID=category[@"id"]; self.categoryLabel=category[@"name"]; [self updateToolbar]; [self beginBrowse];}]];
+        [sheet addAction:[UIAlertAction actionWithTitle:[category[@"id"] isEqual:_categoryID]?[@"✓ " stringByAppendingString:category[@"name"]]:category[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action; self.categoryID=category[@"id"]; self.categoryLabel=category[@"name"]; [self recordChoice:TKAddonHubActionFilter state:@"category"]; [self updateToolbar]; [self beginBrowse];}]];
     }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     [self presentSheet:sheet from:indexPath];
 }
 - (void)presentProject:(NSDictionary *)entry {
+    [self recordChoice:TKAddonHubActionManage state:@"details"];
     NSString *name=[entry[@"name"] isKindOfClass:NSString.class]?entry[@"name"]:WKLocalized(@"addons.untitled");
     NSMutableArray<NSString *> *details=[NSMutableArray new];
     if ([entry[@"summary"] isKindOfClass:NSString.class] && [entry[@"summary"] length]) [details addObject:entry[@"summary"]];
@@ -1652,6 +1708,11 @@ static NSString *BrowseSortLabel(NSInteger field) {
     // Two taps must not become two downloads. The row says what it is doing and the second tap
     // is refused while the first is still in flight.
     if ([_installing containsObject:modID]) return;
+    // One action, from the tap to the committed archive. The identifiers are the API's own
+    // numbers, which the log's token filter accepts, and never the project's name.
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionInstall, @{
+        TKAddonHubKeyProvider: TKAddonProvenanceAPI,
+        TKAddonHubKeyIdentifier: modID.stringValue });
     [_installing addObject:modID];
     _browseStatus=WKLocalizedFormat(@"addons.downloading",name);
     [self.tableView reloadData];
@@ -1659,10 +1720,17 @@ static NSString *BrowseSortLabel(NSInteger field) {
     [client bestFileForModID:modID gameVersion:TKForeverGameVersion completion:^(TKCurseForgeFileCandidate *candidate,NSError *error){
         if (error) {
             [self.installing removeObject:modID];
+            TKAddonHubActionFinish(action, TKAddonHubOutcomeFailed, TKAddonHubFailureClassForError(error), nil);
             [self providerFailed:error];
             return;
         }
-        [self installCandidate:candidate project:entry replacing:nil client:client name:name completion:nil];
+        // The archive transaction completes on the page's own queue, so the end of the action is
+        // the end of the commit rather than the end of the download.
+        [self installCandidate:candidate project:entry replacing:nil client:client name:name
+                    completion:^(BOOL ok, NSError *installError) {
+            TKAddonHubActionFinish(action, ok?TKAddonHubOutcomeSucceeded:TKAddonHubOutcomeFailed,
+                ok?TKAddonHubFailureNone:TKAddonHubFailureClassForError(installError), nil);
+        }];
     }];
 }
 
@@ -1807,6 +1875,13 @@ static NSString *BrowseSortLabel(NSInteger field) {
 // The package this app ships, located and verified. The app's verifier is Swift and the
 // fixture does not link it, so it is found by name exactly as the store finds the archive
 // extractor; a fixture supplies the same shape through `bundledPackageProvider` instead.
+//
+// Called through its implementation, like the backup archive is: this was an NSInvocation,
+// and the object it returned passed through the invocation's own ownership bookkeeping on the
+// way to a strong property. On the installed build that was enough for the next allocation to
+// fault inside -[UIViewController setTitle:] during the Add-On Manager self-test (SIGSEGV,
+// objc_retain at 0x2, `addons-page`, 2026-11-23), while the same three pages were built without
+// it in the simulator. A direct call has one owner and no hidden retain/release.
 - (nullable NSDictionary *)loadBundledPackage:(NSError **)error {
     Class packageClass=NSClassFromString(@"TKAddonPackage");
     SEL selector=NSSelectorFromString(@"bundledPackageWithError:");
@@ -1815,15 +1890,10 @@ static NSString *BrowseSortLabel(NSInteger field) {
             userInfo:@{NSLocalizedDescriptionKey:WKLocalized(@"addons.bundled.unavailable")}];
         return nil;
     }
-    NSMethodSignature *signature=[packageClass methodSignatureForSelector:selector];
-    NSInvocation *invocation=[NSInvocation invocationWithMethodSignature:signature];
-    invocation.target=packageClass; invocation.selector=selector;
+    IMP implementation=[packageClass methodForSelector:selector];
     NSError *__autoreleasing localError=nil;
-    NSError *__autoreleasing *pointer=&localError;
-    [invocation setArgument:&pointer atIndex:2];
-    [invocation invoke];
-    __unsafe_unretained NSDictionary *result=nil;
-    [invocation getReturnValue:&result];
+    NSDictionary *result=((NSDictionary *(*)(id, SEL, NSError **))implementation)(
+        packageClass, selector, &localError);
     if (error) *error=localError;
     return result;
 }
@@ -1848,9 +1918,12 @@ static NSString *BrowseSortLabel(NSInteger field) {
 // the manifest exactly where they were. Nothing is installed by opening the page.
 - (void)installBundledPackage {
     if (_bundledInstalling) return;
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionBundledInstall,
+        @{ TKAddonHubKeyProvider: TKAddonProvenanceFiles });
     NSURL *archive=[_bundledPackage[@"archive"] isKindOfClass:NSURL.class]?_bundledPackage[@"archive"]:nil;
     NSString *release=[_bundledPackage[@"release"] isKindOfClass:NSString.class]?_bundledPackage[@"release"]:nil;
     if (!archive || !release.length) {
+        TKAddonHubActionFinish(action, TKAddonHubOutcomeRefused, TKAddonHubFailureArchive, nil);
         [self showError:WKLocalized(@"addons.bundled.title")
                 message:_bundledPackageError.localizedDescription?:WKLocalized(@"addons.bundled.unavailable")];
         return;
@@ -1867,11 +1940,13 @@ static NSString *BrowseSortLabel(NSInteger field) {
         dispatch_async(dispatch_get_main_queue(), ^{
             self.bundledInstalling=NO;
             if (!ok) {
+                TKAddonHubActionFinish(action, TKAddonHubOutcomeFailed, TKAddonHubFailureClassForError(error), nil);
                 [self showError:WKLocalized(@"addons.error.installTitle")
                         message:error.localizedDescription?:WKLocalized(@"addons.error.importMessage")];
                 [self.tableView reloadData];
                 return;
             }
+            TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone, nil);
             self.browseStatus=WKLocalizedFormat(@"addons.bundled.installed",release);
             [self reloadAddons];
             [self checkForUpdates];
@@ -2251,6 +2326,13 @@ static NSString *BrowseSortLabel(NSInteger field) {
         [self showError:WKLocalized(@"addons.error.changeTitle") message:WKLocalized(@"addons.update.none")];
         return;
     }
+    [self presentSheet:[self bulkConfirmationForRecords:records title:title verb:verb] from:nil];
+}
+// The confirmation every multi-package update goes through. Built here so the fixture and the device
+// self-test assert the sentence a person reads before several archives are replaced.
+- (UIAlertController *)bulkConfirmationForRecords:(NSArray<TKAddonRecord *> *)records
+                                            title:(NSString *)title
+                                             verb:(NSString *)verb {
     NSMutableArray<NSString *> *names=[NSMutableArray new];
     for (TKAddonRecord *record in records) [names addObject:record.name ?: record.identifier];
     NSString *list=[names componentsJoinedByString:@"\n• "];
@@ -2262,7 +2344,7 @@ static NSString *BrowseSortLabel(NSInteger field) {
         (void)action; [weakSelf runBulkUpdate:records];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
-    [self presentSheet:sheet from:nil];
+    return sheet;
 }
 
 - (void)runBulkUpdate:(NSArray<TKAddonRecord *> *)records {
@@ -2272,6 +2354,7 @@ static NSString *BrowseSortLabel(NSInteger field) {
     _bulkNeedsBrowser=0;
     _bulkQueue=[records mutableCopy];
     _bulkFailures=0;
+    self.bulkAction=TKAddonHubActionBegin(TKAddonHubActionUpdateAll, @{ TKAddonHubKeyCount: @(records.count) });
     TKAddonHubLog(TKAddonHubEventUpdate, @{ TKAddonHubKeyOutcome: @"bulk",
         TKAddonHubKeyAction: @"started", TKAddonHubKeyCount: @(records.count) });
     [self updateNavigationItems];
@@ -2285,6 +2368,10 @@ static NSString *BrowseSortLabel(NSInteger field) {
     _bulkCancelled=YES;
     TKAddonHubLog(TKAddonHubEventCancel, @{ TKAddonHubKeyOutcome: @"cancelled",
         TKAddonHubKeyAction: @"bulk", TKAddonHubKeyCount: @(_bulkQueue.count) });
+    // One pair, one end: cancel closes the run's action and the summary in -runNextBulkUpdate
+    // then has nothing left to close.
+    TKAddonHubActionFinish(self.bulkAction, TKAddonHubOutcomeCancelled, TKAddonHubFailureCancelled, nil);
+    self.bulkAction=nil;
     self.bulkStatus=WKLocalized(@"addons.update.cancelled");
     [self updateNavigationItems];
 }
@@ -2309,6 +2396,11 @@ static NSString *BrowseSortLabel(NSInteger field) {
         [self.tableView reloadData];
         TKAddonHubLog(TKAddonHubEventUpdate, @{ TKAddonHubKeyOutcome: _bulkCancelled?@"cancelled":@"finished",
             TKAddonHubKeyCount: @(failed), TKAddonHubKeyReason: browser?@"browser-queued":@"done" });
+        TKAddonHubActionFinish(self.bulkAction,
+            _bulkCancelled?TKAddonHubOutcomeCancelled:(failed?TKAddonHubOutcomeFailed:TKAddonHubOutcomeSucceeded),
+            _bulkCancelled?TKAddonHubFailureCancelled:TKAddonHubFailureNone,
+            @{ TKAddonHubKeyCount: @(failed), TKAddonHubKeyState: browser?@"browser-queued":@"done" });
+        self.bulkAction=nil;
         if (browser) {
             // Named rather than silent: these are the ones whose archive only the project's own
             // page can hand over. Nothing was dropped and nothing failed.
@@ -2336,8 +2428,10 @@ static NSString *BrowseSortLabel(NSInteger field) {
         TKWoWAddonManagerViewController *self=weakSelf;
         if (!self) return;
         if (!ok) self->_bulkFailures+=1;
-        TKAddonHubLog(TKAddonHubEventRow, @{ TKAddonHubKeyOutcome: ok?@"updated":@"failed",
-            TKAddonHubKeyIdentifier: record.identifier, TKAddonHubKeyAction: @"update-all" });
+        NSMutableDictionary *rowFields=[@{ TKAddonHubKeyOutcome: ok?@"updated":@"failed",
+            TKAddonHubKeyIdentifier: record.identifier, TKAddonHubKeyAction: @"update-all" } mutableCopy];
+        if (!ok) rowFields[TKAddonHubKeyFailure]=TKAddonHubFailureName(TKAddonHubFailureClassForError(error));
+        TKAddonHubLog(TKAddonHubEventRow, rowFields);
         [self runNextBulkUpdate];
     }];
 }
@@ -2356,18 +2450,41 @@ static NSString *BrowseSortLabel(NSInteger field) {
                        verb:WKLocalized(@"addons.updateAll")];
 }
 
-- (void)importAddon {
-    UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeZIP] asCopy:YES];
+// What the Files picker is for, said at the control. An archive from Files is a file that will be
+// written into the game, so the sentence about what is accepted and what happens first belongs
+// before the picker opens rather than in a README.
+- (UIAlertController *)importExplanationSheet {
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.import.explain.title")
+        message:WKLocalized(@"addons.import.explain.message") preferredStyle:UIAlertControllerStyleAlert];
+    __weak TKWoWAddonManagerViewController *weakSelf=self;
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.import.explain.choose")
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        (void)action; [weakSelf presentImportPicker];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel")
+        style:UIAlertActionStyleCancel handler:nil]];
+    return sheet;
+}
+- (void)presentImportPicker {
+    UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc]
+        initForOpeningContentTypes:@[UTTypeZIP] asCopy:YES];
     picker.allowsMultipleSelection=NO; picker.delegate=self;
     [self presentViewController:picker animated:YES completion:nil];
 }
+- (void)importAddon {
+    [self presentAlert:[self importExplanationSheet]];
+}
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     (void)controller;
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionImport,
+        @{ TKAddonHubKeyProvider: TKAddonProvenanceFiles });
     NSError *failure=nil; NSURL *url=urls.firstObject; BOOL accessed=[url startAccessingSecurityScopedResource];
     if (!url || ![_store importZIPAtURL:url provider:nil provenance:TKAddonProvenanceFiles error:&failure]) { }
     if (accessed) [url stopAccessingSecurityScopedResource];
     TKAddonHubLog(TKAddonHubEventArchive, @{ TKAddonHubKeyOutcome: failure?@"failed":@"imported",
         TKAddonHubKeyProvider: TKAddonProvenanceFiles, TKAddonHubKeyAction: @"files" });
+    TKAddonHubActionFinish(action, failure?TKAddonHubOutcomeFailed:TKAddonHubOutcomeSucceeded,
+        failure?TKAddonHubFailureClassForError(failure):TKAddonHubFailureNone, nil);
     [self reloadAddons];
     [self checkForUpdates];
     if (failure) {
@@ -2566,13 +2683,15 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             cell.accessibilityIdentifier=@"wow.addons.setupAccess";
             cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
         }
-        else if (indexPath.row==0) { cell.textLabel.text=WKLocalizedFormat(@"addons.sort.current",BrowseSortLabel(_sortField)); cell.detailTextLabel.text=WKLocalizedFormat(@"addons.sort.tapToChange",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")); }
-        else { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); }
+        else if (indexPath.row==0) { cell.textLabel.text=WKLocalizedFormat(@"addons.sort.current",BrowseSortLabel(_sortField)); cell.detailTextLabel.text=WKLocalizedFormat(@"addons.sort.tapToChange",[_sortOrder isEqual:@"asc"]?WKLocalized(@"addons.sort.ascending"):WKLocalized(@"addons.sort.descending")); cell.accessibilityIdentifier=@"wow.addons.browse.sort"; }
+        else { cell.textLabel.text=WKLocalizedFormat(@"addons.filters.category",_categoryLabel?:WKLocalized(@"addons.filters.allCategories")); cell.detailTextLabel.text=WKLocalized(@"addons.filters.tapToFilter"); cell.accessibilityIdentifier=@"wow.addons.browse.filters"; }
     } else if ([kind isEqual:@"browseResults"] || [kind isEqual:@"discover"]) {
         NSArray<NSDictionary *> *projects=[kind isEqual:@"discover"] ? entry[@"rows"] : _results;
         if ([kind isEqual:@"browseResults"] && indexPath.row==(NSInteger)_results.count) {
             cell.textLabel.text=WKLocalized(@"addons.loadMore");
             cell.detailTextLabel.text=WKLocalizedFormat(@"addons.projectsOfShown",(unsigned long)_results.count,(unsigned long)_totalCount);
+            cell.accessibilityIdentifier=@"wow.addons.loadMore";
+            cell.accessoryType=UITableViewCellAccessoryNone;
         } else {
             TKAddonProjectCell *project=[tableView dequeueReusableCellWithIdentifier:@"project"];
             if (!project) project=[[TKAddonProjectCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"project"];
@@ -2738,12 +2857,17 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
     if (record.lastCheckedAt.length) [activity addObject:WKLocalizedFormat(@"addons.detail.checked", record.lastCheckedAt)];
     [activity addObject:WKLocalized(TKAddonUpdateTitleKey([self updateResultForRecord:record]))];
     NSString *activityText=[activity componentsJoinedByString:@"\n"];
+    // What the two folder-affecting actions do, at the point they can be chosen. "Remove from
+    // device" deletes files, and the sheet is the last place a person sees before that happens.
+    NSString *explanation=record.managed?WKLocalized(@"addons.manage.owned"):WKLocalized(@"addons.manage.found");
+    NSString *body=[NSString stringWithFormat:@"%@\n\n%@",
+        record.disabled?WKLocalized(@"addons.manage.disabledNote"):activityText, explanation];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:record.name
-        message:record.disabled?WKLocalized(@"addons.manage.disabledNote"):activityText
+        message:body
         preferredStyle:UIAlertControllerStyleActionSheet];
     UIAlertAction *cancel=[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil];
     if (!record.managed) {
-        sheet.message=[NSString stringWithFormat:@"%@\n%@", WKLocalized(@"addons.manage.unmanaged"), activityText];
+        sheet.message=[NSString stringWithFormat:@"%@\n%@\n\n%@", WKLocalized(@"addons.manage.unmanaged"), activityText, explanation];
         // A folder this store did not install still gets every local action. The two that need an
         // owning record - disable and pin - are absent; the ones that manage the folder and the
         // package's identity are all here.
@@ -2754,22 +2878,56 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         [sheet addAction:[UIAlertAction actionWithTitle:record.linked?WKLocalized(@"addons.link.remove"):WKLocalized(@"addons.link.title") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self presentLinkSheetForRecord:record from:nil];}]];
         if (_store.groups.count)
             [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.group.title") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self presentGroupSheetForRecord:record from:nil];}]];
-        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store removeRecord:record error:e];}];}]];
+        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){(void)a;[self confirmRemoveRecord:record];}]];
         [sheet addAction:cancel];
         return sheet;
     }
     if (TKAddonUpdateIsActionable([self updateResultForRecord:record]))
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.action.update") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self startRowActionForRecord:record];}]];
-    [sheet addAction:[UIAlertAction actionWithTitle:record.disabled?WKLocalized(@"addons.restore"):WKLocalized(@"addons.disable") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store setDisabled:!record.disabled record:record error:e];}];}]];
+    [sheet addAction:[UIAlertAction actionWithTitle:record.disabled?WKLocalized(@"addons.restore"):WKLocalized(@"addons.disable") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store setDisabled:!record.disabled record:record error:e];} action:record.disabled?TKAddonHubActionRestore:TKAddonHubActionDisable identifier:record.identifier];}]];
     // Pinning is how a user says "leave this one alone". It is honoured by every update path,
     // not only by the row that offers it.
-    [sheet addAction:[UIAlertAction actionWithTitle:record.pinned?WKLocalized(@"addons.unpin"):WKLocalized(@"addons.pin") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store setPinned:!record.pinned record:record error:e];}];}]];
+    [sheet addAction:[UIAlertAction actionWithTitle:record.pinned?WKLocalized(@"addons.unpin"):WKLocalized(@"addons.pin") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store setPinned:!record.pinned record:record error:e];} action:record.pinned?TKAddonHubActionUnpin:TKAddonHubActionPin identifier:record.identifier];}]];
     [sheet addAction:[UIAlertAction actionWithTitle:record.linked?WKLocalized(@"addons.link.remove"):WKLocalized(@"addons.link.title") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self presentLinkSheetForRecord:record from:nil];}]];
     if (_store.groups.count)
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.group.title") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){(void)a;[self presentGroupSheetForRecord:record from:nil];}]];
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){(void)a;[self mutate:^BOOL(NSError **e){return [self.store removeRecord:record error:e];}];}]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){(void)a;[self confirmRemoveRecord:record];}]];
     [sheet addAction:cancel];
     return sheet;
+}
+
+// Removal is the one action that deletes something, so it asks once, on its own sheet, and says
+// exactly what goes. Cancelling closes the action pair as cancelled instead of leaving it open.
+- (void)confirmRemoveRecord:(TKAddonRecord *)record {
+    [self presentSheet:[self removalConfirmationForRecord:record] from:nil];
+}
+- (UIAlertController *)removalConfirmationForRecord:(TKAddonRecord *)record {
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionRemove, @{
+        TKAddonHubKeyIdentifier: record.identifier ?: @"unknown",
+        TKAddonHubKeyProvider: record.provenance ?: TKAddonProvenanceUnmanaged });
+    UIAlertController *confirm=[UIAlertController alertControllerWithTitle:
+            WKLocalizedFormat(@"addons.remove.title", record.name ?: record.identifier)
+        message:record.managed?WKLocalized(@"addons.remove.messageOwned"):WKLocalized(@"addons.remove.messageFound")
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak TKWoWAddonManagerViewController *weakSelf=self;
+    [confirm addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.remove.now")
+        style:UIAlertActionStyleDestructive handler:^(UIAlertAction *chosen) {
+        (void)chosen;
+        TKWoWAddonManagerViewController *self=weakSelf; if(!self) return;
+        NSError *error=nil;
+        BOOL ok=[self.store removeRecord:record error:&error];
+        TKAddonHubActionFinish(action, ok?TKAddonHubOutcomeSucceeded:TKAddonHubOutcomeFailed,
+            ok?TKAddonHubFailureNone:TKAddonHubFailureClassForError(error), nil);
+        if (!ok) [self showError:WKLocalized(@"addons.error.changeTitle") message:error.localizedDescription];
+        [self reloadAddons];
+        [self checkForUpdates];
+    }]];
+    [confirm addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel")
+        style:UIAlertActionStyleCancel handler:^(UIAlertAction *chosen) {
+        (void)chosen;
+        TKAddonHubActionFinish(action, TKAddonHubOutcomeCancelled, TKAddonHubFailureCancelled, nil);
+    }]];
+    return confirm;
 }
 // One place that shows an alert, so every one of them is bounded the same way.
 - (void)presentAlert:(UIAlertController *)alert {
@@ -2780,10 +2938,81 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         }];
     });
 }
-- (void)showProviderError:(NSError *)error { dispatch_async(dispatch_get_main_queue(),^{UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.error.providerTitle") message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:a];}); }
-- (void)mutate:(BOOL (^)(NSError **))operation { NSError *error=nil; if(!operation(&error)){UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.error.changeTitle") message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:a];} [self reloadAddons]; [self checkForUpdates]; }
-- (void)setupKey { UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.title") message:WKLocalized(@"addons.key.message") preferredStyle:UIAlertControllerStyleAlert];[a addTextFieldWithConfigurationHandler:^(UITextField *f){f.secureTextEntry=YES;f.autocorrectionType=UITextAutocorrectionTypeNo;f.autocapitalizationType=UITextAutocapitalizationTypeNone;f.placeholder=WKLocalized(@"addons.key.placeholder");}];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.key.save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){(void)x;NSError *e=nil;if(![self.credentials storeCurseForgeKey:a.textFields.firstObject.text error:&e]){UIAlertController *failure=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.errorTitle") message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[failure addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:failure];}else { [self updateToolbar]; [self.tableView reloadData]; if (self.tab==TKAddonHubTabBrowse) [self beginBrowse]; else [self checkForUpdates]; }}]];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];[self presentAlert:a]; }
-- (void)confirmRemoveKey { UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.remove.title") message:WKLocalized(@"addons.key.remove.message") preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.key.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x){(void)x;NSError *e=nil;if(![self.credentials removeCurseForgeKey:&e]){UIAlertController *failure=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.remove.errorTitle") message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[failure addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:failure];return;}self.browseStatus=WKLocalized(@"addons.enterKey.long");self.results=@[];self.totalCount=0;self.categories=nil;[self updateToolbar];[self.tableView reloadData];}]];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];[self presentAlert:a]; }
+- (void)showProviderError:(NSError *)error { dispatch_async(dispatch_get_main_queue(),^{[self presentAlert:[self providerErrorAlert:error]];}); }
+- (UIAlertController *)providerErrorAlert:(NSError *)error {
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.error.providerTitle")
+        message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
+    return alert;
+}
+// A menu choice or a sheet that does its work and closes is one action with no lasting work of
+// its own: the pair opens and closes in the same tap, so the log says which control was used
+// without inventing a duration.
+- (void)recordChoice:(TKAddonHubActionID)action state:(NSString *)state {
+    TKAddonHubActionFinish(TKAddonHubActionBegin(action, state.length?@{ TKAddonHubKeyState: state }:nil),
+        TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone, nil);
+}
+- (void)mutate:(BOOL (^)(NSError **))operation { [self mutate:operation action:TKAddonHubActionManage identifier:nil]; }
+- (void)mutate:(BOOL (^)(NSError **))operation action:(TKAddonHubActionID)action identifier:(NSString *)identifier {
+    TKAddonHubActionToken *token=TKAddonHubActionBegin(action,
+        @{ TKAddonHubKeyIdentifier: identifier ?: @"unknown" });
+    NSError *error=nil;
+    BOOL ok=operation(&error);
+    TKAddonHubActionFinish(token, ok?TKAddonHubOutcomeSucceeded:TKAddonHubOutcomeFailed,
+        ok?TKAddonHubFailureNone:TKAddonHubFailureClassForError(error), nil);
+    if(!ok){UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.error.changeTitle") message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];[self presentAlert:a];}
+    [self reloadAddons];
+    [self checkForUpdates];
+}
+- (void)setupKey {
+    // The key itself is never a field of this action, and nothing here reads the field's text
+    // for the log: the outcome and the failure class are the whole record.
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionKeySetup, nil);
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.title") message:WKLocalized(@"addons.key.message") preferredStyle:UIAlertControllerStyleAlert];
+    [a addTextFieldWithConfigurationHandler:^(UITextField *f){f.secureTextEntry=YES;f.autocorrectionType=UITextAutocorrectionTypeNo;f.autocapitalizationType=UITextAutocapitalizationTypeNone;f.placeholder=WKLocalized(@"addons.key.placeholder");}];
+    [a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.key.save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){
+        (void)x;
+        NSError *e=nil;
+        BOOL ok=[self.credentials storeCurseForgeKey:a.textFields.firstObject.text error:&e];
+        TKAddonHubActionFinish(action, ok?TKAddonHubOutcomeSucceeded:TKAddonHubOutcomeFailed,
+            ok?TKAddonHubFailureNone:TKAddonHubFailureConfiguration, nil);
+        if(!ok){
+            UIAlertController *failure=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.errorTitle") message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+            [failure addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
+            [self presentAlert:failure];
+        } else {
+            [self updateToolbar]; [self.tableView reloadData];
+            if (self.tab==TKAddonHubTabBrowse) [self beginBrowse]; else [self checkForUpdates];
+        }
+    }]];
+    [a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:^(UIAlertAction *x){
+        (void)x; TKAddonHubActionFinish(action, TKAddonHubOutcomeCancelled, TKAddonHubFailureCancelled, nil);
+    }]];
+    [self presentAlert:a];
+}
+- (void)confirmRemoveKey {
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionKeyRemove, nil);
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.remove.title") message:WKLocalized(@"addons.key.remove.message") preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.key.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x){
+        (void)x;
+        NSError *e=nil;
+        BOOL ok=[self.credentials removeCurseForgeKey:&e];
+        TKAddonHubActionFinish(action, ok?TKAddonHubOutcomeSucceeded:TKAddonHubOutcomeFailed,
+            ok?TKAddonHubFailureNone:TKAddonHubFailureConfiguration, nil);
+        if(!ok){
+            UIAlertController *failure=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.key.remove.errorTitle") message:e.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+            [failure addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
+            [self presentAlert:failure];
+            return;
+        }
+        self.browseStatus=WKLocalized(@"addons.enterKey.long");self.results=@[];self.totalCount=0;self.categories=nil;
+        [self updateToolbar];[self.tableView reloadData];
+    }]];
+    [a addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:^(UIAlertAction *x){
+        (void)x; TKAddonHubActionFinish(action, TKAddonHubOutcomeCancelled, TKAddonHubFailureCancelled, nil);
+    }]];
+    [self presentAlert:a];
+}
 
 #pragma mark - My Add-ons controls
 
@@ -2796,6 +3025,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
                                           identifier:nil handler:^(UIAction *a) {
             (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
             self.installedSort=chosen;
+            [self recordChoice:TKAddonHubActionSort state:@"myaddons"];
             [self updateToolbar]; [self.tableView reloadData];
         }];
         action.state=option==_installedSort?UIMenuElementStateOn:UIMenuElementStateOff;
@@ -2812,6 +3042,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
                                           identifier:nil handler:^(UIAction *a) {
             (void)a; TKWoWAddonManagerViewController *self=weakSelf; if(!self)return;
             self.installedFilter=chosen;
+            [self recordChoice:TKAddonHubActionFilter state:@"myaddons"];
             [self updateToolbar]; [self.tableView reloadData];
         }];
         action.state=option==_installedFilter?UIMenuElementStateOn:UIMenuElementStateOff;
@@ -2823,6 +3054,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
 // Create a local group. It changes no file and gives no package a new identity; it only changes
 // which heading the row appears under.
 - (void)tappedCreateGroup {
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionGroupCreate, nil);
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.group.create")
                                                                  message:WKLocalized(@"addons.group.message")
                                                           preferredStyle:UIAlertControllerStyleAlert];
@@ -2832,26 +3064,36 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         field.accessibilityIdentifier=@"wow.addons.group.name";
     }];
     __weak TKWoWAddonManagerViewController *weakSelf=self;
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.group.create") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        (void)action;
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.group.create") style:UIAlertActionStyleDefault handler:^(UIAlertAction *chosen) {
+        (void)chosen;
         TKWoWAddonManagerViewController *self=weakSelf; if(!self) return;
         NSError *error=nil;
-        if (![self.store createGroupNamed:sheet.textFields.firstObject.text error:&error]) {
+        BOOL ok=[self.store createGroupNamed:sheet.textFields.firstObject.text error:&error];
+        TKAddonHubActionFinish(action, ok?TKAddonHubOutcomeSucceeded:TKAddonHubOutcomeFailed,
+            ok?TKAddonHubFailureNone:TKAddonHubFailureClassForError(error), nil);
+        if (!ok) {
             [self showError:WKLocalized(@"addons.error.changeTitle") message:error.localizedDescription];
             return;
         }
         [self reloadAddons];
     }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:^(UIAlertAction *chosen) {
+        (void)chosen; TKAddonHubActionFinish(action, TKAddonHubOutcomeCancelled, TKAddonHubFailureCancelled, nil);
+    }]];
     [self presentAlert:sheet];
 }
 
 // Group membership for one package. Joining or leaving moves nothing on disk.
 - (void)presentGroupSheetForRecord:(TKAddonRecord *)record from:(NSIndexPath *)indexPath {
-    if (!_store.groups.count) {
+    UIAlertController *sheet=[self groupSheetForRecord:record];
+    if (!sheet) {
         [self showError:WKLocalized(@"addons.group.title") message:WKLocalized(@"addons.group.none")];
         return;
     }
+    [self presentSheet:sheet from:indexPath];
+}
+- (UIAlertController *)groupSheetForRecord:(TKAddonRecord *)record {
+    if (!_store.groups.count) return nil;
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:record.name
                                                                  message:WKLocalized(@"addons.group.membership")
                                                           preferredStyle:UIAlertControllerStyleActionSheet];
@@ -2859,32 +3101,49 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
     for (TKAddonGroup *group in _store.groups) {
         BOOL member=[group.members containsObject:record.uuid ?: @""];
         [sheet addAction:[UIAlertAction actionWithTitle:member?[@"✓ " stringByAppendingString:group.name]:group.name
-                                                 style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            (void)action;
+                                                 style:UIAlertActionStyleDefault handler:^(UIAlertAction *chosen) {
+            (void)chosen;
             TKWoWAddonManagerViewController *self=weakSelf; if(!self) return;
+            TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionGroupAssign, @{
+                TKAddonHubKeyIdentifier: record.identifier ?: @"unknown",
+                TKAddonHubKeyState: member?@"leave":@"join" });
             NSError *error=nil;
-            if (![self.store setGroup:group member:record joined:!member error:&error])
+            BOOL ok=[self.store setGroup:group member:record joined:!member error:&error];
+            TKAddonHubActionFinish(action, ok?TKAddonHubOutcomeSucceeded:TKAddonHubOutcomeFailed,
+                ok?TKAddonHubFailureNone:TKAddonHubFailureClassForError(error), nil);
+            if (!ok)
                 [self showError:WKLocalized(@"addons.error.changeTitle") message:error.localizedDescription];
             [self reloadAddons];
         }]];
     }
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
-    [self presentSheet:sheet from:indexPath];
+    return sheet;
 }
 
 // One row's action, chosen by the resolver's answer and nothing else.
 - (void)startRowActionForRecord:(TKAddonRecord *)record {
     TKAddonUpdateResult result=[self updateResultForRecord:record];
+    // The action carries the resolver's own state name, so the log says which word the row was
+    // showing when it was pressed without repeating any of it as free text.
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionUpdate, @{
+        TKAddonHubKeyState: TKAddonUpdateName(result),
+        TKAddonHubKeyIdentifier: record.identifier ?: @"unknown",
+        TKAddonHubKeyProvider: record.provenance ?: TKAddonProvenanceUnmanaged });
     TKAddonHubLog(TKAddonHubEventRow, @{ TKAddonHubKeyOutcome: @"action",
         TKAddonHubKeyIdentifier: record.identifier,
         TKAddonHubKeyAction: TKAddonUpdateStoredValue(result) ?: @"checking",
         TKAddonHubKeyProvider: record.provenance });
     switch (result) {
-        case TKAddonUpdateResultNeedsBrowserConfirmation:
+        case TKAddonUpdateResultNeedsBrowserConfirmation: {
+            BOOL routed=[self browserPageAvailableForRecord:record];
             [self openBrowserForRecord:record];
+            TKAddonHubActionFinish(action, routed?TKAddonHubOutcomeSucceeded:TKAddonHubOutcomeRefused,
+                routed?TKAddonHubFailureNone:TKAddonHubFailureUntrusted, nil);
             return;
+        }
         case TKAddonUpdateResultUnlinked:
             [self presentLinkSheetForRecord:record from:nil];
+            TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone, nil);
             return;
         case TKAddonUpdateResultDownloading:
             // The only cancel that means anything: the archive is in flight and nothing has
@@ -2893,20 +3152,23 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             _updateResults[record.uuid ?: record.identifier]=@([self updateResultForRecord:record]);
             TKAddonHubLog(TKAddonHubEventCancel, @{ TKAddonHubKeyOutcome: @"cancelled",
                 TKAddonHubKeyIdentifier: record.identifier, TKAddonHubKeyAction: @"row" });
+            TKAddonHubActionFinish(action, TKAddonHubOutcomeCancelled, TKAddonHubFailureCancelled, nil);
             [self.tableView reloadData];
             return;
         case TKAddonUpdateResultFailedTerminal:
             [self presentSheet:[self manageSheetForRecord:record] from:nil];
+            TKAddonHubActionFinish(action, TKAddonHubOutcomeRefused, TKAddonHubFailureProvider, nil);
             return;
         default:
             break;
     }
     __weak TKWoWAddonManagerViewController *weakSelf=self;
     [self updateRecord:record completion:^(BOOL ok, NSError *error){
-        (void)error;
         TKWoWAddonManagerViewController *self=weakSelf; if(!self) return;
         // updateRecord completes after the archive transaction, not when the download starts.
         // A new full sweep here erased the settled row state and recreated the visible loop.
+        TKAddonHubActionFinish(action, ok?TKAddonHubOutcomeSucceeded:TKAddonHubOutcomeFailed,
+            ok?TKAddonHubFailureNone:TKAddonHubFailureClassForError(error), nil);
         if (!ok) [self updateToolbar];
     }];
 }
@@ -2921,6 +3183,11 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
     handoff.projectName=[entry[@"name"] isKindOfClass:NSString.class]?entry[@"name"]:nil;
     handoff.projectSlug=[self projectSlugForEntry:entry];
     if (!handoff.projectSlug.length) {
+        // No page this app may call that project's page: the action is refused and says so,
+        // rather than opening a search that would install something else under the identity.
+        TKAddonHubActionFinish(TKAddonHubActionBegin(TKAddonHubActionBrowser,
+            @{ TKAddonHubKeyIdentifier: projectID.stringValue }),
+            TKAddonHubOutcomeRefused, TKAddonHubFailureUntrusted, nil);
         [self showError:WKLocalized(@"addons.error.installTitle") message:WKLocalized(@"addons.browser.noPage")];
         return;
     }
@@ -2931,6 +3198,9 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
     NSNumber *projectID=record.provider[TKAddonProviderProjectID];
     NSString *slug=record.provider[TKAddonProviderProjectSlug];
     if (![projectID isKindOfClass:NSNumber.class] || !slug.length) {
+        TKAddonHubActionFinish(TKAddonHubActionBegin(TKAddonHubActionBrowser,
+            @{ TKAddonHubKeyIdentifier: record.identifier ?: @"unknown" }),
+            TKAddonHubOutcomeRefused, TKAddonHubFailureUntrusted, nil);
         [self showError:WKLocalized(@"addons.error.installTitle") message:WKLocalized(@"addons.browser.noPage")];
         return;
     }
@@ -2946,6 +3216,9 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
 // The browser is acquisition, so what it hands back is installed under the identity the action
 // named - never under whatever the page happened to be showing when the ZIP arrived.
 - (void)presentHandoff:(TKAddonBrowserHandoff *)handoff forRecord:(nullable TKAddonRecord *)record {
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionBrowser, @{
+        TKAddonHubKeyIdentifier: handoff.projectSlug ?: @"unknown",
+        TKAddonHubKeyProvider: record.provenance ?: TKAddonProvenanceUnmanaged });
     TKWoWAddonBrowserViewController *browser=[[TKWoWAddonBrowserViewController alloc] initWithHandoff:handoff];
     UINavigationController *navigation=[[UINavigationController alloc] initWithRootViewController:browser];
     WKPreparePopupForPresentation(navigation, self.view);
@@ -2956,6 +3229,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         TKWoWAddonManagerViewController *self=weakSelf;
         TKWoWAddonBrowserViewController *browser=weakBrowser;
         if (!self) return;
+        TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone, nil);
         [browser dismissViewControllerAnimated:YES completion:^{
             [self installBrowserArchive:archive handoff:handoff replacing:record];
         }];
@@ -2964,6 +3238,11 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         TKWoWAddonManagerViewController *self=weakSelf;
         TKWoWAddonBrowserViewController *browser=weakBrowser;
         if (!self) return;
+        // The refusal reasons are the browser's own keys; the failure class is what the action
+        // contract records, and a cancelled page is not an error.
+        BOOL refused=![reasonKey isEqual:@"addons.browser.cancelled"];
+        TKAddonHubActionFinish(action, refused?TKAddonHubOutcomeRefused:TKAddonHubOutcomeCancelled,
+            refused?TKAddonHubFailureUntrusted:TKAddonHubFailureCancelled, nil);
         [browser dismissViewControllerAnimated:YES completion:^{
             if (![reasonKey isEqual:@"addons.browser.cancelled"])
                 [self showError:WKLocalized(@"addons.browser.title") message:WKLocalized(reasonKey)];
@@ -3025,6 +3304,9 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
 // package's name. Until this is done the package is fully managed locally and simply excluded
 // from provider updates.
 - (void)presentLinkSheetForRecord:(TKAddonRecord *)record from:(NSIndexPath *)indexPath {
+    [self presentSheet:[self linkSheetForRecord:record] from:indexPath];
+}
+- (UIAlertController *)linkSheetForRecord:(TKAddonRecord *)record {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"addons.link.title")
                                                                  message:WKLocalized(@"addons.link.message")
                                                           preferredStyle:UIAlertControllerStyleActionSheet];
@@ -3033,8 +3315,13 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"addons.link.remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
             (void)action;
             TKWoWAddonManagerViewController *self=weakSelf; if(!self) return;
+            TKAddonHubActionToken *token=TKAddonHubActionBegin(TKAddonHubActionUnlink,
+                @{ TKAddonHubKeyIdentifier: record.identifier ?: @"unknown" });
             NSError *error=nil;
-            if (![self.store unlinkRecord:record error:&error])
+            BOOL ok=[self.store unlinkRecord:record error:&error];
+            TKAddonHubActionFinish(token, ok?TKAddonHubOutcomeSucceeded:TKAddonHubOutcomeFailed,
+                ok?TKAddonHubFailureNone:TKAddonHubFailureClassForError(error), nil);
+            if (!ok)
                 [self showError:WKLocalized(@"addons.error.changeTitle") message:error.localizedDescription];
             [self reloadAddons];
             [self checkForUpdates];
@@ -3053,7 +3340,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
             (void)action; [weakSelf openBrowserForRecord:record];
         }]];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
-    [self presentSheet:sheet from:indexPath];
+    return sheet;
 }
 
 - (void)presentLinkSearchForRecord:(TKAddonRecord *)record {
@@ -3107,12 +3394,14 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
 // key it is a named empty state, never a browser page.
 - (void)fetchDiscover {
     if (_discoverLoading) return;
+    TKAddonHubActionToken *action=TKAddonHubActionBegin(TKAddonHubActionDiscover, nil);
     NSString *key=[_credentials curseForgeKey:NULL];
     if (!key.length) {
         _discoverSections=@[];
         _discoverStatus=WKLocalized(@"addons.enterKey.long");
         [self.tableView reloadData];
         [self updateToolbar];
+        TKAddonHubActionFinish(action, TKAddonHubOutcomeRefused, TKAddonHubFailureConfiguration, nil);
         return;
     }
     _discoverLoading=YES;
@@ -3155,6 +3444,8 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
         self.discoverSections=sections;
         self.discoverStatus=total?WKLocalizedFormat(@"addons.projectsFound",
             [NSString stringWithFormat:@"%lu",(unsigned long)total]):WKLocalized(@"addons.discover.empty");
+        TKAddonHubActionFinish(action, TKAddonHubOutcomeSucceeded, TKAddonHubFailureNone,
+            @{ TKAddonHubKeyCount: @(total) });
         [self.tableView reloadData];
         [self updateToolbar];
     });

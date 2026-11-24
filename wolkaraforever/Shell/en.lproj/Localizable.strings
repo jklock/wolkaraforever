@@ -212,12 +212,11 @@
 "home.settings.message" = "Updates install automatically while this app is open. Settings and addons are preserved. Startup preparation is separate from downloading updates.";
 "home.settings.repair" = "Verify and repair game files";
 "home.settings.diagnostics" = "Diagnostics and logs";
+"home.settings.addonDiagnostics" = "Add-On Manager diagnostics";
 "home.settings.networkHealthOn" = "Arm network health for next launch";
 "home.settings.networkHealthOff" = "Disarm network health for next launch";
 "home.settings.networkHealth.title" = "Network health armed";
 "home.settings.networkHealth.message" = "Experimental: the next game launch records anonymous TCP health counters for at most 15 minutes. It records no addresses, ports, names, payloads, credentials, or game data.";
-"home.settings.inputDiagnosticsOn" = "Turn on input diagnostics";
-"home.settings.inputDiagnosticsOff" = "Turn off input diagnostics";
 "home.settings.touchpadPointerOn" = "Use controller touchpad as mouse";
 "home.settings.touchpadPointerOff" = "Stop using controller touchpad as mouse";
 "home.settings.touchpadSpeed" = "Controller touchpad speed: %@";
@@ -643,6 +642,12 @@
 "addons.state.notVerifiedForForever" = "not verified for Forever";
 "addons.manage.note" = "Only this managed package can be changed. Existing folders are left alone.";
 "addons.manage.disabledNote" = "This package is stored privately and is not visible to World of Warcraft.";
+"addons.manage.owned" = "WolkaraForever installed this package. Disable moves its folder out of the game until you restore it; Remove deletes the files it installed, after asking.";
+"addons.manage.found" = "This folder was already in the game's AddOns folder. Disable and Pin need a package WolkaraForever installed; Remove deletes this folder, after asking.";
+"addons.remove.title" = "Remove %@?";
+"addons.remove.messageOwned" = "The files WolkaraForever installed for this package are deleted from the game. Your other add-ons, settings and game files are not touched.";
+"addons.remove.messageFound" = "This folder is deleted from the game's AddOns folder. Its settings and saved variables are not touched.";
+"addons.remove.now" = "Remove from device";
 "addons.pin" = "Pin this version";
 "addons.unpin" = "Allow updates again";
 "addons.remove" = "Remove from device";
@@ -831,6 +836,23 @@
 "addons.discover.popular" = "Popular";
 "addons.discover.empty" = "There is nothing to discover for this game version.";
 "addons.discover.hint" = "Refresh asks CurseForge again.";
+
+/* ---- The Files import, explained before the picker opens ---- */
+"addons.import.explain.title" = "Import an add-on from Files";
+"addons.import.explain.message" = "Choose a ZIP that contains one add-on folder with its .toc file. The archive is checked before anything is written - its paths, its size and each file - and an archive that fails is refused without touching the game. An add-on imported this way is recorded, so it can be updated, disabled or removed from this page.";
+"addons.import.explain.choose" = "Choose a ZIP…";
+
+/* ---- Diagnostics: one switch per development aid, each with what it records ---- */
+"addons.diagnostics.title" = "Add-On Manager diagnostics";
+"addons.diagnostics.section.addons" = "Add-On Manager";
+"addons.diagnostics.section.input" = "Input";
+"addons.diagnostics.section.logs" = "Logs";
+"addons.diagnostics.events" = "Record Add-On Manager events";
+"addons.diagnostics.events.footer" = "Off by default. When it is on, the Add-On Manager records which action ran, whether it finished, failed, was cancelled or was refused, what kind of failure ended it, and how long it took, together with the provider kind, the package identifier and a short archive digest. It records no web addresses, file paths, API keys, cookies, page content or archive contents. While it is off, nothing is built and nothing is written. Lines go to wolkaraforever.log, one megabyte with one previous file, and can be read or shared from Diagnostics and logs on the home screen.";
+"addons.diagnostics.input" = "Input diagnostics";
+"addons.diagnostics.input.footer" = "Lets the controller inspector record what it receives while you play. Off by default and remembered on this iPad; the inspector writes nothing while it is off.";
+"addons.diagnostics.logs.title" = "Log file";
+"addons.diagnostics.logs.footer" = "Open Diagnostics and logs on the home screen to read or share it. The app's Documents folder holds the current log and the previous one.";
 
 /* ---- Chat Composer ---- */
 "chat.composer.state.opening" = "Opening chat…";

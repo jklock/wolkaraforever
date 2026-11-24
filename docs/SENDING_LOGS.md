@@ -101,12 +101,21 @@ brackets is the topic, and it is the quickest way to find the part of a log a re
 | `audio` | The audio session and the battery-saving sound path |
 | `input`, `controller-input` | Input routing and controller commands |
 | `language` | The app's language and the game's language |
-| `addons`, `addon-hub` | The add-on store, and the hub's own structured events |
+| `addons`, `addon-hub` | The add-on store, and the hub's own structured events. The `addon-hub` lines are off by default; see below |
 | `network` | Arming and disarming the anonymous connection-health counters; the counters themselves are written as `[network-health]` lines in the native log |
 | `jit` | External JIT and the enabler's detach |
 | `enrollment` | The developer-service enrollment |
 | `config` | Reading and writing the app's own settings |
 | `selftest` | The app's own device self-tests |
+
+The `addon-hub` lines are a development aid and are **off by default**. Turn them on in
+**Settings → Add-On Manager diagnostics → Record Add-On Manager events**; while they are off,
+nothing is built and nothing is written. When they are on, each action is one `started` line and
+one closing line carrying the action, its outcome (`succeeded`, `failed`, `cancelled` or
+`refused`), the failure class, the duration, the provider kind, the package identifier and a short
+archive digest. They never carry a web address, a file path, an API key, a cookie, page content or
+archive content. The lines go to `wolkaraforever.log`, which holds one megabyte and keeps one
+previous file (`wolkaraforever.log.1`).
 
 The log rotates at one megabyte: when `wolkaraforever.log` fills, it becomes
 `wolkaraforever.log.1` and a new file starts. Only the current file is listed under **Logs and

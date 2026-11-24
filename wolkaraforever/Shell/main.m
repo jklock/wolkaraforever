@@ -735,6 +735,7 @@ static NSString *AKAudioStateDescription(void) {
     BOOL homeSelfTest=[arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestRenderProfile]]
                    || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestLanguage]]
                    || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestAddonsPage]]
+                   || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestProvider]]
                    || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestControls]];
     for(NSUInteger i=1;i<arguments.count;i++) if(![arguments[i] hasPrefix:TKExecutionModeArgumentPrefix] &&
         ![arguments[i] isEqualToString:TKExecutionModeSaveArgument] &&

@@ -4,6 +4,28 @@
 
 ## Unreleased
 
+- **The Add-On Manager no longer crashes the launcher.** Opening the page on iPadOS 27 faulted
+  inside UIKit while the page named itself, which took the whole app down before the manager
+  drew. It now names itself on its navigation item, the way every other page does, and the
+  app's own self-test on the installed build passes all 49 of its Add-On Manager checks (it used
+  to end in a crash report instead of a verdict).
+- **Add-on changes no longer fail with "Update directory must not be a symlink".** The update lock
+  refused its work directory whenever any part of the path was reachable through a symlink, which
+  on iPadOS is the normal `/var` to `/private/var` alias: importing, disabling, removing, linking
+  or grouping an add-on could be refused before anything was written. The lock now asks that one
+  directory about itself and still refuses a link standing in its place; the device self-test
+  joins, leaves and removes a group on the installed build.
+- **Add-On Manager diagnostics.** The Settings sheet no longer carries a diagnostic switch at its
+  root: **Add-On Manager diagnostics** opens a page whose switches each say what they record and
+  are off by default. **Record Add-On Manager events** writes one pair of lines per action the
+  add-on manager takes - the action, its outcome, the kind of failure that ended it and how long
+  it took, with the provider kind, the package identifier and a short archive digest - and never a
+  web address, file path, key, cookie, page content or archive content. The page names the log
+  file, which is read or shared from **Diagnostics and logs**. See
+  [What every control does](docs/UI_REFERENCE.md) and [Send us a log](docs/SENDING_LOGS.md).
+- **Removing an add-on asks first.** The add-on manager's sheet now says what **Disable** and
+  **Remove from device** do to the package, and removing opens its own confirmation before
+  anything is deleted. The rest of your add-ons, your settings and the game are not touched.
 - **Performance.** Controller sticks and d-pads no longer format an element id and a detail
   string for every raw sample when nothing is interested in them, stick values are reported in
   half-unit steps again, and the diagnostic panel updates once per batch instead of once per

@@ -132,6 +132,12 @@ BOOL TKAddonHubLiveRun(UIWindow *window, void (^capture)(NSString *name)) {
         liveKey = [NSProcessInfo.processInfo.environment[@"WK_LIVE_API_KEY"]
                    stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
 
+        // The hub's log is off in the shipped default, which is the state a player has. This run
+        // turns it on so its privacy boundary can be read afterwards, and off again at the end.
+        LiveCheck(!TKAddonHubDiagnosticsEnabled(), @"add-on manager events are off by default");
+        TKAddonHubSetDiagnosticsEnabled(YES);
+        TKAddonHubLogFlush();
+
         // 1. The installation, with no game code in it.
         NSString *working = LiveBuildInstallation(documents);
         NSString *addons = [working stringByAppendingPathComponent:@"Interface/AddOns"];
@@ -520,7 +526,12 @@ BOOL TKAddonHubLiveRun(UIWindow *window, void (^capture)(NSString *name)) {
             if ([line rangeOfString:@"http"].location != NSNotFound) dirtyLines += 1;
         }
         LiveCheck(hubLines > 0, @"the log carries addon-hub events");
+        LiveCheck([log rangeOfString:@"event=action"].location != NSNotFound,
+                  @"and the action contract's own lines");
         LiveCheck(dirtyLines == 0, @"and not one of them contains a URL");
+
+        TKAddonHubSetDiagnosticsEnabled(NO);
+        TKAddonHubLogFlush();
 
         printf("ADDON HUB LIVE %s: %ld passed, %ld failed, %ld not run (%s)\n",
                liveFailed == 0 ? "PASS" : "FAIL", (long)livePassed, (long)liveFailed, (long)liveSkipped,

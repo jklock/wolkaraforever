@@ -88,7 +88,8 @@ Built by `-settingsSheet`; each row is a `UIAlertAction`.
 | Key / Controller Button Configuration | `wolkaraforever/Voice/VoiceViewController.m` (`voice.*`) | `test_voice.sh`, fixture | `ui-voice-page` |
 | Test Voice | `VoiceTestViewController.m` (`voice.test.*`, `voice.state.*`) | `test_voice.sh`, fixture | `wow-voice-test-de` |
 | Controller Touchpad Configuration | `Voice/ControllerTouchpadViewController.m` (`touchpad.*`) | `test_controller_input.sh`, `test_voice.sh` | `ui-touchpad-page` |
-| Add-On Manager | `wolkaraforever/WoW/AddonManager.m` (`addons.*`) | `test_addon_archive.sh`, `test_curseforge.sh`, `test_addon_hub_live.sh` | `ui-addons-myaddons`, `addon-hub-discover`, `addon-hub-browse` |
+| Add-On Manager | `wolkaraforever/WoW/AddonManager.m` (`addons.*`) | `test_addon_archive.sh`, `test_curseforge.sh`, `test_addon_hub_live.sh`, fixture (`test_wow_launcher_ui.sh`) | `ui-addons-myaddons`, `addon-hub-discover`, `addon-hub-browse` |
+| Add-On Manager diagnostics | `wolkaraforever/WoW/AddonDiagnosticsViewController.m` (`addons.diagnostics.*`, `home.settings.addonDiagnostics`) | fixture (`test_wow_launcher_ui.sh`: both switches, off by default, the stored value, no root toggle) | none — a Settings page, not drawn by the guide captures |
 | Diagnostics | `platform/launcher/App/DiagnosticsViewController.m` with rows from `wolkaraforever/Shell/main.m` (`diag.*`) | `test_external_jit_diagnostics.sh` | none — the page is not drawn by the launcher fixture |
 
 ## In-game surfaces

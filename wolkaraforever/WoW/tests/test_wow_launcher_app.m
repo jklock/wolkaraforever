@@ -8,6 +8,7 @@
 #import "../launcher/WoW/AddonCredentialStore.h"
 #import "../launcher/WoW/AddonUpdateResolver.h"
 #import "../launcher/WoW/AddonHubLog.h"
+#import "../launcher/WoW/AddonDiagnosticsViewController.h"
 #import "../launcher/WoW/AddonBrowser.h"
 #import <WebKit/WebKit.h>
 #import <Security/Security.h>
@@ -30,6 +31,11 @@
 @interface TKWoWAddonBrowserViewController (CancellationProbe)
 - (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation
          withError:(NSError *)error;
+@end
+// The page's own drawing and its row action, driven the way the table would drive them.
+@interface TKWoWAddonManagerViewController (AddonHubProbe)
+- (NSArray<NSDictionary *> *)myAddOnSections;
+- (void)startRowActionForRecord:(TKAddonRecord *)record;
 @end
 #import "wow_installation_fixture.h"
 
@@ -651,6 +657,34 @@ static void TestAddonHub(void) {
     assert(navigationItems.count == 2);
     assert([navigationItems[0].accessibilityIdentifier isEqual:@"wow.addons.import"]);
     assert([navigationItems[1].accessibilityIdentifier isEqual:@"wow.addons.refresh"]);
+    // The search field and the Browse rows are controls too, and every control a person can press
+    // has a name a fixture (and an accessibility audit) can find without reading its title.
+    assert(Find(manager.view, @"wow.addons.search") != nil);
+    // Browse's two control rows and the Load more row, under a key the fixture supplies for the
+    // length of these three assertions: the production lookup is put back before anything else
+    // runs, so no later test inherits a credential it did not save.
+    Method keyLookup = class_getInstanceMethod(TKAddonCredentialStore.class, @selector(curseForgeKey:));
+    IMP savedKeyLookup = method_setImplementation(keyLookup, imp_implementationWithBlock(^NSString *(id store, NSError **failure) {
+        (void)store; (void)failure; return @"fixture-key";
+    }));
+    [manager setValue:@(TKAddonHubTabBrowse) forKey:@"_tab"];
+    assert([[manager valueForKey:@"sectionsForCurrentTab"][0][@"rows"] count] == 2);
+    UITableViewCell *sortRow = [manager tableView:manager.tableView
+                           cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+    UITableViewCell *filterRow = [manager tableView:manager.tableView
+                             cellForRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:0]];
+    assert([sortRow.accessibilityIdentifier isEqual:@"wow.addons.browse.sort"]);
+    assert([filterRow.accessibilityIdentifier isEqual:@"wow.addons.browse.filters"]);
+    // One drawn result, a larger total: the row after it is Load more, not a project.
+    [manager setValue:@[ @{ @"id": @1, @"name": @"Fixture" } ] forKey:@"_results"];
+    [manager setValue:@(2) forKey:@"_totalCount"];
+    UITableViewCell *more = [manager tableView:manager.tableView
+                        cellForRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:1]];
+    assert([more.accessibilityIdentifier isEqual:@"wow.addons.loadMore"]);
+    [manager setValue:@[] forKey:@"_results"];
+    [manager setValue:@(0) forKey:@"_totalCount"];
+    [manager setValue:@(TKAddonHubTabMyAddOns) forKey:@"_tab"];
+    method_setImplementation(keyLookup, savedKeyLookup);
     // A saved API key must remain manageable. The keychain-less fixture cannot exercise these
     // rows, but an entitled run verifies that Browse exposes both replacement and removal.
     TKAddonCredentialStore *managedCredentials = [TKAddonCredentialStore new];
@@ -778,6 +812,70 @@ static void TestAddonHub(void) {
                       state:TKAddonUpdateStateUpToDate detail:@"2.1" logo:nil];
     assert(Find(row, withArtwork[@"logo"]) == nil);
 
+    // --- 5b. the destructive action is explained before it is offered, and removing is a
+    //     second, separate decision. The sheet says what Disable and Remove do to the folder; the
+    //     sheet's Remove action is the only destructive one, and it opens its own confirmation.
+    UIAlertController *manage = [manager manageSheetForRecord:unmanagedRecord];
+    NSString *explanation = WKLocalized(@"addons.manage.found");
+    assert(explanation.length > 0 && ![explanation hasPrefix:@"addons."]);
+    assert([manage.message containsString:explanation]);
+    NSUInteger destructive = 0;
+    for (UIAlertAction *offered in manage.actions)
+        if (offered.style == UIAlertActionStyleDestructive) destructive += 1;
+    assert(destructive == 1);
+
+    // --- 5c. a package this app owns gets the whole action set, and a cancel while its archive is
+    //     in flight is a named outcome rather than a row stuck on "Updating…".
+    TKAddonRecord *managedRecord = [TKAddonRecord new];
+    managedRecord.identifier = @"SelftestOwned";
+    managedRecord.uuid = @"selftest-owned";
+    managedRecord.name = @"Selftest Owned";
+    managedRecord.folders = @[@"SelftestOwned"];
+    managedRecord.managed = YES;
+    managedRecord.provenance = TKAddonProvenanceFiles;
+    UIAlertController *ownedSheet = [manager manageSheetForRecord:managedRecord];
+    NSString *ownedExplanation = WKLocalized(@"addons.manage.owned");
+    assert(ownedExplanation.length > 0 && ![ownedExplanation hasPrefix:@"addons."]);
+    assert([ownedSheet.message containsString:ownedExplanation]);
+    NSArray<NSString *> *ownedTitles = [ownedSheet.actions valueForKey:@"title"];
+    assert([ownedTitles containsObject:WKLocalized(@"addons.disable")]);
+    assert([ownedTitles containsObject:WKLocalized(@"addons.pin")]);
+    assert([ownedTitles containsObject:WKLocalized(@"addons.link.title")]);
+    assert([ownedTitles containsObject:WKLocalized(@"addons.remove")]);
+    NSMutableSet<NSString *> *downloading = [manager valueForKey:@"_downloadingPackages"];
+    [downloading addObject:apiRecord.uuid];
+    assert([manager updateResultForRecord:apiRecord] == TKAddonUpdateResultDownloading);
+    [manager startRowActionForRecord:apiRecord];
+    assert(![[manager valueForKey:@"_downloadingPackages"] containsObject:apiRecord.uuid]);
+    assert([manager updateResultForRecord:apiRecord] != TKAddonUpdateResultDownloading);
+
+    // The other two sheets the page offers, built here so the fixture and the device self-test
+    // assert the same controls: a package with no project can be linked, and removal is a
+    // second decision that names the package and offers exactly one destructive action.
+    UIAlertController *linkSheet = [manager linkSheetForRecord:filesRecord];
+    assert([linkSheet.message isEqual:WKLocalized(@"addons.link.message")]);
+    assert([[linkSheet.actions valueForKey:@"title"] containsObject:WKLocalized(@"addons.link.search")]);
+    UIAlertController *foundRemoval = [manager removalConfirmationForRecord:unmanagedRecord];
+    assert([foundRemoval.message isEqual:WKLocalized(@"addons.remove.messageFound")]);
+    NSUInteger foundDestructive = 0;
+    for (UIAlertAction *offered in foundRemoval.actions)
+        if (offered.style == UIAlertActionStyleDestructive) foundDestructive += 1;
+    assert(foundDestructive == 1);
+    UIAlertController *ownedRemoval = [manager removalConfirmationForRecord:managedRecord];
+    assert([ownedRemoval.message isEqual:WKLocalized(@"addons.remove.messageOwned")]);
+    assert([ownedRemoval.title containsString:@"Selftest Owned"]);
+    // The Files import explains what it accepts before the picker opens, and a multi-package
+    // update names the packages it will replace.
+    UIAlertController *importSheet = [manager importExplanationSheet];
+    assert([importSheet.message containsString:@"ZIP"]);
+    assert([[importSheet.actions valueForKey:@"title"] containsObject:WKLocalized(@"addons.import.explain.choose")]);
+    assert([[importSheet.actions valueForKey:@"title"] containsObject:WKLocalized(@"common.cancel")]);
+    UIAlertController *bulkSheet = [manager bulkConfirmationForRecords:@[apiRecord]
+                                                                 title:WKLocalized(@"addons.update.allTitle")
+                                                                  verb:WKLocalized(@"addons.updateAll")];
+    assert([bulkSheet.message containsString:(apiRecord.name ?: apiRecord.identifier)]);
+    assert([[bulkSheet.actions valueForKey:@"title"] containsObject:WKLocalized(@"common.cancel")]);
+
     // --- 6. groups organize records and move no file
     NSError *groupError = nil;
     TKAddonGroup *group = [hubStore createGroupNamed:@"Raiding" error:&groupError];
@@ -787,6 +885,26 @@ static void TestAddonHub(void) {
     // page would read rather than from the object that was created a moment ago.
     assert(hubStore.groups.count == 1 && hubStore.groups.firstObject.members.count == 1);
     assert([hubStore.groups.firstObject.members.firstObject isEqual:apiRecord.uuid]);
+    // The section the list draws is the group the store now holds, and a group with no member
+    // is not drawn at all: an empty heading is a control that did nothing.
+    BOOL drewRaiding = NO;
+    for (NSDictionary *section in [manager myAddOnSections])
+        if ([section[@"title"] isEqual:@"Raiding"]) drewRaiding = YES;
+    assert(drewRaiding);
+    // The membership sheet lists the group the package can join (a member's row carries the
+    // checkmark, so both spellings are the same control).
+    UIAlertController *groupSheet = [manager groupSheetForRecord:apiRecord];
+    BOOL listsRaiding = NO;
+    for (UIAlertAction *action in groupSheet.actions)
+        if ([action.title isEqual:@"Raiding"] || [action.title isEqual:@"✓ Raiding"]) listsRaiding = YES;
+    assert(groupSheet != nil && listsRaiding);
+    TKAddonGroup *empty = [hubStore createGroupNamed:@"Empty" error:&groupError];
+    assert(empty != nil);
+    BOOL drewEmpty = NO;
+    for (NSDictionary *section in [manager myAddOnSections])
+        if ([section[@"title"] isEqual:@"Empty"]) drewEmpty = YES;
+    assert(!drewEmpty);
+    assert([hubStore removeGroup:empty error:&groupError]);
     // A second group with the same name is refused rather than duplicated.
     assert([hubStore createGroupNamed:@"raiding" error:&groupError] == nil);
     assert([hubStore removeGroup:group error:&groupError]);
@@ -819,6 +937,34 @@ static void TestAddonHub(void) {
            TKAddonHubKeyStatus: @302, TKAddonHubKeyCode: @-999 });
     assert([web containsString:@"event=web action=response-policy host=www.curseforge.com"]);
     assert([web containsString:@"route=download mime=html status=302 code=-999"]);
+
+    // --- 7b. the switch: off by default, and one pair when it is on
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:TKAddonHubDiagnosticsEnabledKey];
+    TKAddonHubSetDiagnosticsEnabled(NO);
+    NSMutableArray<NSString *> *written = [NSMutableArray array];
+    TKAddonHubSetSink(^(NSString *line) { [written addObject:line]; });
+    assert(!TKAddonHubDiagnosticsEnabled());
+    assert(TKAddonHubActionBegin(TKAddonHubActionRemove, nil) == nil);
+    TKAddonHubLogFlush();
+    assert(written.count == 0);
+    TKAddonHubSetDiagnosticsEnabled(YES);
+    TKAddonHubLogFlush();
+    [written removeAllObjects];
+    TKAddonHubActionToken *logged = TKAddonHubActionBegin(TKAddonHubActionRemove,
+        @{ TKAddonHubKeyIdentifier: @"FromApi" });
+    TKAddonHubActionFinish(logged, TKAddonHubOutcomeFailed, TKAddonHubFailureStore, nil);
+    TKAddonHubLogFlush();
+    assert(written.count == 2);
+    assert([written[0] containsString:@"event=action"]);
+    assert([written[0] containsString:@"action=remove"]);
+    assert([written[0] containsString:@"outcome=started"]);
+    assert([written[1] containsString:@"outcome=failed"]);
+    assert([written[1] containsString:@"failure=store"]);
+    assert([written[1] containsString:@"duration="]);
+    for (NSString *line in written) assert([line rangeOfString:@"http"].location == NSNotFound);
+    TKAddonHubSetDiagnosticsEnabled(NO);
+    TKAddonHubLogFlush();
+    TKAddonHubSetSink(nil);
 
     // --- 8. the browser trusts CurseForge and its CDN over HTTPS, and nothing else
     assert([TKWoWAddonBrowserViewController isTrustedArchiveURL:
@@ -2835,7 +2981,10 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     UINavigationController *frame = [self settledPresentedController];
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
-    assert([page.title isEqual:@"ADD-ON-VERWALTUNG"]);
+    // The page names itself on its navigation item, not through -[UIViewController setTitle:]:
+    // that setter faulted on the installed build while this page was being created (2026-11-23),
+    // and the bar reads the item's title anyway.
+    assert([page.navigationItem.title isEqual:@"ADD-ON-VERWALTUNG"]);
     [self.window layoutIfNeeded];
     [self assertGermanOnlyInView:page.view page:@"ADD-ON-VERWALTUNG"];
     [self capture:@"wow-addons-de.png"];
@@ -2885,7 +3034,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([sheet.message containsString:@"Aktualisierungen werden automatisch installiert"]);
     NSArray *titles = [sheet.actions valueForKey:@"title"];
     for (NSString *expected in @[@"Spieldateien prüfen und reparieren",
-                                 @"Diagnose und Protokolle", @"Eingabediagnose einschalten",
+                                 @"Diagnose und Protokolle", @"Diagnose für den Add-on-Manager",
                                  @"Über diese App und Open-Source-Lizenzen",
                                  @"Abbrechen"])
         assert([titles containsObject:expected]);
@@ -3089,8 +3238,13 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
         (@[@"Verify and repair game files", @"Diagnostics and logs",
            @"Arm network health for next launch",
-           @"Turn on input diagnostics", @"About and open-source licenses", @"Cancel"])]);
+           @"Add-On Manager diagnostics", @"About and open-source licenses", @"Cancel"])]);
     assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
+    // No diagnostic switch lives at the Settings root: both of them are on the page below, each
+    // with the sentence that says what it records.
+    for (UIAlertAction *action in settings.actions)
+        assert(![action.title isEqual:@"Turn on input diagnostics"] &&
+               ![action.title isEqual:@"Turn off input diagnostics"]);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.
     __block NSInteger diagnostics = 0;
     self.controller.showDiagnostics = ^{ diagnostics++; };
@@ -3102,6 +3256,46 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     Pump(0.4);
     assert(diagnostics == 1);
     self.controller.showDiagnostics = nil;
+
+    // The diagnostics page: both switches, logging off by default, and the add-on switch writes
+    // the stored value the page says it writes.
+    TapBarItem(gear);
+    Pump(0.7);
+    settings = WaitForSheetTitled(self.controller, @"Settings", 20.0);
+    UIAlertAction *addonDiagnostics = nil;
+    for (UIAlertAction *action in settings.actions)
+        if ([action.title isEqual:@"Add-On Manager diagnostics"]) addonDiagnostics = action;
+    assert(addonDiagnostics != nil);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    TKAddonHubSetDiagnosticsEnabled(NO);
+    RunAction(addonDiagnostics);
+    Pump(1.0);
+    UIViewController *presented = self.controller.presentedViewController;
+    assert([presented isKindOfClass:UINavigationController.class]);
+    UITableViewController *page = (UITableViewController *)((UINavigationController *)presented).topViewController;
+    assert([page isKindOfClass:TKAddonDiagnosticsViewController.class]);
+    [page loadViewIfNeeded];
+    UITableViewCell *eventsRow = [page tableView:page.tableView
+                          cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+    UISwitch *events = (UISwitch *)eventsRow.accessoryView;
+    assert([events.accessibilityIdentifier isEqual:@"wow.addons.diagnostics.events"]);
+    assert(!events.isOn);
+    events.on = YES;
+    [events sendActionsForControlEvents:UIControlEventValueChanged];
+    assert(TKAddonHubDiagnosticsEnabled());
+    assert([NSUserDefaults.standardUserDefaults boolForKey:TKAddonHubDiagnosticsEnabledKey]);
+    events.on = NO;
+    [events sendActionsForControlEvents:UIControlEventValueChanged];
+    assert(!TKAddonHubDiagnosticsEnabled());
+    UITableViewCell *inputRow = [page tableView:page.tableView
+                         cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:1]];
+    UISwitch *inputSwitch = (UISwitch *)inputRow.accessoryView;
+    assert([inputSwitch.accessibilityIdentifier isEqual:@"wow.addons.diagnostics.input"]);
+    UITableViewCell *logRow = [page tableView:page.tableView
+                       cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:2]];
+    assert([logRow.accessibilityIdentifier isEqual:@"wow.addons.diagnostics.log"]);
+    [self.controller dismissViewControllerAnimated:NO completion:nil];
+    Pump(0.7);
     // ... and About, which pushes its page onto the launcher's own stack.
     TapBarItem(gear);
     Pump(0.7);

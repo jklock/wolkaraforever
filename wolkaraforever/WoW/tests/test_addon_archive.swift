@@ -6,6 +6,12 @@ func testImport(_ fixtures: UnsafePointer<CChar>, _ temporary: UnsafePointer<CCh
 @_silgen_name("TestBundledPackageInstall")
 func testBundledPackageInstall(_ fixtures: UnsafePointer<CChar>, _ temporary: UnsafePointer<CChar>) -> Int32
 
+@_silgen_name("TestAddonHubContract")
+func testAddonHubContract() -> Int32
+
+@_silgen_name("TestAddonHubLogOff")
+func testAddonHubLogOff()
+
 @main
 struct ArchiveTests {
     static func main() throws {
@@ -15,6 +21,9 @@ struct ArchiveTests {
         }
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
         let packageFixtures = CommandLine.arguments[2]
+        // Nothing this process does is recorded unless a test switches it on: the Add-on Hub
+        // log is off by default, and a previous run must not be able to change that here.
+        testAddonHubLogOff()
         let work = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: work) }
         var checks = 0
@@ -68,6 +77,8 @@ struct ArchiveTests {
             }
         }
         check(bundledResult == 0, "bundled package install lifecycle")
+        // The action-event contract, and its privacy boundary, with logging off by default.
+        check(testAddonHubContract() == 0, "action-event contract and redaction")
         print("ADDON ARCHIVE PASS: \(checks) checks, production Swift and pinned ZIPFoundation")
     }
 }
