@@ -1295,14 +1295,29 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 // picker and the offer that follows the first German selection - come through here, so the
 // validated locale writer and the update gate are the same in both.
 - (void)setGameLocale:(NSString *)value {
-    _locale=value;
     NSString *directory=[self foreverWorkingDirectory];
     if (directory) {
         NSError *error=nil;
-        if (![TKForeverUI setLocale:value inWorkingDirectory:directory error:&error])
+        if (![TKForeverUI setLocale:value inWorkingDirectory:directory error:&error]) {
             WKLog("ui", @"language: unable to update Forever locale: %@", error.localizedDescription?:@"unknown reason");
+            return;
+        }
     }
+    _locale=value;
     [NSUserDefaults.standardUserDefaults setObject:value forKey:@"WoWLocale"];
+    [self refresh];
+}
+- (void)setGameRegion:(NSString *)value {
+    NSString *directory=[self foreverWorkingDirectory];
+    if (directory) {
+        NSError *error=nil;
+        if (![TKForeverUI setRegion:value inWorkingDirectory:directory error:&error]) {
+            WKLog("ui", @"region: unable to update Forever portal: %@", error.localizedDescription?:@"unknown reason");
+            return;
+        }
+    }
+    _region=value;
+    [NSUserDefaults.standardUserDefaults setObject:value forKey:@"WoWRegion"];
     [self refresh];
 }
 - (void)choosePreference:(BOOL)region {
@@ -1310,7 +1325,7 @@ static dispatch_queue_t TKForeverUIQueue(void) {
     NSArray *values=region?@[@"eu",@"us",@"kr",@"tw"]:@[@"enUS",@"frFR",@"esES",@"deDE"];
     for (NSString *value in values) [sheet addAction:[UIAlertAction actionWithTitle:region?TKWoWRegionName(value):TKWoWLocaleName(value) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         (void)action;
-        if (region) { self->_region=value; [NSUserDefaults.standardUserDefaults setObject:value forKey:@"WoWRegion"]; [self refresh]; }
+        if (region) [self setGameRegion:value];
         else [self setGameLocale:value];
     }]];
     [self presentSheet:sheet anchor:_preferencesButton];

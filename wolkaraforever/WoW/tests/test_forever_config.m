@@ -159,6 +159,26 @@ int main(void) {
         assert(![TKForeverUI setLocale:@"invalid" inWorkingDirectory:root error:&error]);
         assert([Read(ConfigPath(root) ) isEqual:localeConfig]);
 
+        // --- region selection replaces only portal, including duplicates. This
+        // keeps a changed launcher region from leaving the installed client at
+        // the endpoint selected when it was first downloaded.
+        Write(ConfigPath(root),
+              @"SET portal \"EU\"\r\n"
+               "SET textLocale \"enUS\"\r\n"
+               "SET portal \"eu\"\r\n"
+               "SET accountName \"ACC\"\r\n"
+               "SET audioLocale \"enUS\"\r\n");
+        assert([TKForeverUI setRegion:@"us" inWorkingDirectory:root error:&error]);
+        assert([Read(ConfigPath(root) ) isEqual:@"SET textLocale \"enUS\"\r\n"
+                                               "SET accountName \"ACC\"\r\n"
+                                               "SET audioLocale \"enUS\"\r\n"
+                                               "SET portal \"US\"\n"]);
+        NSString *regionConfig = Read(ConfigPath(root));
+        assert([TKForeverUI setRegion:@"US" inWorkingDirectory:root error:&error]);
+        assert([Read(ConfigPath(root) ) isEqual:regionConfig]);
+        assert(![TKForeverUI setRegion:@"invalid" inWorkingDirectory:root error:&error]);
+        assert([Read(ConfigPath(root) ) isEqual:regionConfig]);
+
         // --- names and values that would write an unreadable line are refused
         NSDictionary *badName = @{@"render Scale": @"0.5"};
         NSDictionary *badSpace = @{@"renderScale": @"0.5 0.5"};
@@ -166,7 +186,7 @@ int main(void) {
         assert(![TKForeverUI setCVars:badName inWorkingDirectory:root error:&error]);
         assert(![TKForeverUI setCVars:badSpace inWorkingDirectory:root error:&error]);
         assert(![TKForeverUI setCVars:badQuote inWorkingDirectory:root error:&error]);
-        assert([Read(ConfigPath(root)) isEqual:localeConfig]); // nothing was written
+        assert([Read(ConfigPath(root)) isEqual:regionConfig]); // nothing was written
 
         // --- the performance preset writes exactly its own names
         assert([TKForeverUI applyPerformancePresetInWorkingDirectory:root error:&error]);
@@ -185,7 +205,7 @@ int main(void) {
         NSString *reset = Read(ConfigPath(root));
         assert(![reset containsString:@"renderScale"]);
         assert(![reset containsString:@"gxForegroundFPS"]);
-        assert([reset containsString:@"SET portal \"eu\""]);
+        assert([reset containsString:@"SET portal \"US\""]);
 
         // --- a WTF folder outside the working directory is refused
         NSString *outside = [root stringByAppendingPathComponent:@"../outside-wtf"];
@@ -198,7 +218,7 @@ int main(void) {
         [files removeItemAtPath:root error:NULL];
         [files removeItemAtPath:bare error:NULL];
         [files removeItemAtPath:outside error:NULL];
-        puts("FOREVER_CONFIG_PASS: graphics allowlist, byte preservation, CRLF, missing config, gamepad normalisation, CVar set/replace/idempotence, refusal of unreadable names and values, performance preset and its reset, and path boundary.");
+        puts("FOREVER_CONFIG_PASS: graphics allowlist, byte preservation, CRLF, missing config, gamepad normalisation, locale and region replacement, CVar set/replace/idempotence, refusal of unreadable names and values, performance preset and its reset, and path boundary.");
         return 0;
     }
 }

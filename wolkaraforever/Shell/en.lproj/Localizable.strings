@@ -737,6 +737,7 @@
 "forever.error.settingValue" = "A setting value contains a space or a quote.";
 "forever.error.settingStore" = "A setting could not be stored.";
 "forever.error.unsupportedLanguage" = "The selected game language is not supported.";
+"forever.error.unsupportedRegion" = "The selected game region is not supported.";
 "forever.error.noBackupComponent" = "The backup component is not available in this build.";
 "forever.error.backupComponent" = "The backup component cannot be used in this build.";
 

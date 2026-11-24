@@ -160,8 +160,8 @@ Two decisions, each its own sheet:
 | **Language** | The game's text and audio language (for example English (US), Deutsch, Français, Español). Changing it downloads the selected-language files before **Play**. |
 
 The row on the home page reads back both, for example `Region / Locale: EU English`. The launcher
-writes the choice into the game's own `WTF/Config.wtf` (`portal`, `textLocale`, `audioLocale`), which
-is what the client reads at login.
+writes each changed choice into the game's own `WTF/Config.wtf` (`portal`, `textLocale`,
+`audioLocale`) while preserving every other game setting. The client reads those values at login.
 
 ## App language
 
