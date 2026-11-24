@@ -541,6 +541,12 @@ cmd_install() {
     record_what_was_running
     stop_app "$force"
     step "building and installing"
+    # install.sh relays the platform build log while Xcode works. Keep that
+    # output visible here too; hiding it in the session file made a healthy
+    # long build indistinguishable from a wedged command.
+    run_install() {
+        "$root/wolkaraforever/tools/install.sh" 2>&1 | tee "$SESSION/install.log"
+    }
     # No --replace-running: this script has already stopped what was running, so
     # anything running now started in between and must not be killed for us.
     #
@@ -550,10 +556,10 @@ cmd_install() {
     # application could not be determined" - with the app installed and healthy, which the app's own
     # log shows. Retried once, and only for that message: anything else is a real failure and is
     # reported with its output rather than as a bare exit code.
-    if ! "$root/wolkaraforever/tools/install.sh" > "$SESSION/install.log" 2>&1; then
+    if ! run_install; then
         if grep -q "process identifier of the launched application could not be determined" "$SESSION/install.log"; then
             say "the enrolment's process lookup raced the app's own exit; installing once more"
-            "$root/wolkaraforever/tools/install.sh" > "$SESSION/install.log" 2>&1 || {
+            run_install || {
                 tail -20 "$SESSION/install.log"
                 die "install failed twice, and not on the race the first time"
             }
@@ -845,7 +851,11 @@ cmd_view() {
         --destination "$APP_LOG" >/dev/null 2>&1 || true
     if [ -s "$APP_LOG" ]; then
         tail -12 "$APP_LOG" | cut -c1-170 | sed 's/^/  /'
-        grep -q "\[fatal\]" "$APP_LOG" && say "IT SAYS SOMETHING FATAL: pilot.sh log"
+        if app_log_has_new_fatal; then
+            say "the launch from this run logged something fatal: pilot.sh log"
+        elif grep -q "\[fatal\]" "$APP_LOG"; then
+            say "a historical fatal is in pilot.sh log; it is not evidence about this run"
+        fi
     else
         say "no Documents/wolkaraforever.log yet"
     fi
@@ -891,6 +901,21 @@ log_line_count() {
     fi
 }
 
+# `wolkaraforever.log` survives app replacements and launches. A fatal marker is evidence about
+# the current validation only when it appears after the launch marker added by this session.
+app_log_has_new_fatal() {
+    [ -f "$SESSION/log-launches-before" ] || return 1
+    local before; before=$(cat "$SESSION/log-launches-before" 2>/dev/null || true)
+    case "$before" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    awk -v before="$before" '
+        / launched ---$/ { launches++; next }
+        launches > before && /\[fatal\]/ { found=1 }
+        END { exit !found }
+    ' "$APP_LOG"
+}
+
 cmd_log() {
     local lines=${1:-60}
     local pattern=${2:-.}
@@ -920,10 +945,15 @@ cmd_log() {
             say "so what is above was written by an earlier build, whatever it says"
         fi
     fi
-    if grep -q "\[fatal\]" "$APP_LOG"; then
+    if app_log_has_new_fatal; then
         step "it says something fatal"
-        grep -n "\[fatal\]" "$APP_LOG" | tail -4 | cut -c1-200 | sed 's/^/  /'
+        awk -v before="$before" '
+            / launched ---$/ { launches++; next }
+            launches > before && /\[fatal\]/ { print NR ":" $0 }
+        ' "$APP_LOG" | tail -4 | cut -c1-200 | sed 's/^/  /'
         say "the full report, with the stack, is in the same file"
+    elif grep -q "\[fatal\]" "$APP_LOG"; then
+        say "a historical fatal is in this log; it is not evidence about this run"
     fi
 }
 

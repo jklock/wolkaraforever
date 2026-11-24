@@ -734,6 +734,7 @@
 "forever.error.settingValue" = "Ein Einstellungswert enthält ein Leerzeichen oder ein Anführungszeichen.";
 "forever.error.settingStore" = "Eine Einstellung konnte nicht gespeichert werden.";
 "forever.error.unsupportedLanguage" = "Die gewählte Spielsprache wird nicht unterstützt.";
+"forever.error.unsupportedRegion" = "Die gewählte Spielregion wird nicht unterstützt.";
 "forever.error.noBackupComponent" = "Die Sicherungskomponente ist in dieser Version nicht enthalten.";
 "forever.error.backupComponent" = "Die Sicherungskomponente kann in dieser Version nicht verwendet werden.";
 

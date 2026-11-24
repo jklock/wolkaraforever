@@ -339,6 +339,21 @@ inWorkingDirectory:(NSString *)directory
   inWorkingDirectory:directory error:error];
 }
 
++ (BOOL)setRegion:(NSString *)region inWorkingDirectory:(NSString *)directory error:(NSError **)error {
+    static NSSet<NSString *> *supported;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        supported = [NSSet setWithArray:@[@"eu", @"us", @"kr", @"tw"]];
+    });
+    NSString *normalised = region.lowercaseString;
+    if (![supported containsObject:normalised]) {
+        if (error) *error = TKError(WKLocalized(@"forever.error.unsupportedRegion"));
+        return NO;
+    }
+    return [self setCVars:@{@"portal": normalised.uppercaseString}
+  inWorkingDirectory:directory error:error];
+}
+
 + (BOOL)gamepadEnabledInWorkingDirectory:(NSString *)directory {    NSError *error = nil;
     NSString *wtf = [self wtfDirectoryInWorkingDirectory:directory create:NO error:&error];
     if (!wtf) return NO;

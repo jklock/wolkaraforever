@@ -60,6 +60,14 @@ inWorkingDirectory:(NSString *)directory
 inWorkingDirectory:(NSString *)directory
            error:(NSError **)error;
 
+// Keeps the installed Forever client's portal aligned with the launcher region.
+// Only the portal assignment is replaced; every other Config.wtf line keeps its
+// bytes. Supported Blizzard region tags are required so the launcher can never
+// write an unusable login endpoint.
++ (BOOL)setRegion:(NSString *)region
+inWorkingDirectory:(NSString *)directory
+           error:(NSError **)error;
+
 // The client settings this app applies so a frame fits the display's budget.
 //
 // Measured on Dadpad (M1 iPad Pro 12.9, iPadOS 27, 2026-10-23): the client

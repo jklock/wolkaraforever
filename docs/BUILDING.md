@@ -88,8 +88,10 @@ wolkaraforever/tools/install.sh
    cleanly first, and `--force-kill` is the explicit escalation that is never implied.
 1. **Prepare** — `wolkaraforever/tools/prepare.sh`.
 2. **Build** — the engine's own `install.sh` on the prepared tree, which builds and signs our
-   code only, then installs it. `--build-only` stops here and never touches the device, so a
-   compile error costs nothing; with no iPad attached it builds for the generic iOS destination.
+   code only, then installs it. The wrapper relays a periodic line from the platform build log
+   while Xcode works; it never kills a slow build. `--build-only` stops here and never touches
+   the device, so a compile error costs nothing; with no iPad attached it builds for the generic
+   iOS destination.
 3. **After the install** — decided by `TOLKARA_MODE`
    (`wolkaraforever/tools/after_install.sh`): Developer service enrolls the developer service;
    Local signing checks that the page container for this build's executable is on the device;
