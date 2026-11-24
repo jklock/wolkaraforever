@@ -236,10 +236,6 @@ the workflow:
 - `TOLKARA_SKIP_SIGNING_ENFORCEMENT=1`: GitHub's Macs run with System Integrity Protection off,
   so macOS does not enforce code signing there; the three platform tests that check that
   enforcement report skipped. On a normal Mac they run.
-- `UI_BASELINE_UNCOMPARED`: the iPad's three add-ons pages draw their rows 8 px further left on
-  GitHub's virtual Mac than on a Mac, where they match the baselines, so their pixels are not
-  compared there; the fixture's checks of those pages still run, and every other page is
-  compared.
 - The launcher pages are drawn in UTC everywhere (the fixture sets it), so their reviewed
   baselines match on any machine, whatever its time zone.
 
