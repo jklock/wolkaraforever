@@ -219,8 +219,7 @@ run on separate machines at once.
 On GitHub, the **Validate (manual)** workflow does exactly that: from the Actions tab, **Run
 workflow** with a branch or tag, and each group runs on its own machine, side by side, with a
 report per group in the run's summary. Each job's summary starts with `tested commit:` and the
-commit it checked out, which is the one to quote for a pull request: when another workflow calls
-this one, the run's page shows the caller's commit instead. The launcher group runs once per device there, each on
+commit it checked out, which is the one to quote for a pull request. The launcher group runs once per device there, each on
 its own machine (`UI_POLICY_SIMULATORS` narrows the UI policy check to one device), because a
 hosted machine booting both simulators stopped responding. When a launcher page differs from its
 baseline there, the run keeps what that machine drew beside the baselines, as an artifact. A hosted machine
@@ -229,8 +228,9 @@ off Spotlight, which was indexing the fresh disk during the boot. A machine can
 still stop responding while it boots a simulator, and its job then ends "cancelled" with no
 reason given; that is the machine, not a test, and **Re-run failed jobs** reruns just that job.
 Each job logs its free memory, load and largest processes once a minute, so such a stop leaves a
-trace. The workflow never runs by itself; pull requests run only the repository checks. The iPad
-rows are not part of it, since they need the iPad. What differs on a hosted machine is set by
+trace. The workflow never runs by itself; it is never a required PR check. Pull requests instead
+run two non-simulator jobs: the layer/documentation gate and the native regression suite. The iPad
+rows are not part of any GitHub workflow, since they need the iPad. What differs on a hosted machine is set by
 the workflow:
 
 - `TOLKARA_SKIP_SIGNING_ENFORCEMENT=1`: GitHub's Macs run with System Integrity Protection off,

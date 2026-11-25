@@ -1,6 +1,6 @@
 # Everything validate.sh runs except the iPad rows, on GitHub's machines, split into its own
 # groups (validate.sh --group) and run side by side. Never automatic: start it from the Actions
-# tab with "Run workflow" for any branch or tag. Pull requests run only ci.yml's gates.
+# tab with "Run workflow" for any branch or tag. Pull requests never invoke this workflow.
 
 name: Validate (manual)
 
@@ -10,11 +10,6 @@ on:
       ref:
         description: "Branch, tag or commit to validate"
         required: true
-  workflow_call:
-    inputs:
-      ref:
-        required: true
-        type: string
 
 permissions:
   contents: read
