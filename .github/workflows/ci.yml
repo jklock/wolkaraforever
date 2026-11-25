@@ -54,6 +54,10 @@ jobs:
     # non-simulator layer/tool suite. Do not add simulator setup or boot here.
     runs-on: xcode-27
     timeout-minutes: 45
+    env:
+      # GitHub's hosted Macs run with System Integrity Protection off, so the
+      # signing-enforcement tests are not meaningful there (patch 0075 skips them).
+      TOLKARA_SKIP_SIGNING_ENFORCEMENT: "1"
     steps:
       - uses: actions/checkout@v5
         with:
