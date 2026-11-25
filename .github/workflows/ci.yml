@@ -52,12 +52,17 @@ jobs:
     name: Native regression suite
     # validate.sh --group mac exercises the prepared native runtime and every
     # non-simulator layer/tool suite. Do not add simulator setup or boot here.
-    runs-on: macos-15-intel
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Use Xcode 27
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_27*.app | sort -V | tail -1)"
+          xcodebuild -version
 
       - name: Install XcodeGen and LuaJIT
         run: brew install xcodegen luajit
