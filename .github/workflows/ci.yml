@@ -1,9 +1,8 @@
 name: Repository checks
 
-# What this pipeline is: the layer's gates - the split, the patches, the overlay,
-# the documentation and the string tables. What it is not: a build, a test run, or
-# anything that needs a simulator or a device. Those are local (`docs/BUILDING.md`,
-# `validate.sh`).
+# The required GitHub PR gate. It proves the layer boundary, documentation and
+# non-simulator native regressions. Simulator and device validation remains an
+# explicit maintainer action in validate.yml.
 on:
   push:
     branches: [main]
@@ -48,4 +47,38 @@ jobs:
       - run: wolkaraforever/tools/check_docs.sh
       - run: python3 wolkaraforever/tools/check_localization.py
       - run: wolkaraforever/tools/check_layers.sh
+
+  native-regression:
+    name: Native regression suite
+    # validate.sh --group mac exercises the prepared native runtime and every
+    # non-simulator layer/tool suite. Do not add simulator setup or boot here.
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install XcodeGen and LuaJIT
+        run: brew install xcodegen luajit
+
+      - name: Fetch the pinned upstream tree
+        run: |
+          pin=$(git log --grep='^git-subtree-dir: platform$' -n 1 --format=%B | sed -n 's/^git-subtree-split: //p')
+          test -n "$pin" || { echo "No pinned platform commit recorded"; exit 1; }
+          git remote add upstream https://github.com/tolkara/tolkara.git
+          git fetch --quiet upstream "$pin"
+          git update-ref refs/remotes/upstream/main "$pin"
+
+      - name: Run native regression suite
+        run: wolkaraforever/tools/validate.sh --group mac --out "$RUNNER_TEMP/validation.md"
+
+      - name: Report
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f "$RUNNER_TEMP/validation.md" ]; then
+            cat "$RUNNER_TEMP/validation.md" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "validate.sh wrote no report" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
