@@ -120,22 +120,35 @@ fixture_compile() {
 }
 
 fixture_launch() {
-    local log=$1 bundle=$2 line pid base
+    local log=$1 bundle=$2 line pid base stdio_out stdio_err
     shift 2
     case "$log" in /*) base=$log ;; *) base=$PWD/$log ;; esac
     rm -f "$base.stdout" "$base.stderr"
     # A copy already running is left alone: the launch fails, named, rather than end it.
     fixture_refuse_if_running "$bundle" 2>&1 | tee "$log" >&2
     [ "${PIPESTATUS[0]}" = 0 ] || return 1
+    # The simulator's launchd opens these files itself, and it is refused a path on a volume other
+    # than the boot volume: with `--stdout` in a tree on an external disk, `simctl launch` answers
+    # "did not return a process handle nor launch error" and the app never starts (measured
+    # 2026-11-25). The console is captured under TMPDIR and copied to the caller's path after the
+    # fixture has finished; the app keeps writing to that same descriptor throughout the run.
+    stdio_out=$(mktemp "${TMPDIR:-/tmp}/fixture-launch-out.XXXXXX")
+    stdio_err=$(mktemp "${TMPDIR:-/tmp}/fixture-launch-err.XXXXXX")
     # The launch command gets its own limit: the caller's FIXTURE_STEP_LIMIT is for the run that
     # follows, and on a just-booted simulator `simctl launch` alone took over a minute on a hosted
     # runner (2026-11-22), which a suite's 60 s run limit then stopped.
     line=$(FIXTURE_STEP_LIMIT=${FIXTURE_LAUNCH_LIMIT:-300} fixture_step "launch of $bundle" xcrun simctl launch \
-        --stdout="$base.stdout" --stderr="$base.stderr" "$SIM_ID" "$bundle" "$@")
+        --stdout="$stdio_out" --stderr="$stdio_err" "$SIM_ID" "$bundle" "$@")
     pid=${line##*: }
     echo "$line"
     # A launch that never started still leaves a log, so the suite's own checks read something.
-    [[ "$pid" =~ ^[0-9]+$ ]] || { echo "fixture_launch: no pid in: $line" | tee "$log" >&2; return 1; }
+    if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+        cp "$stdio_out" "$base.stdout" 2> /dev/null || true
+        cp "$stdio_err" "$base.stderr" 2> /dev/null || true
+        rm -f "$stdio_out" "$stdio_err"
+        echo "fixture_launch: no pid in: $line" | tee "$log" >&2
+        return 1
+    fi
     # The fixtures stop themselves: each has a 30-second watchdog. This is the backstop, and it
     # reports rather than repairs: a fixture still running at the limit is named, left running,
     # and the launch fails after writing what the fixture said so far.
@@ -149,11 +162,14 @@ fixture_launch() {
         fi
     done
     {
-        cat "$log.stdout" "$log.stderr" 2> /dev/null || true
+        cat "$stdio_out" "$stdio_err" 2> /dev/null || true
         echo "--- the system log of $bundle ($pid) ---"
         xcrun simctl spawn "$SIM_ID" log show --last 15m --style compact \
             --predicate "processIdentifier == $pid" 2> /dev/null || true
         [ -z "$hung" ] || echo "$hung"
     } | tee "$log"
+    cp "$stdio_out" "$base.stdout" 2> /dev/null || true
+    cp "$stdio_err" "$base.stderr" 2> /dev/null || true
+    rm -f "$stdio_out" "$stdio_err"
     [ -z "$hung" ] || return 124
 }

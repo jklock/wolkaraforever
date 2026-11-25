@@ -212,12 +212,11 @@
 "home.settings.message" = "Les mises à jour s’installent automatiquement tant que l’app est ouverte. Vos réglages et vos addons sont conservés. La préparation au démarrage est distincte du téléchargement des mises à jour.";
 "home.settings.repair" = "Vérifier et réparer les fichiers du jeu";
 "home.settings.diagnostics" = "Diagnostics et journaux";
+"home.settings.addonDiagnostics" = "Diagnostics du gestionnaire d’add-ons";
 "home.settings.networkHealthOn" = "Activer le diagnostic réseau pour le prochain lancement";
 "home.settings.networkHealthOff" = "Désactiver le diagnostic réseau pour le prochain lancement";
 "home.settings.networkHealth.title" = "Diagnostic réseau activé";
 "home.settings.networkHealth.message" = "Expérimental : le prochain lancement enregistre des compteurs TCP anonymes pendant 15 minutes au maximum. Il n’enregistre ni adresse, ni port, ni nom, ni données utiles, ni identifiant, ni donnée de jeu.";
-"home.settings.inputDiagnosticsOn" = "Activer les diagnostics d’entrée";
-"home.settings.inputDiagnosticsOff" = "Désactiver les diagnostics d’entrée";
 "home.settings.touchpadPointerOn" = "Utiliser le pavé tactile de la manette comme souris";
 "home.settings.touchpadPointerOff" = "Ne plus utiliser le pavé tactile de la manette comme souris";
 "home.settings.touchpadSpeed" = "Vitesse du pavé tactile de la manette : %@";
@@ -644,6 +643,12 @@
 "addons.state.notVerifiedForForever" = "non vérifié pour Forever";
 "addons.manage.note" = "Seul ce paquet géré peut être modifié. Les dossiers existants ne sont pas touchés.";
 "addons.manage.disabledNote" = "Ce paquet est stocké en privé et n’est pas visible par World of Warcraft.";
+"addons.manage.owned" = "WolkaraForever a installé ce paquet. « Désactiver » déplace son dossier hors du jeu jusqu’à sa restauration ; « Supprimer » efface les fichiers installés, après confirmation.";
+"addons.manage.found" = "Ce dossier était déjà dans le dossier AddOns du jeu. « Désactiver » et « Épingler » nécessitent un paquet installé par WolkaraForever ; « Supprimer » efface ce dossier, après confirmation.";
+"addons.remove.title" = "Supprimer %@ ?";
+"addons.remove.messageOwned" = "Les fichiers installés par WolkaraForever pour ce paquet sont supprimés du jeu. Vos autres add-ons, réglages et fichiers de jeu ne sont pas touchés.";
+"addons.remove.messageFound" = "Ce dossier est supprimé du dossier AddOns du jeu. Ses réglages et variables sauvegardées ne sont pas touchés.";
+"addons.remove.now" = "Supprimer de l’appareil";
 "addons.manage.unmanaged" = "Cet addon existant sera retiré de cet appareil.";
 "addons.pin" = "Épingler cette version";
 "addons.unpin" = "Autoriser à nouveau les mises à jour";
@@ -832,6 +837,23 @@
 "addons.discover.popular" = "Populaires";
 "addons.discover.empty" = "Il n’y a rien à découvrir pour cette version du jeu.";
 "addons.discover.hint" = "Actualiser interroge CurseForge à nouveau.";
+
+/* ---- L’import depuis Fichiers, expliqué avant l’ouverture du sélecteur ---- */
+"addons.import.explain.title" = "Importer un add-on depuis Fichiers";
+"addons.import.explain.message" = "Choisissez un fichier ZIP contenant un dossier d’add-on avec son fichier .toc. L’archive est vérifiée avant toute écriture — ses chemins, sa taille et chaque fichier — et une archive qui échoue est refusée sans toucher au jeu. Un add-on importé ainsi est enregistré : il peut être mis à jour, désactivé ou supprimé depuis cette page.";
+"addons.import.explain.choose" = "Choisir un ZIP…";
+
+/* ---- Diagnostics : un interrupteur par aide au développement, avec ce qui est enregistré ---- */
+"addons.diagnostics.title" = "Diagnostics du gestionnaire d’add-ons";
+"addons.diagnostics.section.addons" = "Gestionnaire d’add-ons";
+"addons.diagnostics.section.input" = "Entrée";
+"addons.diagnostics.section.logs" = "Journaux";
+"addons.diagnostics.events" = "Enregistrer les événements du gestionnaire d’add-ons";
+"addons.diagnostics.events.footer" = "Désactivé par défaut. Lorsqu’il est activé, le gestionnaire d’add-ons enregistre l’action exécutée, son résultat (terminée, échouée, annulée ou refusée), le type d’échec et sa durée, ainsi que le type de fournisseur, l’identifiant du paquet et un court condensat de l’archive. Il n’enregistre aucune adresse web, aucun chemin de fichier, aucune clé d’API, aucun cookie, aucun contenu de page ni d’archive. Tant qu’il est désactivé, rien n’est construit ni écrit. Les lignes vont dans wolkaraforever.log, un mégaoctet avec un fichier précédent, à lire ou partager depuis « Diagnostics et journaux » sur l’écran d’accueil.";
+"addons.diagnostics.input" = "Diagnostics d’entrée";
+"addons.diagnostics.input.footer" = "Permet à l’inspecteur de manette d’enregistrer ce qu’il reçoit pendant le jeu. Désactivé par défaut et mémorisé sur cet iPad ; tant qu’il est désactivé, l’inspecteur n’écrit rien.";
+"addons.diagnostics.logs.title" = "Fichier journal";
+"addons.diagnostics.logs.footer" = "Ouvrez « Diagnostics et journaux » sur l’écran d’accueil pour le lire ou le partager. Le dossier Documents de l’app contient le journal actuel et le précédent.";
 
 /* ---- Chat Composer ---- */
 "chat.composer.state.opening" = "Ouverture du chat…";

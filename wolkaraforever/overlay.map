@@ -53,6 +53,8 @@ wolkaraforever/WoW/AddonBrowser.h launcher/WoW/AddonBrowser.h add
 wolkaraforever/WoW/AddonBrowser.m launcher/WoW/AddonBrowser.m add
 wolkaraforever/WoW/AddonCredentialStore.h launcher/WoW/AddonCredentialStore.h add
 wolkaraforever/WoW/AddonCredentialStore.m launcher/WoW/AddonCredentialStore.m add
+wolkaraforever/WoW/AddonDiagnosticsViewController.h launcher/WoW/AddonDiagnosticsViewController.h add
+wolkaraforever/WoW/AddonDiagnosticsViewController.m launcher/WoW/AddonDiagnosticsViewController.m add
 wolkaraforever/WoW/AddonHubLog.h launcher/WoW/AddonHubLog.h add
 wolkaraforever/WoW/AddonHubLog.m launcher/WoW/AddonHubLog.m add
 wolkaraforever/WoW/AddonManager.h launcher/WoW/AddonManager.h add

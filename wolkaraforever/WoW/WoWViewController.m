@@ -15,6 +15,7 @@
 #import "DownloadStatus.h"
 #import "ForeverUI.h"
 #import "BatterySaverOptionsViewController.h"
+#import "AddonDiagnosticsViewController.h"
 #import "Updater.h"
 #import "../App/LaunchProgressView.h"
 #import "../Controller/ControllerInspector.h"
@@ -1462,18 +1463,11 @@ static dispatch_queue_t TKForeverUIQueue(void) {
         WKLog("network", @"health counters %@ for the next launch", networkHealth?@"disarmed":@"armed");
         if(!networkHealth) [self presentMessage:WKLocalized(@"home.settings.networkHealth.title") message:WKLocalized(@"home.settings.networkHealth.message")];
     }]];
-    // Input diagnostics: the one switch that lets the controller inspector write anything at
-    // all during play. Off by default, stored, and off again after the next launch unless the
-    // user leaves it on - which is what makes "no controller-inspector event-log growth during
-    // ordinary play" a measurable statement rather than a hope.
-    BOOL inputDiagnostics=AKControllerInspector.shared.diagnosticsEnabled;
-    [sheet addAction:[UIAlertAction actionWithTitle:(inputDiagnostics?WKLocalized(@"home.settings.inputDiagnosticsOff"):WKLocalized(@"home.settings.inputDiagnosticsOn"))
-        style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        (void)a;
-        AKControllerInspector.shared.diagnosticsEnabled=!inputDiagnostics;
-        WKLog("ui", @"input diagnostics: %@", !inputDiagnostics?@"on":@"off");
-        [AKInputRouter.shared refreshInterest];
-        [AKControllerInspector.shared showPanel:!inputDiagnostics];
+    // Diagnostics live on their own page. A development switch at the Settings root was one tap
+    // from a sheet that also offers Repair; the page says what is recorded, what it costs while
+    // it is off, how long it is kept, and where it can be read.
+    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.addonDiagnostics") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        (void)a; [self addonDiagnostics];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.about") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a; [self about];
@@ -1489,6 +1483,22 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 }
 - (void)settings {
     [self presentSheet:[self settingsSheet] anchor:nil];
+}
+// The diagnostics switches, on a page of their own. The add-on switch is read and written by the
+// hub log itself; the input switch is the controller inspector's, and the page calls back here
+// because the inspector and the input router belong to adapters this page does not import.
+- (void)addonDiagnostics {
+    TKAddonDiagnosticsViewController *page=[[TKAddonDiagnosticsViewController alloc]
+        initWithInputDiagnosticsOn:AKControllerInspector.shared.diagnosticsEnabled];
+    __weak typeof(self) weakSelf=self;
+    page.inputDiagnosticsChanged=^(BOOL enabled) {
+        typeof(self) self=weakSelf; if(!self) return;
+        AKControllerInspector.shared.diagnosticsEnabled=enabled;
+        WKLog("ui", @"input diagnostics: %@", enabled?@"on":@"off");
+        [AKInputRouter.shared refreshInterest];
+        [AKControllerInspector.shared showPanel:enabled];
+    };
+    [self presentPage:page];
 }
 // Everything about dictation lives on its own screen: the button, the mode, its
 // test page, and what happens to the words afterwards.

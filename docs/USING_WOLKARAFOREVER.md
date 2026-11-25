@@ -36,9 +36,11 @@ Choose **App language** (the row that reads **App language: …**) in **Game Set
 
 In **Settings** (the gear at the top right of the home screen), choose **Arm network health for next launch** only when support asks for connection-health evidence. This experimental switch is off by default, is consumed by the next game launch, and stops automatically after 15 minutes. It records anonymous TCP state, latency, buffer and byte counters in the native log; it never records addresses, ports, host names, DNS, payloads, credentials, or game data. Choose **Disarm network health for next launch** to cancel it before starting the game.
 
+**Add-On Manager diagnostics**, in the same sheet, holds the development switches. Each one says what it records and is off by default. **Record Add-On Manager events** writes one pair of lines for each action the add-on manager takes - the action, its outcome, the kind of failure that ended it and how long it took - and **Input diagnostics** writes the controller inspector's log during play. Neither records web addresses, file paths, API keys, cookies, page content or archive contents. The page names the log file, which is read or shared from **Diagnostics and logs** on the home screen.
+
 ## Manage add-ons
 
-Open **Add-On Manager** to view recorded packages, install the bundled WolkaraRoue package, import a validated archive, or browse a supported provider. An optional provider key stays in the device Keychain. The app removes only add-ons it recorded as managed.
+Open **Add-On Manager** to view recorded packages, install the bundled WolkaraRoue package, import a validated archive, or browse a supported provider. An optional provider key stays in the device Keychain. The app removes only add-ons it recorded as managed, and **Remove from device** asks first: it deletes that package's own files, never your other add-ons, settings or game files.
 
 When an add-on folder includes manifests for several WoW clients, the manager uses the manifest explicitly named for Forever or declaring Forever’s interface to show its title and version. It still considers every manifest when reporting compatibility.
 

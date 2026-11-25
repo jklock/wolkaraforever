@@ -210,12 +210,11 @@
 "home.settings.message" = "Aktualisierungen werden automatisch installiert, solange diese App geöffnet ist. Einstellungen und Add-ons bleiben erhalten. Die Startvorbereitung ist vom Herunterladen der Aktualisierungen getrennt.";
 "home.settings.repair" = "Spieldateien prüfen und reparieren";
 "home.settings.diagnostics" = "Diagnose und Protokolle";
+"home.settings.addonDiagnostics" = "Diagnose für den Add-on-Manager";
 "home.settings.networkHealthOn" = "Netzwerkdiagnose für den nächsten Start aktivieren";
 "home.settings.networkHealthOff" = "Netzwerkdiagnose für den nächsten Start deaktivieren";
 "home.settings.networkHealth.title" = "Netzwerkdiagnose aktiviert";
 "home.settings.networkHealth.message" = "Experimentell: Der nächste Spielstart zeichnet anonyme TCP-Zähler höchstens 15 Minuten auf. Es werden keine Adressen, Ports, Namen, Nutzdaten, Zugangsdaten oder Spieldaten aufgezeichnet.";
-"home.settings.inputDiagnosticsOn" = "Eingabediagnose einschalten";
-"home.settings.inputDiagnosticsOff" = "Eingabediagnose ausschalten";
 "home.settings.touchpadPointerOn" = "Controller-Touchpad als Maus verwenden";
 "home.settings.touchpadPointerOff" = "Controller-Touchpad nicht mehr als Maus verwenden";
 "home.settings.touchpadSpeed" = "Controller-Touchpad-Geschwindigkeit: %@";
@@ -641,6 +640,12 @@
 "addons.state.notVerifiedForForever" = "nicht für Forever bestätigt";
 "addons.manage.note" = "Nur dieses verwaltete Paket kann geändert werden. Vorhandene Ordner bleiben unangetastet.";
 "addons.manage.disabledNote" = "Dieses Paket ist privat gespeichert und für World of Warcraft nicht sichtbar.";
+"addons.manage.owned" = "WolkaraForever hat dieses Paket installiert. „Deaktivieren“ verschiebt seinen Ordner aus dem Spiel, bis Sie es wiederherstellen; „Entfernen“ löscht die installierten Dateien, nachdem es nachfragt.";
+"addons.manage.found" = "Dieser Ordner lag bereits im AddOns-Ordner des Spiels. „Deaktivieren“ und „Anheften“ brauchen ein von WolkaraForever installiertes Paket; „Entfernen“ löscht diesen Ordner, nachdem es nachfragt.";
+"addons.remove.title" = "%@ entfernen?";
+"addons.remove.messageOwned" = "Die von WolkaraForever installierten Dateien dieses Pakets werden aus dem Spiel gelöscht. Ihre anderen Add-ons, Einstellungen und Spieldateien bleiben unberührt.";
+"addons.remove.messageFound" = "Dieser Ordner wird aus dem AddOns-Ordner des Spiels gelöscht. Seine Einstellungen und SavedVariables bleiben unberührt.";
+"addons.remove.now" = "Vom Gerät entfernen";
 "addons.pin" = "Diese Version anheften";
 "addons.unpin" = "Aktualisierungen wieder zulassen";
 "addons.remove" = "Vom Gerät entfernen";
@@ -828,6 +833,23 @@
 "addons.discover.popular" = "Beliebt";
 "addons.discover.empty" = "Für diese Spielversion gibt es nichts zu entdecken.";
 "addons.discover.hint" = "Aktualisieren fragt CurseForge erneut.";
+
+/* ---- Der Import aus „Dateien“, erklärt bevor die Auswahl öffnet ---- */
+"addons.import.explain.title" = "Ein Add-on aus „Dateien“ importieren";
+"addons.import.explain.message" = "Wählen Sie eine ZIP-Datei, die einen Add-on-Ordner mit seiner .toc-Datei enthält. Das Archiv wird geprüft, bevor etwas geschrieben wird – seine Pfade, seine Größe und jede Datei – und ein Archiv, das die Prüfung nicht besteht, wird abgelehnt, ohne das Spiel zu berühren. Ein so importiertes Add-on wird erfasst und kann auf dieser Seite aktualisiert, deaktiviert oder entfernt werden.";
+"addons.import.explain.choose" = "ZIP-Datei wählen…";
+
+/* ---- Diagnose: ein Schalter pro Entwicklungshilfe, jeweils mit der Angabe, was aufgezeichnet wird ---- */
+"addons.diagnostics.title" = "Diagnose für den Add-on-Manager";
+"addons.diagnostics.section.addons" = "Add-on-Manager";
+"addons.diagnostics.section.input" = "Eingabe";
+"addons.diagnostics.section.logs" = "Protokolle";
+"addons.diagnostics.events" = "Add-on-Manager-Ereignisse aufzeichnen";
+"addons.diagnostics.events.footer" = "Standardmäßig aus. Wenn eingeschaltet, zeichnet der Add-on-Manager auf, welche Aktion lief, ob sie abgeschlossen, fehlgeschlagen, abgebrochen oder abgelehnt wurde, welche Fehlerart dazu führte und wie lange sie dauerte, zusammen mit der Anbieterart, der Paketkennung und einem kurzen Archiv-Hash. Er zeichnet keine Webadressen, Dateipfade, API-Schlüssel, Cookies, Seiteninhalte oder Archivinhalte auf. Solange er aus ist, wird nichts erzeugt und nichts geschrieben. Die Zeilen gehen in wolkaraforever.log, ein Megabyte mit einer vorherigen Datei, lesbar und teilbar über „Diagnose und Protokolle“ auf dem Startbildschirm.";
+"addons.diagnostics.input" = "Eingabediagnose";
+"addons.diagnostics.input.footer" = "Lässt den Controller-Inspektor aufzeichnen, was er während des Spielens empfängt. Standardmäßig aus und auf diesem iPad gespeichert; solange sie aus ist, schreibt der Inspektor nichts.";
+"addons.diagnostics.logs.title" = "Protokolldatei";
+"addons.diagnostics.logs.footer" = "Öffnen Sie „Diagnose und Protokolle“ auf dem Startbildschirm, um sie zu lesen oder zu teilen. Der Dokumente-Ordner der App enthält das aktuelle und das vorherige Protokoll.";
 
 /* ---- Chat Composer ---- */
 "chat.composer.state.opening" = "Chat wird geöffnet…";

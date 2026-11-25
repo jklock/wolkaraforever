@@ -23,5 +23,6 @@ Refresh this directory on every tracked-file change. Run `python3 wolkaraforever
 - [Security and policy](SECURITY_AND_POLICY.md)
 - [Human documentation map](HUMAN_DOCUMENTATION_MAP.md)
 - [UI catalog](UI_CATALOG.md)
+- [Add-On Manager action register](ADDON_MANAGER_ACTION_REGISTER.md)
 - [File catalog](FILE_CATALOG.md)
 - [Roadmap](ROADMAP.md)

@@ -14,6 +14,8 @@
 #import "../WoW/AddonCredentialStore.h"
 #import "../WoW/AddonManager.h"
 #import "../WoW/AddonStore.h"
+#import "../WoW/AddonHubLog.h"
+#import "../WoW/AddonDiagnosticsViewController.h"
 #import "../WoW/CurseForgeClient.h"
 #import <CommonCrypto/CommonDigest.h>
 #import "../Input/InputElement.h"
@@ -36,6 +38,7 @@ NSString *const AKSelfTestRenderProfile = @"render-profile";
 NSString *const AKSelfTestCurseForge = @"curseforge";
 NSString *const AKSelfTestSpeechFile = @"speech-file";
 NSString *const AKSelfTestAddonsPage = @"addons-page";
+NSString *const AKSelfTestProvider = @"addons-provider";
 /// Every control on the home page, pressed on the installed build, with a screenshot either side
 /// of each press in Documents/qa/. It puts back everything it touches and names, in its own log,
 /// the controls it does not press and which check owns each of them.
@@ -1366,6 +1369,28 @@ static UIView *AKSelfTestFind(UIView *view, NSString *identifier) {
     return nil;
 }
 
+// The page's row action, its search field and the controls and menus a tap opens, driven the way
+// a tap drives them. Nothing here installs, updates or removes anything: the checks read the page
+// and change only its selection.
+@interface TKWoWAddonManagerViewController (AKSelfTestAddonsPage)
+- (void)startRowActionForRecord:(TKAddonRecord *)record;
+- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText;
+- (void)selectAll;
+- (void)clearSelection;
+- (void)setSelectedIdentifier:(NSString *)identifier selected:(BOOL)selected;
+- (void)updateToolbar;
+- (UIMenu *)keyMenu;
+- (UIMenu *)sortMenu;
+- (UIMenu *)filterMenu;
+- (UIMenu *)columnsMenu;
+- (UIMenu *)installedSortMenu;
+- (UIMenu *)installedFilterMenu;
+- (void)fetchDiscover;
+- (void)beginBrowse;
+- (void)installMod:(NSDictionary *)projectEntry;
+- (UIAlertController *)providerErrorAlert:(NSError *)error;
+@end
+
 static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
     NSFileManager *files = NSFileManager.defaultManager;
     NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:@"selftest-addons"];
@@ -1445,7 +1470,7 @@ static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
     [recorder check:fixture != nil && !fixture.managed _:@"and is not managed"];
     [recorder check:fixture != nil && !fixture.providerUpdatable
                     _:@"and is not offered a provider update"];
-    [recorder check:store.manifestFormat == 2 _:@"the manifest the page read is format 2"];
+    [recorder check:store.manifestFormat == 3 _:@"a format-2 manifest is migrated to format 3 on read"];
 
     // Removing a package is reachable: the row's own sheet offers it, and it is the destructive
     // action. Losing this route is what made "can I delete anything?" a real question, so it is
@@ -1535,7 +1560,365 @@ static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
     [recorder check:[macEverPage.recommendedProjectID isEqual:@1733200]
                     _:@"filtered to CurseForge project 1733200"];
 
+    // The search field, and the sentence that comes before a destructive action. Both are
+    // controls a person meets before anything is deleted, so both are checked on the build that
+    // is installed rather than only in a fixture.
+    [recorder check:AKSelfTestFind(view, @"wow.addons.search") != nil
+                    _:@"the search field has a name a fixture and an audit can find"];
+    NSString *ownedExplanation = WKLocalized(@"addons.manage.owned");
+    [recorder check:ownedExplanation.length > 0 && ![ownedExplanation hasPrefix:@"addons."] &&
+                   manage != nil && [manage.message containsString:ownedExplanation]
+                    _:@"the action sheet says what Disable and Remove do to the package"];
+
+    // The Add-On Manager's event log: off in the shipped default, one pair when it is on, and no
+    // prohibited value in either line.
+    BOOL logWasEnabled = TKAddonHubDiagnosticsEnabled();
+    NSMutableArray<NSString *> *logLines = [NSMutableArray array];
+    TKAddonHubSetSink(^(NSString *line) { [logLines addObject:line]; });
+    TKAddonHubSetDiagnosticsEnabled(NO);
+    TKAddonHubLogFlush();
+    [logLines removeAllObjects];
+    [recorder check:!TKAddonHubDiagnosticsEnabled()
+                    _:@"the Add-On Manager's event log is off by default"];
+    [recorder check:TKAddonHubActionBegin(TKAddonHubActionUpdate, nil) == nil
+                    _:@"and the disabled path allocates no token"];
+    TKAddonHubSetDiagnosticsEnabled(YES);
+    TKAddonHubLogFlush();
+    [logLines removeAllObjects];
+    TKAddonHubActionToken *logToken = TKAddonHubActionBegin(TKAddonHubActionManage, @{
+        TKAddonHubKeyIdentifier: @"selftest", TKAddonHubKeyProvider: TKAddonProvenanceUnmanaged,
+        @"url": @"https://example.com/x.zip?token=secret" });
+    TKAddonHubActionFinish(logToken, TKAddonHubOutcomeFailed, TKAddonHubFailureStore, nil);
+    TKAddonHubLogFlush();
+    BOOL logRedacted = logLines.count == 2;
+    for (NSString *line in logLines)
+        if ([line rangeOfString:@"http"].location != NSNotFound ||
+            [line rangeOfString:@"secret"].location != NSNotFound) logRedacted = NO;
+    [recorder check:logRedacted
+                    _:@"and when it is on, one pair carries the action and outcome with no URL"];
+    TKAddonHubSetDiagnosticsEnabled(logWasEnabled);
+    TKAddonHubLogFlush();
+    TKAddonHubSetSink(nil);
+
+    // The diagnostics page the home gear's Settings sheet opens, built on the installed build.
+    TKAddonDiagnosticsViewController *diagnosticsPage =
+        [[TKAddonDiagnosticsViewController alloc] initWithInputDiagnosticsOn:NO];
+    UIView *diagnosticsView = diagnosticsPage.view;
+    diagnosticsView.frame = CGRectMake(0, 0, 834, 1100);
+    [diagnosticsView layoutIfNeeded];
+    UITableViewCell *eventsCell = [diagnosticsPage tableView:diagnosticsPage.tableView
+                                  cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+    UITableViewCell *inputCell = [diagnosticsPage tableView:diagnosticsPage.tableView
+                                 cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:1]];
+    UISwitch *eventsSwitch = (UISwitch *)eventsCell.accessoryView;
+    UISwitch *inputSwitch = (UISwitch *)inputCell.accessoryView;
+    [recorder check:[eventsSwitch.accessibilityIdentifier isEqual:@"wow.addons.diagnostics.events"] &&
+                   [inputSwitch.accessibilityIdentifier isEqual:@"wow.addons.diagnostics.input"]
+                    _:@"the diagnostics page carries both switches, each with its own name"];
+    [recorder check:!eventsSwitch.isOn || TKAddonHubDiagnosticsEnabled()
+                    _:@"and the event switch draws the stored value"];
+
+    // The other three sheets, as they are offered. A `UIAlertAction` handler cannot be
+    // invoked here, so what is asserted is the sheet a person meets before anything happens;
+    // the store calls its buttons make are covered by the package tests on the Mac.
+    UIAlertController *linkSheet = [page linkSheetForRecord:fixture];
+    BOOL hasLinkSearch = NO, hasLinkCancel = NO;
+    for (UIAlertAction *action in linkSheet.actions) {
+        if ([action.title isEqual:WKLocalized(@"addons.link.search")]) hasLinkSearch = YES;
+        if (action.style == UIAlertActionStyleCancel) hasLinkCancel = YES;
+    }
+    [recorder check:linkSheet != nil && [linkSheet.message isEqual:WKLocalized(@"addons.link.message")] &&
+                   hasLinkSearch && hasLinkCancel
+                    _:@"a package with no project gets a link sheet with its search and a cancel"];
+    UIAlertController *removal = [page removalConfirmationForRecord:fixture];
+    NSUInteger removalDestructive = 0;
+    for (UIAlertAction *action in removal.actions)
+        if (action.style == UIAlertActionStyleDestructive) removalDestructive += 1;
+    [recorder check:[removal.title containsString:fixture.name] && removalDestructive == 1 &&
+                   [removal.message isEqual:WKLocalized(@"addons.remove.messageFound")]
+                    _:@"removing a folder this app found asks first, names it, and offers one Remove"];
+    NSError *groupError = nil;
+    TKAddonGroup *group = [store createGroupNamed:@"Self-test group" error:&groupError];
+    if (!group)
+        WKLog("selftest", @"addons-page: group creation failed (%@); groups now %lu",
+              groupError.localizedDescription ?: @"no reason", (unsigned long)store.groups.count);
+    [recorder check:group != nil _:@"a group can be created for the membership sheet"];
+    UIAlertController *groupSheet = group ? [page groupSheetForRecord:fixture] : nil;
+    BOOL listsGroup = NO;
+    for (UIAlertAction *action in groupSheet.actions)
+        if ([action.title isEqual:@"Self-test group"]) listsGroup = YES;
+    [recorder check:groupSheet != nil && listsGroup
+                    _:@"and the group sheet lists it with a cancel"];
+    [recorder check:[store setGroup:store.groups.firstObject member:fixture joined:YES error:&groupError]
+                    _:@"a package joins that group"];
+    [recorder check:store.groups.firstObject.members.count == 1 _:@"and the membership is stored"];
+    [recorder check:[store setGroup:store.groups.firstObject member:fixture joined:NO error:&groupError]
+                    _:@"and leaves it again"];
+    [recorder check:[store removeGroup:store.groups.firstObject error:&groupError]_:@"the group is removed"];
+
+    // Browse's own first row, drawn from the page's sections. The tab is set directly rather than
+    // through the segmented control: switching to Discover would spend a player's saved provider
+    // key on three queries the check does not need, and the simulator fixture already drives the
+    // control itself. With a key saved the row is Sort; without one it is the single explicit
+    // first-run action.
+    [page setValue:@(TKAddonHubTabBrowse) forKey:@"_tab"];
+    BOOL hasKey = [[page valueForKey:@"hasKey"] boolValue];
+    UITableViewCell *accessRow = [page tableView:page.tableView
+                           cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+    NSString *accessIdentifier = accessRow.accessibilityIdentifier;
+    [recorder check:page.tab == TKAddonHubTabBrowse &&
+                   [accessIdentifier isEqual:(hasKey?@"wow.addons.browse.sort":@"wow.addons.setupAccess")]
+                    _:@"and Browse's first row is named for its state (setup access, or sort with a key)"];
+    [page setValue:@(TKAddonHubTabMyAddOns) forKey:@"_tab"];
+    [recorder check:page.tab == TKAddonHubTabMyAddOns _:@"and back to My Add-ons"];
+    NSUInteger allRecords = page.visibleRecords.count;
+    [page searchBar:nil textDidChange:@"SelftestFixture"];
+    [recorder check:page.visibleRecords.count == 1 _:@"search narrows the list"];
+    [page searchBar:nil textDidChange:@""];
+    [recorder check:page.visibleRecords.count == allRecords _:@"and clearing it restores the list"];
+    [page setValue:@[ @{ @"id": @1, @"name": @"Fixture" } ] forKey:@"_results"];
+    [page setValue:@(2) forKey:@"_totalCount"];
+    [page setValue:@(TKAddonHubTabBrowse) forKey:@"_tab"];
+    UITableViewCell *moreRow = [page tableView:page.tableView
+                            cellForRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:1]];
+    [recorder check:[moreRow.accessibilityIdentifier isEqual:@"wow.addons.loadMore"]
+                    _:@"Load more is a named row of the page"];
+    [page setValue:@[] forKey:@"_results"]; [page setValue:@(0) forKey:@"_totalCount"];
+    [page setValue:@(TKAddonHubTabMyAddOns) forKey:@"_tab"];
+    NSMutableSet<NSString *> *inFlight = [page valueForKey:@"_downloadingPackages"];
+    [inFlight addObject:fixture.uuid];
+    [recorder check:[page updateResultForRecord:fixture] == TKAddonUpdateResultDownloading
+                    _:@"a package whose archive is in flight reads as downloading"];
+    [page startRowActionForRecord:fixture];
+    [recorder check:![(NSSet *)[page valueForKey:@"_downloadingPackages"] containsObject:fixture.uuid]
+                    _:@"and cancelling it clears that state instead of leaving it stuck"];
+
+    // --- the provider tabs draw a named state, and a result draws as its own project row
+    [page setValue:@(TKAddonHubTabDiscover) forKey:@"_tab"];
+    UITableViewCell *discoverRow = [page tableView:page.tableView
+                               cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+    NSString *discoverIdentifier = discoverRow.accessibilityIdentifier;
+    [recorder check:[discoverIdentifier isEqual:(hasKey?@"wow.addons.discover.state":@"wow.addons.setupAccess")]
+                    _:@"Discover draws one named state row: its own state, or the first-run action"];
+    [page setValue:@(TKAddonHubTabBrowse) forKey:@"_tab"];
+    [page setValue:@[ @{ @"id": @424242, @"name": @"Self-test project", @"allowModDistribution": @YES,
+                         @"downloadCount": @1 } ] forKey:@"_results"];
+    [page setValue:@(1) forKey:@"_totalCount"];
+    UITableViewCell *projectRow = [page tableView:page.tableView
+                                cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:1]];
+    [recorder check:[projectRow.accessibilityIdentifier isEqual:@"wow.addons.project.424242"]
+                    _:@"a provider result is drawn as its own named project row"];
+    [recorder check:AKSelfTestFind(projectRow, @"wow.addons.project.424242.install") != nil
+                    _:@"with its own Install control"];
+    [page setValue:@[] forKey:@"_results"];
+    [page setValue:@(0) forKey:@"_totalCount"];
+    [page setValue:@(TKAddonHubTabMyAddOns) forKey:@"_tab"];
+
+    // --- the menus the toolbar opens, built from the same table as the buttons
+    UIMenu *sortMenuBuilt = [page sortMenu];
+    UIMenu *filterMenuBuilt = [page filterMenu];
+    UIMenu *columnsMenuBuilt = [page columnsMenu];
+    UIMenu *installedSortBuilt = [page installedSortMenu];
+    UIMenu *installedFilterBuilt = [page installedFilterMenu];
+    UIMenu *keyMenuBuilt = [page keyMenu];
+    UIMenu *sortFields = sortMenuBuilt.children.firstObject;
+    UIMenu *sortDirection = sortMenuBuilt.children.count > 1 ? sortMenuBuilt.children[1] : nil;
+    [recorder check:sortMenuBuilt.children.count == 2 &&
+                   [sortFields isKindOfClass:UIMenu.class] && sortFields.children.count >= 3 &&
+                   [sortDirection isKindOfClass:UIMenu.class] && sortDirection.children.count == 2
+                    _:@"Sort builds a field list and an ascending/descending pair"];
+    [recorder check:filterMenuBuilt.children.count == 3 && installedSortBuilt.children.count == 3 &&
+                   installedFilterBuilt.children.count == 5 && columnsMenuBuilt.children.count >= 3 &&
+                   keyMenuBuilt.children.count == 2
+                    _:@"Filter, Columns, My Add-ons and the key menu each build their own entries"];
+    NSMutableArray<UIMenu *> *menusToCheck = [NSMutableArray arrayWithObjects:
+        sortMenuBuilt, filterMenuBuilt, columnsMenuBuilt, installedSortBuilt, installedFilterBuilt,
+        keyMenuBuilt, nil];
+    for (UIMenu *menu in [menusToCheck copy])
+        for (UIMenuElement *element in menu.children)
+            if ([element isKindOfClass:UIMenu.class]) [menusToCheck addObject:(UIMenu *)element];
+    BOOL menuTitlesAreSentences = YES;
+    for (UIMenu *menu in menusToCheck)
+        for (UIMenuElement *element in menu.children)
+            if (![element isKindOfClass:UIMenu.class] &&
+                (element.title.length == 0 || [element.title hasPrefix:@"addons."]))
+                menuTitlesAreSentences = NO;
+    [recorder check:menuTitlesAreSentences
+                    _:@"and every entry, submenu included, reads as a sentence"];
+
+    // The Files import explains itself before the picker opens, and a multi-package update names
+    // the packages it will replace.
+    UIAlertController *importSheet = [page importExplanationSheet];
+    [recorder check:importSheet != nil && [importSheet.message containsString:@"ZIP"] &&
+                   [[importSheet.actions valueForKey:@"title"] containsObject:WKLocalized(@"addons.import.explain.choose")] &&
+                   [[importSheet.actions valueForKey:@"title"] containsObject:WKLocalized(@"common.cancel")]
+                    _:@"the Files import explains what it accepts before the picker opens"];
+    UIAlertController *bulkSheet = [page bulkConfirmationForRecords:@[owned]
+                                                              title:WKLocalized(@"addons.update.allTitle")
+                                                               verb:WKLocalized(@"addons.updateAll")];
+    [recorder check:[bulkSheet.message containsString:(owned.name ?: owned.identifier)]
+                    _:@"a multi-package update names the packages it will replace"];
+    // A provider failure is one sentence and one acknowledgement, from a builder the page uses.
+    UIAlertController *providerAlert = [page providerErrorAlert:[NSError errorWithDomain:NSURLErrorDomain
+        code:NSURLErrorNotConnectedToInternet userInfo:@{NSLocalizedDescriptionKey:@"offline"}]];
+    [recorder check:[providerAlert.title isEqual:WKLocalized(@"addons.error.providerTitle")] &&
+                   [providerAlert.message isEqual:@"offline"] && providerAlert.actions.count == 1
+                    _:@"a provider failure shows its reason with one acknowledgement"];
+
+    // --- selection, and the bulk control's own state. Nothing here touches a file.
+    [page selectAll];
+    NSSet<NSString *> *selectedAll = [page valueForKey:@"_selected"];
+    [recorder check:selectedAll.count == 1 && [selectedAll containsObject:owned.identifier]
+                    _:@"Select All takes the one package this app owns, not the folder it found"];
+    [page clearSelection];
+    [recorder check:[[page valueForKey:@"_selected"] count] == 0 _:@"and Clear empties the selection"];
+    [page setSelectedIdentifier:fixture.identifier selected:YES];
+    [recorder check:[[page valueForKey:@"_selected"] count] == 1
+                    _:@"a row's own checkbox adds exactly that package"];
+    [page clearSelection];
+    [page updateToolbar];
+    [recorder check:[[page valueForKey:@"_updateAllButton"] isEnabled] == NO
+                    _:@"and with nothing eligible Update All is offered disabled, not dead"];
+
     [files removeItemAtPath:root error:NULL];
+}
+
+// The provider reads, with the key this app already holds. A provider answer arrives on the main
+// queue, so this is a retry state machine rather than a nested run loop: a block already running
+// on the main queue cannot drain the queue it is on. Nothing is written - no install, no update,
+// no manifest change - and the key is used for the request and nothing else.
+static TKWoWAddonManagerViewController *AKSelfTestProviderPage;
+static NSString *AKSelfTestProviderRoot;
+static NSInteger AKSelfTestProviderStep;
+static BOOL AKSelfTestProviderInstallStarted;
+
+static void AKSelfTestRunProviderStep(AKSelfTestRecorder *recorder, NSInteger attempts) {
+    TKWoWAddonManagerViewController *page=AKSelfTestProviderPage;
+    if (AKSelfTestProviderStep == 0) {
+        NSFileManager *files=NSFileManager.defaultManager;
+        AKSelfTestProviderRoot=[NSTemporaryDirectory() stringByAppendingPathComponent:@"selftest-provider"];
+        [files removeItemAtPath:AKSelfTestProviderRoot error:NULL];
+        NSString *addons=[AKSelfTestProviderRoot stringByAppendingPathComponent:@"Interface/AddOns"];
+        [files createDirectoryAtPath:addons withIntermediateDirectories:YES attributes:nil error:NULL];
+        NSString *key=[[TKAddonCredentialStore new] curseForgeKey:NULL];
+        [recorder check:key.length > 0 _:@"a CurseForge key is saved in this app's Keychain"];
+        if (!key.length) {
+            [files removeItemAtPath:AKSelfTestProviderRoot error:NULL];
+            AKSelfTestLogVerdict(recorder, AKSelfTestProvider);
+            return;
+        }
+        page=[[TKWoWAddonManagerViewController alloc] initWithAddOnsDirectory:addons edition:@"Forever"];
+        (void)page.view;
+        AKSelfTestProviderPage=page;
+        [page setValue:@(TKAddonHubTabDiscover) forKey:@"_tab"];
+        [page fetchDiscover];
+        AKSelfTestProviderStep=1;
+        attempts=75;
+    }
+    if (AKSelfTestProviderStep == 1) {
+        if ([[page valueForKey:@"_discoverLoading"] boolValue] && attempts > 0) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ AKSelfTestRunProviderStep(recorder, attempts - 1); });
+            return;
+        }
+        NSArray *sections=[page valueForKey:@"_discoverSections"];
+        NSString *status=[page valueForKey:@"_discoverStatus"];
+        [recorder check:sections.count > 0
+                        _:[NSString stringWithFormat:@"Discover answers with sections (status: %@)",
+                            status.length ? status : @"none"]];
+        [page setValue:@(TKAddonHubTabBrowse) forKey:@"_tab"];
+        [page beginBrowse];
+        AKSelfTestProviderStep=2;
+        attempts=75;
+    }
+    if (AKSelfTestProviderStep == 2) {
+        NSString *status=[page valueForKey:@"_browseStatus"];
+        NSArray *results=[page valueForKey:@"_results"];
+        if ([status isEqual:WKLocalized(@"addons.loading")] && attempts > 0) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ AKSelfTestRunProviderStep(recorder, attempts - 1); });
+            return;
+        }
+        NSNumber *total=[page valueForKey:@"_totalCount"];
+        [recorder check:results.count > 0 && total.integerValue >= (NSInteger)results.count
+                        _:[NSString stringWithFormat:@"Browse answers with a first page and its total (status: %@)",
+                            status.length ? status : @"none"]];
+        if (results.count) {
+            NSDictionary *first=results.firstObject;
+            NSNumber *modID=[first[@"id"] isKindOfClass:NSNumber.class]?first[@"id"]:nil;
+            UITableViewCell *row=[page tableView:page.tableView
+                            cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:1]];
+            NSString *expected=modID?[NSString stringWithFormat:@"wow.addons.project.%@",modID]
+                                    :@"wow.addons.project";
+            [recorder check:[row.accessibilityIdentifier isEqual:expected] &&
+                           AKSelfTestFind(row, [expected stringByAppendingString:@".install"]) != nil
+                            _:@"and the first provider result draws as its own project row with Install"];
+        }
+        AKSelfTestProviderStep=3;
+    }
+    if (AKSelfTestProviderStep == 3) {
+        // Install the first live result into the temporary store: a real download and a real
+        // import, into a directory this test owns. The user's game is not involved, and the
+        // record is removed again before the run ends.
+        TKAddonStore *store=[page valueForKey:@"_store"];
+        if (!AKSelfTestProviderInstallStarted && store.records.count == 0) {
+            AKSelfTestProviderInstallStarted=YES;
+            // The first result may be a project whose author does not allow downloads through the
+            // API; the row shows Open for it, not Install. Take the first one the page would
+            // actually install.
+            NSArray *results=[page valueForKey:@"_results"];
+            NSDictionary *target=nil;
+            for (NSDictionary *entry in results) {
+                id allow=entry[@"allowModDistribution"];
+                if (![allow isKindOfClass:NSNumber.class] || [allow boolValue]) { target=entry; break; }
+            }
+            if (target) [page installMod:target];
+            attempts=75;
+        }
+        if (store.records.count == 0 && attempts > 0) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ AKSelfTestRunProviderStep(recorder, attempts - 1); });
+            return;
+        }
+        TKAddonRecord *installed=store.records.firstObject;
+        [recorder check:installed != nil && installed.managed && installed.provider != nil
+                        _:@"installing the first live result records a managed package with its provider identity"];
+        if (installed) [store removeRecord:installed error:NULL];
+        [recorder check:store.records.count == 0 _:@"and removing it leaves the temporary store empty"];
+        AKSelfTestProviderStep=4;
+        attempts=0;
+    }
+    if (AKSelfTestProviderStep == 4) {
+        // The key's own lifecycle, with the value this app already holds. A write is proved to work
+        // before anything is removed, so a failure cannot leave the Keychain empty.
+        TKAddonCredentialStore *credentials=[TKAddonCredentialStore new];
+        NSString *key=[credentials curseForgeKey:NULL];
+        NSError *keyError=nil;
+        BOOL rewrote=key.length > 0 && [credentials storeCurseForgeKey:key error:&keyError];
+        [recorder check:rewrote _:@"the key can be written back to the Keychain unchanged"];
+        if (rewrote) {
+            BOOL removed=[credentials removeCurseForgeKey:&keyError];
+            [recorder check:removed && [credentials curseForgeKey:NULL].length == 0
+                            _:@"and removing it leaves no key behind"];
+            BOOL restored=[credentials storeCurseForgeKey:key error:&keyError];
+            if (!restored)
+                WKLog("selftest", @"addons-provider: the key could not be restored (%@)",
+                      keyError.localizedDescription ?: @"no reason");
+            [recorder check:restored && [[credentials curseForgeKey:NULL] isEqual:key]
+                            _:@"and it is put back exactly as it was found"];
+        }
+        AKSelfTestProviderStep=5;
+    }
+    TKAddonStore *store=[page valueForKey:@"_store"];
+    NSString *support=[store valueForKey:@"support"];
+    if ([support isKindOfClass:NSString.class] && support.length)
+        [NSFileManager.defaultManager removeItemAtPath:support error:NULL];
+    [NSFileManager.defaultManager removeItemAtPath:AKSelfTestProviderRoot error:NULL];
+    AKSelfTestProviderPage=nil;
+    AKSelfTestProviderRoot=nil;
+    AKSelfTestProviderStep=0;
+    AKSelfTestProviderInstallStarted=NO;
+    AKSelfTestLogVerdict(recorder, AKSelfTestProvider);
 }
 
 // The app's own language, on the device, in both directions.
@@ -1687,6 +2070,13 @@ void AKRunSelfTest(NSString *name) {
         // On the main queue: it builds and lays out UIKit views and changes none.
         AKSelfTestOnMain(^{ AKSelfTestRunAddonsPage(recorder); });
         AKSelfTestLogVerdict(recorder, name);
+        return;
+    }
+    if ([name isEqualToString:AKSelfTestProvider]) {
+        // Reads the provider with the key this app already has; writes nothing. The step machine
+        // writes its own verdict when the answers are in.
+        AKSelfTestProviderStep=0; AKSelfTestProviderPage=nil; AKSelfTestProviderRoot=nil;
+        AKSelfTestOnMain(^{ AKSelfTestRunProviderStep(recorder, 0); });
         return;
     }
     if ([name isEqualToString:AKSelfTestControls]) {
