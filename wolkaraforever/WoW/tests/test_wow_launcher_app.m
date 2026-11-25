@@ -3441,5 +3441,11 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
 }
 @end
 int main(int argc, char **argv) {
+    // The suite waits for this line before it reads a verdict, and reads it from the system log:
+    // `simctl launch --stdout` does not capture this app's console at all on this runtime
+    // (measured 2026-11-25 - the file is never created), so the line is logged the way the
+    // verdict is. It used to be a line nothing printed, so a fixture that launched and ran
+    // perfectly was reported as "could not be launched" three times.
+    NSLog(@"launcher fixture UI launched");
     @autoreleasepool { return UIApplicationMain(argc,argv,nil,NSStringFromClass(TKWoWFixtureApp.class)); }
 }
