@@ -34,6 +34,7 @@
 #import "StartupActivity.h"
 #import "WolkaraForeverConfig.h"
 #import "WolkaraForeverLog.h"
+#import "GuestLogRotation.h"
 #import "WolkaraForeverTheme.h"
 #import "WKLocalization.h"
 // Why the developer service refused, in the layer's own vocabulary. The sentence
@@ -1207,6 +1208,7 @@ static NSString *AKAudioStateDescription(void) {
 
 // Refuse a native startup before it begins; the runtime log says why.
 - (void)refuseNativeGame:(NSString *)reason {
+    WKGuestLogKeepPrevious(TKDocumentsPath(@"native-guest.log"), TKDocumentsPath(@"native-guest.previous.log"), NULL);
     FILE *log=fopen(TKDocumentsPath(@"native-guest.log").fileSystemRepresentation,"w");
     if (log) { fprintf(log,"[host] native startup refused: %s\n",reason.UTF8String); fclose(log); }
     self.status.text=reason;
@@ -1486,8 +1488,15 @@ static NSString *AKAudioStateDescription(void) {
     }
     UIApplication.sharedApplication.idleTimerDisabled = YES;
     NSString *logPath = TKDocumentsPath(@"native-guest.log");
+    // The previous session's log is kept beside the new one, so a crash or a freeze can still be read
+    // after the next start: one generation, moved (never copied) before the new log is opened.
+    NSString *rotationProblem = nil;
+    WKGuestLogKeep kept = WKGuestLogKeepPrevious(logPath, TKDocumentsPath(@"native-guest.previous.log"), &rotationProblem);
     FILE *log = fopen(logPath.fileSystemRepresentation, "w");
     if (!log) { self.status.text = WKLocalized(@"shell.logUnavailable"); [self showStartStopped]; return; }
+    if (kept == WKGuestLogKeepMoved) fprintf(log, "[host] previous session's log: moved to native-guest.previous.log\n");
+    else if (kept == WKGuestLogKeepNothing) fprintf(log, "[host] previous session's log: none\n");
+    else fprintf(log, "[host] previous session's log: not kept (%s)\n", rotationProblem.UTF8String ?: "unknown error");
     setvbuf(log, NULL, _IOLBF, 0);
     dup2(fileno(log), STDERR_FILENO);
     dup2(fileno(log), STDOUT_FILENO);

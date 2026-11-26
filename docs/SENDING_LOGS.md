@@ -29,6 +29,7 @@ Send the **newest** file unless the situation below matches better.
 | --- | --- | --- |
 | `wolkaraforever.log` | What the launcher did: start-up, the game check and download, add-ons, settings, the interface | The launcher is slow, a row does nothing, a setting does not stick, a download or repair misbehaves |
 | `native-guest.log` | The game and the compatibility layer **during a run** — including anything the game itself printed | The game crashed, would not start, showed a black or frozen screen, had no sound, or the controls or keyboard did wrong |
+| `native-guest.previous.log` | The same log from the game session **before** the latest one: each start moves the old `native-guest.log` here, and the new log's first line says so | The problem happened in an earlier session and you have started the game again since |
 | `host-diagnostics.txt`, `*-probe.log`, `*-probe.txt` | The reports produced by the checks on the Diagnostics page | Only when you were asked to run a specific check — mention which one |
 
 If you played and then sent `wolkaraforever.log` alone, the game part is missing. When in
