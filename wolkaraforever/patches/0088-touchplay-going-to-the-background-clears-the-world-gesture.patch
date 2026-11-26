@@ -1,0 +1,116 @@
+# WolkaraForever layer patch 0088 - host: background clears a world gesture whose finger never lifts
+#
+# Why: iOS can drop fingers held at a screen lock without sending their lifts. The old quiet-until-lift
+# state then swallows later taps. Only a real background clears it; resign keeps its current behavior.
+# If iOS keeps sending the old fingers, ignore their events without blocking fresh fingers or pinches.
+# This method is optional on the iPad touch sink; in every other interface mode the host is unchanged.
+#
+# Applies after: 0087-touchplay-two-fingers-are-a-pinch.patch
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: no (iPad touch lives in the WolkaraForever layer).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -331,6 +331,8 @@
+     // The finger the direct gesture follows, whether a second finger turned it into a
+     // pinch, and the pinch's zoom bookkeeping.
+     UITouch *_directTouch;
++    NSHashTable<UITouch *> *_directFingers; // Weakly tracks every finger in the direct gesture.
++    NSHashTable<UITouch *> *_directIgnored; // Fingers forgotten on background, until their lifts arrive.
+     BOOL _directMulti;
+     CGFloat _pinchScale, _pinchCarry;
+     UIPinchGestureRecognizer *_pinch;
+@@ -695,11 +697,17 @@
+ // it was, a tap or hold still waiting never fires, and the rest of that finger's gesture posts nothing - the
+ // same "let go, then quiet until it lifts" as a pinch beginning (beginDirectMulti). With no finger of the gesture
+ // down there is nothing to wait for, so the whole state is cleared outright - the multi-finger mode of a pinch too,
+-// or its fingers, never lifted by the system, would swallow the first tap on return.
+-- (void)touchReleaseWorldGesture {
++// or its fingers, never lifted by the system, would swallow the first tap on return. On background, iOS may never
++// report their lifts after a screen lock: forget the gesture but ignore those fingers if they send events later.
++- (void)touchReleaseWorldGestureForBackground:(BOOL)background {
+     BOOL down = _directTouch && _directTouch.phase != UITouchPhaseEnded && _directTouch.phase != UITouchPhaseCancelled;
+-    if (down) [self beginDirectMulti];
++    if (down && !background) [self beginDirectMulti];
+     else {
++        if (background) {
++            if (!_directIgnored) _directIgnored = [NSHashTable weakObjectsHashTable];
++            for (UITouch *touch in _directFingers) [_directIgnored addObject:touch];
++            [_directFingers removeAllObjects];
++        }
+         [self cancelDirectHold];
+         _directPending = NO; _directHeld = NO; _directMulti = NO; _directTouch = nil; _worldTapRecorded = NO;
+     }
+@@ -1023,6 +1031,10 @@
+     if (_touchAreas.liveContract && !(t = [self touchesOutsideEdgeZone:t]).count) return;
+     BOOL r = AKIsRight(ev);
+     if (!r && AKMobileInterface() && AKIsFinger(t) && ![self usesRelativeMouse]) {
++        if (_touchAreas) {
++            if (!_directFingers) _directFingers = [NSHashTable weakObjectsHashTable];
++            for (UITouch *touch in t) [_directFingers addObject:touch];
++        }
+         if ([self directGestureActive] || t.count > 1) { [self beginDirectMulti]; return; }
+         [self reconcileModifiers:AKMods(ev.modifierFlags)];
+         _directTouch = t.anyObject;
+@@ -1048,6 +1060,10 @@
+ }
+ - (void)touchesMoved:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
+     if (_touchAreas && !(t = [_touchAreas unclaimedTouches:t phase:UITouchPhaseMoved]).count) return;
++    if (_directIgnored.count) {
++        t = [t objectsPassingTest:^BOOL(UITouch *touch, BOOL *stop) { return ![_directIgnored containsObject:touch]; }];
++        if (!t.count) return;
++    }
+     if ([self handleTrackpadTouches:t event:ev]) return;
+     if([self usesRelativeMouse])return;
+     if ([self directGestureActive]) {
+@@ -1072,14 +1088,28 @@
+ // The direct gesture is over once no finger of it is left on this view.
+ - (void)finishDirectGestureIfIdle:(NSSet<UITouch *> *)lifted event:(UIEvent *)ev {
+     for (UITouch *touch in ev.allTouches) {
+-        if (touch.view != self || [lifted containsObject:touch] || [_touchAreas ownsTouch:touch]) continue;
++        if (touch.view != self || [lifted containsObject:touch] || [_touchAreas ownsTouch:touch] ||
++            [_directIgnored containsObject:touch]) continue;
+         if (touch.phase != UITouchPhaseEnded && touch.phase != UITouchPhaseCancelled) return;
+     }
+     _directMulti = NO; _directTouch = nil;
+ }
+ - (void)touchesEnded:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
+     [_batterySaver setHeld:NO reason:@"touch"];
+     if (_touchAreas && !(t = [_touchAreas unclaimedTouches:t phase:UITouchPhaseEnded]).count) return;
++    for (UITouch *touch in t) [_directFingers removeObject:touch];
++    if (_directIgnored.count) {
++        NSSet<UITouch *> *remaining = [t objectsPassingTest:^BOOL(UITouch *touch, BOOL *stop) {
++            return ![_directIgnored containsObject:touch];
++        }];
++        if (remaining.count != t.count) {
++            // The last ignored lift may be the only callback after a later pinch ended.
++            if (!remaining.count && [self directGestureActive]) [self finishDirectGestureIfIdle:t event:ev];
++            for (UITouch *touch in t) if (![remaining containsObject:touch]) [_directIgnored removeObject:touch];
++            t = remaining;
++            if (!t.count) return;
++        }
++    }
+     if ([self handleTrackpadTouches:t event:ev]) return;
+     if ([self directGestureActive]) {
+         if (!_directMulti && [t containsObject:_directTouch]) {
+@@ -1107,7 +1137,20 @@
+ }
+ - (void)touchesCancelled:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
+     [_batterySaver setHeld:NO reason:@"touch"];
+     if (_touchAreas && !(t = [_touchAreas unclaimedTouches:t phase:UITouchPhaseCancelled]).count) return;
++    for (UITouch *touch in t) [_directFingers removeObject:touch];
++    if (_directIgnored.count) {
++        NSSet<UITouch *> *remaining = [t objectsPassingTest:^BOOL(UITouch *touch, BOOL *stop) {
++            return ![_directIgnored containsObject:touch];
++        }];
++        if (remaining.count != t.count) {
++            // The last ignored lift may be the only callback after a later pinch ended.
++            if (!remaining.count && [self directGestureActive]) [self finishDirectGestureIfIdle:t event:ev];
++            for (UITouch *touch in t) if (![remaining containsObject:touch]) [_directIgnored removeObject:touch];
++            t = remaining;
++            if (!t.count) return;
++        }
++    }
+     if ([self directGestureActive]) {
+         // A cancelled gesture clicks nothing; whatever it held is let go.
+         [self cancelDirectHold];

@@ -23,6 +23,8 @@
 // The bounded record of the keyboard/dictation feature, in one vocabulary. See the header for
 // what may and may not appear in it.
 #import "../Voice/KeyboardDictationEvents.h"
+#import "../WoW/TouchContract.h"
+#import "../WoW/InterfaceMode.h"
 #import "../WoW/CASC.h"
 #import "../WoW/BattleNetSavedPassword.h"
 #import "../WoW/BattleNetSession.h"
@@ -1245,7 +1247,7 @@ static NSString *AKAudioStateDescription(void) {
     if (container) { if (![self forceExecutionMode:TKExecutionModeLocalSigning by:@"--signed-image"]) return; }
     TKApp *app=[self appFromArguments];
     if (!container && self.executionMode==TKExecutionModeLocalSigning) {
-        NSString *sha=app ? [self.library currentSHA256OfApp:app error:NULL] : nil;
+        NSString *sha=app ? [self.library currentSHA256OfApp:app error:NULL]: nil;
         container=TKLocalSigningFindContainer(NSHomeDirectory(),sha);
         if (!container) {
             PrepareLocalSigningFolder();
@@ -1514,6 +1516,17 @@ static NSString *AKAudioStateDescription(void) {
     [self startStartupActivityInFolder:directory];
     if (chdir(directory.fileSystemRepresentation)) fprintf(log,"[host] app working directory failed: %s\n",strerror(errno));
     else fprintf(log,"[host] app working directory=%s\n",directory.fileSystemRepresentation);
+    // iPad touch only: TouchPlay's button list, read once for this game from the game folder (the
+    // working directory just entered). Without it the game still plays, with plain 1.0.8 taps, and
+    // the player is told once how to get the buttons. The guest's own copy of the reader reads the
+    // same file from the working directory; nothing else here depends on the result.
+    if (AKInterfaceModeIsTouchPlay()) {
+        AKTouchContract *touchContract=AKTouchContractLoadForGame([NSURL fileURLWithPath:directory isDirectory:YES],^(NSString *key){
+            self.status.text=WKLocalized(@"touch.contract.missing");
+            fprintf(log,"[host] touch contract: none usable in %s; plain taps (%s)\n",directory.fileSystemRepresentation,key.UTF8String);
+        });
+        if (touchContract) fprintf(log,"[host] touch contract: %lu areas, hold %.2f s, %s-handed\n",(unsigned long)touchContract.areas.count,touchContract.holdSeconds,touchContract.leftHanded?"left":"right");
+    }
     // A profile's caseAliases: folders the application names in another case
     // than its installer wrote them, which only macOS's file system ignores.
     for (NSString *line in [self.library linkCaseAliasesForApp:app]) fprintf(log,"[host] %s\n",line.UTF8String);

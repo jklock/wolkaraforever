@@ -896,3 +896,16 @@
 "login.savedPassword.failed.title" = "Le mot de passe n'a pas été enregistré";
 "login.savedPassword.failed" = "Cet appareil n'a pas conservé le mot de passe : il faut un code, et la clé a besoin de l'accès au trousseau de cette compilation. La connexion a bien eu lieu, mais le mot de passe sera redemandé.";
 "touch.key.savedPassword" = "Mot de passe enregistré";
+
+"touch.contract.missing" = "Boutons tactiles introuvables, les appuis sont donc de simples clics. Installez TouchPlay avec le gestionnaire d’extensions. Lancez le jeu, puis touchez une fois « Menu › Save settings » (c’est le nom dans le jeu).";
+"touch.keyboard.password" = "Mot de passe";
+"touch.keyboard.username" = "Nom d’utilisateur";
+"touch.keyboard.gamebox" = "Champ de texte du jeu";
+"touch.keyboard.typePassword" = "Saisir le mot de passe";
+"touch.chat.say" = "Dire";
+"touch.chat.party" = "Groupe";
+"touch.chat.guild" = "Guilde";
+"touch.chat.whisper" = "Chuchoter";
+"touch.chat.yell" = "Crier";
+"touch.chat.send" = "Envoyer";
+"touch.walkStick" = "Stick de déplacement";
