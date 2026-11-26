@@ -3,6 +3,9 @@ import Foundation
 @_silgen_name("TestRealAddonImport")
 func testImport(_ fixtures: UnsafePointer<CChar>, _ temporary: UnsafePointer<CChar>) -> Int32
 
+@_silgen_name("TestLargeTOCImport")
+func testLargeTOCImport(_ fixtures: UnsafePointer<CChar>, _ temporary: UnsafePointer<CChar>) -> Int32
+
 @_silgen_name("TestBundledPackageInstall")
 func testBundledPackageInstall(_ fixtures: UnsafePointer<CChar>, _ temporary: UnsafePointer<CChar>) -> Int32
 
@@ -61,6 +64,10 @@ struct ArchiveTests {
             work.appendingPathComponent("import").path.withCString { temporary in testImport(fixtures, temporary) }
         }
         check(importResult == 0, "real import lifecycle")
+        let largeTOCResult = root.path.withCString { fixtures in
+            work.appendingPathComponent("large-toc").path.withCString { temporary in testLargeTOCImport(fixtures, temporary) }
+        }
+        check(largeTOCResult == 0, "a big TOC is read by its head")
         // The bundled package, installed the way the recommendation page installs it.
         let bundledResult = packageFixtures.withCString { fixtures in
             work.appendingPathComponent("bundled").path.withCString { temporary in

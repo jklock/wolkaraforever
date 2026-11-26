@@ -234,3 +234,31 @@ int TestBundledPackageInstall(const char *packageFixtures, const char *temporary
         return 0;
     }
 }
+
+// A TOC is read by its head, never refused for its size: a package's data folder whose TOC is a
+// multi-megabyte baked database (QuestieDB) is still one of the package's add-on folders.
+int TestLargeTOCImport(const char *fixtures, const char *temporary) {
+    @autoreleasepool {
+        NSString *root = [NSString stringWithUTF8String:temporary];
+        NSString *directory = [root stringByAppendingPathComponent:@"Game/Interface/AddOns"];
+        NSFileManager *fm = NSFileManager.defaultManager;
+        NSError *error = nil;
+        CHECK([fm createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error], "create sandbox");
+        TKAddonStore *store = [[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wowf" gameVersion:@"1.60.1"];
+        NSString *fixtureRoot = [NSString stringWithUTF8String:fixtures];
+        NSURL *big = [NSURL fileURLWithPath:[fixtureRoot stringByAppendingPathComponent:@"big-toc.zip"]];
+        CHECK([store importZIPAtURL:big error:&error], "a package with a 3 MiB TOC imports");
+        TKAddonRecord *pack = ManagedRecord(store);
+        CHECK([pack.folders isEqual:(@[@"BigPack", @"BigPackDB"])], "the package owns its big-TOC folder too");
+        NSString *dbTOC = [directory stringByAppendingPathComponent:@"BigPackDB/BigPackDB.toc"];
+        CHECK([[fm attributesOfItemAtPath:dbTOC error:&error] fileSize] > 3 * 1024 * 1024, "and installs that folder's whole TOC");
+        CHECK([fm fileExistsAtPath:[directory stringByAppendingPathComponent:@"BigPackDB/DB.lua"]], "with the folder's other files");
+        CHECK([pack.compatibility isEqual:@"verified"], "the head's interface line is read");
+        CHECK([store removeRecord:pack error:&error], "remove it");
+        CHECK(![fm fileExistsAtPath:dbTOC], "and removal takes the big-TOC folder too");
+        NSURL *utf8 = [NSURL fileURLWithPath:[fixtureRoot stringByAppendingPathComponent:@"big-toc-utf8.zip"]];
+        CHECK([store importZIPAtURL:utf8 error:&error], "a big TOC whose head ends inside a UTF-8 character imports");
+        CHECK([ManagedRecord(store).name isEqual:@"Caf\u00e9 Data"], "its title is read as UTF-8, not Latin-1");
+    }
+    return 0;
+}

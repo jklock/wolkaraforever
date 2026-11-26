@@ -79,6 +79,9 @@
 - **The repository gates.** `package_ipa.sh` now resolves its default and relative output at the
   repository root, which is the path the release workflow uploads. CI runs the layer,
   documentation and localization gates and nothing that needs a simulator or a device.
+- **An add-on whose manifest is a large database installs whole.** The manager reads only the
+  head of each `.toc`, so a folder such as QuestieDB, whose manifest is an 18 MB baked database,
+  is no longer skipped as "not an add-on" when its package is imported or updated.
 
 ## v1.0.21 — 2026-11-19
 

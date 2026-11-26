@@ -58,6 +58,10 @@ static NSString *const ForeverInterface = @"16001";
 
 static NSArray<NSString *> *Interfaces(NSString *toc);
 static BOOL Fail(NSError **error, NSString *message) { if(error)*error=[NSError errorWithDomain:@"WolkaraForever.AddOns" code:1 userInfo:@{NSLocalizedDescriptionKey:message}];return NO; }
+// A folder's TOC: the head of each .toc file (the ## lines the store reads are at the top). Only the head is ever
+// read, never a size limit on the file: QuestieDB's TOC is an 18 MB baked database, and a whole-file limit made its
+// folder "no add-on", so a ZIP that carried Questie and QuestieDB installed Questie alone. A head cut inside a UTF-8
+// character ends at the last whole line.
 static NSString *TOC(NSString *folder) {
     NSArray *names=[[NSFileManager.defaultManager contentsOfDirectoryAtPath:folder error:NULL] sortedArrayUsingSelector:@selector(compare:)];
     NSString *chosen=nil;
@@ -65,9 +69,18 @@ static NSString *TOC(NSString *folder) {
     NSMutableArray<NSString *> *others=[NSMutableArray array];
     NSString *folderName=folder.lastPathComponent;
     for(NSString *name in names) if([name.pathExtension.lowercaseString isEqual:@"toc"]) {
-        NSData *data=[NSData dataWithContentsOfFile:[folder stringByAppendingPathComponent:name] options:0 error:NULL];
-        if(!data.length || data.length>256*1024) continue;
-        NSString *toc=[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]?:[[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
+        NSFileHandle *file=[NSFileHandle fileHandleForReadingAtPath:[folder stringByAppendingPathComponent:name]];
+        NSData *data=nil;
+        @try { data=[file readDataOfLength:256*1024]; } @catch (__unused NSException *exception) { data=nil; }
+        [file closeFile];
+        if(!data.length) continue;
+        NSString *text=[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if(!text && data.length==256*1024) {
+            const char *bytes=data.bytes; NSUInteger end=data.length;
+            while(end>0 && bytes[end-1]!='\n') end--;
+            if(end) text=[[NSString alloc] initWithData:[data subdataWithRange:NSMakeRange(0,end)] encoding:NSUTF8StringEncoding];
+        }
+        NSString *toc=text?:[[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
         if(!toc) continue;
         // A package may carry manifests for several game clients. Prefer the one explicitly
         // named for Forever, then a manifest that declares Forever's interface, then its base
