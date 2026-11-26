@@ -30,7 +30,7 @@ This feature can stop working without notice. Do not include credentials, ticket
 
 ## Change app language or interface
 
-Choose **App language** (the row that reads **App language: …**) in **Game Settings Manager** to change the app's own labels and messages. The **Region / Locale** row in the same box sets the game's region and language; changing the game language can require additional files. Open **Launcher Manager** to choose **iPadOS** or **iOS on Duo**. Interface selection changes the arrangement only; it does not change game data or add-ons.
+Choose **App language** (the row that reads **App language: …**) in **Game Settings Manager** to change the app's own labels and messages. The **Region / Locale** row in the same box sets the game's region and language; changing the game language can require additional files. Open **Launcher Manager** to choose **iPadOS**, **iOS on Duo**, or **iPad touch**. [Play by touch on iPad](IPAD_TOUCH.md) explains TouchPlay setup and controls. Interface selection changes the arrangement only; it does not change game data or add-ons.
 
 ## Optional network-health diagnostics
 

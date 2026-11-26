@@ -9,6 +9,7 @@ WolkaraForever lets a user choose a Forever region and game language; download, 
 | Install, signing, first launch | [Installation](../INSTALLATION.md) |
 | Build assembly, execution modes, run commands, packaging | [Build and run WolkaraForever](../BUILDING.md) |
 | Game lifecycle, languages, experimental browser login, add-ons, recovery, controls, voice, Battery Saver Mode, the battery-saving sound path | [Using WolkaraForever](../USING_WOLKARAFOREVER.md) |
+| iPad touch with TouchPlay | [Play by touch on iPad](../IPAD_TOUCH.md) |
 | Phone-specific interface and constraints | [iPhone](../IPHONE.md) |
 | Supported boundary and issue reports | [Compatibility](../../COMPATIBILITY.md) |
 

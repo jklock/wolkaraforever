@@ -908,3 +908,7 @@
 "touch.chat.yell" = "Yell";
 "touch.chat.send" = "Send";
 "touch.walkStick" = "Walk stick";
+
+"home.launcher.interfaceMode.ipadtouch" = "iPad touch";
+"touch.fallback.title" = "iPad touch turned off";
+"touch.fallback.message" = "The game closed unexpectedly twice in a row in iPad touch mode, so WolkaraForever went back to iPadOS. You can choose iPad touch again under Interface Mode.";

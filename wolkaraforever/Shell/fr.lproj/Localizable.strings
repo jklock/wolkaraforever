@@ -909,3 +909,7 @@
 "touch.chat.yell" = "Crier";
 "touch.chat.send" = "Envoyer";
 "touch.walkStick" = "Stick de déplacement";
+
+"home.launcher.interfaceMode.ipadtouch" = "iPad tactile";
+"touch.fallback.title" = "iPad tactile désactivé";
+"touch.fallback.message" = "Le jeu s’est fermé de façon inattendue deux fois de suite en mode iPad tactile, WolkaraForever est donc revenu à iPadOS. Vous pouvez de nouveau choisir iPad tactile sous Mode d’interface.";

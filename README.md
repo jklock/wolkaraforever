@@ -31,7 +31,7 @@ the unsigned External JIT package. If you would rather sideload a package than b
 
 - Download, resume, repair, update, and start a selected Forever client.
 - Choose game and app languages independently.
-- Choose an iPadOS or iOS on Duo interface.
+- Choose iPadOS, iOS on Duo, or [iPad touch](docs/IPAD_TOUCH.md) with TouchPlay.
 - Manage supported add-ons and recover your interface safely.
 - Use touch, keyboard, controller, and optional dictation input.
 - Cap the frame rate and dim an idle session with Battery Saver, and keep the game's sound without

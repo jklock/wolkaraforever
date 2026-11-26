@@ -144,6 +144,13 @@ static BOOL CanStartApps(void) {
 static void FlushSteamCloudAtExit(int code, void *context) {
     if (!code) @autoreleasepool { [(__bridge TKSteamCloudCoordinator *)context flush]; }
 }
+// A guest may call _exit(0), bypassing atexit. The exit observer closes that clean session
+// while retaining the existing Steam cloud flush.
+static void GuestExitObserver(int code, void *context) {
+    AKHostSceneDelegate *scene = (__bridge AKHostSceneDelegate *)context;
+    if (!code) AKTouchCrashGuardEndSession();
+    FlushSteamCloudAtExit(code, (__bridge void *)scene.steamCloud);
+}
 static const char *ModeIdentifier(TKExecutionMode mode) { return (TKExecutionModeIdentifier(mode)?:@"none").UTF8String; }
 // Files shows the app's Documents under its bundle name (Tolkara or TolkaraDiagnostics).
 static NSString *FilesFolderName(void) {
@@ -336,6 +343,7 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
     (void)note;
     WKLog("host", @"the user chose to leave the game; closing WolkaraForever after the countdown");
     [self.steamCloud flush];
+    AKTouchCrashGuardEndSession();
     [self showClosingPage:WKLocalized(@"shell.leaving")];
 }
 
@@ -1474,7 +1482,6 @@ static NSString *AKAudioStateDescription(void) {
                 self.cloudPreparing=NO;
                 if(!ready) { self.status.text=report?:WKLocalizedFormat(@"shell.cloudFailed",error.domain,(long)error.code,app.profile);[self showStartStopped];return; }
                 self.cloudPrepared=YES;[self.steamCloud startPeriodicSync];
-                ng_set_exit_observer(FlushSteamCloudAtExit,(__bridge void *)self.steamCloud);
                 // The guest enters from a timer callout, after this dispatch block returns.
                 [self performSelector:@selector(resumeCloudPreparedNativeGame) withObject:nil afterDelay:0];
             });
@@ -1612,7 +1619,10 @@ static NSString *AKAudioStateDescription(void) {
     [defaults removeObjectForKey:@"WolkaraForever.NetworkHealth.NextLaunch"];
     ng_set_network_health(networkHealth);
     if(networkHealth) fprintf(log,"[host] network health: anonymous TCP counters enabled for this launch\n");
+    AKTouchCrashGuardBeginSession();
+    ng_set_exit_observer(GuestExitObserver, (__bridge void *)self);
     BOOL ok = ng_initialize(path.fileSystemRepresentation, NSBundle.mainBundle.privateFrameworksPath.fileSystemRepresentation, map.fileSystemRepresentation, log, fullStartup);
+    if (ok) AKTouchCrashGuardEndSession(); else AKTouchCrashGuardAbandonSession();
     [TKBattleNetSession gameEnded];
     if (externalJIT) {
         WKExternalJITDiagnosticsMemory(@"native-return");

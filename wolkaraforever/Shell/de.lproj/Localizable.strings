@@ -905,3 +905,7 @@
 "touch.chat.yell" = "Schreien";
 "touch.chat.send" = "Senden";
 "touch.walkStick" = "Laufstick";
+
+"home.launcher.interfaceMode.ipadtouch" = "iPad-Touch";
+"touch.fallback.title" = "iPad-Touch ausgeschaltet";
+"touch.fallback.message" = "Das Spiel wurde im iPad-Touch-Modus zweimal hintereinander unerwartet beendet, daher ist WolkaraForever zu iPadOS zurückgekehrt. Unter Oberflächenmodus kannst du iPad-Touch wieder auswählen.";

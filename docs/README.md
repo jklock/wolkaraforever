@@ -12,9 +12,10 @@ Use this guide to install WolkaraForever and manage a Forever installation.
 4. [What every control does](UI_REFERENCE.md) for a reference row by row, with a picture of every
    page and sheet.
 5. [Use WolkaraForever on iPhone](IPHONE.md) for phone-specific setup and limits.
-6. [Install the unsigned External JIT app](SIDELOADING.md) when you are sideloading
+6. [Play by touch on iPad](IPAD_TOUCH.md) with TouchPlay.
+7. [Install the unsigned External JIT app](SIDELOADING.md) when you are sideloading
    `wolkaraforever-unsigned.ipa` instead of building the app.
-7. [Send us a log](SENDING_LOGS.md) when something goes wrong — a few taps on the iPad, and no
+8. [Send us a log](SENDING_LOGS.md) when something goes wrong — a few taps on the iPad, and no
    computer needed.
 
 For help, read [Compatibility](../COMPATIBILITY.md) and send the log described in

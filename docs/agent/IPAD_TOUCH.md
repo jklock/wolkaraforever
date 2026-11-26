@@ -10,7 +10,7 @@ TouchPlay is installed by the player with the existing add-on manager. It is not
 
 `TouchTextBridge` provides the game's text field and a password field for typing by hand. `TouchControls` adds the iPad touch toolbar, chat channel chips, Send button, a separate trackpad preference, and one release path for held input. It does not create a controller overlay in this mode.
 
-`InterfaceMode` contains the crash guard: two consecutive unclean starts cause a fallback to iPadOS. A clean exit, a failed start and a backgrounded session are counted according to the session helpers. The picker change wires the shell helpers at start and exit and presents the fallback notice in the launcher.
+`InterfaceMode` contains the crash guard: two consecutive unclean starts cause a fallback to iPadOS. A clean exit, a failed start and a backgrounded session are counted according to the session helpers. The shell calls those helpers at start and exit, and the launcher presents the fallback notice.
 
 ## Layer files and patches
 

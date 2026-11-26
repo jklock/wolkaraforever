@@ -8,6 +8,7 @@
 | Build assembly, execution modes, run commands, simulator runs, unsigned IPA packaging | [Build and run WolkaraForever](../BUILDING.md) |
 | Sideloading the unsigned External JIT package: signing, JIT, adding a game, its limits | [Install the unsigned External JIT app](../SIDELOADING.md) |
 | Download, update, language, add-ons, recovery, controls, voice, Battery Saver Mode, the battery-saving sound path | [Using WolkaraForever](../USING_WOLKARAFOREVER.md) |
+| iPad touch and TouchPlay setup | [Play by touch on iPad](../IPAD_TOUCH.md) |
 | A single control: what it does, how to use it, and its picture | [What every control does](../UI_REFERENCE.md) and the [UI catalog](UI_CATALOG.md) |
 | Phone layout, mobile interface, phone hardware | [iPhone](../IPHONE.md) |
 | Getting a log off the device, and what to include | [Send us a log](../SENDING_LOGS.md) |
