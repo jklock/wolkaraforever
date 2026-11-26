@@ -79,6 +79,10 @@
 - **The repository gates.** `package_ipa.sh` now resolves its default and relative output at the
   repository root, which is the path the release workflow uploads. CI runs the layer,
   documentation and localization gates and nothing that needs a simulator or a device.
+- **The picture no longer freezes when the game rebuilds its renderer.** When the game replaced
+  its view's layer while on screen (after a screen lock, as it recovers its GPU device), the new
+  layer was left out of the window and the old one kept showing: the game ran with a frozen
+  picture. The new layer now takes the old one's place.
 
 ## v1.0.21 — 2026-11-19
 

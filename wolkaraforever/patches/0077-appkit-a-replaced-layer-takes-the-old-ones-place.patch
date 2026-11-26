@@ -1,0 +1,116 @@
+# WolkaraForever layer patch 0077 - a replaced view layer takes the old one's place
+#
+# Why: NSView's setLayer: only stored the new layer. When the game replaces its content view's backing
+# layer while the view is on screen (it rebuilds its renderer after the GPU device is lost, for example
+# after a screen lock: the game logs "GxRestart. Reason:DeviceRecovery" and creates a new CAMetalLayer),
+# the old layer stayed in the host's layer tree and the new one was in no tree at all. The game kept
+# rendering complete frames into drawables that never reached the display: the picture froze on the old
+# layer while the game ran. On an iPad Pro 11-inch (M5) this froze the world after a screen lock.
+#
+# setLayer: now puts the new layer where the old one was (same superlayer, same index, so overlays the
+# host added above the game stay above it), moves the view's sublayers' layers onto it, gives a content
+# view's layer the window's content scale, and removes the old layer. A layer detached by nil remembers
+# its place for the next one. A replacement on screen logs "view layer replaced on screen: <Old> ->
+# <New> (main thread=1|0)" once per replacement; an unhosted tree is reordered silently.
+#
+# Applies after: 0075-signing-enforcement-tests-skippable-where-not-enforced.patch
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: yes (platform AppKit layer replacement bug).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -94,6 +94,11 @@
+ + (void)removeMonitor:(id)monitor { AKEventMonitorRemove(monitor); }
+ @end
+ 
++@interface NSWindow (AKLayerReplacement)
++- (CALayer *)ak_hostLayer;
++- (void)ak_applyContentScaleToLayer:(CALayer *)layer;
++@end
++
+ #pragma mark - NSView
+ 
+ @implementation NSTrackingArea
+@@ -103,7 +108,7 @@
+ }
+ @end
+ 
+-@implementation NSView { NSMutableArray<NSView *> *_subviews; NSMutableArray<NSDictionary *> *_cursorRects; NSMutableArray<NSTrackingArea *> *_trackingAreas; __weak NSView *_superview; }
++@implementation NSView { NSMutableArray<NSView *> *_subviews; NSMutableArray<NSDictionary *> *_cursorRects; NSMutableArray<NSTrackingArea *> *_trackingAreas; __weak NSView *_superview; __weak CALayer *_detachedLayerParent; NSUInteger _detachedLayerIndex; }
+ - (instancetype)init { return [self initWithFrame:CGRectZero]; }
+ - (instancetype)initWithFrame:(NSRect)frame {
+     if ((self = [super init])) { _frame = frame; _bounds = (CGRect){CGPointZero, frame.size}; _subviews = [NSMutableArray new]; _cursorRects=[NSMutableArray new]; _trackingAreas=[NSMutableArray new]; _autoresizesSubviews=YES; }
+@@ -115,10 +120,41 @@
+     if (w && !_layer) { self.layer = [self makeBackingLayer]; }
+ }
+ - (void)setLayer:(CALayer *)l {
++    if (_layer == l) return;
++    CALayer *old = _layer;
++    CALayer *parent = old.superlayer;
++    [l removeFromSuperlayer];
++    NSUInteger index = [parent.sublayers indexOfObjectIdenticalTo:old];
++    if (!l && parent) { _detachedLayerParent = parent; _detachedLayerIndex = index; }
++    if (l && !parent && _detachedLayerParent &&
++        (_detachedLayerParent == _superview.layer ||
++         (self == self.window.contentView && _detachedLayerParent == [self.window ak_hostLayer]))) {
++        parent = _detachedLayerParent;
++        index = _detachedLayerIndex;
++    }
++    if (l) _detachedLayerParent = nil;
++    if (!parent && _superview) {
++        parent = _superview.layer;
++        NSUInteger sibling = [_superview->_subviews indexOfObjectIdenticalTo:self];
++        index = 0;
++        for (NSUInteger i = 0; i < sibling; i++)
++            if (_superview->_subviews[i].layer.superlayer == parent) index++;
++    } else if (!parent && self == self.window.contentView) {
++        parent = [self.window ak_hostLayer];
++        index = parent.sublayers.count;
++    }
++    BOOL hosted = l && old.superlayer && [self.window ak_hostLayer];
++    if (hosted) AKLog(@"view layer replaced on screen: %@ -> %@ (main thread=%d)", NSStringFromClass(old.class), NSStringFromClass(l.class), NSThread.isMainThread);
++    [old removeFromSuperlayer];
+     _layer = l;
+     // As AppKit's: a view's layer is placed by its origin, which Wine's Mac driver sets as the position.
+     l.anchorPoint = CGPointZero;
+     l.frame = _frame; l.delegate = nil; l.hidden=_hidden;
++    if (l) {
++        for (NSView *child in _subviews) if (child.layer) [l addSublayer:child.layer];
++        if (self == self.window.contentView) [self.window ak_applyContentScaleToLayer:l];
++        if (parent) [parent insertSublayer:l atIndex:(unsigned)MIN(index, parent.sublayers.count)];
++    }
+ }
+ - (void)setHidden:(BOOL)hidden { _hidden=hidden; _layer.hidden=hidden; }
+ - (void)setFrame:(NSRect)f {
+@@ -1389,6 +1425,7 @@
+     for(CALayer *child in layer.sublayers) logLayer(child,depth+1);
+ }
+ @implementation NSWindow { UIWindow *_uiWindow; AKHostView *_host; NSRect _contentRect; NSResponder *_firstResponder; NSUInteger _collectionBehavior; }
++- (CALayer *)ak_hostLayer { return _host.layer; }
+ - (BOOL)ak_needsTrackingEvents { return [_host ak_needsTrackingEvents]; }
+ - (instancetype)initWithContentRect:(NSRect)r styleMask:(NSUInteger)m backing:(NSUInteger)b defer:(BOOL)d {
+     static _Atomic NSInteger numbers;
+@@ -1475,15 +1512,18 @@
+     [_host.layer addSublayer:_contentView.layer];
+     [self ak_hostBoundsChanged:_host.bounds];
+ }
+-- (void)ak_hostBoundsChanged:(CGRect)b {
+-    if (CGSizeEqualToSize(b.size, CGSizeZero)) return;
+-    // As AppKit: the view may keep its own scale, as Wine's does when it draws
+-    // one pixel a point.
+-    CALayer *layer = _contentView.layer; CGFloat scale = self.backingScaleFactor;
++- (void)ak_applyContentScaleToLayer:(CALayer *)layer {
++    CGFloat scale = self.backingScaleFactor;
+     SEL keep = @selector(layer:shouldInheritContentsScale:fromWindow:);
+     if (layer.contentsScale != scale && (![_contentView respondsToSelector:keep] ||
+         ((BOOL (*)(id, SEL, CALayer *, CGFloat, NSWindow *))objc_msgSend)(_contentView, keep, layer, scale, self)))
+         layer.contentsScale = scale;
++}
++- (void)ak_hostBoundsChanged:(CGRect)b {
++    if (CGSizeEqualToSize(b.size, CGSizeZero)) return;
++    // As AppKit: the view may keep its own scale, as Wine's does when it draws
++    // one pixel a point.
++    [self ak_applyContentScaleToLayer:_contentView.layer];
+     BOOL resized = !CGSizeEqualToSize(_contentView.frame.size, b.size);
+     _contentView.frame = b;
+     if (_host.window) AKSetGuestDisplayGeometry(b.size,_host.window.windowScene.screen.maximumFramesPerSecond);
