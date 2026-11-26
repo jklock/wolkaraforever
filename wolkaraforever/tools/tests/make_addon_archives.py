@@ -60,3 +60,18 @@ central = data.find(b'PK\x01\x02')
 assert central >= 0, 'the central directory record was not where it was expected'
 data[central + 24:central + 28] = (10).to_bytes(4, 'little')
 path.write_bytes(bytes(data))
+
+# A package whose second folder's TOC is a baked database (QuestieDB's is 18 MB): the ## lines are at the
+# top, the rest is data. The store reads only the head of a TOC, so the folder is still an add-on.
+big_head = b'## Interface: 16001\n## Title: Big Pack DB\n## Version: 1\nDB.lua\n'
+archive('big-toc', [('BigPack/BigPack.toc', b'## Interface: 16001\n## Title: Big Pack\n## Version: 1\nmain.lua\n'),
+                    ('BigPack/main.lua', b'-- big pack\n'),
+                    ('BigPackDB/BigPackDB.toc', big_head + b'## X-Baked: ' + b'7' * (3 * 1024 * 1024) + b'\n'),
+                    ('BigPackDB/DB.lua', b'-- data\n')])
+# A big TOC whose 256 KiB head ends inside a two-byte UTF-8 character: the head is cut back to its last
+# whole line, so the title is read as UTF-8 rather than as Latin-1.
+utf8_head = '## Interface: 16001\n## Title: Caf\u00e9 Data\n## Version: 1\n'.encode()
+pad = (256 * 1024 - 1 - len(utf8_head)) % 2
+utf8_toc = utf8_head + b'x' * pad + '\u00e9'.encode() * 200_000 + b'\n'
+assert utf8_toc[256 * 1024 - 1] == 0xC3, 'the head must end on the first byte of a two-byte character'
+archive('big-toc-utf8', [('Utf8Data/Utf8Data.toc', utf8_toc)])

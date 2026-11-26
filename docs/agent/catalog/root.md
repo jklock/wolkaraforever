@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | .gitignore | . | repository file | Repository-level file | Repository file supporting repository operation or policy | . | None | `sha256:3e4b80c9e1871761ff90c8ee004404fd821f5bfbb3a64bee21298ed2308aa324`; `b9f9beb`; 2026-11-25 |
 | AGENTS.md | . | documentation | Repository-level file | Documentation supporting repository operation or policy | . | None | `sha256:2577c39125b95b1881bfd3767673b7bb05bbbbeb6ef4673e31e53ead553c4b0f`; `b9f9beb`; 2026-11-25 |
-| CHANGELOG.md | . | documentation | Repository-level file | Documentation supporting repository operation or policy | . | None | `sha256:a46e9ea83e71e1be0101bfbfff73343f64a7d19e290ea1379bde2accae4d7349`; `b9f9beb`; 2026-11-25 |
+| CHANGELOG.md | . | documentation | Repository-level file | Documentation supporting repository operation or policy | . | None | `sha256:333d5ef7813f392c2c6037d7e0185b7f7e9079f6210f01e7eb1799b428611edf`; `c4fc307`; 2026-11-26 |
 | COMPATIBILITY.md | . | documentation | Repository-level file | Documentation supporting repository operation or policy | . | None | `sha256:5b62eb3db3a88a397440ef2df4e37de681c7d9603b96bf1217cff4883575841f`; `b9f9beb`; 2026-11-25 |
 | CONTRIBUTORS.md | . | documentation | Repository-level file | Documentation supporting repository operation or policy | . | None | `sha256:adeb4a506c935c2f0c71a0bfeb54794f6ab72953f7fae24aa5c898e6b6789dd7`; `b9f9beb`; 2026-11-25 |
 | LICENSE | . | repository file | Repository-level file | Repository file supporting repository operation or policy | . | None | `sha256:ddbec1870d68d8671e611b68dab33fbc23582f5d8c78d5942ab147bc829d5287`; `b9f9beb`; 2026-11-25 |
