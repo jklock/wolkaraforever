@@ -34,6 +34,7 @@
 #import "StartupActivity.h"
 #import "WolkaraForeverConfig.h"
 #import "WolkaraForeverLog.h"
+#import "ProcessEnd.h"
 #import "WolkaraForeverTheme.h"
 #import "WKLocalization.h"
 // Why the developer service refused, in the layer's own vocabulary. The sentence
@@ -1362,6 +1363,8 @@ static NSString *AKAudioStateDescription(void) {
 // the guest left behind, with the mark and the number falling, is the whole point: the app
 // leaves by itself and the user is told what to do rather than left on a launcher whose Play
 // does nothing.
+// Every way out of this page ends the process with WKEndProcess, never exit(): after a game has run,
+// exit() runs the game's static destructors while its threads are alive, and one of them aborts.
 - (void)showClosingPage:(NSString *)reason {
     static UIWindow *closing;
     if (closing) return;
@@ -1370,7 +1373,7 @@ static NSString *AKAudioStateDescription(void) {
         for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes)
             if ([candidate isKindOfClass:UIWindowScene.class]) { scene=(UIWindowScene *)candidate; break; }
     }
-    if (!scene) { exit(0); }
+    if (!scene) { WKEndProcess(0); }
     closing = [[UIWindow alloc] initWithWindowScene:scene];
     closing.windowLevel = UIWindowLevelAlert + 1;
     UIView *root = [UIView new];
@@ -1419,7 +1422,7 @@ static NSString *AKAudioStateDescription(void) {
     [closeNow addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) {
         (void)action;
         WKLog("host", @"closing now: the user pressed Close WolkaraForever");
-        exit(0);
+        WKEndProcess(0);
     }] forControlEvents:UIControlEventTouchUpInside];
 
     UIStackView *column = [[UIStackView alloc] initWithArrangedSubviews:@[logo, title, instructions, countdown, closeNow]];
@@ -1447,7 +1450,7 @@ static NSString *AKAudioStateDescription(void) {
         remaining--;
         countdown.text = [NSString stringWithFormat:@"%ld", (long)MAX(remaining, 0)];
         WKLog("host", @"closing in %ld", (long)MAX(remaining, 0));
-        if (remaining <= 0) { [timer invalidate]; exit(0); }
+        if (remaining <= 0) { [timer invalidate]; WKEndProcess(0); }
     }];
     [NSRunLoop.mainRunLoop addTimer:ticker forMode:NSRunLoopCommonModes];
 }
