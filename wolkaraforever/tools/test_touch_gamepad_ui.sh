@@ -22,13 +22,16 @@ for LANGUAGE in en de; do
     mkdir -p "$APP/$LANGUAGE.lproj"
     cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$APP/$LANGUAGE.lproj/"
 done
+# TouchPlay's saved buttons as the iPad wrote them, for the iPad touch walk stick's checks.
+# The older add-on's file (TouchPlay-v1.lua, keys on D, A and S) and the current one (none).
+cp tests/fixtures/TouchPlay-v1.lua tests/fixtures/TouchPlay-v1-a22.lua "$APP/"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 fixture_compile xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations \
     translation/AppKit/TouchGamepad.m translation/AppKit/TouchGamepadLayout.m translation/AppKit/TouchHaptics.m \
     translation/AppKit/InterfaceMode.m translation/AppKit/LayoutStore.m translation/AppKit/AKHostLocalization.m \
     translation/AppKit/TouchCamera.m translation/AppKit/ControllerPointer.m translation/AppKit/TouchControllerLog.m translation/AppKit/TouchTrackpad.c \
-    tests/test_touch_gamepad_app.m \
+    translation/AppKit/TouchAreas.m translation/AppKit/TouchContract.m tests/test_touch_gamepad_app.m \
     -framework Foundation -framework UIKit -framework GameController -framework CoreGraphics -framework QuartzCore -o "$APP/TouchGamepadFixture"
 cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -59,10 +62,14 @@ else
     fi
     # Both interfaces: the default (iPadOS, what every release through v1.0.7 has) and the
     # mobile one the launcher selects with WolkaraForeverInterfaceModeV1.
-    for MODE in "" "--mobile-interface"; do
-        LOG="build/touch-gamepad-fixture/self-test${MODE:+-mobile}.log"
+    # and the iPad touch one (TouchPlay), which is mobile too and is gated on its own.
+    for MODE in "" "--mobile-interface" "--mobile-interface ipadtouch"; do
+        LOG="build/touch-gamepad-fixture/self-test$(echo "${MODE:+ $MODE}" | tr -c 'A-Za-z0-9\n' '-').log"
         # simctl may report success even when the app aborts an assertion, so the log decides.
         fixture_launch "$LOG" org.tolkara.tests.touch-gamepad "$@" $MODE
         grep -Eq 'TOUCH_GAMEPAD_(LIFECYCLE|INPUT)_PASS:' "$LOG"
+        # The self-test ends through the process's real exit(); the crash guard's handler must have
+        # run (it is what makes a quit from the game a clean exit).
+        if [[ " $* " == *" --self-test "* ]]; then grep -q 'TOUCH_CRASH_GUARD_EXIT_PASS:' "$LOG"; fi
     done
 fi

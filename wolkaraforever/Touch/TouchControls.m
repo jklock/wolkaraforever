@@ -9,6 +9,9 @@
 #import "TouchGamepadLayout.h"
 #import "TouchGamepad.h"
 #import "TouchHaptics.h"
+#import "TouchAreas.h"
+#import "TouchTextBridge.h"
+#import "TouchWorldSignal.h"
 #import <objc/message.h>
 
 // Null until the app's shell says which keys are the user's; null means "nothing is owned",
@@ -95,6 +98,10 @@ NSString *const AKChatComposerOutcomeKey = @"outcome";
 // ChatComposer.m, which owns the closing decision.
 static unsigned short const AKKeyReturnCode = 36;
 static NSString *const AKTouchTrackpadDefaultsKey = @"TKTouchTrackpadEnabled";
+// iPad touch's own trackpad switch. Its plain touches are a click where the finger is (0055), and a trackpad
+// turned on in another interface must not carry into it: on the iPad (an iPad test) the shared switch, left on
+// from an earlier interface, made every tap on the character screen click at the cursor instead.
+static NSString *const AKTouchTrackpadIPadTouchDefaultsKey = @"WolkaraForeverIPadTouchTrackpadEnabled";
 // Whether the top toolbar is folded into its handle. Folded unless the user left it open.
 static NSString *const AKTouchToolbarCollapsedDefaultsKey = @"WolkaraForeverToolbarCollapsed";
 // An open toolbar folds itself away after this long without a tap on it.
@@ -157,6 +164,9 @@ static BOOL hardwareKeyboardAttached(void) {
 // dismissed: the draft editor uses it to decide whether to take focus back when
 // a system panel (dictation) has finished with it.
 - (BOOL)keyboardRequested;
+// The draft editor gave up the keyboard on its own (not for dictation): the request it was opened for is over, so it
+// takes the keyboard again only when its owner asks (device fix 2).
+- (void)draftEditorLetGo;
 @end
 
 // The Composer's card, which this file draws because it is the file that owns the draft editor,
@@ -181,7 +191,7 @@ static BOOL hardwareKeyboardAttached(void) {
 - (void)keyboardViewToggleDictation;
 @end
 
-@interface AKTouchControls () <AKTouchKeyboardSink>
+@interface AKTouchControls () <AKTouchKeyboardSink, AKTouchTextSink>
 @end
 
 // A normal, visible UIKit document. Editing and dictation stay local until
@@ -237,6 +247,14 @@ static BOOL hardwareKeyboardAttached(void) {
 - (BOOL)canReplaceField { return [self canModifyDraft] && (self.hasText || !_didSubmitDraft); }
 - (void)textViewDidChange:(UITextView *)view {
     (void)view;
+    // A newline that reached the end of the draft past the delegate is the keyboard's Return too (mobile): taken out, and
+    // sent. A pasted text with lines in it is left alone (its newlines become spaces when it is sent).
+    if (_mobileInterface && _acceptingInput && ([self.text hasSuffix:@"\n"] || [self.text hasSuffix:@"\r"])) {
+        [super setText:[[self.text componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet] componentsJoinedByString:@""]];
+        _didSubmitDraft = NO;
+        [self returnPressed];
+        return;
+    }
     _didSubmitDraft = NO;
     [self.inputOwner draftEditorChanged:self.text];
     [self.inputOwner updateDraftButtons];
@@ -290,6 +308,13 @@ static BOOL hardwareKeyboardAttached(void) {
     [self.inputOwner sendChatText:text];
     return YES;
 }
+// Only its owner opens the draft editor: something else asking it to take the keyboard is refused (device fix 2). UIKit's
+// AutoFill gathers every text input in the window into a login group and, with the password field closed, asks the
+// group's other members to take the keyboard and fills them: in the fixture the chat draft took the account's e-mail
+// address and came up with it, one tap from sending it to the game's chat.
+- (BOOL)canBecomeFirstResponder {
+    return self.inputOwner.keyboardRequested && [super canBecomeFirstResponder];
+}
 - (BOOL)becomeFirstResponder {
     if (!self.isFirstResponder) _didSubmitDraft = NO;
     _acceptingInput = YES;
@@ -316,6 +341,7 @@ static BOOL hardwareKeyboardAttached(void) {
             // Closing the keyboard is how a composition is abandoned, so the draft - and any
             // provisional text in it - goes, and the cancellation is announced once.
             [self discardDraft];
+            [self.inputOwner draftEditorLetGo];
         }
     }
     [self.inputOwner updateKeyboardButton];
@@ -334,27 +360,30 @@ static BOOL hardwareKeyboardAttached(void) {
         if (input && input.inputOwner.keyboardRequested && !input.isFirstResponder) [input becomeFirstResponder];
     }];
 }
+// The keyboard's Return. Mobile: Send puts the draft in the game's chat, exactly as the Send button does (Replace is the
+// button that only fills the selected field). Standard: Done replaces the field, as it always has. Deferred until UIKit
+// finishes the edit that brought it; this never mutates its document from inside that edit.
+- (void)returnPressed {
+    BOOL mobile = _mobileInterface;
+    NSUInteger session = _session;
+    __weak AKKeyboardTextView *weakSelf = self;
+    [NSRunLoop.mainRunLoop performInModes:@[NSRunLoopCommonModes] block:^{
+        AKKeyboardTextView *input = weakSelf;
+        if (!input || input->_session != session) return;
+        if (mobile) [input sendDraftToChat]; else [input forwardCommittedText];
+    }];
+}
 - (BOOL)textView:(UITextView *)textView shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text {
     (void)textView; (void)range;
-    if ([text isEqual:@"\n"]) {
-        // Mobile: Send puts the draft in the game's chat (Replace is the button that only
-        // fills the selected field). Standard: Done replaces the field, as it always has.
-        // Defer until UIKit finishes this edit; do not mutate its document here.
-        BOOL mobile = _mobileInterface;
-        NSUInteger session = _session;
-        __weak AKKeyboardTextView *weakSelf = self;
-        [NSRunLoop.mainRunLoop performInModes:@[NSRunLoopCommonModes] block:^{
-            AKKeyboardTextView *input = weakSelf;
-            if (!input || input->_session != session) return;
-            if (mobile) [input sendDraftToChat]; else [input forwardCommittedText];
-        }];
-        return NO;
-    }
+    if ([text isEqual:@"\n"]) { [self returnPressed]; return NO; }
     return _acceptingInput;
 }
+// The keyboard's Return can also arrive as a newline typed straight in (a player, a device check: on the iPad the blue Send key
+// did not send; only the Send button did). Every way in is the same Return: never a newline in the draft.
 - (void)insertText:(NSString *)text {
     BOOL wasComposing = _composing || self.markedTextRange != nil;
-    if (_acceptingInput) [super insertText:text];
+    if (_acceptingInput && ([text isEqual:@"\n"] || [text isEqual:@"\r"])) [self returnPressed];
+    else if (_acceptingInput) [super insertText:text];
     // UIKit hands a composed sequence over as one insertion. Announcing the commit here is
     // what makes "committed" mean the same thing to the log and to the guest: the text that
     // reaches the game is the string UIKit committed, not a re-derivation of it.
@@ -599,10 +628,72 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
 }
 @end
 
+// iPad touch, mockup 82: while the chat keyboard is up, a touch on the game (not the toolbar, not the composer)
+// closes the keyboard and reaches nothing - no click, no key, no draft sent. Over the game, under the toolbar and
+// the composer; it takes a touch only while the chat composer has the keyboard.
+@interface AKTouchKeyboardGate : UIView
+@property (nonatomic, weak) AKTouchControls *controls;
+@end
+@implementation AKTouchKeyboardGate
+- (instancetype)initWithFrame:(CGRect)frame {
+    if ((self = [super initWithFrame:frame])) {
+        self.backgroundColor = UIColor.clearColor;
+        self.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        self.accessibilityIdentifier = @"wolkaraforever.keyboard.gate";
+        self.isAccessibilityElement = NO;
+    }
+    return self;
+}
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    (void)event;
+    return self.controls.textKind == AKTextKindChat && [self pointInside:point withEvent:event] ? self : nil;
+}
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    (void)touches; (void)event;
+    if (self.controls.textKind != AKTextKindChat) return;
+    AKLog(@"keyboard: a tap on the game closes the chat; nothing sent");
+    [self.controls dismissKeyboard];
+}
+// The rest of that finger is swallowed: it reaches nothing.
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { (void)touches; (void)event; }
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { (void)touches; (void)event; }
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { (void)touches; (void)event; }
+@end
+
+// Which view of this app has the keyboard now, if any (device fix 2): an action sent to no target goes to the first
+// responder, and the first one to answer is it. With no first responder it reaches the window, the scene or the
+// application, which are not "a view that has the keyboard".
+static __weak UIResponder *gAKTouchFoundResponder;
+@interface UIResponder (AKTouchFirstResponder)
+- (void)ak_touchFindFirstResponder:(id)sender;
+@end
+@implementation UIResponder (AKTouchFirstResponder)
+- (void)ak_touchFindFirstResponder:(id)sender { (void)sender; gAKTouchFoundResponder = self; }
+@end
+static UIResponder *AKTouchFirstResponder(void) {
+    gAKTouchFoundResponder = nil;
+    [UIApplication.sharedApplication sendAction:@selector(ak_touchFindFirstResponder:) to:nil from:nil forEvent:nil];
+    UIResponder *found = gAKTouchFoundResponder;
+    gAKTouchFoundResponder = nil;
+    if (!found || [found isKindOfClass:UIWindow.class] || [found isKindOfClass:UIApplication.class] ||
+        [found isKindOfClass:UIScene.class] || found == (id)UIApplication.sharedApplication.delegate) return nil;
+    return found;
+}
+
+// The chat's channels (mockup 82): each chip makes the line a slash line. Whisper is the reply to the last
+// whisper (/r): the app cannot read a name from the game.
+static NSString *const AKChatChipKeys[] = {@"say", @"party", @"guild", @"whisper", @"yell"};
+static NSString *const AKChatChipPrefixes[] = {@"/s ", @"/p ", @"/g ", @"/r ", @"/y "};
+static const NSInteger AKChatChipCount = 5;
+
+
+
+
+
 @implementation AKTouchControls {
     UIButton *_keyboardButton, *_trackpadButton, *_gamepadButton, *_settingsButton, *_leaveButton;
     UIButton *_toolbarHandle;
-    BOOL _toolbarCollapsed, _mobileInterface;
+    BOOL _toolbarCollapsed, _mobileInterface, _touchPlay;
     NSTimer *_toolbarCollapseTimer;
     UIButton *_insertDraftButton, *_clearDraftButton;
     UIButton *_speechLanguageButton;
@@ -637,10 +728,34 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     AKControllerPointer _controllerPointer;
     AKTouchHaptics *_haptics;
     AKTouchGamepad *_gamepad;
+    // iPad touch: the walk stick only (only the walk stick, with no virtual controller), its own layer below this toolbar. Nil in every other mode.
+    AKTouchGamepad *_walkStick;
     BOOL _tookOwnPlace;
     // Whether one of the game's password fields has the keyboard: the game asked for secure
     // event input (Carbon adapter, patch 0058).
     BOOL _protectedField;
+    // iPad touch: the keyboard for the game's password box, typed by hand (no password is stored or logged; no AutoFill ). Nil in
+    // every other mode.
+    AKTouchTextBridge *_textBridge;
+    // iPad touch: whether the player is in the world, read from the add-on's secure-input pulses ; it
+    // decides whether TouchPlay's buttons are on screen (AKTouchAreas.live). Nil in every other mode.
+    AKTouchWorldSignal *_worldSignal;
+    // The keyboard passes between the composer and the password field: the game's view must not take it between.
+    BOOL _handingOver;
+    // iPad touch: whether the game's secure event input is on right now, as last announced (device fix 2). The box's
+    // focus (_protectedField) is believed on a player's tap only while it is.
+    BOOL _secureOn;
+    // iPad touch: the login screen (the game's start, or the game's password box seen since the player was last in the
+    // world). Out of the world there, the composer types into the game's account box: its Return is Tab, never Login.
+    BOOL _loginScreen;
+    // iPad touch: how far the game is slid up for the password keyboard (0 when not).
+    CGFloat _slide;
+    AKTouchKeyboardGate *_gate;
+    // iPad touch's chat: the chips row above the keys, the chosen chip (-1: the game's own channel), and Send.
+    UIView *_chips;
+    UIStackView *_chipStack;
+    NSInteger _chatChannel;
+    UIButton *_sendButton;
     // The saved-password key, shown only while the field above has the keyboard and the launcher's
     // experimental login is on. The password itself is never kept here: it is typed and dropped.
     UIButton *_passwordKey;
@@ -667,7 +782,6 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         case AKTrackpadUp: [controls.delegate touchButton:button pressed:NO]; break;
     }
 }
-
 - (UIButton *)buttonWithSymbol:(NSString *)symbol label:(NSString *)label action:(SEL)action {
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
     [button setImage:[UIImage systemImageNamed:symbol] forState:UIControlStateNormal];
@@ -729,6 +843,73 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         // does, and the launcher writes the key before a guest starts. Standard (iPadOS)
         // keeps the toolbar it has always had - five buttons across the top, always open.
         _mobileInterface = AKInterfaceModeIsMobile();
+        // iPad touch: the TouchPlay add-on draws the buttons, so the controller overlay and its
+        // virtual gamepad are never made (see the guard where the gamepad is created). Read once, with
+        // the interface, for the same reason.
+        _touchPlay = AKInterfaceModeIsTouchPlay();
+        // iPad touch: the password box's own keyboard, and the chat strip's tap opens the chat.
+        _chatChannel = -1;
+        if (_touchPlay) {
+            // A game start is "not in the world" until the add-on's pulse says it entered.
+            _worldSignal = [AKTouchWorldSignal new];
+            _worldSignal.sheetPulses = AKTouchCurrentContract().sheetPulses;
+            __weak AKTouchControls *weakWorld = self;
+            _worldSignal.changed = ^(AKTouchWorldState state) { [weakWorld worldChanged:state]; };
+        }
+        if (_touchPlay && AKTouchTextBridgeWanted()) {
+            _textBridge = [AKTouchTextBridge new];
+            _loginScreen = YES;   // a game starts at the login screen
+            _textBridge.sink = self;
+            __weak AKTouchControls *weakControls = self;
+            _textBridge.openChat = ^{
+                AKTouchControls *controls = weakControls;
+                if (controls && !controls->_keyboardInput.isFirstResponder) [controls becomeFirstResponder];
+            };
+            _textBridge.activeChanged = ^(BOOL active) {
+                AKTouchControls *controls = weakControls;
+                if (!controls) return;
+                // Back to the game's view, as the composer does when it closes - unless the keyboard is passing to the
+                // composer (it would drop and come back), or the field lost it to another view (the Passwords sheet):
+                // then the game's view takes it only if nothing else has it, and the field stays ready for AutoFill.
+                if (!active && !controls->_handingOver && !controls->_keyboardInput.isFirstResponder) [controls takeKeyboardBackFromField];
+                [controls updateKeyboardButton];
+                [controls slideGameForPassword:active && controls->_textBridge.kind == AKTextKindPassword];
+            };
+            // The game's password box, once secure input has stayed on past the debounce (a pulse of the add-on's never
+            // gets here): it takes the keyboard, from the chat composer too. From the composer, the keyboard passes
+            // straight to the field (the composer gives it up and drops its draft).
+            // The scene, not UIApplication: during UIApplicationWillResignActiveNotification, which is when the game turns
+            // secure input off for Face ID's sheet, UIApplication still says active (device fix 2).
+            _textBridge.appIsActive = ^BOOL { AKTouchControls *controls = weakControls; return controls ? [controls appIsActive] : YES; };
+            _textBridge.secureFocusConfirmed = ^(BOOL opening, void (^open)(void)) {
+                AKTouchControls *controls = weakControls;
+                if (!controls) return;
+                controls->_protectedField = YES;
+                // The password box out of the world: this is the login screen (switching accounts lands here too).
+                if (controls->_worldSignal.state == AKTouchWorldOut) controls->_loginScreen = YES;
+                BOOL fromComposer = opening && controls->_keyboardInput.isFirstResponder;
+                if (fromComposer) {
+                    controls->_handingOver = YES;
+                    controls->_keyboardRequested = NO;
+                    if (controls->_ownKeyboard) {
+                        controls->_ownKeyboard = NO; controls->_keyboardInput.inputView = nil; [controls->_keyboardInput reloadInputViews];
+                    }
+                }
+                open();
+                if (fromComposer) {
+                    controls->_handingOver = NO;
+                    if (controls->_keyboardInput.isFirstResponder) [controls dismissKeyboard];   // the field did not take it
+                }
+                AKLog(@"keyboard: the game's password box has focus");
+                [controls updateKeyboardButton];
+            };
+            [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatAreaTapped:)
+                                                       name:AKTouchChatAreaTappedNotification object:nil];
+            [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(plainGameTouchBegan:)
+                                                       name:AKTouchPlainGameTouchBeganNotification object:nil];
+            [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(touchContractChanged:)
+                                                       name:AKTouchContractDidChangeNotification object:nil];
+        }
         if (_mobileInterface) {
             // The handle folds the five buttons away so they do not sit over the game, and
             // brings them back with one tap.
@@ -757,13 +938,23 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
             }]];
         }
         _trackpadButton.menu = [UIMenu menuWithTitle:@"Mouse buttons" children:actions];
-        NSNumber *saved = [NSUserDefaults.standardUserDefaults objectForKey:AKTouchTrackpadDefaultsKey];
+        NSNumber *saved = [NSUserDefaults.standardUserDefaults objectForKey:[self trackpadDefaultsKey]];
         // Mobile: direct touch by default - a tap clicks where the finger is and a hold
         // right-clicks (patch 0055), which reads better than a cursor moved like a trackpad.
         // Standard: the default it has always had, a trackpad on a phone and off on an iPad.
+        // iPad touch reads only its own switch, off until it is turned on in iPad touch.
         self.trackpadEnabled = saved ? saved.boolValue
             : (_mobileInterface ? NO : UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone);
+        if (_touchPlay) AKLog(@"touch controls: iPad touch's trackpad is %@ (%@)", self.trackpadEnabled ? @"on" : @"off",
+                              saved ? @"turned so in iPad touch" : @"its default; another interface's switch does not apply");
+        if (_touchPlay) {
+            // The toolbar's dock follows TouchPlay's buttons: in the world or not, and new buttons after a reload.
+            [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(toolbarDockInputsChanged:) name:AKTouchAreasLiveDidChangeNotification object:nil];
+            [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(toolbarDockInputsChanged:) name:AKTouchContractDidChangeNotification object:nil];
+        }
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(suspendInput:) name:UIApplicationWillResignActiveNotification object:nil];
+        // iPad touch: the game's password box that asked while the app was away gets its field now.
+        if (_textBridge) [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appBecameActive:) name:UIApplicationDidBecomeActiveNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(backgroundInput:) name:UIApplicationDidEnterBackgroundNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowResigned:) name:UIWindowDidResignKeyNotification object:nil];
         // The app's relay, by name (launcher/Input/ControllerTouchpad.h): that code is not linked
@@ -821,8 +1012,12 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         return;
     }
     // Folded, the keyboard stays: it is the button a player reaches for most (the chat).
-    for (UIButton *button in @[_trackpadButton, _gamepadButton, _settingsButton, _leaveButton])
+    for (UIButton *button in @[_trackpadButton, _leaveButton])
         button.hidden = _toolbarCollapsed;
+    // The controller overlay's toggle and settings gear: in iPad touch there is no overlay for them
+    // to act on, so they are never shown, folded or open. Everywhere else they fold with the rest.
+    for (UIButton *button in @[_gamepadButton, _settingsButton])
+        button.hidden = _touchPlay || _toolbarCollapsed;
     _keyboardButton.hidden = NO;
     [_toolbarHandle setImage:[UIImage systemImageNamed:_toolbarCollapsed ? @"chevron.compact.down" : @"chevron.compact.up"]
                     forState:UIControlStateNormal];
@@ -837,6 +1032,18 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     [NSUserDefaults.standardUserDefaults setBool:collapsed forKey:AKTouchToolbarCollapsedDefaultsKey];
     [self applyToolbarCollapsed];
     AKLog(@"toolbar: %@", collapsed ? @"folded into its handle" : @"opened");
+}
+// The areas' live switch, or the contract itself, changed: the toolbar's place may too. The live switch is already
+// set when it is posted, so the toolbar moves at once; the contract's notification reaches the areas by the same
+// route, so that one waits a turn for them to take the new contract first.
+- (void)toolbarDockInputsChanged:(NSNotification *)notification {
+    void (^move)(void) = ^{
+        [self setNeedsLayout];
+        if (self.superview) [self placeToolbarInHost:self.superview];
+    };
+    if ([notification.name isEqualToString:AKTouchContractDidChangeNotification]) dispatch_async(dispatch_get_main_queue(), move);
+    else if (NSThread.isMainThread) move();
+    else dispatch_async(dispatch_get_main_queue(), move);
 }
 - (void)toggleToolbar {
     [self setToolbarCollapsed:!_toolbarCollapsed];
@@ -872,6 +1079,9 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 // keyboard and the draft editor above it take the bottom, and the keyboard button is how
 // typing is closed.
 //
+// iPad touch: always the top-centre band, folded or open (AKTouchToolbarDockFor; run 5); it follows the button list when it
+// changes.
+//
 // Measured on the device: centring on host.safeAreaLayoutGuide put the toolbar 103pt right of
 // the screen centre, so the guide is not the screen here. The bounds are. Frame placement
 // also settles the tug of war with the host's own constraints for us - they are dropped once,
@@ -892,11 +1102,23 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     CGFloat width, height;
     if (!_mobileInterface) { width = 252; height = 44; }
     else if (_toolbarCollapsed) { width = 96; height = 34; }
-    else { width = 304; height = 44; }
+    else { width = _touchPlay ? 208 : 304; height = 44; }   // iPad touch: four buttons, not six
     CGRect bounds = host.bounds;
-    CGFloat y = (!_mobileInterface || self.keyboardVisible) ? host.safeAreaInsets.top + 8
-        : bounds.size.height - host.safeAreaInsets.bottom - 8 - height;
-    self.frame = CGRectMake(floor((bounds.size.width - width) / 2), y, width, height);
+    BOOL top = !_mobileInterface || self.keyboardVisible;
+    CGFloat centreX = bounds.size.width / 2;
+    // iPad touch: always the top-centre band, folded or open, whatever the game shows - in the world, out of it or with a
+    // window open (run 5: out of the world it used to drop to 1.0.10's bottom centre, where the open toolbar's keyboard
+    // button sat over TouchPlay's info card). TouchPlay keeps that band clear; the dock follows the button list (not
+    // whether it is on screen), so the toolbar never moves when a window opens or closes.
+    if (_touchPlay) {
+        top = YES;
+        AKTouchToolbarDock dock = AKTouchToolbarDockFor([AKTouchAreas areasForView:host].contract, bounds.size, host.safeAreaInsets,
+                                                        CGSizeMake(208, 44), CGSizeMake(96, 34));
+        centreX = dock.centreX;
+    }
+    CGFloat y = top ? host.safeAreaInsets.top + 8 : bounds.size.height - host.safeAreaInsets.bottom - 8 - height;
+    // iPad touch: the game is slid up for the password keyboard; the toolbar stays where it is on screen.
+    self.frame = CGRectMake(floor(centreX - width / 2), y + _slide, width, height);
     if (logged < 3) {
         logged++;
         AKLog(@"toolbar host bounds=%.0fx%.0f insets top=%.0f left=%.0f bottom=%.0f placed x=%.0f y=%.0f centre=%.0f (screen centre %.0f)",
@@ -920,7 +1142,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     // constraints were missing from the layout engine's set for it - they read active, carried the
     // right values and were installed on the row, and constraintsAffectingLayoutForAxis: never
     // returned them - so the row measured 0 and the draft editor took its 44 points (measured
-    // 2026-11-16 with lldb, on both matrix simulators). A frame set in the layout pass is not
+    // a device check with lldb, on both matrix simulators). A frame set in the layout pass is not
     // something the engine can lose, and the row's own children are still laid out against it.
     if (_composerRow.superview && !_composerRow.hidden) {
         CGFloat card = CGRectGetHeight(_composer.bounds);
@@ -933,8 +1155,9 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     _keyboardButton.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
     _gamepadButton.frame = CGRectMake(104, 0, 44, 44);
     _settingsButton.frame = CGRectMake(156, 0, 44, 44);
-    _leaveButton.frame = CGRectMake(208, 0, 44, 44);
-    _toolbarHandle.frame = _toolbarCollapsed ? CGRectMake(52, 0, 44, 34) : CGRectMake(260, 0, 44, 44);
+    // iPad touch packs the four buttons it shows: trackpad, keyboard, leave, handle.
+    _leaveButton.frame = CGRectMake(_touchPlay ? 104 : 208, 0, 44, 44);
+    _toolbarHandle.frame = _toolbarCollapsed ? CGRectMake(52, 0, 44, 34) : CGRectMake(_touchPlay ? 156 : 260, 0, 44, 44);
     _toolbarHandle.layer.cornerRadius = _toolbarCollapsed ? 17 : 22;
 }
 - (void)setTrackpadEnabled:(BOOL)enabled {
@@ -947,11 +1170,15 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 }
 - (void)toggleTrackpad {
     self.trackpadEnabled = !self.trackpadEnabled;
-    [NSUserDefaults.standardUserDefaults setBool:self.trackpadEnabled forKey:AKTouchTrackpadDefaultsKey];
+    [NSUserDefaults.standardUserDefaults setBool:self.trackpadEnabled forKey:[self trackpadDefaultsKey]];
 }
+// The trackpad switch this interface reads and writes: iPad touch's own, or the one every other interface shares.
+- (NSString *)trackpadDefaultsKey { return _touchPlay ? AKTouchTrackpadIPadTouchDefaultsKey : AKTouchTrackpadDefaultsKey; }
 - (BOOL)gamepadEnabled { return _gamepadEnabled; }
 - (BOOL)configuring { return _gamepad.configuring; }
 - (void)showControlSettings {
+    // iPad touch has no controller overlay, hence no settings sheet; the gear is hidden there.
+    if (_touchPlay) return;
     [self cancelCameraGesture:@"settings"]; [self dismissKeyboard];
     // The gamepad owns the settings sheet, so we open it here rather than asking a
     // host that may have no such thing.
@@ -994,6 +1221,8 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         AKHostLocalized(@"touch.gamepad.value.automatic")) : AKHostLocalized(@"touch.gamepad.value.off");
 }
 - (void)toggleGamepad {
+    // iPad touch has no gamepad to switch, and the stored preference belongs to the modes that do.
+    if (_touchPlay) return;
     _gamepadEnabled = !_gamepadEnabled;
     [NSUserDefaults.standardUserDefaults setBool:_gamepadEnabled forKey:@"TKTouchGamepadEnabled"];
     _gamepad.enabled = _gamepadEnabled;
@@ -1002,15 +1231,27 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         [self.delegate touchGamepadPreferenceChanged:_gamepadEnabled];
 }
 - (BOOL)canBecomeFirstResponder { return YES; }
-- (BOOL)keyboardVisible { return _keyboardInput.isFirstResponder; }
+- (BOOL)keyboardVisible { return _keyboardInput.isFirstResponder || _textBridge.active; }
+- (AKTextKind)textKind {
+    if (_keyboardInput.isFirstResponder) return AKTextKindChat;
+    return _textBridge.active ? _textBridge.kind : AKTextKindNone;
+}
 - (BOOL)becomeFirstResponder {
+    // The chat composer and the password field never share the keyboard: the composer takes it from the field
+    // directly (the field gives it up), never through the game's view.
+    _handingOver = _textBridge.active;
     _composer.hidden = NO;
     _gamepad.keyboardVisible = YES;
+    _walkStick.keyboardVisible = YES;
     if ([self.delegate respondsToSelector:@selector(touchKeyboardVisibilityChanged:)])
         [self.delegate touchKeyboardVisibilityChanged:YES];
     _keyboardRequested = YES;
     _systemKeyboardSeen = NO;
+    // The keyboard's Return reads what it does: Next in the login's account box (Tab), Send for the chat, Done elsewhere.
+    _keyboardInput.returnKeyType = !_mobileInterface ? UIReturnKeyDone : [self typingIntoLoginAccountBox] ? UIReturnKeyNext : UIReturnKeySend;
     BOOL accepted = [_keyboardInput becomeFirstResponder];
+    if (_textBridge.active || _textBridge.kind != AKTextKindNone) [_textBridge end];
+    _handingOver = NO;
     [self updateKeyboardButton];
     [self checkSystemKeyboard:++_keyboardRequest late:NO];
     return accepted;
@@ -1030,6 +1271,8 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         AKTouchControls *controls = weakSelf;
         if (!controls || controls->_keyboardRequest != request || !controls.keyboardVisible || controls->_ownKeyboard) return;
+        // The layer's own keys are the composer's; the password field (iPad touch) never gets them.
+        if (!controls->_keyboardInput.isFirstResponder) return;
         BOOL hardware = hardwareKeyboardAttached();
         if (!late) AKLog(@"hardware keyboard %@", hardware ? @"attached" : @"absent");
         if (!controls->_systemKeyboardSeen) {
@@ -1047,28 +1290,87 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
     });
 }
 - (BOOL)keyboardRequested { return _keyboardRequested; }
+- (void)draftEditorLetGo { if (!_handingOver) _keyboardRequested = NO; }
 - (BOOL)resignFirstResponder {
     BOOL accepted = [_keyboardInput resignFirstResponder];
     [self updateKeyboardButton];
     return accepted;
 }
 - (void)updateKeyboardButton {
-    _composer.hidden = !self.keyboardVisible;
+    // The composer is the chat's; the password field has none (the game's box shows the dots).
+    _composer.hidden = !_keyboardInput.isFirstResponder;
     if (self.superview) [self placeToolbarInHost:self.superview];
     [self updateDraftButtons];
     // The card and the row follow the keyboard: with review mode on, the keyboard coming up is
     // what puts the Composer row (and its microphone) on screen.
     [self applyComposerState];
     [_keyboardButton setImage:[UIImage systemImageNamed:self.keyboardVisible ? @"keyboard.chevron.compact.down" : @"keyboard"] forState:UIControlStateNormal];
-    _keyboardButton.accessibilityLabel = self.keyboardVisible ? AKHostLocalized(@"touch.keyboard.hide") : AKHostLocalized(@"touch.keyboard.show");
+    // iPad touch, the game's password box focused and no keyboard up: the button brings the Passwords field back.
+    _keyboardButton.accessibilityLabel = self.keyboardVisible ? AKHostLocalized(@"touch.keyboard.hide")
+        : (_textBridge && _protectedField) ? AKHostLocalized(@"touch.keyboard.typePassword") : AKHostLocalized(@"touch.keyboard.show");
     _gamepad.keyboardVisible = self.keyboardVisible;
+    _walkStick.keyboardVisible = self.keyboardVisible;
     if ([self.delegate respondsToSelector:@selector(touchKeyboardVisibilityChanged:)])
         [self.delegate touchKeyboardVisibilityChanged:self.keyboardVisible];
 }
 - (void)toggleKeyboard {
     [self cancelCameraGesture:@"keyboard"];
     if (self.keyboardVisible) [self dismissKeyboard];
+    // Outside the open world, the button types directly into the focused game box.
+    else if (_textBridge && !_protectedField && !_secureOn && _worldSignal.state != AKTouchWorldIn && ![self typingIntoLoginAccountBox]) {
+        [_textBridge beginForKind:AKTextKindGameBox];
+        AKLog(@"keyboard: the toolbar's keyboard button opens live typing");
+        [self updateKeyboardButton];
+    }
+    else if (_textBridge) [self openKeyboardForPlayer:@"the toolbar's keyboard button"];
     else [self becomeFirstResponder];
+}
+// iPad touch (device fix 2): the player asked for the keyboard - the toolbar's button, the chat strip, or a game key. It
+// always opens: whatever an earlier password left behind ends here. The game's password box gets the Passwords field
+// only while the game still has secure input on (a remembered focus without it is stale: the chat opens), and a keyboard
+// that nothing took is asked for once more after every responder in the window lets go.
+- (void)openKeyboardForPlayer:(NSString *)source {
+    if (_protectedField && !_secureOn && [self appIsActive]) {
+        AKLog(@"keyboard: %@: the game's password box no longer has secure input on; the old password state is cleared", source);
+        _protectedField = NO;
+    }
+    BOOL password = _protectedField;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (attempt) {
+            UIResponder *holder = AKTouchFirstResponder();
+            AKLog(@"keyboard: %@: nothing took the keyboard (it is with %@); asking again", source,
+                  holder ? NSStringFromClass(holder.class) : @"nobody");
+            [self.window endEditing:YES];
+            [self.superview becomeFirstResponder];
+        }
+        if (password) [_textBridge beginForKind:AKTextKindPassword];
+        else [_textBridge beginForKind:AKTextKindChat];
+        if (self.keyboardVisible) break;
+    }
+    AKLog(@"keyboard: %@ %@", source, !self.keyboardVisible ? @"could not open the keyboard"
+          : password ? @"opens the password field" : @"opens the chat");
+    [self updateKeyboardButton];
+}
+- (BOOL)appIsActive {
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return NO;
+    UIWindowScene *scene = self.window.windowScene;
+    return !scene || scene.activationState == UISceneActivationStateForegroundActive;
+}
+- (void)appBecameActive:(NSNotification *)note {
+    (void)note;
+    [_textBridge tick];
+}
+// The password field gave up the keyboard. Closed by the bridge: the game's view takes it back at once, as when the
+// composer closes. Lost to another view: that view keeps it; only if nothing has it does the game's view take it, so
+// a hardware keyboard still reaches the game.
+- (void)takeKeyboardBackFromField {
+    if (_textBridge.kind == AKTextKindNone) { [self.superview becomeFirstResponder]; return; }
+    __weak AKTouchControls *weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        AKTouchControls *controls = weakSelf;
+        if (!controls || controls.keyboardVisible || AKTouchFirstResponder()) return;
+        [controls.superview becomeFirstResponder];
+    });
 }
 // iPadOS has no software keyboard to give (it believes a hardware keyboard is
 // attached), so the layer supplies the keys itself. A custom input view is shown
@@ -1080,6 +1382,7 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
         _layerKeyboard.sink = self;
     }
     _ownKeyboard = YES;
+    _keyboardRequested = YES;   // the layer's keys are a keyboard asked for, like the toolbar's button
     _keyboardInput.inputView = _layerKeyboard;
     _composer.hidden = NO;
     BOOL focused = _keyboardInput.isFirstResponder || [_keyboardInput becomeFirstResponder];
@@ -1119,6 +1422,7 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
 }
 - (void)keyboardViewShowSystemKeyboard {
     _ownKeyboard = NO;
+    _keyboardRequested = YES;
     _keyboardInput.inputView = nil;
     if (!_keyboardInput.isFirstResponder) [_keyboardInput becomeFirstResponder];
     [_keyboardInput reloadInputViews];
@@ -1126,13 +1430,14 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
     AKLog(@"the keyboard is iPadOS's again (for dictation)");
 }
 - (void)dismissKeyboard {
+    [_textBridge end];
     _keyboardRequested = NO;
     // Back to iPadOS's own keyboard for the next request: dictation's microphone
     // only exists on it.
     if (_ownKeyboard) { _ownKeyboard = NO; _keyboardInput.inputView = nil; [_keyboardInput reloadInputViews]; }
     if (self.keyboardVisible) {
         [self resignFirstResponder];
-        [self.superview becomeFirstResponder];
+        if (!_handingOver) [self.superview becomeFirstResponder];
     }
 }
 // The guest owns its text/selection. Explicit Replace replaces the field.
@@ -1199,19 +1504,121 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
 // passwords, and their length is not the log's business.
 static const unsigned short AKKeyF12 = 111;
 - (void)secureEventInputChanged:(NSNotification *)note {
-    BOOL protectedField = [note.userInfo[@"enabled"] boolValue];
-    BOOL changed = protectedField != _protectedField;
-    _protectedField = protectedField;
-    if (!changed) return;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self updateSavedPasswordKey];
-        // The game asks for secure input only while its password field has the keyboard; the key
-        // follows that, so chat and every other field never show it.
-        AKLog(@"keyboard: protected field %@", self->_protectedField ? @"focused" : @"left");
-        if (self->_protectedField) [self typePendingPasswordSoon];
-    });
+    BOOL enabled = [note.userInfo[@"enabled"] boolValue];
+    if (_worldSignal) _worldSignal.sheetPulses = AKTouchCurrentContract().sheetPulses;
+    [_worldSignal secureInputChanged:enabled];
+    if (!_textBridge) {
+        BOOL protectedField = [note.userInfo[@"enabled"] boolValue];
+        BOOL changed = protectedField != _protectedField;
+        _protectedField = protectedField;
+        if (!changed) return;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self updateSavedPasswordKey];
+            AKLog(@"keyboard: protected field %@", self->_protectedField ? @"focused" : @"left");
+            if (self->_protectedField) [self typePendingPasswordSoon];
+        });
+        return;
+    }
+    _secureOn = enabled;
+    if (enabled && _textBridge.kind == AKTextKindGameBox) [_textBridge end];
+    // iPad touch. The add-on's pulses  and the game's password box both arrive here; they are told apart
+    // by how long secure input stays on. The signal reads them for the world (TouchPlay's buttons); the bridge opens the
+    // password field only for an "on" that outlasts its debounce, and tells us then (secureFocusConfirmed), so a
+    // pulse never flashes the password keyboard, is never the player's typing, and never opens or closes the chat
+    // composer.
+    // The scene's state, not only UIApplication's: the game turns secure input off inside
+    // UIApplicationWillResignActiveNotification (Face ID's sheet, mid-AutoFill), when UIApplication still says active and
+    // only the scene says inactive (device fix 2: read as active, that off closed the field and the fill went nowhere).
+    BOOL appActive = [self appIsActive];
+    if (enabled) {
+        // A secure input that starts in the world has to last longer to be the password box ; the signal has
+        // just settled whatever was due, so what it says is what this "on" began in.
+        _textBridge.inWorld = _worldSignal.state != AKTouchWorldOut;   // windows and TouchPlay sheets use the in-world threshold
+        [_textBridge secureInputChanged:YES appActive:appActive];
+        return;
+    }
+    if (!appActive) {
+        // The game turns secure input off when the app resigns active (Control Centre, a notification, Face ID's sheet)
+        // and on again on return; its box has the focus all along. Not the box losing it: the bridge keeps its field, and
+        // the controls keep knowing the box is the game's focus - the bridge only re-confirms an "on" it has no field
+        // open for, so clearing this here would leave the toolbar's keyboard and Send on the plain composer, typing the
+        // password as chat.
+        [_textBridge secureInputChanged:NO appActive:NO];
+        return;
+    }
+    // Off while the app is active: the box really lost focus, and the field closes. The bridge first, so nothing it does
+    // can leave the box's focus remembered after it.
+    [_textBridge secureInputChanged:NO appActive:YES];
+    BOOL wasProtected = _protectedField;
+    _protectedField = NO;
+    if (wasProtected) AKLog(@"keyboard: the game's password box lost focus");
+    [self updateKeyboardButton];
 }
-
+/// The add-on's pulses say the player entered or left the world, or opened a window in it:
+/// TouchPlay's buttons are live, or not; with a window open the walk stick stays live, auto-run included.
+- (void)worldChanged:(AKTouchWorldState)state {
+    // In the world: past the login screen (back out at the character list it is not the login screen until its password
+    // box shows again).
+    if (state != AKTouchWorldOut) _loginScreen = NO;
+    if (state == AKTouchWorldIn && _textBridge.kind == AKTextKindGameBox) [_textBridge end];
+    [self applyWorldToAreas];
+}
+- (void)touchContractChanged:(NSNotification *)note {
+    AKTouchContract *contract = [note.object isKindOfClass:AKTouchContract.class] ? note.object : AKTouchCurrentContract();
+    _worldSignal.sheetPulses = contract.sheetPulses;
+}
+- (void)plainGameTouchBegan:(NSNotification *)note {
+    (void)note;
+    if (_textBridge.kind == AKTextKindGameBox) [_textBridge end];
+}
+// iPad touch, a player a device check (Return in the account box pressed Login with no password): the composer is typing into the
+// login screen's account box. The signal: out of the world (the add-on's pulses; no world entered yet, or two pulses
+// since), the game's secure input off (not its password box), and the login screen (the game's start, or its password
+// box seen since the player was last in the world). The app cannot see the game's boxes; this is what it can know.
+- (BOOL)typingIntoLoginAccountBox {
+    return _textBridge && _worldSignal && _worldSignal.state == AKTouchWorldOut && _loginScreen && !_protectedField && !_secureOn;
+}
+- (void)applyWorldToAreas {
+    if (!_worldSignal || !self.superview) return;
+    [[AKTouchAreas areasForView:self.superview] setLive:_worldSignal.state == AKTouchWorldIn
+                                             windowOpen:_worldSignal.state == AKTouchWorldWindow
+                                               chatOnly:_worldSignal.state == AKTouchWorldSheet];
+}
+// iPad touch, mockups 26, 29, 83: while the password keyboard is up the game slides up by
+// AKTouchPasswordSlideFraction of its height, so the login box stays above the keys; back down when it closes.
+// The whole game view moves (a translation), so a touch still lands where the player sees it, and the toolbar is
+// moved down by the same amount to stay where it is on screen. The view's frame is put back when it comes down,
+// in case the window was resized meanwhile.
+- (void)slideGameForPassword:(BOOL)up {
+    UIView *host = self.superview;
+    if (!host) return;
+    CGFloat slide = up ? round(host.bounds.size.height * AKTouchPasswordSlideFraction) : 0;
+    if (slide == _slide) return;
+    _slide = slide;
+    AKLog(@"keyboard: the game %@", slide ? @"slides up above the password keyboard" : @"slides back down");
+    // Touches keep working while it moves: without AllowUserInteraction UIKit stops hit-testing into a view while it
+    // animates, so the game, the toolbar and the gate would miss taps during the slide.
+    [UIView animateWithDuration:0.25 delay:0
+                        options:UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
+                     animations:^{
+        host.transform = slide ? CGAffineTransformMakeTranslation(0, -slide) : CGAffineTransformIdentity;
+        if (!slide && host.superview && !CGRectEqualToRect(host.frame, host.superview.bounds)) host.frame = host.superview.bounds;
+        [self placeToolbarInHost:host];
+    } completion:nil];
+}
+// TouchPlay's chat strip was tapped: the chat keyboard, including over a TouchPlay sheet.
+- (void)chatAreaTapped:(NSNotification *)note {
+    (void)note;
+    // a game window or an Out state leaves the strip plain; Sheet keeps this one area live.
+    if (_worldSignal && _worldSignal.state != AKTouchWorldIn && _worldSignal.state != AKTouchWorldSheet && !_protectedField) {
+        AKLog(@"keyboard: the chat strip's tap ignored (outside the world and a TouchPlay sheet)");
+        return;
+    }
+    [self cancelTouches];
+    // While the game's password box has focus (the login screen, where TouchPlay is not drawn), a tap there is
+    // never the cleartext chat: it is the password field (interim).
+    [self openKeyboardForPlayer:_protectedField ? @"the chat strip while the password box has focus" : @"the chat strip"];
+}
 #pragma mark - The saved game password
 
 // The key on the keyboard's row, shown only while the game's password field has the keyboard and the
@@ -1219,7 +1626,7 @@ static const unsigned short AKKeyF12 = 111;
 // The password is not in this file: the app reads it from the Keychain behind Face ID when the
 // player taps and hands it back only to be typed, and it is dropped again immediately.
 - (void)updateSavedPasswordKey {
-    _passwordKey.hidden = !(_protectedField && AKSavedPasswordEnabled);
+    _passwordKey.hidden = _touchPlay || !(_protectedField && AKSavedPasswordEnabled);
 }
 - (void)savedPasswordAvailabilityChanged:(NSNotification *)note {
     BOOL enabled = [note.userInfo[AKTouchSavedPasswordEnabledKey] boolValue];
@@ -1237,7 +1644,7 @@ static const unsigned short AKKeyF12 = 111;
 // The player tapped the key: ask the launcher for the password. Nothing about it is logged, and
 // nothing is read anywhere except the game's own password field.
 - (void)savedPasswordKey {
-    if (!_protectedField || !AKSavedPasswordEnabled) return;
+    if (_touchPlay || !_protectedField || !AKSavedPasswordEnabled) return;
     __weak typeof(self) weakSelf = self;
     [NSNotificationCenter.defaultCenter postNotificationName:AKTouchSavedPasswordReadRequestNotification
         object:self userInfo:@{AKTouchSavedPasswordReplyKey: ^(NSString *password) {
@@ -1298,7 +1705,7 @@ static const unsigned short AKKeyF12 = 111;
     [front presentViewController:alert animated:YES completion:nil];
 }
 - (void)savedPasswordKeyHeld:(UILongPressGestureRecognizer *)recognizer {
-    if (recognizer.state != UIGestureRecognizerStateBegan || !AKSavedPasswordEnabled) return;
+    if (_touchPlay || recognizer.state != UIGestureRecognizerStateBegan || !AKSavedPasswordEnabled) return;
     UIViewController *front = [self frontViewController];
     if (!front) return;
     UIAlertController *ask = [UIAlertController alertControllerWithTitle:AKHostLocalized(@"login.savedPassword.forget.title")
@@ -1339,7 +1746,7 @@ static const unsigned short AKKeyF12 = 111;
     NSUInteger generation = _pendingPasswordGeneration;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (self->_pendingPasswordGeneration != generation || !self->_pendingPassword) return;
-        if (!AKSavedPasswordEnabled || UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
+        if (self->_touchPlay || !AKSavedPasswordEnabled || UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
             !self->_protectedField) return;
         NSString *password = self->_pendingPassword;
         self->_pendingPassword = nil;
@@ -1359,6 +1766,15 @@ static const unsigned short AKKeyF12 = 111;
     return root;
 }
 - (void)sendChatText:(NSString *)text {
+    if ([self typingIntoLoginAccountBox]) {
+        // The account box: the name, then Tab - the game moves to its password box (whose own Return logs in). Never
+        // Return here, and never a chat key. Nothing about the name is logged.
+        if (text.length) [self.delegate touchInsertText:text];
+        [self.delegate touchSpecialKey:48 characters:@"\t"];
+        AKLog(@"keyboard: Return in the login's account box is Tab (to the password box), never Login");
+        [self dismissKeyboard];
+        return;
+    }
     if (!text.length) {
         // Nothing typed: Return is just Return.
         [self.delegate touchSpecialKey:36 characters:@"\r"];
@@ -1375,13 +1791,18 @@ static const unsigned short AKKeyF12 = 111;
         [self dismissKeyboard];
         return;
     }
+    // iPad touch: a chosen chip makes it that channel's slash line, which opens the chat by itself (no F12).
+    if (_touchPlay && _chatChannel >= 0 && _chatChannel < AKChatChipCount && ![text hasPrefix:@"/"])
+        text = [AKChatChipPrefixes[_chatChannel] stringByAppendingString:text];
     if (![text hasPrefix:@"/"]) [self.delegate touchSpecialKey:AKKeyF12 characters:@"\uF70F"];
     [self.delegate touchInsertText:text];
     [self.delegate touchSpecialKey:36 characters:@"\r"];
     AKLog(@"keyboard: a line went to the chat (%@)", [text hasPrefix:@"/"] ? @"command" : @"message");
     [self dismissKeyboard];
 }
-- (UIView *)inputAccessoryView {
+- (UIView *)inputAccessoryView { return _touchPlay ? [self chipsRow] : [self keyRow]; }
+// 1.0.10's row of the game's own keys above the keyboard: Esc, Tab, arrows, backspace, Return, hide.
+- (UIView *)keyRow {
     if (!_accessory) {
         UIStackView *row = [[UIStackView alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
         row.distribution = UIStackViewDistributionFillEqually;
@@ -1426,6 +1847,68 @@ static const unsigned short AKKeyF12 = 111;
     }
     return _accessory;
 }
+// iPad touch's rows above the keys: the chat's chips (mockup 82: Say, Party, Guild, Whisper, Yell; one at a time, the
+// chosen one tapped again goes back to the game's own channel), and under them 1.0.10's row of the game's keys, kept
+// because Tab, Esc and the arrows are how one moves between the game's own fields (the login screen's).
+- (UIView *)chipsRow {
+    if (_chips) return _chips;
+    UIView *row = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 52)];
+    row.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.96];
+    UIStackView *stack = [UIStackView new];
+    stack.axis = UILayoutConstraintAxisHorizontal;
+    stack.spacing = 12;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [row addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[[stack.centerXAnchor constraintEqualToAnchor:row.centerXAnchor],
+                                              [stack.centerYAnchor constraintEqualToAnchor:row.centerYAnchor]]];
+    for (NSInteger i = 0; i < AKChatChipCount; i++) {
+        UIButton *chip = [UIButton buttonWithType:UIButtonTypeCustom];
+        chip.tag = i;
+        [chip setTitle:AKHostLocalized([@"touch.chat." stringByAppendingString:AKChatChipKeys[i]]) forState:UIControlStateNormal];
+        [chip setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+        chip.titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightMedium];
+        chip.layer.cornerRadius = 18;
+        chip.accessibilityIdentifier = [@"wolkaraforever.chat." stringByAppendingString:AKChatChipKeys[i]];
+        chip.translatesAutoresizingMaskIntoConstraints = NO;
+        [NSLayoutConstraint activateConstraints:@[[chip.heightAnchor constraintEqualToConstant:36],
+                                                  [chip.widthAnchor constraintGreaterThanOrEqualToConstant:88]]];
+        [chip addTarget:self action:@selector(chipTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [stack addArrangedSubview:chip];
+    }
+    _chipStack = stack;
+    UIView *keys = [self keyRow];
+    UIStackView *column = [[UIStackView alloc] initWithFrame:CGRectMake(0, 0, 320, 52 + 44)];
+    column.axis = UILayoutConstraintAxisVertical;
+    column.distribution = UIStackViewDistributionFill;
+    for (UIView *part in @[row, keys]) {
+        part.translatesAutoresizingMaskIntoConstraints = NO;
+        [column addArrangedSubview:part];
+    }
+    [NSLayoutConstraint activateConstraints:@[[row.heightAnchor constraintEqualToConstant:52], [keys.heightAnchor constraintEqualToConstant:44]]];
+    _chips = column;
+    [self updateChips];
+    return column;
+}
+- (void)chipTapped:(UIButton *)chip {
+    _chatChannel = chip.tag == _chatChannel ? -1 : chip.tag;
+    AKLog(@"keyboard: chat channel %@", _chatChannel >= 0 ? AKChatChipKeys[_chatChannel] : @"the game's own");
+    [self updateChips];
+}
+- (void)updateChips {
+    for (UIButton *chip in _chipStack.arrangedSubviews) {
+        chip.selected = chip.tag == _chatChannel;
+        chip.backgroundColor = chip.selected ? [UIColor colorWithRed:0.36 green:0.36 blue:0.62 alpha:1] : [UIColor colorWithWhite:1 alpha:0.14];
+        chip.accessibilityTraits = chip.selected ? UIAccessibilityTraitButton | UIAccessibilityTraitSelected : UIAccessibilityTraitButton;
+    }
+    _composerLabel.text = [self composerLabelText];
+}
+// The composer's label: the chosen channel's name, or what the field does.
+- (NSString *)composerLabelText {
+    if (_touchPlay && _chatChannel >= 0 && _chatChannel < AKChatChipCount)
+        return AKHostLocalized([@"touch.chat." stringByAppendingString:AKChatChipKeys[_chatChannel]]);
+    return AKComposerDefaultLabel(_mobileInterface);
+}
+- (void)sendDraft { [_keyboardInput sendDraftToChat]; }
 - (void)accessoryKey:(UIButton *)button {
     if (button.tag == 6) { [self dismissKeyboard]; return; }
     // Replace and Return/Tab are deliberate separate steps. Do not accidentally
@@ -1480,6 +1963,7 @@ static const unsigned short AKKeyF12 = 111;
     BOOL ready = [_keyboardInput canModifyDraft];
     _insertDraftButton.enabled = !active && [_keyboardInput canReplaceField];
     _clearDraftButton.enabled = !active && ready && _keyboardInput.hasText;
+    _sendButton.enabled = ready;
     for (UIButton *button in ((UIStackView *)_accessory).arrangedSubviews) {
         button.enabled = button.tag == 6 || button.tag == 7 || (ready && !_keyboardInput.hasText);
     }
@@ -1510,12 +1994,18 @@ static const unsigned short AKKeyF12 = 111;
 // Review then Send, with the Composer available: the product's answer for a new installation.
 // Classic direct - what an existing player has - keeps every entry path doing exactly what it
 // did before this feature existed.
+// iPad touch keeps its own chat: TouchPlay's chat strip and the toolbar open the
+// classic draft with the touch chips and the gold Send, and Send is F12 + the line + Return (or the
+// slash line). The Composer's review flow is jklock's answer for every other interface; in iPad touch
+// it is never in force, whatever the stored mode, so a mapped button and the keyboard's Return take
+// the classic path there (the open request answers "classic-direct").
 - (BOOL)composerInReviewMode {
     // A password field has the keyboard (the game turned on secure event input): this is not
     // chat, so the Composer stands aside and Return takes the classic protected-field path -
     // type exactly what was written, then Return. Without this the Composer's Send refused to
     // open chat in a protected field and the login could never be submitted.
     if (_protectedField) return NO;
+    if (_touchPlay) return NO;
     return AKChatComposerIsAvailable() && AKChatDeliveryModeInForce() == AKChatDeliveryModeReview;
 }
 
@@ -1679,10 +2169,13 @@ static const unsigned short AKKeyF12 = 111;
         [composer composerWasTurnedOff];
     }
     BOOL active = [self composerActive];
-    _composer.hidden = !(self.keyboardVisible || active || composer.state == AKChatComposerStateFailed);
+    // The card is the draft's: up with the draft editor, never for iPad touch's password field (which also
+    // counts as a visible keyboard). Outside iPad touch the two are the same thing.
+    _composer.hidden = !(_keyboardInput.isFirstResponder || active || composer.state == AKChatComposerStateFailed);
     _composerRow.hidden = !active;
     if (_composer.superview) [self setNeedsLayout];
-    _insertDraftButton.hidden = active;
+    // iPad touch has the gold Send where Replace was (mockup 82); Replace is never shown there.
+    _insertDraftButton.hidden = active || _sendButton != nil;
     _clearDraftButton.hidden = active;
     _speechLanguageButton.hidden = active;
 
@@ -1691,7 +2184,7 @@ static const unsigned short AKKeyF12 = 111;
     // current state (and kept the card height inside that guard), so the trailing and bottom
     // halves could disagree - the draft ended up pinned to the card's bottom and to the row's
     // top at once, which squeezed the action row to zero height and let the editor take the
-    // difference. Measured 2026-11-16 through the touch fixture: card 130 (right), editor 96
+    // difference. Measured a device check through the touch fixture: card 130 (right), editor 96
     // (should be 48), action row 0 (should be 44), with both bottom pins live.
     _classicEditorTrailing.active = !active;
     _classicEditorBottom.active = !active;
@@ -1715,8 +2208,9 @@ static const unsigned short AKKeyF12 = 111;
         default:
             // Idle: the review card before a session starts. Its placeholder says what this card
             // does, because "Replaces the field" describes the classic one and would be a lie.
+            // Classic: what the field does, or iPad touch's chosen chat channel (composerLabelText).
             stateText = self.composerInReviewMode ? AKHostLocalized(@"chat.composer.placeholder")
-                                                 : AKComposerDefaultLabel(_mobileInterface);
+                                                 : [self composerLabelText];
             break;
     }
     BOOL failed = composer.state == AKChatComposerStateFailed;
@@ -2072,7 +2566,25 @@ static const unsigned short AKKeyF12 = 111;
     language.titleLabel.font = [UIFont systemFontOfSize:13];
     language.showsMenuAsPrimaryAction = YES;
     // The action row is the one view in the card not laid out by constraints: see -layoutSubviews.
-    for (UIView *view in @[label, _keyboardInput, language, clear, insert]) {
+    NSMutableArray<UIView *> *parts = [@[label, _keyboardInput, language, clear, insert] mutableCopy];
+    // iPad touch (mockup 82): a gold Send where Replace was; Replace (fill the game's selected field) is not part of it.
+    if (AKInterfaceModeIsTouchPlay()) {
+        UIButton *send = _sendButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        [send setTitle:AKHostLocalized(@"touch.chat.send") forState:UIControlStateNormal];
+        UIColor *gold = [UIColor colorWithRed:1 green:0.83 blue:0.30 alpha:1];
+        [send setTitleColor:gold forState:UIControlStateNormal];
+        [send setTitleColor:[gold colorWithAlphaComponent:0.4] forState:UIControlStateDisabled];
+        send.titleLabel.font = [UIFont boldSystemFontOfSize:20];
+        send.backgroundColor = [UIColor colorWithRed:0.55 green:0.04 blue:0.04 alpha:1];
+        send.layer.cornerRadius = 8;
+        send.layer.borderWidth = 2;
+        send.layer.borderColor = gold.CGColor;
+        send.accessibilityIdentifier = @"wolkaraforever.keyboard.send";
+        [send addTarget:self action:@selector(sendDraft) forControlEvents:UIControlEventTouchUpInside];
+        insert.hidden = YES;
+        [parts addObject:send];
+    }
+    for (UIView *view in parts) {
         view.translatesAutoresizingMaskIntoConstraints = NO;
         [_composer addSubview:view];
     }
@@ -2116,6 +2628,11 @@ static const unsigned short AKKeyF12 = 111;
         _classicEditorTrailing, _classicEditorBottom, _composerHeight,
     ]];
     [self refreshSpeechLanguageButton];
+    if (_sendButton) [NSLayoutConstraint activateConstraints:@[
+        [_sendButton.widthAnchor constraintEqualToConstant:84], [_sendButton.heightAnchor constraintEqualToConstant:52],
+        [_sendButton.centerYAnchor constraintEqualToAnchor:_keyboardInput.centerYAnchor],
+        [_sendButton.trailingAnchor constraintEqualToAnchor:_composer.trailingAnchor constant:-8],
+    ]];
 }
 - (void)didMoveToSuperview {
     [super didMoveToSuperview];
@@ -2123,6 +2640,9 @@ static const unsigned short AKKeyF12 = 111;
     UIView *host = self.superview;
     if (!host) return;
     [host addSubview:_composer];
+    if (_touchPlay) gTouchPlayControls = self;   // AKTouchReleaseEverything reaches the running guest's controls
+    [_textBridge attachToView:host];
+    [self applyWorldToAreas];   // a game start is out of the world
     // The editor follows the keyboard; the toolbar stays fixed at the top.
     // No resizing of the game's rendering surface or reading of game memory.
     NSLayoutConstraint *width = [_composer.widthAnchor constraintEqualToAnchor:host.safeAreaLayoutGuide.widthAnchor constant:-24];
@@ -2137,7 +2657,10 @@ static const unsigned short AKKeyF12 = 111;
     // placeToolbarInHost. Constraints are the host's to set, and Apple says a view must
     // not set translatesAutoresizingMaskIntoConstraints on itself; frame placement from
     // the host's bounds is the one thing neither can argue with.
-    if (!_gamepad) {
+    // iPad touch has no controller overlay and attaches no virtual gamepad to the game: the sticks,
+    // shoulders and face buttons are the add-on's to draw, and a layer of ours over them is what
+    // swallowed its taps. The toolbar above stays. Every other mode makes it as it always has.
+    if (!_gamepad && !_touchPlay) {
         _gamepad = [[AKTouchGamepad alloc] initWithHostView:host];
         __weak AKTouchControls *weakSelf = self;
         _gamepad.visibilityChanged = ^(BOOL visible) {
@@ -2148,7 +2671,17 @@ static const unsigned short AKKeyF12 = 111;
         };
         _gamepad.enabled = _gamepadEnabled;
     }
+    // ...and iPad touch has the walk stick in their place, under this toolbar so the toolbar keeps its
+    // taps where it reaches into the walk half.
+    if (!_walkStick && _touchPlay) _walkStick = [[AKTouchGamepad alloc] initWalkStickWithHostView:host below:self];
+    // ...and the gate that closes the chat on a tap on the game: above the stick, under this toolbar and the composer.
+    if (_touchPlay) {
+        if (!_gate) { _gate = [[AKTouchKeyboardGate alloc] initWithFrame:host.bounds]; _gate.controls = self; }
+        _gate.frame = host.bounds;
+        [host insertSubview:_gate belowSubview:self];
+    }
     _gamepad.keyboardVisible = self.keyboardVisible;
+    _walkStick.keyboardVisible = self.keyboardVisible;
     [_gamepad refresh];
 }
 
@@ -2212,6 +2745,32 @@ static const unsigned short AKKeyF12 = 111;
     AKControllerPointerUpdate(&_controllerPointer, fingers.unsignedIntValue, x.doubleValue, y.doubleValue,
                               time.doubleValue, AKEmitTouch, context);
 }
+// The controls of the guest that is running (iPad touch only; there is one per guest). AKTouchReleaseEverything
+// reaches it from anywhere without the caller holding a reference.
+static __weak AKTouchControls *gTouchPlayControls;
+void AKTouchReleaseEverything(void) { [gTouchPlayControls releaseEverythingClosingKeyboard:YES background:NO]; }
+
+// the input path (review focus 4): the app is leaving the screen with fingers and keys down. One entry point lets go of
+// everything the TouchPlay layer can hold; each part lets go of its own and nothing is tapped, held or clicked on
+// the way out:
+//   - the buttons: every press key (Jump, Dive) up with its chord, a hold ring cancelled - its hold key never goes -
+//     and an aimed spell stopped with Interact's stop key (AKTouchAreas cancelAll); the fingers
+//     stay the areas' until they lift, sending nothing;
+//   - the walk stick: every walk key up, the vector zero, the ring hidden, auto-run off;
+//   - the host's world gesture: the mouse button a drag holds comes up (patch 0081); on background
+//     the finger is forgotten (0085);
+//   - the text keyboard: the password field is closed with nothing sent (the text bridge holds no key). The one
+//     exception is a resign: iPadOS puts Face ID's and the Passwords sheet over the app while a password is being
+//     filled, which resigns the app active in the middle of it - closing the field then would lose the fill. A
+//     resign leaves the field to the system; the app really going to the background closes it.
+// Not in iPad touch (no registered controls): nothing at all.
+- (void)releaseEverythingClosingKeyboard:(BOOL)closeKeyboard background:(BOOL)background {
+    if (!_touchPlay) return;
+    [[AKTouchAreas areasForView:self.superview] cancelAll];
+    [_walkStick releaseWalking];
+    AKTouchReleaseWorldGesture(background);
+    if (closeKeyboard) [self dismissKeyboard];
+}
 // The line this app has always written when input is taken away. Kept in one place so the
 // background path and the resign path cannot drift apart again.
 - (void)logInputSuspended {
@@ -2220,12 +2779,14 @@ static const unsigned short AKKeyF12 = 111;
     AKLog(@"input suspended (draftFirstResponder=%d)", _keyboardInput.isFirstResponder);
 }
 - (void)suspendInput:(NSNotification *)notification {
-    (void)notification;
     // Losing focus takes the camera gesture away: the touch that was steering is no longer
     // ours, and leaving it half-open is how the camera used to answer nothing afterwards.
     [self cancelCameraGesture:@"resign"];
     // The same for the controller's touchpad: a click held as focus goes is released, once.
     AKControllerPointerReset(&_controllerPointer, AKEmitTouch, (__bridge void *)self);
+    // iPad touch: a call, Control Centre or the app switcher with keys down lets go of every one of them (the input path).
+    // The keyboard stays: Face ID's sheet resigns the app mid-way through a password fill.
+    if ([notification.name isEqualToString:UIApplicationWillResignActiveNotification]) [self releaseEverythingClosingKeyboard:NO background:NO];
     [self logInputSuspended];
 }
 - (void)systemKeyboardShown:(NSNotification *)notification {
@@ -2250,7 +2811,11 @@ static const unsigned short AKKeyF12 = 111;
     (void)notification;
     [self cancelTouches];
     AKLog(@"draft keyboard requested from the guest");
-    if (!self.keyboardVisible) [self becomeFirstResponder];
+    if (self.keyboardVisible) return;
+    // iPad touch, the game's password box focused: the keyboard is the Passwords field, as the toolbar's button gives it -
+    // never the plain composer, whose Send would type the password as chat.
+    if (_textBridge) [self openKeyboardForPlayer:@"the game's keyboard request"];
+    else [self becomeFirstResponder];
 }
 - (void)backgroundInput:(NSNotification *)notification {
     [self cancelCameraGesture:@"background"];
@@ -2259,6 +2824,8 @@ static const unsigned short AKKeyF12 = 111;
     // at most once, and the draft is kept for the return. It is never sent.
     [AKChatComposer.shared appDidBackground];
     [self applyComposerState];
+    // iPad touch: really going away - everything is let go (the keyboard closes right after, as it always has).
+    [self releaseEverythingClosingKeyboard:NO background:YES];
     [self dismissKeyboard];
 }
 - (void)windowResigned:(NSNotification *)notification {
@@ -2270,6 +2837,7 @@ static const unsigned short AKKeyF12 = 111;
 }
 - (void)dealloc {
     [_composer removeFromSuperview];
+    [_gate removeFromSuperview];
     [_holdTimer invalidate];
     // Nothing to tell at teardown (the delegate may be gone), and nothing left behind either.
     AKTouchCameraReset(&_camera, @"teardown", NULL, NULL);

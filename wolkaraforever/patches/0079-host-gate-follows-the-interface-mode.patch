@@ -46,13 +46,16 @@
  @implementation AKHostView { CGPoint _last; NSEventModifierFlags _mods; BOOL _pressedRight, _pressedLeft, _pointerInside, _softwareCursor; UIImageView *_cursorView; UIPointerInteraction *_pointer; UIPointerStyle *_gamePointerStyle; unsigned _hoverUpdates, _pointerUpdates, _cursorVisibilityReasons; NSTimeInterval _pointerReportTime; CGPoint _cursorHotSpot;
 --- a/tests/test_appkit_views.m
 +++ b/tests/test_appkit_views.m
-@@ -192,6 +192,15 @@
+@@ -192,6 +192,18 @@
      [defaults setObject:@"ios" forKey:@"WolkaraForeverInterfaceModeV1"];
      plainHost=[NSClassFromString(@"AKHostView") new];
      assert(plainHost.multipleTouchEnabled && [plainHost valueForKey:@"_pinch"] != nil);
 +    // Every mobile mode gets them, not only the literal "ios": the host asks the same question the
 +    // layer's controls do. iOS on Duo used to get the layer's controls and no gestures.
 +    [defaults setObject:@"iosduo" forKey:@"WolkaraForeverInterfaceModeV1"];
++    plainHost=[NSClassFromString(@"AKHostView") new];
++    assert(plainHost.multipleTouchEnabled && [plainHost valueForKey:@"_pinch"] != nil);
++    [defaults setObject:@"ipadtouch" forKey:@"WolkaraForeverInterfaceModeV1"];
 +    plainHost=[NSClassFromString(@"AKHostView") new];
 +    assert(plainHost.multipleTouchEnabled && [plainHost valueForKey:@"_pinch"] != nil);
 +    // And iPadOS, which is not mobile, keeps the single-touch host.

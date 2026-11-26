@@ -1,0 +1,8 @@
+
+TouchPlayDB = {
+["enabled"] = true,
+["softInteractOld"] = 1,
+["guideDone"] = true,
+["softInteractTold"] = true,
+["guideGlowed"] = true,
+["contract"] = "TPC1;hold=0.45;hand=R;turn=1;world=CTRL-ALT-SHIFT-F1;areas=spell1,BR,54,68,88,88,CTRL-ALT-SHIFT-F2,CTRL-ALT-SHIFT-D,|spell2,BR,302,80,64,64,CTRL-ALT-SHIFT-F3,CTRL-ALT-SHIFT-E,|spell3,BR,289,158,64,64,CTRL-ALT-SHIFT-F4,CTRL-ALT-SHIFT-F,|spell4,BR,251,227,64,64,CTRL-ALT-SHIFT-F5,CTRL-ALT-SHIFT-G,|spell5,BR,192,279,64,64,CTRL-ALT-SHIFT-F6,CTRL-ALT-SHIFT-H,|spell6,BR,120,310,64,64,CTRL-ALT-SHIFT-F7,CTRL-ALT-SHIFT-I,|spell7,BR,41,315,64,64,CTRL-ALT-SHIFT-F8,CTRL-ALT-SHIFT-J,|page1,BR,167,415,44,44,CTRL-ALT-SHIFT-F9,,|page2,BR,119,

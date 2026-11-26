@@ -1,0 +1,93 @@
+# WolkaraForever layer patch 0083 - host: TouchPlay's world touch only in the world (iPad touch)
+#
+# Why: TouchPlay's buttons are drawn only in the world, but until now the host acted on the saved button list
+# (the contract) wherever the player was - on the login and character-select screens too, where a cached list's
+# second tap, hold, edge zone and "touch buttons not found" notice changed or blocked the game's own buttons.
+# The add-on now tells the app when the player is in the world (a short secure-input pulse on entering, two on
+# leaving; TouchWorldSignal.m reads them), and the layer's AKTouchAreas has one switch for it:
+# `live`. This patch makes the host read it:
+#   - The areas start not live: a game start is out of the world, so every touch is the plain 1.0.8 touch
+#     (0055) until the pulse says otherwise.
+#   - Everything 0081 and 0082 did "with a contract" now does it with `liveContract`, the contract while the
+#     buttons are on screen and nil when not: the second tap's right click, the hold's world key, the turn
+#     drag, the edge zone, the hold time, and the pinch's refusal of the walk stick's thumb and of the edge
+#     zone. Out of the world each of those is exactly the direct touch of 0055.
+#   - The buttons' own fingers (0080) and the world key already follow `live` inside AKTouchAreas, as does
+#     the "touch buttons not found" notice (it waits for the buttons to be live; the host still asks once, when
+#     the view first has a size).
+# With the buttons live, and in every other interface mode, the host is exactly 0055 + 0079 .. 0082.
+#
+# Applies after: 0082-touchplay-pinch-skips-the-walk-stick.patch
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: no (TouchPlay and iPad touch live in the WolkaraForever layer).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -344,6 +344,10 @@
+             // this view. The pinch is told not to take a finger that is on a button.
+             if (AKInterfaceModeIsTouchPlay()) {
+                 _touchAreas = [[AKTouchAreas alloc] initWithView:self];
++                // A game start is out of the world: TouchPlay's buttons are not drawn on the login and character
++                // screens, so until the add-on's pulse says the player entered the world (TouchControls.m),
++                // every touch is the plain 1.0.8 touch.
++                _touchAreas.live = NO;
+                 AKTouchSetKeySink(self);
+                 _pinch.delegate = self;
+             }
+@@ -597,9 +601,9 @@
+     if (recognizer != _pinch || !_touchAreas) return YES;
+     // ...nor a finger on a view of the layer's over the game - the walk stick's thumb (0082): a walk
+     // and a look are two fingers, not a pinch.
+-    if (_touchAreas.contract && touch.view && touch.view != self) return NO;
++    if (_touchAreas.liveContract && touch.view && touch.view != self) return NO;
+     CGPoint p = [touch locationInView:self];
+-    if (_touchAreas.contract && [self pointInEdgeZone:p]) return NO;   // nor one in the edge zone (0081)
++    if (_touchAreas.liveContract && [self pointInEdgeZone:p]) return NO;   // nor one in the edge zone (0081)
+     return ![_touchAreas ownsTouch:touch] && ![_touchAreas claimsPoint:p];
+ }
+ - (BOOL)usesRelativeMouse { return AKMouseIsCaptured() && GCMouse.mice.count>0; }
+@@ -803,7 +807,7 @@
+     // is under it. No right click.
+     // An aimed spell may have moved the shared pointer since this finger came down: it goes back under
+     // the finger first. A world key the reader does not know falls back to the right click.
+-    if (_touchAreas.contract) {
++    if (_touchAreas.liveContract) {
+         _worldTapRecorded = NO;
+         if (!CGPointEqualToPoint(_last, _directStart)) [self postMouse:NSEventTypeMouseMoved at:_directStart button:0];
+         if ([_touchAreas sendWorldKey]) {
+@@ -855,7 +859,7 @@
+ // TouchPlay: whether a tap at `p` is the second of two world taps, close by and soon (the record is
+ // then gone); otherwise it is the first, and is remembered. The time is the areas' clock.
+ - (BOOL)worldSecondTapAt:(CGPoint)p {
+-    if (!_touchAreas.contract) return NO;
++    if (!_touchAreas.liveContract) return NO;
+     NSTimeInterval now = _touchAreas.clock();
+     if (_worldTapRecorded && now - _worldTapTime <= AKDirectSecondTapWindow &&
+         hypot(p.x - _worldTapPoint.x, p.y - _worldTapPoint.y) <= AKDirectSecondTapRadius) {
+@@ -880,7 +884,7 @@
+     // iPad touch: a finger on a TouchPlay button is the button's; only the others go on.
+     if (_touchAreas && !(t = [_touchAreas unclaimedTouches:t phase:UITouchPhaseBegan]).count) return;
+     if ([self handleTrackpadTouches:t event:ev]) return;
+-    if (_touchAreas.contract && !(t = [self touchesOutsideEdgeZone:t]).count) return;
++    if (_touchAreas.liveContract && !(t = [self touchesOutsideEdgeZone:t]).count) return;
+     BOOL r = AKIsRight(ev);
+     if (!r && AKMobileInterface() && AKIsFinger(t) && ![self usesRelativeMouse]) {
+         if ([self directGestureActive] || t.count > 1) { [self beginDirectMulti]; return; }
+@@ -894,7 +898,7 @@
+         [self cancelDirectHold];
+         __weak AKHostView *weakSelf = self;
+         // TouchPlay's hold time when it has one (the add-on's setting), 0055's otherwise.
+-        NSTimeInterval holdDelay = _touchAreas.contract.holdSeconds > 0 ? _touchAreas.contract.holdSeconds : AKDirectHoldDelay;
++        NSTimeInterval holdDelay = _touchAreas.liveContract.holdSeconds > 0 ? _touchAreas.liveContract.holdSeconds : AKDirectHoldDelay;
+         _directHold = [NSTimer timerWithTimeInterval:holdDelay repeats:NO block:^(NSTimer *timer) {
+             (void)timer; [weakSelf directHoldFired];
+         }];
+@@ -917,7 +921,7 @@
+             if (hypot(point.x - _directStart.x, point.y - _directStart.y) < AKDirectSlop) return;
+             [self cancelDirectHold];
+             // TouchPlay: the drag looks, turning the character with the view when the add-on says so.
+-            BOOL turn = _touchAreas.contract ? _touchAreas.contract.turnWithView : _directHeld;
++            BOOL turn = _touchAreas.liveContract ? _touchAreas.liveContract.turnWithView : _directHeld;
+             _directPending = NO; _directHeld = NO; _worldTapRecorded = NO;
+             [self postMouse:turn ? NSEventTypeRightMouseDown : NSEventTypeLeftMouseDown at:_directStart button:turn ? 1 : 0];
+         }

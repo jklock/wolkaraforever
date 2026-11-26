@@ -1,0 +1,230 @@
+# WolkaraForever layer patch 0085 - host: a TouchPlay chord's modifiers stay down for the game's frame (iPad touch)
+#
+# Why: on the iPad (an iPad test, 16 Nov) every TouchPlay button reached the game without its modifiers: the spell
+# holds (CTRL-ALT-SHIFT-H/J/K, -M) opened the game's own PvP, Guild, Professions and Map panels, Jump
+# (CTRL-ALT-SHIFT-V) toggled the nameplates, the taps (F2..F8) did nothing. 0080 posted each chord as one batch -
+# the modifiers' flags-changed events, the key, the modifiers' release - in a single main-thread call. The guest
+# drains the whole queue before it runs a frame, and the game follows the modifiers as their events come but acts
+# on a key in its frame, with the modifiers it holds then: by then the release had been taken too, so it saw the
+# bare key. The simulator fixture's guest read each event's own flags, so it passed; its guest now acts in frames
+# as the game does. A hardware keyboard never hits this: a held modifier spans many frames.
+#   - touchKey:characters:modifiers:pressed: presses the modifiers a key needs (as 0080: a flags-changed event
+#     with the key code and left-hand device bit) and the key, and keeps them down. They come up, in reverse, once
+#     the guest has found the queue empty AKTouchChordReleasePolls (3) times since the chord's last key and at
+#     least AKTouchChordReleaseSeconds (50 ms) has passed - a frame or more after the one that took the key,
+#     however often the guest polls in a frame. A tap's down and up share one press; another chord key while they
+#     are down keeps them down longer (a modifier it does not need comes up first).
+#   - While they are down, every other event the host posts - a click, a walk key, a typed or hardware key, a
+#     scroll - waits in order and follows the release, its flags stripped of the chord's: a world tap while Jump is
+#     held is a plain click, the walk stick's W/A/S/D stay bare. A pointer move with nothing waiting goes at once
+#     (an aimed spell's circle follows the finger). NSApplication asks the host holding a chord (postEvent:atStart:)
+#     and tells it when the guest found the queue empty (nextEventMatchingMask:, once per call); what the release
+#     posts is delivered in that same call.
+#   - reconcileModifiers: keeps the chord's modifiers, which UIKit does not report, while they are held.
+#   - The first eight releases are logged: polls, milliseconds and how many events waited (no keys, no text).
+# Only TouchPlay's areas (iPad touch) send keys with modifiers, so no other interface ever holds a chord and the
+# queue's two added checks are a nil test there.
+#
+# Later (an iPad test, 16 Nov): with this hold the keys still arrived bare, so timing was not the cause. The game
+# builds a chord as ALT-CTRL-SHIFT-<key> and looks its binding up by that exact string; TouchPlay had bound
+# CTRL-ALT-SHIFT-<key>, which was never found, so the game ran the bare key's binding. The add-on now binds in
+# the game's order and the contract reader takes either (TouchContract.m). The hold is kept: it is
+# harmless, and the guest log shows the game reads each event's own flags (it never calls CGEventSourceFlagsState
+# or +[NSEvent modifierFlags]), so the events were right all along.
+#
+# Applies after: 0084-touchplay-leaving-the-app-lets-go-of-the-world.patch
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: no (TouchPlay and iPad touch live in the WolkaraForever layer).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -287,7 +287,20 @@
+ @interface AKHostView : UIView <UIPointerInteractionDelegate, AKTouchControlsDelegate, AKTouchKeySink, UIGestureRecognizerDelegate>
+ @property (nonatomic, weak) NSWindow *nsWindow;
+ - (BOOL)ak_needsTrackingEvents;
++// iPad touch: a TouchPlay chord's modifiers held for the game's next frames (patch 0085). The queue asks the
++// host that holds one whether an event posted meanwhile waits for them to come up, and tells it each time the
++// guest asks for an event and finds none (the guest has taken everything posted so far).
++- (BOOL)ak_chordTakesEvent:(NSEvent *)event;
++- (void)ak_guestFoundQueueEmpty;
+ @end
++// The host view while it holds a chord's modifiers for the game; nil otherwise.
++static __weak AKHostView *AKChordHost;
++// How long a chord's modifiers stay down after its last key: until the guest has found the queue empty this many
++// times since, and at least this long has passed - a frame or more after the one that took the key, however often
++// the guest polls in a frame. The game reads the modifiers when it acts on a key, in its frame, not as the key is
++// dequeued (an iPad test, 16 Nov), so a chord released in the same batch as its key reached it bare.
++static const unsigned AKTouchChordReleasePolls = 3;
++static const NSTimeInterval AKTouchChordReleaseSeconds = 0.05;
+ 
+ // The interface the user chose: any mobile mode - "ios", "iosduo", or "auto" on a phone - has
+ // the direct-touch gestures; anything else, including a missing or hand-edited value,
+@@ -328,6 +341,15 @@
+     BOOL _worldTapRecorded;
+     CGPoint _worldTapPoint;
+     NSTimeInterval _worldTapTime;
++    // iPad touch: the modifier keys (HID usages, in the order pressed) a TouchPlay chord holds for the game, while
++    // its frames pass (patch 0085); the guest's empty polls and the time since the chord's last key; whether the
++    // host is posting the chord itself; and the other input that waits until the modifiers are up.
++    UIKeyboardHIDUsage _chordUsages[3];
++    size_t _chordCount;
++    unsigned _chordEmptyPolls;
++    NSTimeInterval _chordKeyTime;
++    BOOL _chordPosting;
++    NSMutableArray<NSEvent *> *_chordWaiting;
+ }
+ - (BOOL)ak_needsTrackingEvents { return _touchControls.configuring || _touchControls.keyboardVisible || _pressedLeft || _pressedRight || _pressedMiddle; }
+ - (instancetype)initWithFrame:(CGRect)f {
+@@ -541,21 +563,46 @@
+     [NSApp postEvent:event atStart:NO];
+ }
+ // One key with modifiers, pressed or released - a TouchPlay button's CTRL-ALT-SHIFT key. Each modifier
+-// the key needs and is not already held goes down first, as its own key (a flags-changed event with its
+-// key code and left-hand device bit, as a Mac keyboard reports it); then the key; then those modifiers
+-// come up again, in reverse. So nothing stays held between two touch keys, and a click or a typed key in
+-// between carries only what the user is really holding. TouchPlay acts on the up click, so the caller
+-// sends a down and an up for each tap.
++// the key needs and nobody holds yet goes down first, as its own key (a flags-changed event with its key
++// code and left-hand device bit, as a Mac keyboard reports it); then the key. The modifiers stay down
++// until the guest has had the key for a frame or more (patch 0085): the game reads them when it acts on
++// the key, in its frame, so modifiers released in the same batch as the key left it bare - the an iPad test
++// bug (H opened the PvP panel instead of a spell). A tap's down and up share one press of them, and a
++// chord key while they are down only keeps them down longer. Meanwhile every other input - a click, a
++// walk key, a typed key - waits for them to come up (ak_chordTakesEvent:), so it never carries the chord.
++// A key without modifiers (the walk stick's W/A/S/D) is such other input. TouchPlay acts on the up click,
++// so the caller sends a down and an up for each tap.
++static NSEventModifierFlags AKChordFlag(UIKeyboardHIDUsage usage) {
++    return usage == 0xE0 ? NSEventModifierFlagControl : usage == 0xE2 ? NSEventModifierFlagOption : usage == 0xE1 ? NSEventModifierFlagShift : 0;
++}
++// `flags` without one modifier key the chord holds: its device bit, and its flag unless the other side's key is down.
++static NSEventModifierFlags AKFlagsWithoutKey(NSEventModifierFlags flags, UIKeyboardHIDUsage usage) {
++    for (size_t i = 0; i < sizeof AKModifierKeys / sizeof *AKModifierKeys; i++) {
++        if (AKModifierKeys[i].usage != usage) continue;
++        flags &= ~AKModifierKeys[i].bit;
++        if (!(flags & AKModifierKeys[i ^ 1].bit)) flags &= ~AKModifierKeys[i].flag;   // left and right are neighbours
++    }
++    return flags;
++}
+ - (void)touchKey:(unsigned short)code characters:(NSString *)characters modifiers:(NSUInteger)modifiers pressed:(BOOL)pressed {
+-    static const struct { UIKeyboardHIDUsage usage; NSEventModifierFlags flag; } chord[] = {
+-        {0xE0, NSEventModifierFlagControl}, {0xE2, NSEventModifierFlagOption}, {0xE1, NSEventModifierFlagShift},
+-    };
+-    UIKeyboardHIDUsage added[3]; size_t count = 0;
+-    for (size_t i = 0; i < 3; i++) {
+-        if (!(modifiers & chord[i].flag) || (_mods & chord[i].flag)) continue;
+-        _mods = AKModifiersAfterKey(_mods, chord[i].usage, YES);
+-        [self postTouchModifier:chord[i].usage];
+-        added[count++] = chord[i].usage;
++    static const UIKeyboardHIDUsage chord[] = {0xE0, 0xE2, 0xE1};   // control, option, shift - pressed in this order
++    NSEventModifierFlags wanted = modifiers & (NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagShift);
++    if (wanted) {
++        _chordPosting = YES;
++        // A modifier held for an earlier chord that this key has not comes up first.
++        size_t kept = 0;
++        for (size_t i = 0; i < _chordCount; i++) {
++            if (wanted & AKChordFlag(_chordUsages[i])) { _chordUsages[kept++] = _chordUsages[i]; continue; }
++            _mods = AKModifiersAfterKey(_mods, _chordUsages[i], NO);
++            [self postTouchModifier:_chordUsages[i]];
++        }
++        _chordCount = kept;
++        for (size_t i = 0; i < 3; i++) {
++            if (!(wanted & AKChordFlag(chord[i])) || (_mods & AKChordFlag(chord[i]))) continue;   // down already
++            _mods = AKModifiersAfterKey(_mods, chord[i], YES);
++            [self postTouchModifier:chord[i]];
++            _chordUsages[_chordCount++] = chord[i];
++        }
+     }
+     NSEvent *event = [NSEvent new];
+     event.type = pressed ? NSEventTypeKeyDown : NSEventTypeKeyUp;
+@@ -563,11 +610,56 @@
+     event.characters = characters; event.charactersIgnoringModifiers = characters;
+     event.timestamp = NSProcessInfo.processInfo.systemUptime;
+     [NSApp postEvent:event atStart:NO];
+-    while (count > 0) {
+-        UIKeyboardHIDUsage usage = added[--count];
++    if (!wanted) return;
++    _chordPosting = NO;
++    if (!_chordCount) return;   // the user holds them all (a hardware keyboard): nothing of ours to let go
++    AKChordHost = self;
++    _chordEmptyPolls = 0;
++    _chordKeyTime = NSProcessInfo.processInfo.systemUptime;
++}
++// The queue's question while a chord is held (0085): an event the host did not post as part of the chord
++// carries only what the user holds, and waits for the chord to come up - all of it from the first one on,
++// so the guest still gets the host's input in the order it was made. A pointer move with nothing waiting
++// goes at once, so an aimed spell's circle keeps up with the finger.
++- (BOOL)ak_chordTakesEvent:(NSEvent *)event {
++    if (!_chordCount || _chordPosting) return NO;
++    NSEventModifierFlags flags = event.modifierFlags;
++    for (size_t i = 0; i < _chordCount; i++) flags = AKFlagsWithoutKey(flags, _chordUsages[i]);
++    event.modifierFlags = flags;
++    NSEventType type = event.type;
++    BOOL motion = type == NSEventTypeMouseMoved || type == NSEventTypeLeftMouseDragged ||
++                  type == NSEventTypeRightMouseDragged || type == NSEventTypeOtherMouseDragged;
++    if (motion && !_chordWaiting.count) return NO;
++    if (!_chordWaiting) _chordWaiting = [NSMutableArray array];
++    [_chordWaiting addObject:event];
++    return YES;
++}
++// The guest asked for an event and the queue had none: it has taken everything posted so far. Enough of
++// those, and long enough after the chord's last key, its frame has gone by: the modifiers come up, in
++// reverse, and whatever waited follows them.
++- (void)ak_guestFoundQueueEmpty {
++    if (!_chordCount) return;
++    if (++_chordEmptyPolls < AKTouchChordReleasePolls) return;
++    NSTimeInterval held = NSProcessInfo.processInfo.systemUptime - _chordKeyTime;
++    if (held < AKTouchChordReleaseSeconds) return;
++    unsigned polls = _chordEmptyPolls;
++    _chordPosting = YES;
++    while (_chordCount) {
++        UIKeyboardHIDUsage usage = _chordUsages[--_chordCount];
+         _mods = AKModifiersAfterKey(_mods, usage, NO);
+         [self postTouchModifier:usage];
+     }
++    _chordPosting = NO;
++    if (AKChordHost == self) AKChordHost = nil;
++    NSArray<NSEvent *> *waiting = _chordWaiting;
++    _chordWaiting = nil;
++    static unsigned logged;
++    if (logged < 8) {
++        logged++;
++        AKLog(@"touch chord: its modifiers came up after %u empty polls and %.0f ms; %lu other events waited",
++              polls, held * 1000, (unsigned long)waiting.count);
++    }
++    for (NSEvent *event in waiting) [NSApp postEvent:event atStart:NO];
+ }
+ - (void)postTouchModifier:(UIKeyboardHIDUsage)usage {
+     NSEvent *event = [NSEvent new];
+@@ -1005,6 +1097,8 @@
+ // is released, so the guest hears of that even when the key's own release was
+ // reported with the modifier still set.
+ - (void)reconcileModifiers:(NSEventModifierFlags)reported {
++    // A TouchPlay chord's modifiers are the host's own, not UIKit's: they stay while it holds them (0085).
++    for (size_t i = 0; i < _chordCount; i++) reported |= AKChordFlag(_chordUsages[i]);
+     NSEventModifierFlags now = AKModifiersReconciled(_mods, reported);
+     if (now == _mods) return;
+     BOOL released = (_mods & ~now & ~NSEventModifierFlagCapsLock) != 0;
+@@ -1437,6 +1531,9 @@
+     if(_terminationPending) { _terminationApproved=shouldTerminate;_terminationPending=NO; }
+ }
+ - (void)postEvent:(NSEvent *)e atStart:(BOOL)atStart {
++    // iPad touch: while a TouchPlay chord's modifiers are down for the game, other input waits for them (0085).
++    AKHostView *chordHost = AKChordHost;
++    if (chordHost && [chordHost ak_chordTakesEvent:e]) return;
+     // Preserve button/key boundaries, but combine consecutive motion samples.
+     // This prevents a fast pointer from queuing stale movement ahead of key-up.
+     NSEvent *last=_queue.lastObject;
+@@ -1480,6 +1577,13 @@
+                 return e;
+             }
+         }
++        // The guest has taken everything posted so far: a TouchPlay chord held for its frames hears of it, and
++        // what it posts as it comes up (the modifiers, then the input that waited) is delivered now (0085).
++        AKHostView *chordHost = AKChordHost;
++        if (!pumped && !_queue.count && chordHost) {
++            [chordHost ak_guestFoundQueueEmpty];
++            if (_queue.count) continue;
++        }
+         NSTimeInterval left = date ? date.timeIntervalSinceNow : 0;
+         if (pumped && left <= 0) return nil;
+         // Idle polls stay nonblocking; held buttons and native controls also
