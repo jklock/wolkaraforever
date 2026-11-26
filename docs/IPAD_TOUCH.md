@@ -9,7 +9,7 @@ covers the mode, its chat and its password keyboard.
 ## Choose iPad touch
 
 1. Install the TouchPlay add-on with the **Add-on Manager**. It is not bundled with WolkaraForever:
-   get its ZIP from <where TouchPlay is published>, then import it from Files.
+   get its ZIP from its releases page, https://github.com/myi1/TouchPlay/releases (MIT), then import it from Files.
 2. Start the game, and in the game use TouchPlay's **Menu › Save settings** once, so TouchPlay writes
    its button list.
 3. Open **Launcher Manager**, choose **Interface Mode**, and pick **iPad touch**. Automatic never picks
