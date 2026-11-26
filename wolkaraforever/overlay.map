@@ -18,6 +18,8 @@ wolkaraforever/Shell/ExecutionMode.h launcher/App/ExecutionMode.h replace
 wolkaraforever/Shell/ExecutionMode.m launcher/App/ExecutionMode.m replace
 wolkaraforever/Shell/ExternalJITDiagnostics.h launcher/App/ExternalJITDiagnostics.h add
 wolkaraforever/Shell/ExternalJITDiagnostics.m launcher/App/ExternalJITDiagnostics.m add
+wolkaraforever/Shell/GuestLogRotation.h launcher/App/GuestLogRotation.h add
+wolkaraforever/Shell/GuestLogRotation.m launcher/App/GuestLogRotation.m add
 wolkaraforever/Shell/Info.plist launcher/Info.plist replace
 wolkaraforever/Shell/Integrated-Info.plist authorization/App/Integrated-Info.plist replace
 wolkaraforever/Shell/LaunchProgressView.m launcher/App/LaunchProgressView.m replace
@@ -44,6 +46,7 @@ wolkaraforever/Shell/main.m launcher/App/main.m replace
 wolkaraforever/Shell/tests/test_background_pacing.m tests/test_background_pacing.m add
 wolkaraforever/Shell/tests/test_execution_mode.m tests/test_execution_mode.m replace
 wolkaraforever/Shell/tests/test_external_jit_diagnostics.m tests/test_external_jit_diagnostics.m add
+wolkaraforever/Shell/tests/test_guest_log_rotation.m tests/test_guest_log_rotation.m add
 wolkaraforever/Shell/tests/test_localization.m tests/test_localization.m add
 #
 # WoW: the launcher module, its test script source and its tests

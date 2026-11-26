@@ -79,6 +79,10 @@
 - **The repository gates.** `package_ipa.sh` now resolves its default and relative output at the
   repository root, which is the path the release workflow uploads. CI runs the layer,
   documentation and localization gates and nothing that needs a simulator or a device.
+- **The previous game session's log is kept.** Each game start moves the old `native-guest.log`
+  to `native-guest.previous.log` before it opens a new one, and the new log's first line says
+  whether the old one was moved, there was none, or why it could not be kept. A crash or a
+  freeze can now be read after the game has been started again.
 
 ## v1.0.21 — 2026-11-19
 
