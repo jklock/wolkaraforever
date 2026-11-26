@@ -1,0 +1,67 @@
+# WolkaraForever layer patch 0079 - the host's direct-touch gate follows the interface mode
+#
+# Why: 0055 gave the host view its direct-touch gestures (tap, hold, hold-slide, pinch) behind
+# its own check, which compared the stored interface mode to the literal "ios". The layer's own
+# controls ask AKInterfaceModeIsMobile(), which is also true for "iosduo" and for "auto" on a
+# phone - so those modes got the mobile toolbar and no gestures: one finger, no pinch. The host
+# now asks the same question the layer does: AKMobileInterface() returns AKInterfaceModeIsMobile(),
+# whose header the overlay already places beside AppKit.m. iPadOS, a missing value and a value this
+# build does not recognise stay Standard exactly as before. The AppKit views test (0060) states the
+# rule: the host takes several fingers and has the pinch in iosduo too, and not in ipados.
+#
+# Applies after: 0075-signing-enforcement-tests-skippable-where-not-enforced.patch
+# Applies to: translation/AppKit/AppKit.m, tests/test_appkit_views.m
+# Upstream: no (the interface mode lives in the WolkaraForever layer).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -5,6 +5,7 @@
+ #import "TouchControls.h"
+ #import "AKTouchEventPump.h"
+ #import "TouchGamepadLayout.h"
++#import "InterfaceMode.h"
+ 
+ // The guest screen's pixels per point, defined in Screens.m.
+ CGFloat AKGuestBackingScale(void);
+@@ -287,13 +288,14 @@
+ - (BOOL)ak_needsTrackingEvents;
+ @end
+ 
+-// The interface the user chose: "ios" is the mobile (iPhone/Duo) arrangement, anything
+-// else - including a missing or hand-edited value - is iPadOS, the interface every release
+-// through v1.0.7 has had. Read on each use, so a value written between two guests in one
+-// process is seen by the second. The launcher owns the key; the layer only reads it.
++// The interface the user chose: any mobile mode - "ios", "iosduo", or "auto" on a phone - has
++// the direct-touch gestures; anything else, including a missing or hand-edited value,
++// is iPadOS, the interface every release through v1.0.7 has had. The layer's own controls ask
++// AKInterfaceModeIsMobile() the same question, so the toolbar and this view cannot disagree about
++// which interface is on. Read on each use, so a value written between two guests in one process is
++// seen by the second. The launcher owns the key; the layer only reads it.
+ static BOOL AKMobileInterface(void) {
+-    id value = [NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverInterfaceModeV1"];
+-    return [value isKindOfClass:NSString.class] && [(NSString *)value isEqualToString:@"ios"];
++    return AKInterfaceModeIsMobile();
+ }
+ 
+ @implementation AKHostView { CGPoint _last; NSEventModifierFlags _mods; BOOL _pressedRight, _pressedLeft, _pointerInside, _softwareCursor; UIImageView *_cursorView; UIPointerInteraction *_pointer; UIPointerStyle *_gamePointerStyle; unsigned _hoverUpdates, _pointerUpdates, _cursorVisibilityReasons; NSTimeInterval _pointerReportTime; CGPoint _cursorHotSpot;
+--- a/tests/test_appkit_views.m
++++ b/tests/test_appkit_views.m
+@@ -192,6 +192,18 @@
+     [defaults setObject:@"ios" forKey:@"WolkaraForeverInterfaceModeV1"];
+     plainHost=[NSClassFromString(@"AKHostView") new];
+     assert(plainHost.multipleTouchEnabled && [plainHost valueForKey:@"_pinch"] != nil);
++    // Every mobile mode gets them, not only the literal "ios": the host asks the same question the
++    // layer's controls do. iOS on Duo used to get the layer's controls and no gestures.
++    [defaults setObject:@"iosduo" forKey:@"WolkaraForeverInterfaceModeV1"];
++    plainHost=[NSClassFromString(@"AKHostView") new];
++    assert(plainHost.multipleTouchEnabled && [plainHost valueForKey:@"_pinch"] != nil);
++    [defaults setObject:@"ipadtouch" forKey:@"WolkaraForeverInterfaceModeV1"];
++    plainHost=[NSClassFromString(@"AKHostView") new];
++    assert(plainHost.multipleTouchEnabled && [plainHost valueForKey:@"_pinch"] != nil);
++    // And iPadOS, which is not mobile, keeps the single-touch host.
++    [defaults setObject:@"ipados" forKey:@"WolkaraForeverInterfaceModeV1"];
++    plainHost=[NSClassFromString(@"AKHostView") new];
++    assert(!plainHost.multipleTouchEnabled && [plainHost valueForKey:@"_pinch"] == nil);
+     [defaults removeObjectForKey:@"WolkaraForeverInterfaceModeV1"];
+     [defaults setBool:YES forKey:AKTouchControlsDefaultsKey];
+     id host=[NSClassFromString(@"AKHostView") new];

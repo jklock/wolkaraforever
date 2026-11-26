@@ -895,3 +895,20 @@
 "login.savedPassword.failed.title" = "The password was not saved";
 "login.savedPassword.failed" = "This device did not keep the password: it needs a passcode, and the key needs this build's keychain access. The sign-in still happened, but the password will be asked for again.";
 "touch.key.savedPassword" = "Saved password";
+
+"touch.contract.missing" = "Touch buttons not found, so taps are plain clicks. Install TouchPlay with the add-on manager, then start the game and use Menu › Save settings once.";
+"touch.keyboard.password" = "Password";
+"touch.keyboard.username" = "User name";
+"touch.keyboard.gamebox" = "Game text box";
+"touch.keyboard.typePassword" = "Type password";
+"touch.chat.say" = "Say";
+"touch.chat.party" = "Party";
+"touch.chat.guild" = "Guild";
+"touch.chat.whisper" = "Whisper";
+"touch.chat.yell" = "Yell";
+"touch.chat.send" = "Send";
+"touch.walkStick" = "Walk stick";
+
+"home.launcher.interfaceMode.ipadtouch" = "iPad touch";
+"touch.fallback.title" = "iPad touch turned off";
+"touch.fallback.message" = "The game closed unexpectedly twice in a row in iPad touch mode, so WolkaraForever went back to iPadOS. You can choose iPad touch again under Interface Mode.";

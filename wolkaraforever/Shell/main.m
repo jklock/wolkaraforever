@@ -23,6 +23,8 @@
 // The bounded record of the keyboard/dictation feature, in one vocabulary. See the header for
 // what may and may not appear in it.
 #import "../Voice/KeyboardDictationEvents.h"
+#import "../WoW/TouchContract.h"
+#import "../WoW/InterfaceMode.h"
 #import "../WoW/CASC.h"
 #import "../WoW/BattleNetSavedPassword.h"
 #import "../WoW/BattleNetSession.h"
@@ -141,6 +143,13 @@ static BOOL CanStartApps(void) {
 }
 static void FlushSteamCloudAtExit(int code, void *context) {
     if (!code) @autoreleasepool { [(__bridge TKSteamCloudCoordinator *)context flush]; }
+}
+// A guest may call _exit(0), bypassing atexit. The exit observer closes that clean session
+// while retaining the existing Steam cloud flush.
+static void GuestExitObserver(int code, void *context) {
+    AKHostSceneDelegate *scene = (__bridge AKHostSceneDelegate *)context;
+    if (!code) AKTouchCrashGuardEndSession();
+    FlushSteamCloudAtExit(code, (__bridge void *)scene.steamCloud);
 }
 static const char *ModeIdentifier(TKExecutionMode mode) { return (TKExecutionModeIdentifier(mode)?:@"none").UTF8String; }
 // Files shows the app's Documents under its bundle name (Tolkara or TolkaraDiagnostics).
@@ -334,6 +343,7 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
     (void)note;
     WKLog("host", @"the user chose to leave the game; closing WolkaraForever after the countdown");
     [self.steamCloud flush];
+    AKTouchCrashGuardEndSession();
     [self showClosingPage:WKLocalized(@"shell.leaving")];
 }
 
@@ -1245,7 +1255,7 @@ static NSString *AKAudioStateDescription(void) {
     if (container) { if (![self forceExecutionMode:TKExecutionModeLocalSigning by:@"--signed-image"]) return; }
     TKApp *app=[self appFromArguments];
     if (!container && self.executionMode==TKExecutionModeLocalSigning) {
-        NSString *sha=app ? [self.library currentSHA256OfApp:app error:NULL] : nil;
+        NSString *sha=app ? [self.library currentSHA256OfApp:app error:NULL]: nil;
         container=TKLocalSigningFindContainer(NSHomeDirectory(),sha);
         if (!container) {
             PrepareLocalSigningFolder();
@@ -1472,7 +1482,6 @@ static NSString *AKAudioStateDescription(void) {
                 self.cloudPreparing=NO;
                 if(!ready) { self.status.text=report?:WKLocalizedFormat(@"shell.cloudFailed",error.domain,(long)error.code,app.profile);[self showStartStopped];return; }
                 self.cloudPrepared=YES;[self.steamCloud startPeriodicSync];
-                ng_set_exit_observer(FlushSteamCloudAtExit,(__bridge void *)self.steamCloud);
                 // The guest enters from a timer callout, after this dispatch block returns.
                 [self performSelector:@selector(resumeCloudPreparedNativeGame) withObject:nil afterDelay:0];
             });
@@ -1514,6 +1523,17 @@ static NSString *AKAudioStateDescription(void) {
     [self startStartupActivityInFolder:directory];
     if (chdir(directory.fileSystemRepresentation)) fprintf(log,"[host] app working directory failed: %s\n",strerror(errno));
     else fprintf(log,"[host] app working directory=%s\n",directory.fileSystemRepresentation);
+    // iPad touch only: TouchPlay's button list, read once for this game from the game folder (the
+    // working directory just entered). Without it the game still plays, with plain 1.0.8 taps, and
+    // the player is told once how to get the buttons. The guest's own copy of the reader reads the
+    // same file from the working directory; nothing else here depends on the result.
+    if (AKInterfaceModeIsTouchPlay()) {
+        AKTouchContract *touchContract=AKTouchContractLoadForGame([NSURL fileURLWithPath:directory isDirectory:YES],^(NSString *key){
+            self.status.text=WKLocalized(@"touch.contract.missing");
+            fprintf(log,"[host] touch contract: none usable in %s; plain taps (%s)\n",directory.fileSystemRepresentation,key.UTF8String);
+        });
+        if (touchContract) fprintf(log,"[host] touch contract: %lu areas, hold %.2f s, %s-handed\n",(unsigned long)touchContract.areas.count,touchContract.holdSeconds,touchContract.leftHanded?"left":"right");
+    }
     // A profile's caseAliases: folders the application names in another case
     // than its installer wrote them, which only macOS's file system ignores.
     for (NSString *line in [self.library linkCaseAliasesForApp:app]) fprintf(log,"[host] %s\n",line.UTF8String);
@@ -1599,7 +1619,10 @@ static NSString *AKAudioStateDescription(void) {
     [defaults removeObjectForKey:@"WolkaraForever.NetworkHealth.NextLaunch"];
     ng_set_network_health(networkHealth);
     if(networkHealth) fprintf(log,"[host] network health: anonymous TCP counters enabled for this launch\n");
+    AKTouchCrashGuardBeginSession();
+    ng_set_exit_observer(GuestExitObserver, (__bridge void *)self);
     BOOL ok = ng_initialize(path.fileSystemRepresentation, NSBundle.mainBundle.privateFrameworksPath.fileSystemRepresentation, map.fileSystemRepresentation, log, fullStartup);
+    if (ok) AKTouchCrashGuardEndSession(); else AKTouchCrashGuardAbandonSession();
     [TKBattleNetSession gameEnded];
     if (externalJIT) {
         WKExternalJITDiagnosticsMemory(@"native-return");

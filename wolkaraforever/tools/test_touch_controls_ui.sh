@@ -24,6 +24,14 @@ for LANGUAGE in en de; do
     mkdir -p "$APP/$LANGUAGE.lproj"
     cp "launcher/App/$LANGUAGE.lproj/Localizable.strings" "$APP/$LANGUAGE.lproj/"
 done
+# TouchPlay's saved buttons as the iPad wrote them, for the iPad touch run's host checks.
+cp tests/fixtures/TouchPlay-v1.lua "$APP/"
+#...and the add-on's newer key set, whose Interact has a hold key (the aim's "stop" button).
+cp tests/fixtures/TouchPlay-v1-stopkey.lua "$APP/"
+#...and the add-on's current key set (no key on W, A, S or D), for the walk stick's host checks.
+cp tests/fixtures/TouchPlay-v1-a22.lua "$APP/"
+#...and the same keys as the add-on binds them now, in the game's own order (ALT-CTRL-SHIFT-).
+cp tests/fixtures/TouchPlay-v1-altorder.lua "$APP/"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 fixture_compile xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
     -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations \
@@ -64,13 +72,93 @@ else
     if [[ " $* " != *" --self-test "* ]]; then
         set -- --self-test "$@"
     fi
+    # TouchPlay's button list (contract v1): its reader is Foundation-only, so it is a bare process
+    # in the simulator, given the fixtures (the iPad's own saved file, the same from a newer
+    # TouchPlay, and the file cut short) as a folder on the command line.
+    CONTRACT=build/touch-controls-fixture/TouchContractTest
+    xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
+        -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Itranslation/AppKit \
+        translation/AppKit/TouchContract.m translation/AppKit/InterfaceMode.m tests/test_touch_contract.m \
+        -framework Foundation -framework UIKit -framework CoreGraphics -o "$CONTRACT"
+    fixture_step "touch contract" xcrun simctl spawn "$SIM_ID" "$PWD/$CONTRACT" "$PWD/tests/fixtures" 2>&1 | tee build/touch-controls-fixture/contract.log
+    grep -q 'TOUCH_CONTRACT_PASS:' build/touch-controls-fixture/contract.log
+    # TouchPlay's buttons played by the fingers (glow, tap on lift, hold, drag off, Jump): a bare UIKit
+    # process with a recorder for the keys and a fixture clock, given the same fixtures folder.
+    AREAS=build/touch-controls-fixture/TouchAreasTest
+    xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
+        -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Itranslation/AppKit \
+        translation/AppKit/TouchAreas.m translation/AppKit/TouchContract.m translation/AppKit/InterfaceMode.m \
+        translation/AppKit/AKHostLocalization.m tests/test_touch_areas.m \
+        -framework Foundation -framework UIKit -framework CoreGraphics -framework QuartzCore -o "$AREAS"
+    cp -R launcher/App/en.lproj launcher/App/de.lproj launcher/App/fr.lproj "$(dirname "$AREAS")/"   # the notice reads the app's tables beside it
+    fixture_step "touch areas" xcrun simctl spawn "$SIM_ID" "$PWD/$AREAS" "$PWD/tests/fixtures" 2>&1 | tee build/touch-controls-fixture/areas.log
+    grep -q 'TOUCH_AREAS_PASS:' build/touch-controls-fixture/areas.log
+    # The chat keyboard and the password from Apple's Passwords app (no password is stored or logged): the bridge's field, with a recorder
+    # for the host's text path; a bare UIKit process, its own stderr captured to prove nothing typed is logged.
+    TEXT=build/touch-controls-fixture/TouchTextTest
+    xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
+        -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Itranslation/AKSupport -Itranslation/AppKit \
+        translation/AKSupport/AKSupport.m translation/AppKit/TouchTextBridge.m translation/AppKit/InterfaceMode.m \
+        translation/AppKit/AKHostLocalization.m tests/test_touch_text.m \
+        -framework Foundation -framework UIKit -framework CoreGraphics -o "$TEXT"
+    fixture_step "touch text" xcrun simctl spawn "$SIM_ID" "$PWD/$TEXT" 2>&1 | tee build/touch-controls-fixture/text.log
+    grep -q 'TOUCH_TEXT_PASS:' build/touch-controls-fixture/text.log
+    # The in-world gate: the add-on's secure-input pulses read on a fixture clock - one short pulse
+    # enters the world, two leave it, a held secure input is a password box - and the password field's debounce
+    # agrees with the pulse limit. A bare Foundation process.
+    WORLD=build/touch-controls-fixture/TouchWorldTest
+    xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g \
+        -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Itranslation/AKSupport -Itranslation/AppKit \
+        translation/AKSupport/AKSupport.m translation/AppKit/TouchWorldSignal.m translation/AppKit/TouchTextBridge.m \
+        translation/AppKit/InterfaceMode.m translation/AppKit/AKHostLocalization.m tests/test_touch_world.m \
+        -framework Foundation -framework UIKit -framework CoreGraphics -o "$WORLD"
+    fixture_step "touch world" xcrun simctl spawn "$SIM_ID" "$PWD/$WORLD" 2>&1 | tee build/touch-controls-fixture/world.log
+    grep -q 'TOUCH_WORLD_PASS:' build/touch-controls-fixture/world.log
+    # The reader is compiled into the app and into the adapter library, and one process loads both.
+    # Two images defining one Objective-C class make the runtime warn and pick one, so the app's copy
+    # has its own class names: load both in one simulator process and look for the warning.
+    DUP=build/touch-controls-fixture/two-images
+    mkdir -p "$DUP"
+    cat > "$DUP/main.m" <<'SRC'
+#import <Foundation/Foundation.h>
+#include <dlfcn.h>
+int main(int argc, char **argv) {
+    @autoreleasepool {
+        if (!dlopen(argv[1], RTLD_NOW)) { fprintf(stderr, "dlopen failed: %s\n", dlerror()); return 2; }
+        Class adapter = NSClassFromString(@"AKTouchContract"), app = NSClassFromString(@"AKAppTouchContract");
+        Class adapterArea = NSClassFromString(@"AKTouchArea"), appArea = NSClassFromString(@"AKAppTouchArea");
+        if (!adapter || !app || !adapterArea || !appArea || adapter == app || adapterArea == appArea) { fprintf(stderr, "classes: %p %p %p %p\n", adapter, app, adapterArea, appArea); return 1; }
+        printf("TOUCH_CONTRACT_TWO_IMAGES_PASS: the adapter's AKTouchContract and the app's AKAppTouchContract load side by side\n");
+    }
+    return 0;
+}
+SRC
+    CFLAGS=(-target arm64-apple-ios17.0-simulator -isysroot "$SDK" -fobjc-arc -O1 -g -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations)
+    xcrun --sdk iphonesimulator clang "${CFLAGS[@]}" -dynamiclib -Itranslation/AppKit translation/AppKit/TouchContract.m translation/AppKit/InterfaceMode.m \
+        -framework Foundation -framework UIKit -framework CoreGraphics -o "$DUP/libadapter.dylib"
+    xcrun --sdk iphonesimulator clang "${CFLAGS[@]}" -Ilauncher/WoW launcher/WoW/TouchContract.m launcher/WoW/InterfaceMode.m "$DUP/main.m" \
+        -framework Foundation -framework UIKit -framework CoreGraphics -o "$DUP/twoimages"
+    codesign --force --sign - "$DUP/libadapter.dylib" "$DUP/twoimages" > /dev/null 2>&1
+    fixture_step "touch two images" xcrun simctl spawn "$SIM_ID" "$PWD/$DUP/twoimages" "$PWD/$DUP/libadapter.dylib" > "$DUP/run.log" 2>&1 || { cat "$DUP/run.log"; exit 1; }
+    cat "$DUP/run.log"
+    ! grep -q 'implemented in both' "$DUP/run.log"
+    grep -q 'TOUCH_CONTRACT_TWO_IMAGES_PASS:' "$DUP/run.log"
+    # ...and that the app loads it at game start (Shell/main.m has no test of its own; this reads it).
+    ../../wolkaraforever/tools/test_touch_contract_wiring.sh
     # Both interfaces: the default (iPadOS, what every release through v1.0.7 has) and the
     # mobile one the launcher selects with WolkaraForeverInterfaceModeV1.
-    for MODE in "" "--mobile-interface"; do
-        LOG="build/touch-controls-fixture/self-test${MODE:+-mobile}.log"
+    # and the Duo and iPad touch ones, which are mobile too (the host takes direct-touch gestures in all three).
+    for MODE in "" "--mobile-interface" "--mobile-interface iosduo" "--mobile-interface ipadtouch"; do
+        LOG="build/touch-controls-fixture/self-test$(echo "${MODE:+ $MODE}" | tr -c 'A-Za-z0-9\n' '-').log"
         # simctl may report success even when the app aborts an assertion, so the log decides.
         fixture_launch "$LOG" org.tolkara.tests.touch-controls "$@" $MODE
         grep -q 'TOUCH_UI_SELF_TEST_PASS:' "$LOG"
+        # No password is stored or logged: the iPad touch run fills a password nothing else could hold by chance; it is in no log line.
+        # (An `if`, not `! grep`: set -e does not stop on a negated command.)
+        if grep -q 'Tp9-Zx!qv7' "$LOG"; then echo "a password reached the log: $LOG" >&2; exit 1; fi
+        # iPad touch keeps its own chat and never uses the Composer (its self-test above checks that the
+        # review mode is not in force there), so the Composer's card runs in the other interfaces only.
+        if [ "$MODE" = "--mobile-interface ipadtouch" ]; then continue; fi
         # The Composer's card and a real guest, in the same interface: the assertions the state
         # machine's own fixture cannot make because it has no window.
         CLOG="build/touch-controls-fixture/composer${MODE:+-mobile}.log"

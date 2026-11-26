@@ -1,0 +1,194 @@
+# WolkaraForever layer patch 0081 - host: the world by touch with TouchPlay (iPad touch)
+#
+# Why: in iPad touch the TouchPlay add-on draws the game's touch buttons and saves them with three
+# settings for the rest of the screen (the contract, TouchContract.h): its hold time, whether the
+# character turns with the view, and a world key. 0080 gave the buttons their fingers; this is the
+# world - a finger no button takes - and the finger that leaves a spell to aim it. With a contract:
+#   - A tap is still a left click where the finger is (0055). A second tap within 40 pt and 1.5 s of
+#     the last is a right click there instead (talk, loot, attack), and the record is gone. A drag, a
+#     hold or a pinch in between also clears it. The time is the areas' clock (fixture-driven in tests).
+#   - Kept still for the contract's hold time, the finger sends the world key (the cursor is under it -
+#     put back there first if an aimed spell moved it - so the add-on shows the card of what is there)
+#     instead of 0055's right click. A world key the reader does not know is 0055's right click.
+#   - A drag (past 0055's 10 pt slop) is a right drag when the contract says turn=1 (the character
+#     turns with the view), a left drag when turn=0.
+#   - A finger that lands within 20 pt of the view's edge posts nothing at all: it is handed to the
+#     areas to hold quietly until it lifts, and the pinch never takes it.
+#   - A spell dragged off its button (TouchAreas.m) moves the pointer through touchPointerAt:click:,
+#     the second method of the areas' key sink: a mouse move with no button down, so the game's circle
+#     follows the finger; the lift on the world is a left click there. If another finger is dragging the
+#     view, the aim ends that drag first (its button up, as a pinch does). Stopping an aim (a lift over a
+#     button, a cancel) is Interact's hold key, the add-on's "stop" button, through 0080's key path -
+#     never Escape. A separate world tap while a spell is aimed also places it (the game takes that
+#     tap's click).
+# With no contract, and in every other interface mode, the host is exactly 0055 + 0063 + 0079 + 0080.
+#
+# Applies after: 0080-touchplay-buttons-take-their-fingers.patch
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: no (TouchPlay and iPad touch live in the WolkaraForever layer).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -324,6 +324,10 @@
+     // take never reaches the gestures above. Nil in every other mode.
+     AKTouchAreas *_touchAreas;
+     BOOL _touchAreasNoticeAsked;
++    // iPad touch with TouchPlay's button list: the last world tap, for the second tap's right click.
++    BOOL _worldTapRecorded;
++    CGPoint _worldTapPoint;
++    NSTimeInterval _worldTapTime;
+ }
+ - (BOOL)ak_needsTrackingEvents { return _touchControls.configuring || _touchControls.keyboardVisible || _pressedLeft || _pressedRight || _pressedMiddle; }
+ - (instancetype)initWithFrame:(CGRect)f {
+@@ -568,11 +572,32 @@
+     event.timestamp = NSProcessInfo.processInfo.systemUptime;
+     [NSApp postEvent:event atStart:NO];
+ }
++// A spell dragged off its TouchPlay button is aimed by the finger (TouchAreas.m): the pointer goes where
++// the finger is, with no button down, so the game's circle is under it; the lift on the world is a
++// left click there, which places the spell.
++// The pointer is shared: if another finger is dragging the view (a button is down), the aim ends that
++// drag first, as a pinch does - its button comes up and the rest of that gesture posts nothing - so the
++// aim never moves or clicks with the drag's button still down (left + right is the game's run).
++- (void)touchPointerAt:(CGPoint)p click:(BOOL)click {
++    if (_pressedLeft || _pressedRight) {
++        if ([self directGestureActive]) [self beginDirectMulti];
++        else {
++            if (_pressedLeft) [self postMouse:NSEventTypeLeftMouseUp at:_last button:0];
++            if (_pressedRight) [self postMouse:NSEventTypeRightMouseUp at:_last button:1];
++        }
++    }
++    if (!CGPointEqualToPoint(p, _last) || !click) [self postMouse:NSEventTypeMouseMoved at:p button:0];
++    if (!click) return;
++    [self postMouse:NSEventTypeLeftMouseDown at:p button:0];
++    [self postMouse:NSEventTypeLeftMouseUp at:p button:0];
++}
+ // The pinch (two fingers zoom the camera) never takes a finger that is on a TouchPlay button: a spell
+ // and a walk are two fingers, not a pinch.
+ - (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldReceiveTouch:(UITouch *)touch {
+     if (recognizer != _pinch || !_touchAreas) return YES;
+-    return ![_touchAreas ownsTouch:touch] && ![_touchAreas claimsPoint:[touch locationInView:self]];
++    CGPoint p = [touch locationInView:self];
++    if (_touchAreas.contract && [self pointInEdgeZone:p]) return NO;   // nor one in the edge zone (0081)
++    return ![_touchAreas ownsTouch:touch] && ![_touchAreas claimsPoint:p];
+ }
+ - (BOOL)usesRelativeMouse { return AKMouseIsCaptured() && GCMouse.mice.count>0; }
+ - (void)captureChanged:(NSNotification *)notification {
+@@ -754,6 +779,16 @@
+ static const CGFloat AKDirectSlop = 10;
+ static const NSTimeInterval AKDirectHoldDelay = 0.45;
+ static const CGFloat AKPinchNotch = 0.07;
++// iPad touch with TouchPlay's button list (patch 0081) changes the world touch - a finger no button
++// takes - in four places, and nothing else: a second tap within 40 pt and 1.5 s of the last is a right
++// click (talk, loot, attack); a finger kept still for the add-on's hold time sends its world key (the
++// add-on shows the card of what is under the cursor) instead of the right click; a drag is a right drag
++// when the character turns with the view (the add-on's turn=1), a left drag otherwise; a finger that
++// lands within 20 pt of the view's edge posts nothing. A drag starts after AKDirectSlop (10 pt), as
++// before. With no button list, and in every other mode, it is the direct touch above exactly.
++static const CGFloat AKDirectSecondTapRadius = 40;
++static const NSTimeInterval AKDirectSecondTapWindow = 1.5;
++static const CGFloat AKDirectEdgeInset = 20;
+ static BOOL AKIsFinger(NSSet<UITouch *> *t) { return t.anyObject.type == UITouchTypeDirect; }
+ - (void)cancelDirectHold { [_directHold invalidate]; _directHold = nil; }
+ - (void)directHoldFired {
+@@ -761,6 +796,18 @@
+     if (!_directPending || _directMulti) return;
+     _directPending = NO; _directHeld = YES;
+     [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium] impactOccurred];
++    // TouchPlay: the cursor is already at the finger; its world key asks the add-on for the card of what
++    // is under it. No right click.
++    // An aimed spell may have moved the shared pointer since this finger came down: it goes back under
++    // the finger first. A world key the reader does not know falls back to the right click.
++    if (_touchAreas.contract) {
++        _worldTapRecorded = NO;
++        if (!CGPointEqualToPoint(_last, _directStart)) [self postMouse:NSEventTypeMouseMoved at:_directStart button:0];
++        if ([_touchAreas sendWorldKey]) {
++            AKLog(@"direct touch: hold sent TouchPlay's world key");
++            return;
++        }
++    }
+     [self postMouse:NSEventTypeRightMouseDown at:_directStart button:1];
+     [self postMouse:NSEventTypeRightMouseUp at:_directStart button:1];
+     AKLog(@"direct touch: hold became a right click");
+@@ -769,6 +816,7 @@
+ - (void)beginDirectMulti {
+     [self cancelDirectHold];
+     _directPending = NO; _directHeld = NO; _directMulti = YES;
++    _worldTapRecorded = NO;
+     if (_pressedLeft) [self postMouse:NSEventTypeLeftMouseUp at:_last button:0];
+     if (_pressedRight) [self postMouse:NSEventTypeRightMouseUp at:_last button:1];
+ }
+@@ -801,12 +849,37 @@
+     }
+ }
+ - (BOOL)directGestureActive { return _directTouch != nil || _directMulti; }
++// TouchPlay: whether a tap at `p` is the second of two world taps, close by and soon (the record is
++// then gone); otherwise it is the first, and is remembered. The time is the areas' clock.
++- (BOOL)worldSecondTapAt:(CGPoint)p {
++    if (!_touchAreas.contract) return NO;
++    NSTimeInterval now = _touchAreas.clock();
++    if (_worldTapRecorded && now - _worldTapTime <= AKDirectSecondTapWindow &&
++        hypot(p.x - _worldTapPoint.x, p.y - _worldTapPoint.y) <= AKDirectSecondTapRadius) {
++        _worldTapRecorded = NO;
++        return YES;
++    }
++    _worldTapRecorded = YES; _worldTapPoint = p; _worldTapTime = now;
++    return NO;
++}
++- (BOOL)pointInEdgeZone:(CGPoint)p { return !CGRectContainsPoint(CGRectInset(self.bounds, AKDirectEdgeInset, AKDirectEdgeInset), p); }
++// TouchPlay: a finger that lands in the edge zone is held quietly by the areas until it lifts, so none of
++// its moves or its lift reach the gestures below either; the others go on.
++- (NSSet<UITouch *> *)touchesOutsideEdgeZone:(NSSet<UITouch *> *)t {
++    NSMutableSet<UITouch *> *rest = [NSMutableSet setWithCapacity:t.count];
++    for (UITouch *touch in t) {
++        if (touch.type == UITouchTypeDirect && [self pointInEdgeZone:[touch locationInView:self]]) [_touchAreas keepQuiet:touch];
++        else [rest addObject:touch];
++    }
++    return rest;
++}
+ - (void)touchesBegan:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
+     if ([self ak_consumeBatterySaverInput:@"touch"]) return;
+     [_batterySaver setHeld:YES reason:@"touch"];
+     // iPad touch: a finger on a TouchPlay button is the button's; only the others go on.
+     if (_touchAreas && !(t = [_touchAreas unclaimedTouches:t phase:UITouchPhaseBegan]).count) return;
+     if ([self handleTrackpadTouches:t event:ev]) return;
++    if (_touchAreas.contract && !(t = [self touchesOutsideEdgeZone:t]).count) return;
+     BOOL r = AKIsRight(ev);
+     if (!r && AKMobileInterface() && AKIsFinger(t) && ![self usesRelativeMouse]) {
+         if ([self directGestureActive] || t.count > 1) { [self beginDirectMulti]; return; }
+@@ -817,7 +890,9 @@
+         [self postMouse:NSEventTypeMouseMoved at:_last button:0];
+         [self cancelDirectHold];
+         __weak AKHostView *weakSelf = self;
+-        _directHold = [NSTimer timerWithTimeInterval:AKDirectHoldDelay repeats:NO block:^(NSTimer *timer) {
++        // TouchPlay's hold time when it has one (the add-on's setting), 0055's otherwise.
++        NSTimeInterval holdDelay = _touchAreas.contract.holdSeconds > 0 ? _touchAreas.contract.holdSeconds : AKDirectHoldDelay;
++        _directHold = [NSTimer timerWithTimeInterval:holdDelay repeats:NO block:^(NSTimer *timer) {
+             (void)timer; [weakSelf directHoldFired];
+         }];
+         // The guest's own loop runs the default mode; common modes include it.
+@@ -838,8 +913,9 @@
+         if (_directPending || _directHeld) {
+             if (hypot(point.x - _directStart.x, point.y - _directStart.y) < AKDirectSlop) return;
+             [self cancelDirectHold];
+-            BOOL turn = _directHeld;
+-            _directPending = NO; _directHeld = NO;
++            // TouchPlay: the drag looks, turning the character with the view when the add-on says so.
++            BOOL turn = _touchAreas.contract ? _touchAreas.contract.turnWithView : _directHeld;
++            _directPending = NO; _directHeld = NO; _worldTapRecorded = NO;
+             [self postMouse:turn ? NSEventTypeRightMouseDown : NSEventTypeLeftMouseDown at:_directStart button:turn ? 1 : 0];
+         }
+         if (CGPointEqualToPoint(point, _last)) return;
+@@ -867,8 +943,10 @@
+             CGPoint point = [_directTouch locationInView:self];
+             if (_directPending) {
+                 _directPending = NO;
+-                [self postMouse:NSEventTypeLeftMouseDown at:_directStart button:0];
+-                [self postMouse:NSEventTypeLeftMouseUp at:_directStart button:0];
++                // TouchPlay: a second world tap close by and soon is a right click.
++                BOOL second = [self worldSecondTapAt:_directStart];
++                [self postMouse:second ? NSEventTypeRightMouseDown : NSEventTypeLeftMouseDown at:_directStart button:second ? 1 : 0];
++                [self postMouse:second ? NSEventTypeRightMouseUp : NSEventTypeLeftMouseUp at:_directStart button:second ? 1 : 0];
+             } else if (_directHeld) {
+                 // A hold already clicked; lifting the finger adds nothing.
+                 _directHeld = NO;

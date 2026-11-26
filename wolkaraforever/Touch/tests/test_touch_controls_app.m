@@ -1,4 +1,5 @@
 // Original UIKit/AppKit fixture for manual touch/keyboard testing. No guest.
+#import <UIKit/UIKit.h>
 #import "AppKit.h"
 #import "AKPerformanceOverlay.h"
 #import "AKTouchEventPump.h"
@@ -6,12 +7,19 @@
 #import "TouchGamepad.h"
 #import "TouchGamepadLayout.h"
 #import "AKHostLocalization.h"
+#import "TouchContract.h"
+#import "TouchAreas.h"
+#import "TouchTextBridge.h"
+#import "TouchWorldSignal.h"
 #include <assert.h>
-
+#include <math.h>
+#include <unistd.h>
+#import <objc/runtime.h>
+#import <objc/message.h>
 // Wait for the state an assertion needs, pumping the main run loop, instead of sleeping a fixed
 // time and hoping. Sleeping a second measured whatever this machine had managed by then: on a
 // busy simulator the Composer's card was read between the passes that size it and its action
-// row, and the same code passed a minute earlier (measured 2026-11-16: two of three runs failed
+// row, and the same code passed a minute earlier (measured a device check: two of three runs failed
 // with card=130, row=0 where the assertions want row=44). The assertions themselves are
 // unchanged - only the moment they run is, and the timeout is a budget for a slow machine rather
 // than a claim about how long the product takes.
@@ -32,6 +40,9 @@ static BOOL AKTouchFixtureWaitFor(NSTimeInterval timeout, BOOL (^ready)(void)) {
 // The composer's language control asks through this; the fixture drives the same method the
 // menu action calls, so what it exercises is the production path rather than a copy of it.
 - (void)chooseSpeechLanguage:(NSString *)stored;
+- (void)showControlSettings;
+- (void)toggleToolbar;   // the handle's action
+- (void)toggleTrackpad;  // the trackpad button's action
 @end
 
 // The composer's language button, by the identifier a person's assistive technology sees.
@@ -57,6 +68,24 @@ static UIButton *FixtureLanguageButton(UIView *root) {
 @property (nonatomic, strong, nullable) NSEvent *lastKeyEvent;
 // Every key this guest view was given, in order, so a test can read a whole sequence.
 @property NSMutableArray<NSNumber *> *keyCodes;
+// When set, every key down, key up and modifier change, as "down 99 COS" / "flags 59 C" (C control,
+// O option, S shift, "-" none): what a TouchPlay key looks like to the game.
+@property (nullable) NSMutableArray<NSString *> *keyEvents;
+@property (nullable) NSMutableArray<NSEvent *> *receivedKeys;
+// When set, every mouse event, as "LeftDown 500,400" / "Moved 700,300" / "RightDrag 640,330", at the
+// event's window location (bottom-left origin, as AppKit gives it).
+@property (nullable) NSMutableArray<NSString *> *mouseEvents;
+// The game's own reading of its input, as the iPad showed it (an iPad test, 16 Nov): it follows the modifiers as
+// their flags-changed events come, but acts on a key or a button press in its frame - once it has drained the
+// whole queue - with the modifiers it holds then. A chord whose modifiers came up in the same batch as its key
+// reached it bare. When set, each key and button press as the frame acted on it: "down 99 COS", "LeftDown -";
+// `endFrame` is the frame (AKFixtureFrame).
+@property (nullable) NSMutableArray<NSString *> *frameActions;
+@property NSEventModifierFlags frameModifiers;
+@property NSMutableArray<NSString *> *framePending;
+// Each button press's own modifier flags, as the event carried them ("-" for none).
+@property (nullable) NSMutableArray<NSString *> *clickModifiers;
+- (void)endFrame;
 @end
 @implementation AKInputFixtureView
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -92,7 +121,37 @@ static UIButton *FixtureLanguageButton(UIView *root) {
     self.result.string = [NSString stringWithFormat:@"%@\nText: %@", self.lastAction, self.text];
 }
 - (BOOL)acceptsFirstResponder { return YES; }
+static NSString *AKFixtureModifiers(NSEventModifierFlags flags) {
+    NSMutableString *text = [NSMutableString string];
+    if (flags & NSEventModifierFlagControl) [text appendString:@"C"];
+    if (flags & NSEventModifierFlagOption) [text appendString:@"O"];
+    if (flags & NSEventModifierFlagShift) [text appendString:@"S"];
+    return text.length ? text : @"-";
+}
+// The game's frame: what it was given since the last one, acted on with the modifiers it holds now.
+- (void)framePend:(NSString *)action {
+    if (!self.frameActions) return;
+    if (!self.framePending) self.framePending = [NSMutableArray array];
+    [self.framePending addObject:action];
+}
+- (void)endFrame {
+    for (NSString *action in self.framePending)
+        [self.frameActions addObject:[NSString stringWithFormat:@"%@ %@", action, AKFixtureModifiers(self.frameModifiers)]];
+    [self.framePending removeAllObjects];
+}
+- (void)keyUp:(NSEvent *)event {
+    [self.receivedKeys addObject:event];
+    [self.keyEvents addObject:[NSString stringWithFormat:@"up %u %@", event.keyCode, AKFixtureModifiers(event.modifierFlags)]];
+    [self framePend:[NSString stringWithFormat:@"up %u", event.keyCode]];
+}
+- (void)flagsChanged:(NSEvent *)event {
+    [self.keyEvents addObject:[NSString stringWithFormat:@"flags %u %@", event.keyCode, AKFixtureModifiers(event.modifierFlags)]];
+    self.frameModifiers = event.modifierFlags;
+}
 - (void)keyDown:(NSEvent *)event {
+    [self.receivedKeys addObject:event];
+    [self.keyEvents addObject:[NSString stringWithFormat:@"down %u %@", event.keyCode, AKFixtureModifiers(event.modifierFlags)]];
+    [self framePend:[NSString stringWithFormat:@"down %u", event.keyCode]];
     self.lastKeyEvent = event;
     if (!self.keyCodes) self.keyCodes = [NSMutableArray new];
     [self.keyCodes addObject:@(event.keyCode)];
@@ -116,27 +175,67 @@ static UIButton *FixtureLanguageButton(UIView *root) {
     self.lastAction = @"Keyboard input received";
     [self refresh];
 }
+- (void)recordMouse:(NSString *)kind event:(NSEvent *)event {
+    [self.mouseEvents addObject:[NSString stringWithFormat:@"%@ %.0f,%.0f", kind, event.locationInWindow.x, event.locationInWindow.y]];
+}
+- (void)mouseUp:(NSEvent *)event { [self recordMouse:@"LeftUp" event:event]; }
+- (void)rightMouseUp:(NSEvent *)event { [self recordMouse:@"RightUp" event:event]; }
 - (void)mouseMoved:(NSEvent *)event {
+    [self recordMouse:@"Moved" event:event];
     self.lastAction = [NSString stringWithFormat:@"Pointer %.0f, %.0f", event.locationInWindow.x, event.locationInWindow.y];
     [self refresh];
 }
-- (void)mouseDown:(NSEvent *)event { self.lastAction = event.clickCount == 2 ? @"Double click" : @"Left click / hold"; [self refresh]; }
-- (void)rightMouseDown:(NSEvent *)event { (void)event; self.lastAction = @"Right click / hold"; [self refresh]; }
+- (void)recordPress:(NSString *)kind event:(NSEvent *)event {
+    [self framePend:kind];
+    [self.clickModifiers addObject:AKFixtureModifiers(event.modifierFlags)];
+}
+- (void)mouseDown:(NSEvent *)event { [self recordMouse:@"LeftDown" event:event]; [self recordPress:@"LeftDown" event:event]; self.lastAction = event.clickCount == 2 ? @"Double click" : @"Left click / hold"; [self refresh]; }
+- (void)rightMouseDown:(NSEvent *)event { [self recordMouse:@"RightDown" event:event]; [self recordPress:@"RightDown" event:event]; self.lastAction = @"Right click / hold"; [self refresh]; }
 - (void)otherMouseDown:(NSEvent *)event { (void)event; self.lastAction = @"Middle click"; [self refresh]; }
-- (void)mouseDragged:(NSEvent *)event { (void)event; self.lastAction = @"Left drag"; [self refresh]; }
-- (void)rightMouseDragged:(NSEvent *)event { (void)event; self.lastAction = @"Right drag"; [self refresh]; }
+- (void)mouseDragged:(NSEvent *)event { [self recordMouse:@"LeftDrag" event:event]; self.lastAction = @"Left drag"; [self refresh]; }
+- (void)rightMouseDragged:(NSEvent *)event { [self recordMouse:@"RightDrag" event:event]; self.lastAction = @"Right drag"; [self refresh]; }
 - (void)scrollWheel:(NSEvent *)event {
     self.lastAction = [NSString stringWithFormat:@"Scroll %.0f, %.0f", event.deltaX, event.deltaY];
     [self refresh];
 }
 @end
 
+// One frame of the game: everything queued, drained until the queue is empty, then acted on (endFrame).
+static void AKFixtureFrame(void) {
+    NSEvent *event;
+    while ((event = [NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES])) [NSApp sendEvent:event];
+    id guest = NSApp.keyWindow.contentView;
+    if ([guest respondsToSelector:@selector(endFrame)]) [guest endFrame];
+}
+// Whether the host still holds a TouchPlay chord's modifiers for the game's frames (patch 0082); NO for a host that
+// has no such thing.
+static BOOL AKFixtureChordHeld(void) {
+    UIView *host = [NSApp.keyWindow valueForKey:@"_host"];
+    if (!host || !class_getInstanceVariable(host.class, "_chordCount")) return NO;
+    return [[host valueForKey:@"_chordCount"] unsignedLongValue] != 0;
+}
 static void AKDrainFixtureEvents(void) {
     // Let UIKit finish its asynchronous text transaction before observing the
     // translated events. The fixture is entered from a timer, like the guest.
     CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.02, false);
-    NSEvent *event;
-    while ((event = [NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES])) [NSApp sendEvent:event];
+    AKFixtureFrame();
+    // A TouchPlay chord keeps its modifiers down for the game's next frames: let those frames go by, as the game's
+    // own loop would, so a check sees the chord whole (and what waited for it).
+    for (unsigned frames = 0; AKFixtureChordHeld() && frames < 400; frames++) {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.005, false);
+        AKFixtureFrame();
+    }
+    assert(!AKFixtureChordHeld());
+}
+
+// Folds or opens the toolbar the way its own handle does, for a fixture that checks both states.
+static void AKFixtureSetToolbarCollapsed(AKTouchControls *controls, BOOL collapsed) {
+    SEL selector = NSSelectorFromString(@"setToolbarCollapsed:");
+    NSMethodSignature *signature = [controls methodSignatureForSelector:selector];
+    NSInvocation *call = [NSInvocation invocationWithMethodSignature:signature];
+    call.target = controls; call.selector = selector;
+    [call setArgument:&collapsed atIndex:2];
+    [call invoke];
 }
 
 static UIView *AKFindInputView(UIView *root, NSString *identifier) {
@@ -147,17 +246,11 @@ static UIView *AKFindInputView(UIView *root, NSString *identifier) {
     }
     return nil;
 }
-
-// One key of the accessory row, by the number it carries rather than by where it sits. The
-// saved-password key is first on the row and hidden most of the time, so an index into
-// arrangedSubviews would name a different key the moment it exists.
-static UIButton *AKAccessoryKey(UIStackView *row, NSUInteger number) {
-    NSString *identifier = [NSString stringWithFormat:@"wolkaraforever.keyboard.key.%lu",
-                            (unsigned long)number];
-    for (UIView *view in row.arrangedSubviews)
-        if ([view isKindOfClass:UIButton.class] && [view.accessibilityIdentifier isEqual:identifier])
-            return (UIButton *)view;
-    return nil;
+// The walk stick's auto-run lock: the plate's centre in the host's coordinates, above the ring as drawn now.
+static CGPoint AKFixtureWalkLock(UIView *host) {
+    UIView *plate = AKFindInputView(host, @"wolkaraforever.touch.walkStick.lockPlate");
+    assert(plate);
+    return [plate.superview convertPoint:plate.center toView:host];
 }
 
 #pragma mark - Faking a key press at the adapter's door
@@ -203,11 +296,2707 @@ static NSEvent *AKFixturePressKey(UIView *host, AKInputFixtureView *guest, unsig
     return guest.lastKeyEvent;
 }
 
+#pragma mark - Fingers at the host's door (TouchPlay's buttons, the input path)
+
+// UITouch cannot be placed, so, as with the keys above, the two accessors the host reads are
+// overridden: where the finger is, and that it is a finger.
+@interface AKFixtureTouch : UITouch
+@property CGPoint fixturePoint;
+// What the host's "is any finger of this gesture still down" check reads from the event's touches.
+@property (weak) UIView *fixtureView;
+@property UITouchPhase fixturePhase;
+@end
+@implementation AKFixtureTouch
+- (CGPoint)locationInView:(UIView *)view { (void)view; return self.fixturePoint; }
+- (UITouchType)type { return UITouchTypeDirect; }
+- (UIView *)view { return self.fixtureView; }
+- (UITouchPhase)phase { return self.fixturePhase; }
+@end
+// An event whose touches are the fixture's fingers.
+@interface AKFixtureEvent : UIEvent
+@property NSSet<UITouch *> *fixtureTouches;
+@end
+@implementation AKFixtureEvent
+- (NSSet<UITouch *> *)allTouches { return self.fixtureTouches; }
+@end
+static AKFixtureTouch *AKFixtureFinger(CGPoint point) { AKFixtureTouch *t = [AKFixtureTouch new]; t.fixturePoint = point; return t; }
+static CGPoint AKFixtureCentre(AKTouchContract *contract, NSString *name, CGSize size) {
+    CGRect rect = AKTouchAreaRect([contract areaNamed:name], size);
+    return CGPointMake(CGRectGetMidX(rect), CGRectGetMidY(rect));
+}
+// One TouchPlay key as the game sees it: control, option and shift pressed before the key, and released, in
+// reverse, a few frames after it (patch 0082: the game reads them in its frame).
+static NSArray<NSString *> *AKFixtureChordKey(unsigned code, BOOL down) {
+    NSString *key = [NSString stringWithFormat:@"%@ %u COS", down ? @"down" : @"up", code];
+    return @[@"flags 59 C", @"flags 58 CO", @"flags 56 COS", key, @"flags 56 CO", @"flags 58 C", @"flags 59 -"];
+}
+// Taps in one frame or a few: their downs and ups share one press of the modifiers.
+static NSArray<NSString *> *AKFixtureChordTaps(NSArray<NSNumber *> *codes) {
+    NSMutableArray<NSString *> *events = [@[@"flags 59 C", @"flags 58 CO", @"flags 56 COS"] mutableCopy];
+    for (NSNumber *code in codes) {
+        [events addObject:[NSString stringWithFormat:@"down %u COS", code.unsignedIntValue]];
+        [events addObject:[NSString stringWithFormat:@"up %u COS", code.unsignedIntValue]];
+    }
+    [events addObjectsFromArray:@[@"flags 56 CO", @"flags 58 C", @"flags 59 -"]];
+    return events;
+}
+// A tap: its down and up share one press of the modifiers.
+static NSArray<NSString *> *AKFixtureChordTap(unsigned code) { return AKFixtureChordTaps(@[@(code)]); }
+
+// iPad touch: the host offers every finger to TouchPlay's areas first. A finger on a button is the
+// button's (lit, its key at the lift) and never reaches the 1.0.8 gestures; a finger in the world is a
+// click as before; two at once each do their own thing. The contract is the iPad's own file.
+static void AKFixtureCheckTouchAreas(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    if (!touchPlay) { assert(areas == nil); return; }
+    assert(areas != nil);
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1" ofType:@"lua"];
+    AKTouchContract *contract = AKTouchContractParse([NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL]);
+    assert(contract.areas.count == 26);
+    areas.contract = contract;
+    CGSize size = host.bounds.size;
+    AKDrainFixtureEvents();
+    guest.keyEvents = [NSMutableArray array];
+
+    // A tap on spell2: lit at once, nothing sent until the lift, then F3 with the chord, down and up.
+    AKFixtureTouch *spell = AKFixtureFinger(AKFixtureCentre(contract, @"spell2", size));
+    guest.lastAction = @"Ready";
+    [host touchesBegan:[NSSet setWithObject:spell] withEvent:nil];
+    assert([areas pressViewForTouch:spell].superview == host);
+    assert([host valueForKey:@"_directTouch"] == nil);
+    AKDrainFixtureEvents();
+    assert(guest.keyEvents.count == 0);
+    [host touchesEnded:[NSSet setWithObject:spell] withEvent:nil];
+    AKDrainFixtureEvents();
+    if (![guest.keyEvents isEqualToArray:AKFixtureChordTap(99)])
+        fprintf(stderr, "TOUCH_AREAS_HOST_MISMATCH: %s\n", [guest.keyEvents componentsJoinedByString:@", "].UTF8String);
+    assert([guest.keyEvents isEqualToArray:AKFixtureChordTap(99)]);
+    assert(![guest.lastAction containsString:@"click"]);
+    assert([[host valueForKey:@"_mods"] unsignedLongValue] == 0);
+    assert(areas.activeFingerCount == 0);
+
+    // Jump: R down when the finger lands, up when it lifts.
+    [guest.keyEvents removeAllObjects];
+    AKFixtureTouch *jump = AKFixtureFinger(AKFixtureCentre(contract, @"jump", size));
+    [host touchesBegan:[NSSet setWithObject:jump] withEvent:nil];
+    AKDrainFixtureEvents();
+    assert([guest.keyEvents isEqualToArray:AKFixtureChordKey(15, YES)]);
+    [host touchesCancelled:[NSSet setWithObject:jump] withEvent:nil];
+    AKDrainFixtureEvents();
+    assert([guest.keyEvents isEqualToArray:[AKFixtureChordKey(15, YES) arrayByAddingObjectsFromArray:AKFixtureChordKey(15, NO)]]);
+
+    // The pinch never takes a finger that is on a button; a finger in the world it may.
+    UIPinchGestureRecognizer *pinch = [host valueForKey:@"_pinch"];
+    CGPoint worldPoint = CGPointMake(size.width / 2, size.height / 2);
+    assert(![areas claimsPoint:worldPoint]);
+    assert(pinch.delegate == (id)host);
+    assert(![pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:AKFixtureFinger(AKFixtureCentre(contract, @"spell1", size))]);
+    assert([pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:AKFixtureFinger(worldPoint)]);
+
+    // A button and the world at once: the button's key, and the world's click - not a pinch.
+    [guest.keyEvents removeAllObjects];
+    guest.lastAction = @"Ready";
+    AKFixtureTouch *button = AKFixtureFinger(AKFixtureCentre(contract, @"spell1", size));
+    AKFixtureTouch *world = AKFixtureFinger(worldPoint);
+    NSSet *both = [NSSet setWithObjects:button, world, nil];
+    [host touchesBegan:both withEvent:nil];
+    assert([host valueForKey:@"_directTouch"] == world && ![[host valueForKey:@"_directMulti"] boolValue]);
+    [host touchesEnded:both withEvent:nil];
+    AKDrainFixtureEvents();
+    assert([guest.keyEvents isEqualToArray:AKFixtureChordTap(120)]);
+    assert([guest.lastAction containsString:@"click"]);
+    assert([host valueForKey:@"_directTouch"] == nil && ![[host valueForKey:@"_directMulti"] boolValue]);
+
+    // A Jump finger held while two world fingers come down together (the pinch's gesture) and lift:
+    // the world gesture is over when they are up - the held button finger does not keep it open - and
+    // R stays down until the Jump finger lifts.
+    [guest.keyEvents removeAllObjects];
+    CGPoint jumpPoint = AKFixtureCentre(contract, @"jump", size);
+    AKFixtureTouch *held = AKFixtureFinger(jumpPoint);
+    AKFixtureTouch *w1 = AKFixtureFinger(worldPoint), *w2 = AKFixtureFinger(CGPointMake(worldPoint.x + 80, worldPoint.y));
+    for (AKFixtureTouch *finger in @[held, w1, w2]) { finger.fixtureView = host; finger.fixturePhase = UITouchPhaseBegan; }
+    AKFixtureEvent *event = [AKFixtureEvent new];
+    event.fixtureTouches = [NSSet setWithObjects:held, w1, w2, nil];
+    [host touchesBegan:[NSSet setWithObject:held] withEvent:event];
+    [host touchesBegan:[NSSet setWithObjects:w1, w2, nil] withEvent:event];
+    assert([[host valueForKey:@"_directMulti"] boolValue]);
+    held.fixturePhase = UITouchPhaseStationary; w1.fixturePhase = w2.fixturePhase = UITouchPhaseEnded;
+    [host touchesEnded:[NSSet setWithObjects:w1, w2, nil] withEvent:event];
+    assert(![[host valueForKey:@"_directMulti"] boolValue] && [host valueForKey:@"_directTouch"] == nil);
+    AKDrainFixtureEvents();
+    assert([guest.keyEvents isEqualToArray:AKFixtureChordKey(15, YES)]);
+    held.fixturePhase = UITouchPhaseEnded;
+    [host touchesEnded:[NSSet setWithObject:held] withEvent:event];
+    AKDrainFixtureEvents();
+    assert([guest.keyEvents isEqualToArray:[AKFixtureChordKey(15, YES) arrayByAddingObjectsFromArray:AKFixtureChordKey(15, NO)]]);
+
+    // A reload while Jump is held lets go of R; that finger's later moves and lift are still the
+    // button's, never a left drag with no button pressed.
+    [guest.keyEvents removeAllObjects];
+    AKFixtureTouch *reloaded = AKFixtureFinger(jumpPoint);
+    [host touchesBegan:[NSSet setWithObject:reloaded] withEvent:nil];
+    areas.contract = AKTouchContractParse([NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL]);
+    AKDrainFixtureEvents();
+    assert([guest.keyEvents isEqualToArray:AKFixtureChordTap(15)]);
+    guest.lastAction = @"Ready";   // R's key down said "Keyboard input received"
+    // The host's pointer stays where it was: no drag (the guest view would not even see a drag with no
+    // button down, so the host's own pointer is what tells).
+    CGPoint pointerBefore = [[host valueForKey:@"_last"] CGPointValue];
+    reloaded.fixturePoint = CGPointMake(worldPoint.x + 37, worldPoint.y + 23);
+    [host touchesMoved:[NSSet setWithObject:reloaded] withEvent:nil];
+    assert(CGPointEqualToPoint([[host valueForKey:@"_last"] CGPointValue], pointerBefore));
+    [host touchesEnded:[NSSet setWithObject:reloaded] withEvent:nil];
+    AKDrainFixtureEvents();
+    assert(CGPointEqualToPoint([[host valueForKey:@"_last"] CGPointValue], pointerBefore));
+    assert([guest.lastAction isEqual:@"Ready"]);
+    assert([guest.keyEvents isEqualToArray:AKFixtureChordTap(15)]);   // only R's press and release, from the reload
+
+    // The game view changes size (rotation, Stage Manager) while Jump is held: R is let go.
+    [guest.keyEvents removeAllObjects];
+    AKFixtureTouch *resized = AKFixtureFinger(AKFixtureCentre(areas.contract, @"jump", size));
+    [host touchesBegan:[NSSet setWithObject:resized] withEvent:nil];
+    CGRect frame = host.frame;
+    host.frame = CGRectMake(frame.origin.x, frame.origin.y, frame.size.width - 120, frame.size.height);
+    [host layoutIfNeeded];
+    AKDrainFixtureEvents();
+    assert([guest.keyEvents isEqualToArray:AKFixtureChordTap(15)]);
+    assert(areas.activeFingerCount == 0);
+    [host touchesEnded:[NSSet setWithObject:resized] withEvent:nil];
+    host.frame = frame;
+    [host layoutIfNeeded];
+    AKDrainFixtureEvents();
+    assert([guest.keyEvents isEqualToArray:AKFixtureChordTap(15)]);   // the lift added nothing
+
+    // Without a contract the same finger is a plain click again (1.0.8 touch).
+    areas.contract = nil;
+    [guest.keyEvents removeAllObjects];
+    guest.lastAction = @"Ready";
+    AKFixtureTouch *plain = AKFixtureFinger(AKFixtureCentre(contract, @"spell2", size));
+    [host touchesBegan:[NSSet setWithObject:plain] withEvent:nil];
+    [host touchesEnded:[NSSet setWithObject:plain] withEvent:nil];
+    AKDrainFixtureEvents();
+    assert(guest.keyEvents.count == 0 && [guest.lastAction containsString:@"click"]);
+    guest.keyEvents = nil;
+}
+
+// iPad touch: the walk stick (the input path) is the controls' own view over the game, below the toolbar. A
+// thumb in the walk area is its, never the host's; its movement keys go through the host's key path
+// (bare W/S/A/D, no modifiers); a walking thumb and a later finger are never a pinch, two fingers at once are (patch 0084). Every other mode has none.
+static void AKFixtureCheckWalkStick(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    UIView *overlay = AKFindInputView(host, @"wolkaraforever.touch.walkArea");
+    if (!touchPlay) { assert([controls valueForKey:@"_walkStick"] == nil && overlay == nil); return; }
+    assert([controls valueForKey:@"_walkStick"] != nil && overlay.superview == host);
+    assert([host.subviews indexOfObject:overlay] < [host.subviews indexOfObject:controls]);
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    // The add-on's current keys (none on W, A, S or D) and the older file's (TouchPlay-v1.lua).
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1-a22" ofType:@"lua"];
+    NSString *olderPath = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1" ofType:@"lua"];
+    AKTouchContract *current = AKTouchContractParse([NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL]);
+    AKTouchContract *older = AKTouchContractParse([NSString stringWithContentsOfFile:olderPath encoding:NSUTF8StringEncoding error:NULL]);
+    assert(current.areas.count == 26 && older.areas.count == 26);
+    areas.contract = current;
+    [host layoutIfNeeded];
+    CGSize size = host.bounds.size;
+    CGPoint p = CGPointMake(size.width * 0.25, size.height * 0.62);
+    assert([host hitTest:p withEvent:nil] == overlay);
+    // The toolbar, which reaches into the walk half, stays above the stick.
+    CGRect bar = controls.frame;
+    CGPoint barPoint = CGPointMake(CGRectGetMinX(bar) + 10, CGRectGetMidY(bar));
+    assert(barPoint.x < size.width / 2);
+    assert([[host hitTest:barPoint withEvent:nil] isDescendantOfView:controls]);
+    // A walk through the host's key path: W down with no modifiers, W up at the lift.
+    AKDrainFixtureEvents();
+    guest.keyEvents = [NSMutableArray array];
+    // The stick's clock, so a second finger can come "later" (patch 0084: soon after the thumb is a pinch).
+    __block NSTimeInterval stickSkew = 0;
+    [overlay setValue:^NSTimeInterval { return NSProcessInfo.processInfo.systemUptime + stickSkew; } forKey:@"clock"];
+    AKFixtureTouch *thumb = AKFixtureFinger(p);
+    thumb.fixtureView = overlay;
+    [overlay touchesBegan:[NSSet setWithObject:thumb] withEvent:nil];
+    thumb.fixturePoint = CGPointMake(p.x, p.y - 50);
+    [overlay touchesMoved:[NSSet setWithObject:thumb] withEvent:nil];
+    AKDrainFixtureEvents();
+    if (![guest.keyEvents isEqualToArray:@[@"down 13 -"]])
+        fprintf(stderr, "TOUCH_WALK_HOST_MISMATCH: %s\n", [guest.keyEvents componentsJoinedByString:@", "].UTF8String);
+    assert([guest.keyEvents isEqualToArray:@[@"down 13 -"]]);
+    // The pinch and the stick (patch 0084): the stick's thumb may be one of a pinch's fingers, but a walking thumb and a
+    // finger that comes later are a walk and a look - the pinch never begins, W stays down.
+    UIPinchGestureRecognizer *pinch = [host valueForKey:@"_pinch"];
+    assert([pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:thumb]);
+    stickSkew = 0.5;
+    AKFixtureTouch *world = AKFixtureFinger(CGPointMake(size.width * 0.55, size.height * 0.5));
+    world.fixtureView = host;
+    assert([pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:world]);
+    assert(![pinch.delegate gestureRecognizerShouldBegin:pinch]);
+    AKDrainFixtureEvents();
+    assert([guest.keyEvents isEqualToArray:@[@"down 13 -"]]);
+    // Walking, a tap on spell1 (the host's own finger path): its chord tap goes out between, W stays down
+    // through it, and W comes up last, at the stick's lift.
+    CGPoint spellPoint = AKFixtureCentre(current, @"spell1", size);
+    AKFixtureTouch *spell = AKFixtureFinger(spellPoint);
+    spell.fixtureView = host;
+    [host touchesBegan:[NSSet setWithObject:spell] withEvent:nil];
+    [host touchesEnded:[NSSet setWithObject:spell] withEvent:nil];
+    [overlay touchesEnded:[NSSet setWithObject:thumb] withEvent:nil];
+    AKDrainFixtureEvents();
+    NSMutableArray *expected = [NSMutableArray arrayWithObject:@"down 13 -"];
+    [expected addObjectsFromArray:AKFixtureChordTap(120)];
+    [expected addObject:@"up 13 -"];
+    if (![guest.keyEvents isEqualToArray:expected])
+        fprintf(stderr, "TOUCH_WALK_HOST_MISMATCH (W + spell1): %s\n", [guest.keyEvents componentsJoinedByString:@", "].UTF8String);
+    assert([guest.keyEvents isEqualToArray:expected]);
+    assert([[host valueForKey:@"_mods"] unsignedLongValue] == 0 && [host valueForKey:@"_directTouch"] == nil);
+    // Two fingers at once, one on the stick and one on the game (a player, a device check: a pinch grabbed the stick): a pinch.
+    // The pinch begins, the stick lets go and sends nothing - not even after, while its finger moves and lifts.
+    [guest.keyEvents removeAllObjects];
+    AKFixtureTouch *pinchThumb = AKFixtureFinger(p);
+    pinchThumb.fixtureView = overlay;
+    assert([pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:pinchThumb]);
+    [overlay touchesBegan:[NSSet setWithObject:pinchThumb] withEvent:nil];
+    AKFixtureTouch *pinchOther = AKFixtureFinger(CGPointMake(size.width * 0.5, size.height * 0.5));
+    pinchOther.fixtureView = host;
+    assert([pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:pinchOther]);
+    assert([pinch.delegate gestureRecognizerShouldBegin:pinch]);
+    pinchThumb.fixturePoint = CGPointMake(p.x - 60, p.y + 60);
+    [overlay touchesMoved:[NSSet setWithObject:pinchThumb] withEvent:nil];
+    [overlay touchesEnded:[NSSet setWithObject:pinchThumb] withEvent:nil];
+    AKDrainFixtureEvents();
+    if (guest.keyEvents.count) fprintf(stderr, "TOUCH_WALK_PINCH_MISMATCH: %s\n", [guest.keyEvents componentsJoinedByString:@", "].UTF8String);
+    assert(guest.keyEvents.count == 0);
+    // The older add-on's file holds spell1 on CTRL-ALT-SHIFT-D, the stick's D: walking right,
+    // a held spell1 sends no chord on D (no hold key now: F2 at the lift) and D stays down until the stick lets go
+    // (a chord on D's code is no key, so nothing ever releases it, and nothing has to press it again).
+    areas.contract = older;
+    __block NSTimeInterval now = 100;
+    areas.clock = ^NSTimeInterval { return now; };
+    [guest.keyEvents removeAllObjects];
+    AKFixtureTouch *right = AKFixtureFinger(p);
+    right.fixtureView = overlay;
+    [overlay touchesBegan:[NSSet setWithObject:right] withEvent:nil];
+    right.fixturePoint = CGPointMake(p.x + 50, p.y);
+    [overlay touchesMoved:[NSSet setWithObject:right] withEvent:nil];
+    AKFixtureTouch *held = AKFixtureFinger(spellPoint);
+    held.fixtureView = host;
+    [host touchesBegan:[NSSet setWithObject:held] withEvent:nil];
+    now += 1.0; [areas tick];
+    [host touchesEnded:[NSSet setWithObject:held] withEvent:nil];
+    [overlay touchesEnded:[NSSet setWithObject:right] withEvent:nil];
+    AKDrainFixtureEvents();
+    expected = [NSMutableArray arrayWithObject:@"down 2 -"];
+    [expected addObjectsFromArray:AKFixtureChordTap(120)];
+    [expected addObject:@"up 2 -"];
+    if (![guest.keyEvents isEqualToArray:expected])
+        fprintf(stderr, "TOUCH_WALK_HOST_MISMATCH (D + older spell1): %s\n", [guest.keyEvents componentsJoinedByString:@", "].UTF8String);
+    assert([guest.keyEvents isEqualToArray:expected]);
+    assert([[host valueForKey:@"_mods"] unsignedLongValue] == 0);
+    areas.clock = nil;
+    areas.contract = current;
+    // No contract: no stick, the thumb is the host's (1.0.8's plain taps).
+    areas.contract = nil;
+    assert([host hitTest:p withEvent:nil] == host);
+    guest.keyEvents = nil;
+}
+
+#pragma mark - The world by touch (the input path, rules 2 and 10)
+
+// "LeftDown 500,400" as the guest records it: the host's point at the window's bottom-left origin.
+static NSString *AKFixtureMouse(NSString *kind, CGPoint p, UIView *host) {
+    return [NSString stringWithFormat:@"%@ %.0f,%.0f", kind, p.x, host.bounds.size.height - p.y];
+}
+// The guest's mouse events without the pointer moves: the clicks and drags.
+static NSString *AKFixtureClicks(AKInputFixtureView *guest) {
+    NSMutableArray *clicks = [NSMutableArray array];
+    for (NSString *event in guest.mouseEvents) if (![event hasPrefix:@"Moved"]) [clicks addObject:event];
+    return [clicks componentsJoinedByString:@" | "];
+}
+static NSString *AKFixtureJoin(NSArray<NSString *> *events) { return [events componentsJoinedByString:@" | "]; }
+static void AKFixtureExpect(NSString *what, NSString *got, NSString *expected) {
+    if ([got isEqualToString:expected]) return;
+    fprintf(stderr, "TOUCH_WORLD_MISMATCH %s:\n  got      %s\n  expected %s\n", what.UTF8String, got.UTF8String, expected.UTF8String);
+    assert(0);
+}
+// One finger, down and up at once (a tap), or down, moved through `path`, and up at its last point.
+static void AKFixtureGesture(UIView *host, CGPoint start, NSArray<NSValue *> *path) {
+    AKFixtureTouch *finger = AKFixtureFinger(start);
+    [host touchesBegan:[NSSet setWithObject:finger] withEvent:nil];
+    for (NSValue *point in path) {
+        finger.fixturePoint = point.CGPointValue;
+        [host touchesMoved:[NSSet setWithObject:finger] withEvent:nil];
+    }
+    [host touchesEnded:[NSSet setWithObject:finger] withEvent:nil];
+    AKDrainFixtureEvents();
+}
+static void AKFixtureTap(UIView *host, CGPoint p) { AKFixtureGesture(host, p, @[]); }
+static void AKFixtureResetInput(AKInputFixtureView *guest) {
+    AKDrainFixtureEvents();
+    guest.keyEvents = [NSMutableArray array];
+    guest.receivedKeys = [NSMutableArray array];
+    guest.mouseEvents = [NSMutableArray array];
+}
+
+#pragma mark - A chord in the game's frame (an iPad test, 16 Nov)
+
+// On the iPad every TouchPlay chord reached the game without its modifiers: spell holds opened the game's own H/J/K/M
+// panels, Jump (V) toggled the nameplates, the F2..F8 taps did nothing. The game follows the modifiers as their
+// flags-changed events come but acts on a key in its frame, after it has drained the queue - when the host had already
+// let them go in the same batch. This fixture's guest acts the same way (frameActions). The chord's modifiers stay
+// down for that frame and come up a few frames later; whatever else comes meanwhile - a world click, a walk key -
+// waits for them, so it never carries the chord.
+static void AKFixtureCheckChordFrames(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    if (!touchPlay) return;
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    UIView *overlay = AKFindInputView(host, @"wolkaraforever.touch.walkArea");
+    // The current add-on's file: its keys in the game's own order (ALT-CTRL-SHIFT-),.
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1-altorder" ofType:@"lua"];
+    AKTouchContract *contract = AKTouchContractParse([NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL]);
+    AKFixtureExpect(@"chord_frames: the current add-on's world key, in the game's order", contract.worldKey ?: @"(no contract)", @"ALT-CTRL-SHIFT-F1");
+    AKTouchContract *contractBefore = areas.contract;
+    BOOL liveBefore = areas.live;
+    areas.contract = contract;
+    areas.live = YES;
+    [host layoutIfNeeded];
+    CGSize size = host.bounds.size;
+    AKDrainFixtureEvents();
+    guest.keyEvents = [NSMutableArray array];
+    guest.mouseEvents = [NSMutableArray array];
+    guest.frameActions = [NSMutableArray array];
+    guest.clickModifiers = [NSMutableArray array];
+
+    // chord_in_its_frame: a tap on spell2 (F3). The frame that takes it acts on it with control, option and shift down.
+    AKFixtureTouch *spell = AKFixtureFinger(AKFixtureCentre(contract, @"spell2", size));
+    [host touchesBegan:[NSSet setWithObject:spell] withEvent:nil];
+    [host touchesEnded:[NSSet setWithObject:spell] withEvent:nil];
+    AKFixtureFrame();
+    AKFixtureExpect(@"chord_in_its_frame: the frame acts on F3 with its chord", AKFixtureJoin(guest.frameActions), @"down 99 COS | up 99 COS");
+    // ...and they are still down two frames later, a moment after (a frame or more after the key's, however often the
+    // guest polls in one)...
+    AKFixtureFrame(); AKFixtureFrame();
+    AKFixtureExpect(@"chord_in_its_frame: still down two frames on", AKFixtureJoin(guest.keyEvents),
+                    @"flags 59 C | flags 58 CO | flags 56 COS | down 99 COS | up 99 COS");
+    // ...and come up, in reverse, once those frames and 50 ms have gone by; nothing more is acted on.
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.06, false);
+    AKFixtureFrame();
+    AKFixtureExpect(@"chord_in_its_frame: up after its frames", AKFixtureJoin(guest.keyEvents),
+                    @"flags 59 C | flags 58 CO | flags 56 COS | down 99 COS | up 99 COS | flags 56 CO | flags 58 C | flags 59 -");
+    AKFixtureExpect(@"chord_in_its_frame: nothing else acted on", AKFixtureJoin(guest.frameActions), @"down 99 COS | up 99 COS");
+    assert([[host valueForKey:@"_mods"] unsignedLongValue] == 0);
+
+    // jump_then_world_tap: Jump (V) held, and a world tap in the same frame. The game acts on V with the chord; the
+    // world tap's click waits for the chord to come up and is a plain click, in a later frame. A tap while Jump is
+    // still held, after that, is plain as well, and V stays down until its finger lifts.
+    [guest.keyEvents removeAllObjects]; [guest.mouseEvents removeAllObjects]; [guest.frameActions removeAllObjects];
+    AKFixtureTouch *jump = AKFixtureFinger(AKFixtureCentre(contract, @"jump", size));
+    CGPoint world = CGPointMake(size.width * 0.5, size.height * 0.35), later = CGPointMake(size.width * 0.62, size.height * 0.2);
+    assert(![areas claimsPoint:world] && ![areas claimsPoint:later]);
+    [host touchesBegan:[NSSet setWithObject:jump] withEvent:nil];
+    AKFixtureTouch *tap = AKFixtureFinger(world);
+    [host touchesBegan:[NSSet setWithObject:tap] withEvent:nil];
+    [host touchesEnded:[NSSet setWithObject:tap] withEvent:nil];
+    AKFixtureFrame();
+    AKFixtureExpect(@"jump_then_world_tap: the frame acts on V with its chord, no click yet", AKFixtureJoin(guest.frameActions), @"down 9 COS");
+    AKDrainFixtureEvents();
+    AKFixtureExpect(@"jump_then_world_tap: the click is plain, after the chord", AKFixtureJoin(guest.frameActions), @"down 9 COS | LeftDown -");
+    AKFixtureExpect(@"jump_then_world_tap: the click carries no modifier", AKFixtureJoin(guest.clickModifiers), @"-");
+    AKFixtureExpect(@"jump_then_world_tap: the click is where the finger was", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", world, host), AKFixtureMouse(@"LeftUp", world, host)]));
+    AKFixtureExpect(@"jump_then_world_tap: V held, the chord up", AKFixtureJoin(guest.keyEvents),
+                    @"flags 59 C | flags 58 CO | flags 56 COS | down 9 COS | flags 56 CO | flags 58 C | flags 59 -");
+    AKFixtureTap(host, later);
+    AKFixtureExpect(@"jump_then_world_tap: a tap later in the hold is plain", AKFixtureJoin(guest.frameActions), @"down 9 COS | LeftDown - | LeftDown -");
+    AKFixtureExpect(@"jump_then_world_tap: its click carries no modifier", AKFixtureJoin(guest.clickModifiers), @"- | -");
+    [host touchesEnded:[NSSet setWithObject:jump] withEvent:nil];
+    AKFixtureFrame();
+    AKFixtureExpect(@"jump_then_world_tap: V comes up with its chord", AKFixtureJoin(guest.frameActions), @"down 9 COS | LeftDown - | LeftDown - | up 9 COS");
+    AKDrainFixtureEvents();
+    assert([[host valueForKey:@"_mods"] unsignedLongValue] == 0 && areas.activeFingerCount == 0);
+
+    // walk_in_the_chord_window: a spell tap, and the thumb starts walking in the same frame. W waits for the chord and
+    // is bare; the spell's frame has the chord.
+    [guest.keyEvents removeAllObjects]; [guest.mouseEvents removeAllObjects]; [guest.frameActions removeAllObjects];
+    CGPoint p = CGPointMake(size.width * 0.25, size.height * 0.62);
+    assert([host hitTest:p withEvent:nil] == overlay);
+    AKFixtureTouch *spell1 = AKFixtureFinger(AKFixtureCentre(contract, @"spell1", size));
+    [host touchesBegan:[NSSet setWithObject:spell1] withEvent:nil];
+    [host touchesEnded:[NSSet setWithObject:spell1] withEvent:nil];
+    AKFixtureTouch *thumb = AKFixtureFinger(p);
+    thumb.fixtureView = overlay;
+    [overlay touchesBegan:[NSSet setWithObject:thumb] withEvent:nil];
+    thumb.fixturePoint = CGPointMake(p.x, p.y - 50);
+    [overlay touchesMoved:[NSSet setWithObject:thumb] withEvent:nil];
+    AKFixtureFrame();
+    AKFixtureExpect(@"walk_in_the_chord_window: the frame acts on F2 with its chord, W not yet", AKFixtureJoin(guest.frameActions), @"down 120 COS | up 120 COS");
+    AKDrainFixtureEvents();
+    AKFixtureExpect(@"walk_in_the_chord_window: W bare, after the chord", AKFixtureJoin(guest.frameActions), @"down 120 COS | up 120 COS | down 13 -");
+    AKFixtureExpect(@"walk_in_the_chord_window: the order", AKFixtureJoin(guest.keyEvents),
+                    @"flags 59 C | flags 58 CO | flags 56 COS | down 120 COS | up 120 COS | flags 56 CO | flags 58 C | flags 59 - | down 13 -");
+    [overlay touchesEnded:[NSSet setWithObject:thumb] withEvent:nil];
+    AKDrainFixtureEvents();
+    AKFixtureExpect(@"walk_in_the_chord_window: W up at the lift", AKFixtureJoin(guest.frameActions), @"down 120 COS | up 120 COS | down 13 - | up 13 -");
+    assert([[host valueForKey:@"_mods"] unsignedLongValue] == 0);
+
+    guest.frameActions = nil; guest.clickModifiers = nil; guest.keyEvents = nil; guest.mouseEvents = nil;
+    areas.live = liveBefore;
+    areas.contract = contractBefore;
+    [host layoutIfNeeded];
+    AKDrainFixtureEvents();
+}
+
+// an iPad test (16 Nov): on the character screen a tap clicked at the cursor, not at the finger - the cursor had to be
+// slid onto a button first. The trackpad was on (the device log has no "cursor visibility hidden=1" at the start,
+// which every run with it off prints): the toolbar's switch is one setting for every interface, and one left on in
+// another interface carried into iPad touch, whose plain touches (0055) are a click where the finger is. iPad touch
+// has its own switch now, off until it is turned on in iPad touch; this run started with the shared one on (its
+// argument domain). Turned on here, the next game in iPad touch starts with it on, and the shared one is untouched.
+static void AKFixtureCheckTrackpadSwitch(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    if (!touchPlay) return;
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    assert([[defaults objectForKey:@"TKTouchTrackpadEnabled"] isEqual:@YES]);   // as another interface left it
+    NSDictionary *persistent = [defaults persistentDomainForName:NSBundle.mainBundle.bundleIdentifier];
+    id sharedBefore = persistent[@"TKTouchTrackpadEnabled"];
+    assert(!controls.trackpadEnabled);
+    // A tap clicks where the finger is (the areas not live: the character screen).
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    BOOL liveBefore = areas.live;
+    areas.live = NO;
+    CGPoint finger = CGPointMake(host.bounds.size.width * 0.3, host.bounds.size.height * 0.4);
+    assert(!CGPointEqualToPoint([[host valueForKey:@"_last"] CGPointValue], finger));
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, finger);
+    AKFixtureExpect(@"trackpad_switch: a tap on the character screen clicks at the finger", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", finger, host), AKFixtureMouse(@"LeftUp", finger, host)]));
+    // The toolbar's button turns iPad touch's own switch, and only that one.
+    [controls toggleTrackpad];
+    assert(controls.trackpadEnabled);
+    assert([[defaults objectForKey:@"WolkaraForeverIPadTouchTrackpadEnabled"] isEqual:@YES]);
+    assert((sharedBefore == nil && [defaults persistentDomainForName:NSBundle.mainBundle.bundleIdentifier][@"TKTouchTrackpadEnabled"] == nil) ||
+           [[defaults persistentDomainForName:NSBundle.mainBundle.bundleIdentifier][@"TKTouchTrackpadEnabled"] isEqual:sharedBefore]);
+    @autoreleasepool {
+        AKTouchControls *next = [[AKTouchControls alloc] initWithFrame:CGRectZero];   // the next game in iPad touch
+        assert(next.trackpadEnabled);
+    }
+    [controls toggleTrackpad];
+    assert(!controls.trackpadEnabled && [[defaults objectForKey:@"WolkaraForeverIPadTouchTrackpadEnabled"] isEqual:@NO]);
+    [defaults removeObjectForKey:@"WolkaraForeverIPadTouchTrackpadEnabled"];
+    areas.live = liveBefore;
+    AKDrainFixtureEvents();
+    guest.keyEvents = nil; guest.mouseEvents = nil;
+}
+
+// A finger kept still for `seconds` of real time (the host's own hold timer), then lifted.
+static void AKFixtureHoldStill(UIView *host, AKInputFixtureView *guest, CGPoint p, NSTimeInterval seconds, AKFixtureTouch **out) {
+    AKFixtureTouch *finger = AKFixtureFinger(p);
+    [host touchesBegan:[NSSet setWithObject:finger] withEvent:nil];
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, seconds, false);
+    AKDrainFixtureEvents();
+    *out = finger;
+}
+// The same, without the wall-clock wait: the host's hold timer is looked at (it is set for `seconds`, the hold time that
+// applies) and fired. The real wait stays in the first hold of each kind (AKFixtureHoldStill), so the timer itself is
+// still seen to run; this saves a second or so per repeat out of the self-test's 30 s.
+static void AKFixtureHoldFired(UIView *host, CGPoint p, NSTimeInterval seconds, AKFixtureTouch **out) {
+    AKFixtureTouch *finger = AKFixtureFinger(p);
+    [host touchesBegan:[NSSet setWithObject:finger] withEvent:nil];
+    NSTimer *hold = [host valueForKey:@"_directHold"];
+    assert(hold.isValid && hold.fireDate.timeIntervalSinceNow > seconds - 0.2 && hold.fireDate.timeIntervalSinceNow <= seconds);
+    [hold fire];
+    AKDrainFixtureEvents();
+    *out = finger;
+}
+
+// 1.0.8's direct touch, unchanged: what every mobile mode has, and iPad touch with no button list.
+// A hold is a right click; two taps are two left clicks; a finger at the very edge is a click too.
+static void AKFixtureCheckWorld108(UIView *host, AKInputFixtureView *guest) {
+    AKFixtureResetInput(guest);
+    AKFixtureTouch *held = nil;
+    CGPoint still = CGPointMake(700, 300);
+    AKFixtureHoldStill(host, guest, still, 0.6, &held);
+    AKFixtureExpect(@"no_contract_is_1_0_8: hold", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"RightDown", still, host), AKFixtureMouse(@"RightUp", still, host)]));
+    assert(guest.keyEvents.count == 0);
+    [host touchesEnded:[NSSet setWithObject:held] withEvent:nil];
+    AKFixtureResetInput(guest);
+    CGPoint a = CGPointMake(500, 400), b = CGPointMake(520, 410);
+    AKFixtureTap(host, a);
+    AKFixtureTap(host, b);
+    AKFixtureExpect(@"no_contract_is_1_0_8: two taps", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", a, host), AKFixtureMouse(@"LeftUp", a, host),
+                                    AKFixtureMouse(@"LeftDown", b, host), AKFixtureMouse(@"LeftUp", b, host)]));
+    AKFixtureResetInput(guest);
+    CGPoint edge = CGPointMake(10, 500);
+    AKFixtureTap(host, edge);
+    AKFixtureExpect(@"no_contract_is_1_0_8: edge", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", edge, host), AKFixtureMouse(@"LeftUp", edge, host)]));
+    // A drag before any hold is a left drag (the camera), whatever TouchPlay's turn setting would say.
+    AKFixtureResetInput(guest);
+    CGPoint from = CGPointMake(600, 300), to = CGPointMake(640, 330);
+    AKFixtureGesture(host, from, @[[NSValue valueWithCGPoint:to]]);
+    AKFixtureExpect(@"no_contract_is_1_0_8: drag", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", from, host), AKFixtureMouse(@"LeftDrag", to, host), AKFixtureMouse(@"LeftUp", to, host)]));
+    guest.keyEvents = nil; guest.mouseEvents = nil;
+}
+
+// iPad touch with TouchPlay's button list: a world touch (one no button takes) is a left click on a
+// tap, a right click on a second tap close by, the contract's world key on a hold (TouchPlay's card),
+// a look drag (a right drag when the character turns with the view), and nothing at the very edge.
+// A finger dragged off a spell aims it: the cursor follows, the lift clicks or (on Interact) cancels.
+static void AKFixtureCheckWorldTouch(UIView *host, AKInputFixtureView *guest, BOOL touchPlay, BOOL mobile) {
+    if (!mobile) return;   // Standard has no direct gestures at all
+    if (!touchPlay) { AKFixtureCheckWorld108(host, guest); return; }
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1" ofType:@"lua"];
+    NSString *text = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL];
+    AKTouchContract *contract = AKTouchContractParse(text);
+    assert(contract.turnWithView && [contract.worldKey isEqual:@"CTRL-ALT-SHIFT-F1"]);
+    areas.contract = contract;
+    // The fixture's clock for the second tap's 1.5 s; the hold below runs on the real timer.
+    __block NSTimeInterval now = 1000;
+    areas.clock = ^NSTimeInterval { return now; };
+    CGSize size = host.bounds.size;
+    CGPoint a = CGPointMake(500, 400), b = CGPointMake(520, 410);
+    for (NSValue *point in @[[NSValue valueWithCGPoint:a], [NSValue valueWithCGPoint:b], [NSValue valueWithCGPoint:CGPointMake(700, 300)],
+                             [NSValue valueWithCGPoint:CGPointMake(640, 560)], [NSValue valueWithCGPoint:CGPointMake(600, 300)]])
+        assert(![areas claimsPoint:point.CGPointValue]);   // the world, at this size
+
+    // rule2_tap_twice_right_clicks: a tap, then another within 40 pt and 1.5 s, is a right click there,
+    // and the record is gone: a third tap is a left click again.
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, a);
+    now += 0.4;
+    AKFixtureTap(host, b);
+    AKFixtureExpect(@"rule2_tap_twice_right_clicks", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", a, host), AKFixtureMouse(@"LeftUp", a, host),
+                                    AKFixtureMouse(@"RightDown", b, host), AKFixtureMouse(@"RightUp", b, host)]));
+    assert(guest.keyEvents.count == 0);
+    AKFixtureResetInput(guest);
+    now += 0.2;
+    AKFixtureTap(host, b);
+    AKFixtureExpect(@"rule2: the right click cleared the record", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", b, host), AKFixtureMouse(@"LeftUp", b, host)]));
+
+    // rule2_far_or_slow_second_tap_selects: 100 pt away, or 2.0 s later, is a second left click.
+    now += 10;
+    AKFixtureResetInput(guest);
+    CGPoint far = CGPointMake(600, 400);
+    AKFixtureTap(host, a);
+    now += 0.4;
+    AKFixtureTap(host, far);
+    AKFixtureExpect(@"rule2_far_second_tap_selects", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", a, host), AKFixtureMouse(@"LeftUp", a, host),
+                                    AKFixtureMouse(@"LeftDown", far, host), AKFixtureMouse(@"LeftUp", far, host)]));
+    now += 10;
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, a);
+    now += 2.0;
+    AKFixtureTap(host, b);
+    AKFixtureExpect(@"rule2_slow_second_tap_selects", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", a, host), AKFixtureMouse(@"LeftUp", a, host),
+                                    AKFixtureMouse(@"LeftDown", b, host), AKFixtureMouse(@"LeftUp", b, host)]));
+
+    // A drag in between clears the record: the tap after it selects.
+    now += 10;
+    AKFixtureTap(host, a);
+    now += 0.2;
+    AKFixtureGesture(host, a, @[[NSValue valueWithCGPoint:CGPointMake(560, 440)]]);
+    now += 0.2;
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, b);
+    AKFixtureExpect(@"rule2: a drag clears the record", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", b, host), AKFixtureMouse(@"LeftUp", b, host)]));
+
+    // second_tap_on_area_is_not_world: a world tap just above spell1, then a tap on spell1 within
+    // 40 pt and 1.5 s: spell1's key, and no right click.
+    now += 10;
+    CGRect spell1 = AKTouchAreaRect([contract areaNamed:@"spell1"], size);
+    CGPoint above = CGPointMake(CGRectGetMidX(spell1), CGRectGetMinY(spell1) - 6), on = CGPointMake(CGRectGetMidX(spell1), CGRectGetMinY(spell1) + 6);
+    assert(![areas claimsPoint:above] && [areas claimsPoint:on]);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, above);
+    now += 0.3;
+    AKFixtureTap(host, on);
+    AKFixtureExpect(@"second_tap_on_area_is_not_world: clicks", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", above, host), AKFixtureMouse(@"LeftUp", above, host)]));
+    AKFixtureExpect(@"second_tap_on_area_is_not_world: keys", AKFixtureJoin(guest.keyEvents), AKFixtureJoin(AKFixtureChordTap(120)));
+
+    // rule2_hold_world_sends_world_key: still for the contract's 0.45 s (the real timer): the cursor is
+    // already at the finger, then ctrl+opt+shift F1 down and up; no right click, and the lift adds nothing.
+    now += 10;
+    AKFixtureResetInput(guest);
+    CGPoint still = CGPointMake(700, 300);
+    AKFixtureTouch *held = nil;
+    AKFixtureHoldStill(host, guest, still, 0.6, &held);
+    assert(CGPointEqualToPoint([[host valueForKey:@"_last"] CGPointValue], still));
+    AKFixtureExpect(@"rule2_hold_world_sends_world_key: cursor", AKFixtureJoin(guest.mouseEvents), AKFixtureMouse(@"Moved", still, host));
+    AKFixtureExpect(@"rule2_hold_world_sends_world_key: keys", AKFixtureJoin(guest.keyEvents), AKFixtureJoin(AKFixtureChordTap(122)));
+    [host touchesEnded:[NSSet setWithObject:held] withEvent:nil];
+    AKDrainFixtureEvents();
+    AKFixtureExpect(@"rule2_hold_world_sends_world_key: lift", AKFixtureClicks(guest), @"");
+    AKFixtureExpect(@"rule2_hold_world_sends_world_key: the lift adds no key", AKFixtureJoin(guest.keyEvents), AKFixtureJoin(AKFixtureChordTap(122)));
+    // ...and a hold is not a first tap: a tap right after it selects.
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, still);
+    AKFixtureExpect(@"rule2: a hold leaves no tap record", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", still, host), AKFixtureMouse(@"LeftUp", still, host)]));
+    // The hold time is the contract's: with hold=0.9, nothing at 0.55 s, the key by 1.1 s.
+    areas.contract = AKTouchContractParse([text stringByReplacingOccurrencesOfString:@"hold=0.45" withString:@"hold=0.9"]);
+    now += 10;
+    AKFixtureResetInput(guest);
+    held = AKFixtureFinger(still);
+    [host touchesBegan:[NSSet setWithObject:held] withEvent:nil];
+    AKDrainFixtureEvents();
+    assert(guest.keyEvents.count == 0 && [AKFixtureClicks(guest) isEqualToString:@""]);
+    NSTimer *holdTimer = [host valueForKey:@"_directHold"];
+    assert(holdTimer.isValid && holdTimer.fireDate.timeIntervalSinceNow > 0.7 && holdTimer.fireDate.timeIntervalSinceNow <= 0.9);
+    [holdTimer fire];
+    AKDrainFixtureEvents();
+    AKFixtureExpect(@"hold time from the contract", AKFixtureJoin(guest.keyEvents), AKFixtureJoin(AKFixtureChordTap(122)));
+    [host touchesEnded:[NSSet setWithObject:held] withEvent:nil];
+    areas.contract = contract;
+
+    // drag_after_hold: after the world key, sliding is still a look drag, per the turn setting (turn=1:
+    // a right drag; turn=0: a left drag), from where the finger came down.
+    for (NSString *turn in @[@"turn=1", @"turn=0"]) {
+        areas.contract = AKTouchContractParse([text stringByReplacingOccurrencesOfString:@";turn=1;" withString:[NSString stringWithFormat:@";%@;", turn]]);
+        BOOL right = [turn isEqual:@"turn=1"];
+        now += 10;
+        AKFixtureResetInput(guest);
+        CGPoint slid = CGPointMake(760, 340);
+        AKFixtureHoldFired(host, still, 0.45, &held);
+        held.fixturePoint = slid;
+        [host touchesMoved:[NSSet setWithObject:held] withEvent:nil];
+        [host touchesEnded:[NSSet setWithObject:held] withEvent:nil];
+        AKDrainFixtureEvents();
+        AKFixtureExpect([@"drag_after_hold: keys " stringByAppendingString:turn], AKFixtureJoin(guest.keyEvents), AKFixtureJoin(AKFixtureChordTap(122)));
+        AKFixtureExpect([@"drag_after_hold: drag " stringByAppendingString:turn], AKFixtureClicks(guest),
+                        AKFixtureJoin(@[AKFixtureMouse(right ? @"RightDown" : @"LeftDown", still, host), AKFixtureMouse(right ? @"RightDrag" : @"LeftDrag", slid, host),
+                                        AKFixtureMouse(right ? @"RightUp" : @"LeftUp", slid, host)]));
+    }
+    areas.contract = contract;
+
+    // hold_then_second_tap: a tap, then a hold close by within 1.5 s: the hold is the world key, not a
+    // right click; and it leaves no record, so the next tap close by selects.
+    now += 10;
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, a);
+    now += 0.3;
+    AKFixtureHoldFired(host, b, 0.45, &held);
+    [host touchesEnded:[NSSet setWithObject:held] withEvent:nil];
+    now += 0.2;
+    AKFixtureTap(host, b);
+    AKFixtureExpect(@"hold_then_second_tap: clicks", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", a, host), AKFixtureMouse(@"LeftUp", a, host),
+                                    AKFixtureMouse(@"LeftDown", b, host), AKFixtureMouse(@"LeftUp", b, host)]));
+    AKFixtureExpect(@"hold_then_second_tap: keys", AKFixtureJoin(guest.keyEvents), AKFixtureJoin(AKFixtureChordTap(122)));
+
+    // M4: a world key the reader does not know is no key: the hold is 0055's right click again.
+    areas.contract = AKTouchContractParse([text stringByReplacingOccurrencesOfString:@"world=CTRL-ALT-SHIFT-F1" withString:@"world=CTRL-ALT-SHIFT-F20"]);
+    assert(areas.contract != nil);
+    now += 10;
+    AKFixtureResetInput(guest);
+    AKFixtureHoldFired(host, still, 0.45, &held);
+    [host touchesEnded:[NSSet setWithObject:held] withEvent:nil];
+    AKDrainFixtureEvents();
+    AKFixtureExpect(@"unknown world key: right click", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"RightDown", still, host), AKFixtureMouse(@"RightUp", still, host)]));
+    assert(guest.keyEvents.count == 0);
+    areas.contract = contract;
+
+    // rule10_turn_with_view_right_drag (turn=1): a drag is a right drag, the character turns with the view.
+    now += 10;
+    AKFixtureResetInput(guest);
+    CGPoint from = CGPointMake(600, 300), to = CGPointMake(640, 330);
+    AKFixtureGesture(host, from, @[[NSValue valueWithCGPoint:to]]);
+    AKFixtureExpect(@"rule10_turn_with_view_right_drag", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"RightDown", from, host), AKFixtureMouse(@"RightDrag", to, host), AKFixtureMouse(@"RightUp", to, host)]));
+    // turn_off_left_drag (turn=0): a left drag, the camera only.
+    areas.contract = AKTouchContractParse([text stringByReplacingOccurrencesOfString:@";turn=1;" withString:@";turn=0;"]);
+    assert(!areas.contract.turnWithView);
+    now += 10;
+    AKFixtureResetInput(guest);
+    AKFixtureGesture(host, from, @[[NSValue valueWithCGPoint:to]]);
+    AKFixtureExpect(@"turn_off_left_drag", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", from, host), AKFixtureMouse(@"LeftDrag", to, host), AKFixtureMouse(@"LeftUp", to, host)]));
+    areas.contract = contract;
+
+    // drag_to_world_clicks_there: begun on spell7 and dragged to (640,560): spell7's F8 once, when it
+    // left; the cursor follows the finger; the lift is a left click at (640,560).
+    now += 10;
+    AKFixtureResetInput(guest);
+    CGPoint spell7 = AKFixtureCentre(contract, @"spell7", size), ground = CGPointMake(640, 560);
+    AKFixtureTouch *aiming = AKFixtureFinger(spell7);
+    [host touchesBegan:[NSSet setWithObject:aiming] withEvent:nil];
+    aiming.fixturePoint = CGPointMake(spell7.x - 120, spell7.y - 40);
+    [host touchesMoved:[NSSet setWithObject:aiming] withEvent:nil];
+    AKDrainFixtureEvents();
+    AKFixtureExpect(@"drag_to_world_clicks_there: key on leaving", AKFixtureJoin(guest.keyEvents), AKFixtureJoin(AKFixtureChordTap(100)));
+    AKFixtureExpect(@"drag_to_world_clicks_there: no click yet", AKFixtureClicks(guest), @"");
+    aiming.fixturePoint = ground;
+    [host touchesMoved:[NSSet setWithObject:aiming] withEvent:nil];
+    AKDrainFixtureEvents();
+    assert(CGPointEqualToPoint([[host valueForKey:@"_last"] CGPointValue], ground));
+    AKFixtureExpect(@"drag_to_world_clicks_there: the cursor follows", AKFixtureJoin(guest.mouseEvents),
+                    AKFixtureJoin(@[AKFixtureMouse(@"Moved", CGPointMake(spell7.x - 120, spell7.y - 40), host), AKFixtureMouse(@"Moved", ground, host)]));
+    [host touchesEnded:[NSSet setWithObject:aiming] withEvent:nil];
+    AKDrainFixtureEvents();
+    AKFixtureExpect(@"drag_to_world_clicks_there: click", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", ground, host), AKFixtureMouse(@"LeftUp", ground, host)]));
+    AKFixtureExpect(@"drag_to_world_clicks_there: no other key", AKFixtureJoin(guest.keyEvents), AKFixtureJoin(AKFixtureChordTap(100)));
+    assert([host valueForKey:@"_directTouch"] == nil && areas.activeFingerCount == 0);
+    assert([[host valueForKey:@"_mods"] unsignedLongValue] == 0);
+
+    // drag_to_interact_cancels: lifted inside Interact, the aim is stopped with Interact's hold key
+    // (the add-on's hidden "stop" button), never Escape; no click. The iPad's current file has no hold key
+    // on Interact: then nothing at all. Lifted over any other button: the same stop, no click.
+    NSString *stopText = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"TouchPlay-v1-stopkey" ofType:@"lua"]
+                                                   encoding:NSUTF8StringEncoding error:NULL];
+    AKTouchContract *stopContract = AKTouchContractParse(stopText);
+    assert([[stopContract areaNamed:@"interact"].holdKey isEqual:@"CTRL-ALT-SHIFT-R"]);
+    // The stop key follows the spell's tap key in the same few frames, so the two share one press of the modifiers.
+    NSArray<NSArray *> *cancels = @[@[contract, @"interact", @[]], @[stopContract, @"interact", @[@15]],
+                                    @[stopContract, @"bags", @[@15]], @[stopContract, @"spell3", @[@15]]];
+    for (NSArray *cancel in cancels) {
+        areas.contract = cancel[0];
+        now += 10;
+        AKFixtureResetInput(guest);
+        aiming = AKFixtureFinger(spell7);
+        [host touchesBegan:[NSSet setWithObject:aiming] withEvent:nil];
+        aiming.fixturePoint = ground;
+        [host touchesMoved:[NSSet setWithObject:aiming] withEvent:nil];
+        aiming.fixturePoint = AKFixtureCentre(cancel[0], cancel[1], size);
+        [host touchesMoved:[NSSet setWithObject:aiming] withEvent:nil];
+        [host touchesEnded:[NSSet setWithObject:aiming] withEvent:nil];
+        AKDrainFixtureEvents();
+        NSString *what = [NSString stringWithFormat:@"drag_to_%@_cancels (%@)", cancel[1], cancel[0] == contract ? @"no stop key" : @"stop key"];
+        AKFixtureExpect([what stringByAppendingString:@": keys"], AKFixtureJoin(guest.keyEvents),
+                        AKFixtureJoin(AKFixtureChordTaps([@[@100] arrayByAddingObjectsFromArray:cancel[2]])));
+        AKFixtureExpect([what stringByAppendingString:@": no click"], AKFixtureClicks(guest), @"");
+        assert([[host valueForKey:@"_mods"] unsignedLongValue] == 0);
+    }
+    areas.contract = contract;
+
+    // aim_while_dragging (I1): another finger is dragging the view (turn=0: left button down; turn=1:
+    // right button down) when a spell is aimed. The aim ends that drag first, as a pinch would (its
+    // button comes up, its later moves and lift post nothing), so the click is a plain left click,
+    // never a click with the drag's button still down (left+right is WoW's run).
+    for (NSString *turn in @[@"turn=0", @"turn=1"]) {
+        areas.contract = AKTouchContractParse([text stringByReplacingOccurrencesOfString:@";turn=1;" withString:[NSString stringWithFormat:@";%@;", turn]]);
+        BOOL right = [turn isEqual:@"turn=1"];
+        now += 10;
+        AKFixtureResetInput(guest);
+        CGPoint from = CGPointMake(600, 300), to = CGPointMake(640, 330);
+        AKFixtureTouch *look = AKFixtureFinger(from);
+        [host touchesBegan:[NSSet setWithObject:look] withEvent:nil];
+        look.fixturePoint = to;
+        [host touchesMoved:[NSSet setWithObject:look] withEvent:nil];
+        aiming = AKFixtureFinger(spell7);
+        [host touchesBegan:[NSSet setWithObject:aiming] withEvent:nil];
+        aiming.fixturePoint = ground;
+        [host touchesMoved:[NSSet setWithObject:aiming] withEvent:nil];
+        [host touchesEnded:[NSSet setWithObject:aiming] withEvent:nil];
+        look.fixturePoint = CGPointMake(700, 350);
+        [host touchesMoved:[NSSet setWithObject:look] withEvent:nil];
+        [host touchesEnded:[NSSet setWithObject:look] withEvent:nil];
+        AKDrainFixtureEvents();
+        AKFixtureExpect([@"aim_while_dragging " stringByAppendingString:turn], AKFixtureClicks(guest),
+                        AKFixtureJoin(@[AKFixtureMouse(right ? @"RightDown" : @"LeftDown", from, host), AKFixtureMouse(right ? @"RightDrag" : @"LeftDrag", to, host),
+                                        AKFixtureMouse(right ? @"RightUp" : @"LeftUp", to, host),
+                                        AKFixtureMouse(@"LeftDown", ground, host), AKFixtureMouse(@"LeftUp", ground, host)]));
+        AKFixtureExpect([@"aim_while_dragging keys " stringByAppendingString:turn], AKFixtureJoin(guest.keyEvents), AKFixtureJoin(AKFixtureChordTap(100)));
+        assert(![[host valueForKey:@"_pressedLeft"] boolValue] && ![[host valueForKey:@"_pressedRight"] boolValue]);
+        assert([host valueForKey:@"_directTouch"] == nil && ![[host valueForKey:@"_directMulti"] boolValue]);
+    }
+    areas.contract = contract;
+
+    // M3: a world finger held while another aims and places a spell: the aim moved the shared pointer, so
+    // when the hold fires the cursor goes back under the held finger before the world key.
+    now += 10;
+    AKFixtureResetInput(guest);
+    AKFixtureTouch *waiting = AKFixtureFinger(still);
+    [host touchesBegan:[NSSet setWithObject:waiting] withEvent:nil];
+    aiming = AKFixtureFinger(spell7);
+    [host touchesBegan:[NSSet setWithObject:aiming] withEvent:nil];
+    aiming.fixturePoint = ground;
+    [host touchesMoved:[NSSet setWithObject:aiming] withEvent:nil];
+    [host touchesEnded:[NSSet setWithObject:aiming] withEvent:nil];
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.6, false);
+    AKDrainFixtureEvents();
+    assert(CGPointEqualToPoint([[host valueForKey:@"_last"] CGPointValue], still));
+    AKFixtureExpect(@"hold after an aim: the cursor back first", guest.mouseEvents.lastObject, AKFixtureMouse(@"Moved", still, host));
+    AKFixtureExpect(@"hold after an aim: keys", AKFixtureJoin(guest.keyEvents),
+                    AKFixtureJoin([AKFixtureChordTap(100) arrayByAddingObjectsFromArray:AKFixtureChordTap(122)]));
+    [host touchesEnded:[NSSet setWithObject:waiting] withEvent:nil];
+    AKDrainFixtureEvents();
+
+    // edge_touches_ignored: fingers that land in the 20 pt edge zone (x 10, x W-5, y H-8, y 8) post
+    // nothing, not even the pointer, whatever they do; the pinch never takes one; and a world tap while
+    // one is down is still a tap, not a pinch.
+    now += 10;
+    AKFixtureResetInput(guest);
+    CGPoint lastBefore = [[host valueForKey:@"_last"] CGPointValue];
+    UIPinchGestureRecognizer *pinch = [host valueForKey:@"_pinch"];
+    for (NSValue *point in @[[NSValue valueWithCGPoint:CGPointMake(10, 500)], [NSValue valueWithCGPoint:CGPointMake(size.width - 5, 500)],
+                             [NSValue valueWithCGPoint:CGPointMake(600, size.height - 8)], [NSValue valueWithCGPoint:CGPointMake(1100, 8)]]) {
+        assert(![areas claimsPoint:point.CGPointValue]);
+        assert(![pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:AKFixtureFinger(point.CGPointValue)]);
+        AKFixtureGesture(host, point.CGPointValue, @[[NSValue valueWithCGPoint:CGPointMake(500, 500)]]);
+        AKFixtureTouch *still2 = nil;
+        AKFixtureHoldStill(host, guest, point.CGPointValue, 0.05, &still2);
+        [host touchesEnded:[NSSet setWithObject:still2] withEvent:nil];
+    }
+    AKDrainFixtureEvents();
+    AKFixtureExpect(@"edge_touches_ignored", AKFixtureJoin(guest.mouseEvents), @"");
+    assert(guest.keyEvents.count == 0 && [host valueForKey:@"_directTouch"] == nil);
+    assert(CGPointEqualToPoint([[host valueForKey:@"_last"] CGPointValue], lastBefore));
+    assert(![areas ownsTouch:AKFixtureFinger(CGPointMake(10, 500))]);
+    AKFixtureTouch *edgeFinger = AKFixtureFinger(CGPointMake(10, 500));
+    [host touchesBegan:[NSSet setWithObject:edgeFinger] withEvent:nil];
+    AKFixtureTap(host, a);
+    assert(![[host valueForKey:@"_directMulti"] boolValue]);
+    AKFixtureExpect(@"edge finger held, world tap", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", a, host), AKFixtureMouse(@"LeftUp", a, host)]));
+    [host touchesEnded:[NSSet setWithObject:edgeFinger] withEvent:nil];
+    assert(![areas ownsTouch:edgeFinger]);
+
+    // no_contract_is_1_0_8: the same host with the button list gone is 1.0.8's direct touch again.
+    areas.contract = nil;
+    areas.clock = nil;
+    AKFixtureCheckWorld108(host, guest);
+}
+
+#pragma mark - The chat keyboard and the password from Apple's Passwords app (the input path; no password is stored or logged)
+
+// Every regular file in the app's container, as "size mtime", by path inside it.
+static NSDictionary<NSString *, NSString *> *AKFixtureContainerFiles(void) {
+    NSString *home = NSHomeDirectory();
+    NSMutableDictionary *files = [NSMutableDictionary dictionary];
+    NSArray *keys = @[NSURLIsRegularFileKey, NSURLFileSizeKey, NSURLContentModificationDateKey];
+    for (NSURL *url in [NSFileManager.defaultManager enumeratorAtURL:[NSURL fileURLWithPath:home] includingPropertiesForKeys:keys options:0 errorHandler:nil]) {
+        NSDictionary *values = [url resourceValuesForKeys:keys error:NULL];
+        if (![values[NSURLIsRegularFileKey] boolValue]) continue;
+        files[[url.path substringFromIndex:MIN(url.path.length, home.length)]] =
+            [NSString stringWithFormat:@"%@ %f", values[NSURLFileSizeKey], [values[NSURLContentModificationDateKey] timeIntervalSince1970]];
+    }
+    return files;
+}
+// Whether any file in the container holds `secret`, as UTF-8 or UTF-16.
+static BOOL AKFixtureContainerHolds(NSString *secret) {
+    NSArray<NSData *> *forms = @[[secret dataUsingEncoding:NSUTF8StringEncoding], [secret dataUsingEncoding:NSUTF16LittleEndianStringEncoding],
+                                 [secret dataUsingEncoding:NSUTF16BigEndianStringEncoding]];
+    for (NSString *path in AKFixtureContainerFiles()) {
+        NSData *data = [NSData dataWithContentsOfFile:[NSHomeDirectory() stringByAppendingString:path] options:NSDataReadingMappedIfSafe error:NULL];
+        for (NSData *form in forms) if (data.length && [data rangeOfData:form options:0 range:NSMakeRange(0, data.length)].location != NSNotFound) {
+            fprintf(stderr, "TOUCH_TEXT_HOST: the password is in %s\n", path.UTF8String);
+            return YES;
+        }
+    }
+    return NO;
+}
+// The game's secure event input, as patch 0058 announces it, and the fixture clock the world signal and the password
+// bridge read: nothing here waits for a real timer. `AKFixtureAdvance` moves the clock and settles both.
+static NSTimeInterval gFixtureNow = 5000;
+static AKTouchControls *gFixtureControls;
+static void AKFixturePostSecure(BOOL enabled) {
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification" object:nil userInfo:@{@"enabled": @(enabled)}];
+}
+static void AKFixtureUseClocks(AKTouchControls *controls) {
+    if (gFixtureControls == controls) return;
+    gFixtureControls = controls;
+    NSTimeInterval (^clock)(void) = ^NSTimeInterval { return gFixtureNow; };
+    [(AKTouchWorldSignal *)[controls valueForKey:@"_worldSignal"] setClock:clock];
+    [(AKTouchTextBridge *)[controls valueForKey:@"_textBridge"] setClock:clock];
+}
+static void AKFixtureAdvance(NSTimeInterval seconds) {
+    gFixtureNow += seconds;
+    [(AKTouchWorldSignal *)[gFixtureControls valueForKey:@"_worldSignal"] tick];
+    [(AKTouchTextBridge *)[gFixtureControls valueForKey:@"_textBridge"] tick];
+}
+// The game's password box taking (YES) or losing (NO) the keyboard. An "on" is held for good, as a real box is - past
+// the bridge's debounce and the world signal's limits, in the world too (1.5 s) - so a box also means
+// "not in the world".
+static void AKFixtureSecureInput(BOOL enabled) {
+    AKFixturePostSecure(enabled);
+    if (enabled && gFixtureControls) AKFixtureAdvance(AKTouchPasswordInWorldSeconds + 0.1);
+}
+// The app is not active (Control Centre, a notification, Face ID's sheet) for the length of `block`: what the controls
+// read when the game turns secure input off.
+static void AKFixtureWhileInactive(void (^block)(void)) {
+    Method method = class_getInstanceMethod(UIApplication.class, @selector(applicationState));
+    IMP original = method_getImplementation(method);
+    method_setImplementation(method, imp_implementationWithBlock(^UIApplicationState(id receiver) { (void)receiver; return UIApplicationStateInactive; }));
+    block();
+    method_setImplementation(method, original);
+}
+// What the add-on sends: one short pulse entering the world, two leaving it.
+static void AKFixturePulse(void) { AKFixturePostSecure(YES); AKFixtureAdvance(0.15); AKFixturePostSecure(NO); }
+static void AKFixtureEnterWorldPulse(void) { AKFixturePulse(); AKFixtureAdvance(1.0); }
+static void AKFixtureLeaveWorldPulses(void) { AKFixturePulse(); AKFixtureAdvance(0.15); AKFixturePulse(); AKFixtureAdvance(1.0); }
+// a window or panel open while still in the world is three pulses.
+static void AKFixtureWindowPulses(void) {
+    AKFixturePulse(); AKFixtureAdvance(0.15); AKFixturePulse(); AKFixtureAdvance(0.15); AKFixturePulse(); AKFixtureAdvance(1.0);
+}
+// iPad touch: the player is in the world (the buttons are live). Idempotent.
+static void AKFixtureEnterWorld(UIView *host) {
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    AKFixtureUseClocks(controls);
+    // The signal too, not only the areas: a check may have switched the areas on by hand.
+    if ([[host valueForKey:@"_touchAreas"] isLive] && [(AKTouchWorldSignal *)[controls valueForKey:@"_worldSignal"] inWorld]) return;
+    AKFixtureEnterWorldPulse();
+    assert([[host valueForKey:@"_touchAreas"] isLive]);
+}
+static void AKFixtureExpectKeys(NSString *what, AKInputFixtureView *guest, NSArray<NSString *> *expected) {
+    if ([guest.keyEvents isEqualToArray:expected]) return;
+    fprintf(stderr, "TOUCH_TEXT_HOST_MISMATCH %s:\n  got      %s\n  expected %s\n", what.UTF8String,
+            [guest.keyEvents componentsJoinedByString:@", "].UTF8String, [expected componentsJoinedByString:@", "].UTF8String);
+    assert(0);
+}
+
+#pragma mark - Leaving the app (the input path, review focus 4)
+
+// The app going away: a call, Control Centre, the app switcher (will resign active), then Home (did enter background).
+// The application comes back after, so the rest of the fixture runs as before.
+static void AKFixtureLeaveApp(NSNotificationName name) {
+    [NSNotificationCenter.defaultCenter postNotificationName:name object:nil];
+    AKDrainFixtureEvents();
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+}
+// The key downs and ups the game heard, without the modifier events around them.
+static NSString *AKFixtureKeyPresses(AKInputFixtureView *guest) {
+    NSMutableArray *keys = [NSMutableArray array];
+    for (NSString *event in guest.keyEvents) if (![event hasPrefix:@"flags"]) [keys addObject:event];
+    return [keys componentsJoinedByString:@", "];
+}
+static void AKFixtureInterruptionExpect(NSString *what, NSString *got, NSString *expected) {
+    if ([got isEqualToString:expected]) return;
+    fprintf(stderr, "TOUCH_INTERRUPTION_MISMATCH %s:\n  got      %s\n  expected %s\n", what.UTF8String, got.UTF8String, expected.UTF8String);
+    assert(0);
+}
+
+// Drive the installed host and its real Battery Saver coordinator. Each phase is sent to
+// the same recipient UIKit would use; the guest recorder observes delivery, not source text.
+static void AKFixtureCheckInterruptions(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    CGSize size = host.bounds.size;
+    CGPoint worldPoint = CGPointMake(size.width * 0.55, size.height * 0.5);
+    NSArray<NSNotificationName> *leaves = @[UIApplicationWillResignActiveNotification, UIApplicationDidEnterBackgroundNotification];
+    if (!touchPlay) {
+        // ipados_unchanged: the other modes keep 1.0.10's behaviour - the entry point has nothing to release, and a
+        // finger's drag goes on holding its mouse button through a resign (its own lift, or a cancel, ends it).
+        for (NSNotificationName leave in leaves) {
+            AKFixtureResetInput(guest);
+            AKTouchReleaseEverything();
+            AKFixtureTouch *drag = AKFixtureFinger(worldPoint);
+            [host touchesBegan:[NSSet setWithObject:drag] withEvent:nil];
+            drag.fixturePoint = CGPointMake(worldPoint.x + 40, worldPoint.y);
+            [host touchesMoved:[NSSet setWithObject:drag] withEvent:nil];
+            AKDrainFixtureEvents();
+            NSString *before = AKFixtureClicks(guest);
+            AKFixtureLeaveApp(leave);
+            AKFixtureInterruptionExpect([@"ipados_unchanged: " stringByAppendingString:leave], AKFixtureClicks(guest), before);
+            assert(![AKFixtureClicks(guest) containsString:@"LeftUp"] && [[host valueForKey:@"_pressedLeft"] boolValue]);
+            [host touchesEnded:[NSSet setWithObject:drag] withEvent:nil];
+            AKDrainFixtureEvents();
+            assert(![[host valueForKey:@"_pressedLeft"] boolValue] && ![[host valueForKey:@"_pressedRight"] boolValue]);
+        }
+        AKFixtureResetInput(guest);
+        return;
+    }
+    AKFixtureEnterWorld(host);
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    AKTouchGamepad *stick = [controls valueForKey:@"_walkStick"];
+    UIView *overlay = AKFindInputView(host, @"wolkaraforever.touch.walkArea");
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1-a22" ofType:@"lua"];
+    AKTouchContract *contract = AKTouchContractParse([NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL]);
+    assert(contract.areas.count == 26 && stick && overlay);
+    areas.contract = contract;
+    [host layoutIfNeeded];
+    __block NSTimeInterval now = 700;
+    areas.clock = ^NSTimeInterval { return now; };
+    CGPoint walkPoint = CGPointMake(size.width * 0.25, size.height * 0.62);
+    CGPoint jumpPoint = AKFixtureCentre(contract, @"jump", size);
+    CGPoint spell1Point = AKFixtureCentre(contract, @"spell1", size);
+    CGPoint spell2Point = AKFixtureCentre(contract, @"spell2", size);
+    assert(![areas claimsPoint:worldPoint] && [areas claimsPoint:jumpPoint] && [areas claimsPoint:spell1Point]);
+
+    for (NSNotificationName leave in leaves) {
+        // background_releases_everything: Jump held, the stick auto-running, a hold ring half full, and a world
+        // right-drag (turn=1) all at once; then the app leaves.
+        AKFixtureResetInput(guest);
+        // The stick's auto-run hold  on the same fixture clock.
+        [overlay setValue:^NSTimeInterval { return now; } forKey:@"clock"];
+        AKFixtureTouch *thumb = AKFixtureFinger(walkPoint); thumb.fixtureView = overlay;
+        [overlay touchesBegan:[NSSet setWithObject:thumb] withEvent:nil];
+        thumb.fixturePoint = CGPointMake(walkPoint.x, walkPoint.y - 60);
+        [overlay touchesMoved:[NSSet setWithObject:thumb] withEvent:nil];
+        thumb.fixturePoint = AKFixtureWalkLock(host);      // up onto the lock above the ring
+        [overlay touchesMoved:[NSSet setWithObject:thumb] withEvent:nil];
+        now += 0.25; [overlay performSelector:@selector(tick)];   // held there until the lock is full
+        [overlay touchesEnded:[NSSet setWithObject:thumb] withEvent:nil];     // let go on it: auto-run
+        AKFixtureTouch *jump = AKFixtureFinger(jumpPoint); jump.fixtureView = host;
+        [host touchesBegan:[NSSet setWithObject:jump] withEvent:nil];
+        AKFixtureTouch *hold = AKFixtureFinger(spell1Point); hold.fixtureView = host;
+        [host touchesBegan:[NSSet setWithObject:hold] withEvent:nil];
+        now += 0.30; [areas tick];
+        AKFixtureTouch *drag = AKFixtureFinger(worldPoint); drag.fixtureView = host;
+        [host touchesBegan:[NSSet setWithObject:drag] withEvent:nil];
+        drag.fixturePoint = CGPointMake(worldPoint.x + 60, worldPoint.y);
+        [host touchesMoved:[NSSet setWithObject:drag] withEvent:nil];
+        AKDrainFixtureEvents();
+        assert(stick.autoRunning && stick.leftStickVector.y > 0.9);
+        assert([[host valueForKey:@"_pressedRight"] boolValue]);
+        AKTouchHoldRing *ring = [areas holdRingForTouch:hold];
+        assert(ring && ring.state == AKTouchHoldRingFilling && ring.progress > 0.2 && ring.progress < 0.9);
+        assert(areas.activeFingerCount == 2);
+        // Held so far: W (the stick) and Jump's V (code 9), no hold key, the right button down.
+        AKFixtureInterruptionExpect(@"before leaving: keys", AKFixtureKeyPresses(guest), @"down 13 -, down 9 COS");
+        assert([AKFixtureClicks(guest) hasPrefix:AKFixtureMouse(@"RightDown", worldPoint, host)]);
+        [guest.keyEvents removeAllObjects];
+        [guest.mouseEvents removeAllObjects];
+
+        AKFixtureLeaveApp(leave);
+
+        // Jump up (with its chord), the walk key up, the vector zero, auto-run off, the stick hidden...
+        // (Jump's and the walk key's ups: the order between the stick's own observer and the controls' is not the point.)
+        NSArray *ups = [[AKFixtureKeyPresses(guest) componentsSeparatedByString:@", "] sortedArrayUsingSelector:@selector(compare:)];
+        AKFixtureInterruptionExpect([@"background_releases_everything keys: " stringByAppendingString:leave], AKFixtureJoin(ups),
+                                    @"up 13 - | up 9 COS");
+        assert(stick.leftStickVector.x == 0 && stick.leftStickVector.y == 0 && !stick.autoRunning && !stick.leftStickVisible);
+        // ...the hold ring never completed, so no hold key (F, code 3) and no tap key (F2, code 120) went at all...
+        assert(![AKFixtureKeyPresses(guest) containsString:@"down 3"] && ![AKFixtureKeyPresses(guest) containsString:@"120"]);
+        assert([areas holdRingForTouch:hold] == nil && areas.activeFingerCount == 0);
+        // ...the right button came up where the drag was, and nothing else was clicked.
+        assert(![[host valueForKey:@"_pressedRight"] boolValue] && ![[host valueForKey:@"_pressedLeft"] boolValue]);
+        assert([AKFixtureClicks(guest) hasPrefix:@"RightUp "] && ![AKFixtureClicks(guest) containsString:@"Left"]);
+        // The fingers that were down lift later: nothing more is sent, no click, no key.
+        [guest.keyEvents removeAllObjects];
+        [guest.mouseEvents removeAllObjects];
+        now += 2.0; [areas tick];
+        [host touchesEnded:[NSSet setWithObject:hold] withEvent:nil];
+        [host touchesEnded:[NSSet setWithObject:jump] withEvent:nil];
+        [host touchesEnded:[NSSet setWithObject:drag] withEvent:nil];
+        AKDrainFixtureEvents();
+        AKFixtureInterruptionExpect(@"after the lifts: keys", AKFixtureKeyPresses(guest), @"");
+        AKFixtureInterruptionExpect(@"after the lifts: clicks", AKFixtureClicks(guest), @"");
+        assert([host valueForKey:@"_directTouch"] == nil);
+        assert(![[host valueForKey:@"_directMulti"] boolValue]);
+
+        // hold_cancelled_on_resign: a ring filling when the app leaves is gone, the hold key never goes, even if the
+        // finger stays down and the clock runs on; the lift taps nothing.
+        AKFixtureResetInput(guest);
+        AKFixtureTouch *filling = AKFixtureFinger(spell1Point); filling.fixtureView = host;
+        [host touchesBegan:[NSSet setWithObject:filling] withEvent:nil];
+        now += 0.25; [areas tick];
+        ring = [areas holdRingForTouch:filling];
+        assert(ring && ring.state == AKTouchHoldRingFilling && ring.progress > 0 && ring.progress < 1);
+        AKFixtureLeaveApp(leave);
+        assert([areas holdRingForTouch:filling] == nil && ring.state == AKTouchHoldRingCancelled);
+        now += 1.0; [areas tick];
+        [host touchesEnded:[NSSet setWithObject:filling] withEvent:nil];
+        AKDrainFixtureEvents();
+        AKFixtureInterruptionExpect([@"hold_cancelled_on_resign: " stringByAppendingString:leave], AKFixtureKeyPresses(guest), @"");
+
+        // aiming_stopped_on_resign: a spell dragged off its button is aimed (its key went at the slide); leaving stops
+        // the aim with Interact's stop key (U, code 32) and the lift afterwards clicks nothing.
+        AKFixtureResetInput(guest);
+        AKFixtureTouch *aim = AKFixtureFinger(spell2Point); aim.fixtureView = host;
+        [host touchesBegan:[NSSet setWithObject:aim] withEvent:nil];
+        aim.fixturePoint = CGPointMake(spell2Point.x - 120, spell2Point.y - 120);
+        [host touchesMoved:[NSSet setWithObject:aim] withEvent:nil];
+        AKDrainFixtureEvents();
+        AKFixtureInterruptionExpect(@"aiming: the spell's key at the slide", AKFixtureKeyPresses(guest), @"down 99 COS, up 99 COS");
+        [guest.keyEvents removeAllObjects];
+        [guest.mouseEvents removeAllObjects];
+        AKFixtureLeaveApp(leave);
+        AKFixtureInterruptionExpect([@"aiming_stopped_on_resign: " stringByAppendingString:leave], AKFixtureKeyPresses(guest), @"down 32 COS, up 32 COS");
+        [host touchesEnded:[NSSet setWithObject:aim] withEvent:nil];
+        AKDrainFixtureEvents();
+        AKFixtureInterruptionExpect(@"aiming lift sends nothing more", AKFixtureKeyPresses(guest), @"down 32 COS, up 32 COS");
+        assert(![AKFixtureClicks(guest) containsString:@"Left"]);
+        assert(areas.activeFingerCount == 0);
+    }
+
+    // A pending tap (a finger down, not yet moved) waiting when the app leaves is not clicked when it lifts.
+    AKFixtureResetInput(guest);
+    AKFixtureTouch *pending = AKFixtureFinger(worldPoint); pending.fixtureView = host;
+    [host touchesBegan:[NSSet setWithObject:pending] withEvent:nil];
+    AKFixtureLeaveApp(UIApplicationWillResignActiveNotification);
+    [host touchesEnded:[NSSet setWithObject:pending] withEvent:nil];
+    AKDrainFixtureEvents();
+    AKFixtureInterruptionExpect(@"a waiting tap is not clicked after leaving", AKFixtureClicks(guest), @"");
+    // ...and the next finger is an ordinary tap again.
+    AKFixtureTap(host, worldPoint);
+    AKFixtureInterruptionExpect(@"the next tap clicks", AKFixtureClicks(guest),
+                                AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", worldPoint, host), AKFixtureMouse(@"LeftUp", worldPoint, host)]));
+
+    // A pinch whose fingers the system never lifts (the app went away mid-pinch) leaves the host in its multi-finger
+    // state with no finger down; leaving the app clears it outright, so the first tap on return is one click, not
+    // swallowed.
+    for (NSNotificationName leave in leaves) {
+        AKFixtureResetInput(guest);
+        CGPoint second = CGPointMake(worldPoint.x + 80, worldPoint.y + 30);
+        AKFixtureTouch *one = AKFixtureFinger(worldPoint), *two = AKFixtureFinger(second);
+        [host touchesBegan:[NSSet setWithObjects:one, two, nil] withEvent:nil];
+        assert([[host valueForKey:@"_directMulti"] boolValue] && [host valueForKey:@"_directTouch"] == nil);
+        AKFixtureLeaveApp(leave);
+        assert(![[host valueForKey:@"_directMulti"] boolValue] && [host valueForKey:@"_directTouch"] == nil);
+        AKFixtureResetInput(guest);
+        AKFixtureTap(host, worldPoint);
+        AKFixtureInterruptionExpect([@"the first tap after a pinch left behind: " stringByAppendingString:leave], AKFixtureClicks(guest),
+                                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", worldPoint, host), AKFixtureMouse(@"LeftUp", worldPoint, host)]));
+    }
+
+    // background_clears_a_finger_that_never_lifts / resign_keeps_quiet_until_the_finger_lifts.
+    // AKFixtureLeaveWorldPulses supplies the real two-pulse out-of-world transition;
+    // AKFixtureHoldFired and AKFixtureEvent supply the host's real hold and allTouches paths.
+    AKFixtureLeaveWorldPulses();
+    assert(!areas.live);
+    for (int background = 0; background < 2; background++) {
+        AKFixtureResetInput(guest);
+        AKFixtureTouch *old = nil;
+        AKFixtureHoldFired(host, worldPoint, 0.5, &old);
+        old.fixtureView = host;
+        assert([AKFixtureClicks(guest) hasPrefix:AKFixtureMouse(@"RightDown", worldPoint, host)]);
+        [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
+        if (background) [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidEnterBackgroundNotification object:nil];
+        AKDrainFixtureEvents();
+        if (background) [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillEnterForegroundNotification object:nil];
+        [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+        AKDrainFixtureEvents();
+        AKFixtureResetInput(guest);
+        CGPoint next = CGPointMake(worldPoint.x + 60, worldPoint.y);
+        NSString *click = AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", next, host), AKFixtureMouse(@"LeftUp", next, host)]);
+        old.fixturePhase = UITouchPhaseStationary;
+        AKFixtureTouch *listed = AKFixtureFinger(next); listed.fixtureView = host;
+        AKFixtureEvent *event = [AKFixtureEvent new];
+        event.fixtureTouches = [NSSet setWithObjects:old, listed, nil];
+        [host touchesBegan:[NSSet setWithObject:listed] withEvent:event];
+        listed.fixturePhase = UITouchPhaseEnded;
+        [host touchesEnded:[NSSet setWithObject:listed] withEvent:event];
+        AKDrainFixtureEvents();
+        AKFixtureInterruptionExpect(background ? @"background_clears_a_finger_that_never_lifts: first tap with old stationary" :
+                                    @"resign_keeps_quiet_until_the_finger_lifts: first tap with old stationary",
+                                    AKFixtureClicks(guest), background ? click : @"");
+        if (background) {
+            // The fixture's pinch check above begins two AKFixtureFinger touches together.
+            // Keep T Stationary in allTouches while N and M begin and end as one gesture.
+            AKFixtureResetInput(guest);
+            AKFixtureTouch *pinchN = AKFixtureFinger(next); pinchN.fixtureView = host;
+            AKFixtureTouch *pinchM = AKFixtureFinger(CGPointMake(next.x + 45, next.y)); pinchM.fixtureView = host;
+            event.fixtureTouches = [NSSet setWithObjects:old, pinchN, pinchM, nil];
+            NSSet *pair = [NSSet setWithObjects:pinchN, pinchM, nil];
+            [host touchesBegan:pair withEvent:event];
+            pinchN.fixturePhase = UITouchPhaseEnded;
+            pinchM.fixturePhase = UITouchPhaseEnded;
+            [host touchesEnded:pair withEvent:event];
+            AKDrainFixtureEvents();
+            AKFixtureResetInput(guest);
+            AKFixtureTouch *afterPinch = AKFixtureFinger(next); afterPinch.fixtureView = host;
+            event.fixtureTouches = [NSSet setWithObjects:old, afterPinch, nil];
+            [host touchesBegan:[NSSet setWithObject:afterPinch] withEvent:event];
+            afterPinch.fixturePhase = UITouchPhaseEnded;
+            [host touchesEnded:[NSSet setWithObject:afterPinch] withEvent:event];
+            AKDrainFixtureEvents();
+            AKFixtureInterruptionExpect(@"background_clears_a_finger_that_never_lifts: tap after two fingers with old stationary",
+                                        AKFixtureClicks(guest), click);
+        }
+        AKFixtureResetInput(guest);
+        AKFixtureTouch *fresh = AKFixtureFinger(next);
+        fresh.fixtureView = host;
+        event.fixtureTouches = [NSSet setWithObject:fresh];
+        [host touchesBegan:[NSSet setWithObject:fresh] withEvent:event];
+        fresh.fixturePhase = UITouchPhaseEnded;
+        [host touchesEnded:[NSSet setWithObject:fresh] withEvent:event];
+        AKDrainFixtureEvents();
+        AKFixtureInterruptionExpect(background ? @"background_clears_a_finger_that_never_lifts: first tap" :
+                                    @"resign_keeps_quiet_until_the_finger_lifts: first tap", AKFixtureClicks(guest), background ? click : @"");
+        AKFixtureResetInput(guest);
+        AKFixtureTouch *another = AKFixtureFinger(next); another.fixtureView = host;
+        old.fixturePhase = UITouchPhaseStationary;
+        event.fixtureTouches = [NSSet setWithObjects:old, another, nil];
+        [host touchesBegan:[NSSet setWithObject:another] withEvent:event];
+        another.fixturePhase = UITouchPhaseEnded;
+        [host touchesEnded:[NSSet setWithObject:another] withEvent:event];
+        AKDrainFixtureEvents();
+        AKFixtureInterruptionExpect(background ? @"background_clears_a_finger_that_never_lifts: stationary old touch" :
+                                    @"resign_keeps_quiet_until_the_finger_lifts: stationary old touch", AKFixtureClicks(guest), click);
+        old.fixturePhase = UITouchPhaseEnded;
+        event.fixtureTouches = [NSSet setWithObject:old];
+        [host touchesEnded:[NSSet setWithObject:old] withEvent:event];
+        AKFixtureResetInput(guest);
+        AKFixtureTap(host, next);
+        AKFixtureInterruptionExpect(@"after the old finger lifts", AKFixtureClicks(guest), click);
+    }
+
+    // background_forgets_a_finger_still_down: iOS can deliver T again after the
+    // background clear. AKFixtureHoldFired supplies the host timer; AKFixtureEvent
+    // supplies the same touch identity and its moved/ended phases to the host.
+    AKFixtureResetInput(guest);
+    AKFixtureTouch *forgotten = nil;
+    AKFixtureHoldFired(host, worldPoint, 0.5, &forgotten);
+    forgotten.fixtureView = host;
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidEnterBackgroundNotification object:nil];
+    AKDrainFixtureEvents();
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillEnterForegroundNotification object:nil];
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    AKFixtureResetInput(guest);
+    AKFixtureEvent *forgottenEvent = [AKFixtureEvent new];
+    forgottenEvent.fixtureTouches = [NSSet setWithObject:forgotten];
+    forgotten.fixturePhase = UITouchPhaseMoved;
+    forgotten.fixturePoint = CGPointMake(worldPoint.x + 35, worldPoint.y);
+    [host touchesMoved:[NSSet setWithObject:forgotten] withEvent:forgottenEvent];
+    forgotten.fixturePhase = UITouchPhaseEnded;
+    [host touchesEnded:[NSSet setWithObject:forgotten] withEvent:forgottenEvent];
+    AKDrainFixtureEvents();
+    AKFixtureInterruptionExpect(@"background_forgets_a_finger_still_down: old move and lift",
+                                [guest.mouseEvents componentsJoinedByString:@" | "], @"");
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, worldPoint);
+    AKFixtureInterruptionExpect(@"background_forgets_a_finger_still_down: fresh tap", AKFixtureClicks(guest),
+                                AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", worldPoint, host), AKFixtureMouse(@"LeftUp", worldPoint, host)]));
+
+    // background_forgets_every_finger_of_a_pinch: the pinch check above builds a
+    // simultaneous pair with AKFixtureFinger and a two-touch touchesBegan set.
+    // AKFixtureEvent keeps both real touch identities in allTouches after return.
+    AKFixtureResetInput(guest);
+    AKFixtureTouch *pinchOne = AKFixtureFinger(worldPoint); pinchOne.fixtureView = host;
+    AKFixtureTouch *pinchTwo = AKFixtureFinger(CGPointMake(worldPoint.x + 80, worldPoint.y + 30)); pinchTwo.fixtureView = host;
+    NSSet *pinchPair = [NSSet setWithObjects:pinchOne, pinchTwo, nil];
+    AKFixtureEvent *pinchEvent = [AKFixtureEvent new];
+    pinchEvent.fixtureTouches = pinchPair;
+    [host touchesBegan:pinchPair withEvent:pinchEvent];
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidEnterBackgroundNotification object:nil];
+    AKDrainFixtureEvents();
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillEnterForegroundNotification object:nil];
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    AKFixtureResetInput(guest);
+    pinchOne.fixturePhase = UITouchPhaseMoved;
+    pinchTwo.fixturePhase = UITouchPhaseMoved;
+    pinchOne.fixturePoint = CGPointMake(worldPoint.x + 30, worldPoint.y);
+    pinchTwo.fixturePoint = CGPointMake(worldPoint.x + 110, worldPoint.y + 30);
+    [host touchesMoved:pinchPair withEvent:pinchEvent];
+    pinchOne.fixturePhase = UITouchPhaseEnded;
+    pinchTwo.fixturePhase = UITouchPhaseEnded;
+    [host touchesEnded:pinchPair withEvent:pinchEvent];
+    AKDrainFixtureEvents();
+    AKFixtureInterruptionExpect(@"background_forgets_every_finger_of_a_pinch: old moves and lifts",
+                                [guest.mouseEvents componentsJoinedByString:@" | "], @"");
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, worldPoint);
+    AKFixtureInterruptionExpect(@"background_forgets_every_finger_of_a_pinch: fresh tap", AKFixtureClicks(guest),
+                                AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", worldPoint, host), AKFixtureMouse(@"LeftUp", worldPoint, host)]));
+
+    // Nothing is left held for the checks that follow.
+    areas.clock = nil;
+    areas.contract = nil;
+    AKFixtureResetInput(guest);
+    guest.keyEvents = nil; guest.mouseEvents = nil;
+}
+
+// AKLog in AKSupport.m writes [ak] lines to stderr. Capture only this fixture's
+// synchronous return transaction; the saved descriptor is restored before assertions.
+static NSString *AKFixtureCaptureLog(void (^work)(void)) {
+    fflush(stderr);
+    FILE *capture = tmpfile();
+    assert(capture);
+    int saved = dup(fileno(stderr));
+    assert(saved >= 0 && dup2(fileno(capture), fileno(stderr)) >= 0);
+    work();
+    fflush(stderr);
+    assert(dup2(saved, fileno(stderr)) >= 0);
+    close(saved);
+    assert(fseek(capture, 0, SEEK_END) == 0);
+    long length = ftell(capture);
+    assert(length >= 0 && fseek(capture, 0, SEEK_SET) == 0);
+    NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)length];
+    assert(fread(data.mutableBytes, 1, (size_t)length, capture) == (size_t)length);
+    fclose(capture);
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+}
+// C1/M2: the real host path owns the sheet strip and the toolbar's live field.
+static void AKFixtureCheckSheetAndGameBox(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    if (!touchPlay) {
+        assert([controls valueForKey:@"_textBridge"] == nil);
+        return; // K16: the other interfaces have no bridge.
+    }
+    AKFixtureEnterWorld(host);
+    AKTouchWorldSignal *signal = [controls valueForKey:@"_worldSignal"];
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    AKTouchTextBridge *bridge = [controls valueForKey:@"_textBridge"];
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1-a22" ofType:@"lua"];
+    NSString *source = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL];
+    AKTouchContract *sheet = AKTouchContractParse([source stringByReplacingOccurrencesOfString:@";areas=" withString:@";sheet=2;areas="]);
+    assert(sheet.sheetPulses);
+    // F11: first load has no change notification. The next settled group must still read sheet=2.
+    NSString *lazyFolder = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    NSString *saved = [lazyFolder stringByAppendingPathComponent:@"WTF/Account/Fixture/SavedVariables"];
+    assert([NSFileManager.defaultManager createDirectoryAtPath:saved withIntermediateDirectories:YES attributes:nil error:NULL]);
+    NSString *lazySource = [source stringByReplacingOccurrencesOfString:@";areas=" withString:@";sheet=2;areas="];
+    assert([lazySource writeToFile:[saved stringByAppendingPathComponent:@"TouchPlay.lua"] atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
+    AKTouchContractReset();
+    assert(!signal.sheetPulses);
+    assert(AKTouchContractLoadForGame([NSURL fileURLWithPath:lazyFolder isDirectory:YES], nil).sheetPulses);
+    AKFixtureLeaveWorldPulses();
+    assert(signal.state == AKTouchWorldSheet && signal.sheetPulses); // F11: lazy first load, no notice.
+    [NSFileManager.defaultManager removeItemAtPath:lazyFolder error:NULL];
+    AKFixtureEnterWorldPulse();
+    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchContractDidChangeNotification object:sheet];
+    AKDrainFixtureEvents();
+    assert(signal.sheetPulses && areas.contract.sheetPulses);
+    AKFixtureLeaveWorldPulses();
+    assert(signal.state == AKTouchWorldSheet && areas.chatOnly && !areas.live && areas.liveContract == nil);
+    CGPoint walk = CGPointMake(host.bounds.size.width * 0.25, host.bounds.size.height * 0.62);
+    assert([host hitTest:walk withEvent:nil] == host && ![[controls valueForKey:@"_walkStick"] autoRunning]); // S10 walk stick off.
+    CGPoint chat = AKFixtureCentre(sheet, @"chat", host.bounds.size);
+    CGPoint spell = AKFixtureCentre(sheet, @"spell2", host.bounds.size);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, spell);
+    AKFixtureExpect(@"S3 sheet spell is a plain click", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", spell, host), AKFixtureMouse(@"LeftUp", spell, host)]));
+    assert(guest.keyEvents.count == 0 && !controls.keyboardVisible);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, chat);
+    assert(controls.textKind == AKTextKindChat && controls.keyboardVisible);
+    assert(guest.keyEvents.count == 0 && guest.mouseEvents.count == 0); // S2/K9: composer, no game input.
+    [controls dismissKeyboard];
+    NSString *gameBoxLog = AKFixtureCaptureLog(^{ [controls toggleKeyboard]; });
+    assert([gameBoxLog containsString:@"keyboard: the toolbar's keyboard button opens live typing"]);
+    assert(controls.textKind == AKTextKindGameBox && bridge.active && [[controls valueForKey:@"_composer"] isHidden]);
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindNone && !bridge.active); // K11.
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindGameBox && bridge.active);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, spell);
+    assert(!bridge.active && controls.textKind == AKTextKindNone); // K10: one tap closes the field.
+    AKFixtureExpect(@"K10 closing tap still selects the game target", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", spell, host), AKFixtureMouse(@"LeftUp", spell, host)]));
+    [controls toggleKeyboard];
+    assert(bridge.kind == AKTextKindGameBox);
+    AKFixturePostSecure(YES);
+    AKFixtureAdvance(0.15);
+    [bridge beginForKind:AKTextKindGameBox];
+    AKFixtureWhileInactive(^{ AKFixturePostSecure(NO); });
+    assert(bridge.kind == AKTextKindGameBox); // K12: inactive off does not close the field.
+    AKFixtureAdvance(1.0);
+    assert(signal.state == AKTouchWorldIn && bridge.kind == AKTextKindNone); // K12.
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindChat); // K6.
+    [controls dismissKeyboard];
+    AKFixtureWindowPulses();
+    assert(signal.state == AKTouchWorldWindow && !areas.chatOnly);
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindGameBox); // K1 Window.
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, spell);
+    assert(bridge.kind == AKTextKindNone); // K10 Window: early-return path.
+    AKFixtureExpect(@"K10 Window closing tap still clicks", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", spell, host), AKFixtureMouse(@"LeftUp", spell, host)]));
+    AKFixtureLeaveWorldPulses();
+    assert(signal.state == AKTouchWorldSheet);
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindGameBox); // K1 Sheet.
+    AKFixturePostSecure(YES);
+    assert(bridge.kind == AKTextKindNone); // secure on closes live typing before password debounce.
+    [controls toggleKeyboard];
+    assert(bridge.kind != AKTextKindGameBox); // toolbar cannot reopen live typing while secure is on.
+    [controls dismissKeyboard];
+    AKFixturePostSecure(NO);
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidEnterBackgroundNotification object:nil];
+    assert(bridge.kind == AKTextKindNone); // K13.
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    [controls toggleKeyboard];
+    assert(bridge.kind == AKTextKindGameBox);
+    AKFixturePostSecure(YES); AKFixtureAdvance(1.6);
+    assert(controls.textKind == AKTextKindPassword && bridge.kind == AKTextKindPassword); // K7/K14 live field yields to password.
+    AKFixturePostSecure(NO);
+    AKFixtureEnterWorldPulse();
+    for (NSUInteger count = 4; count <= 5; count++) {
+        for (NSUInteger pulse = 0; pulse < count; pulse++) {
+            if (pulse) AKFixtureAdvance(0.15);
+            AKFixturePulse();
+        }
+        AKFixtureAdvance(1.0);
+        assert(signal.state == AKTouchWorldOut && !areas.chatOnly);
+        AKFixtureResetInput(guest);
+        AKFixtureTap(host, chat);
+        assert(!controls.keyboardVisible && guest.keyEvents.count == 0);
+        AKFixtureExpect(@"S5 four/five pulses leave chat plain", AKFixtureClicks(guest),
+                        AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", chat, host), AKFixtureMouse(@"LeftUp", chat, host)]));
+        AKFixtureEnterWorldPulse();
+    }
+    // The real watcher loads the replacement before publishing its notification.
+    assert([NSFileManager.defaultManager createDirectoryAtPath:saved withIntermediateDirectories:YES attributes:nil error:NULL]);
+    assert([source writeToFile:[saved stringByAppendingPathComponent:@"TouchPlay.lua"] atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
+    AKTouchContract *oldContract = AKTouchContractLoadForGame([NSURL fileURLWithPath:lazyFolder isDirectory:YES], nil);
+    assert(oldContract && !oldContract.sheetPulses);
+    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchContractDidChangeNotification object:oldContract];
+    [NSFileManager.defaultManager removeItemAtPath:lazyFolder error:NULL];
+    AKDrainFixtureEvents();
+    assert(!signal.sheetPulses);
+    AKFixtureLeaveWorldPulses();
+    assert(signal.state == AKTouchWorldOut && !areas.chatOnly); // S6 old contract: 2 is Out.
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindGameBox); // K1 Out after world entry.
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, spell);
+    assert(bridge.kind == AKTextKindNone); // K10 Out: early-return path.
+    AKFixtureExpect(@"K10 Out closing tap still clicks", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", spell, host), AKFixtureMouse(@"LeftUp", spell, host)]));
+    [controls setValue:@YES forKey:@"_loginScreen"];
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindChat); // K8 account-box exception.
+    [controls dismissKeyboard];
+    [controls setValue:@NO forKey:@"_loginScreen"];
+    AKFixtureEnterWorldPulse();
+}
+
+#pragma mark - The toolbar stays in the top-centre band (the input path, run 5)
+
+// Whether the toolbar's frame is in the top band: 8 pt below the safe area's top, its middle within a fifth of the width
+// of the centre.
+static BOOL AKFixtureToolbarInTopBand(UIView *host, AKTouchControls *controls) {
+    CGRect frame = controls.frame;
+    return fabs(CGRectGetMinY(frame) - (host.safeAreaInsets.top + 8)) < 1 && fabs(CGRectGetMidX(frame) - host.bounds.size.width / 2) <= host.bounds.size.width * 0.2 + 1;
+}
+static void AKFixtureExpectTopBand(UIView *host, AKTouchControls *controls, NSString *what) {
+    [host layoutIfNeeded]; [controls setNeedsLayout]; [controls layoutIfNeeded];
+    if (AKFixtureToolbarInTopBand(host, controls)) return;
+    fprintf(stderr, "TOUCH_DOCK_MISMATCH %s: the toolbar at %s is not in the top-centre band of %s\n", what.UTF8String,
+            NSStringFromCGRect(controls.frame).UTF8String, NSStringFromCGSize(host.bounds.size).UTF8String);
+    assert(0);
+}
+// Run 5 (16 Nov, IMG_0010): with TouchPlay's info card open the add-on sent "left", the toolbar dropped to 1.0.10's
+// bottom centre, opened, and its keyboard button sat over the card's "Change spell" - the tap opened the keyboard. In iPad
+// touch the toolbar is always in the top-centre band: folded and open, no button list, either hand, in the world, out of
+// it, with a window open, the keyboard up, and after a reload changes the buttons. It covers no button, a tap
+// on it lands on it (never the walk stick below), a tap in the gap between its buttons or just under it reaches the game,
+// and it still folds itself after 6 s.
+static void AKFixtureCheckToolbarDock(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    (void)guest;
+    if (!touchPlay) return;
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    AKFixtureEnterWorld(host);
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    AKTouchWorldSignal *signal = [controls valueForKey:@"_worldSignal"];
+    UIButton *handle = [controls valueForKey:@"_toolbarHandle"];
+    UIView *overlay = AKFindInputView(host, @"wolkaraforever.touch.walkArea");
+    assert(handle && overlay);
+    NSString *text = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"TouchPlay-v1-a22" ofType:@"lua"]
+                                               encoding:NSUTF8StringEncoding error:NULL];
+    NSString *leftText = [text stringByReplacingOccurrencesOfString:@"hand=R" withString:@"hand=L"];
+    NSDictionary *flip = @{@"BR": @"BL", @"BL": @"BR", @"TR": @"TL", @"TL": @"TR"};
+    for (NSString *name in @[@"spell1", @"spell2", @"spell3", @"spell4", @"spell5", @"spell6", @"spell7", @"page1", @"page2", @"page3", @"page4",
+                             @"nexttarget", @"item1", @"item2", @"item3", @"item4", @"interact", @"jump", @"dive", @"chat"])
+        for (NSString *corner in flip) {
+            NSString *from = [NSString stringWithFormat:@"%@,%@,", name, corner];
+            if (![leftText containsString:from]) continue;
+            leftText = [leftText stringByReplacingOccurrencesOfString:from withString:[NSString stringWithFormat:@"%@,%@,", name, flip[corner]]];
+            break;
+        }
+    NSDictionary<NSString *, AKTouchContract *> *contracts = @{@"right-handed": AKTouchContractParse(text), @"left-handed": AKTouchContractParse(leftText)};
+    assert(contracts.count == 2 && [contracts[@"left-handed"] leftHanded] && ![contracts[@"right-handed"] leftHanded]);
+    // The fixture's window is a portrait iPad; TouchPlay's layout is for landscape, so the host is made the iPad Pro's
+    // landscape size for this check (the layout units are height / 1024: here one point each) and put back after.
+    CGRect savedFrame = host.frame;
+    host.frame = CGRectMake(0, 0, 1366, 1024);
+    [host layoutIfNeeded];
+    CGSize size = host.bounds.size;
+    BOOL foldedAtStart = [[controls valueForKey:@"_toolbarCollapsed"] boolValue];
+    // No button list: the top centre, folded and open.
+    areas.contract = nil;
+    for (NSNumber *fold in @[@YES, @NO]) {
+        AKFixtureSetToolbarCollapsed(controls, fold.boolValue);
+        AKFixtureExpectTopBand(host, controls, fold.boolValue ? @"no button list, folded" : @"no button list, open");
+        assert(fabs(CGRectGetMidX(controls.frame) - size.width / 2) < 1);
+    }
+    for (NSString *hand in @[@"right-handed", @"left-handed"]) {
+        AKTouchContract *contract = contracts[hand];
+        areas.contract = contract;
+        assert(areas.liveContract == contract);
+        CGFloat foldedMidX = 0;
+        for (NSNumber *fold in @[@YES, @NO]) {
+            AKFixtureSetToolbarCollapsed(controls, fold.boolValue);
+            NSString *what = [NSString stringWithFormat:@"handle_avoids_areas (%@, %@)", hand, fold.boolValue ? @"folded" : @"open"];
+            AKFixtureExpectTopBand(host, controls, what);
+            CGRect frame = controls.frame;
+            assert(fabs(frame.size.width - (fold.boolValue ? 96 : 208)) < 1 && fabs(frame.size.height - (fold.boolValue ? 34 : 44)) < 1);
+            // Folded and open share one dock: the handle does not jump away when it opens (same centre, within rounding).
+            if (fold.boolValue) foldedMidX = CGRectGetMidX(frame); else assert(fabs(CGRectGetMidX(frame) - foldedMidX) < 1.5);
+            if (!CGRectContainsRect(host.bounds, frame)) { fprintf(stderr, "TOUCH_DOCK_MISMATCH off screen: %s\n", what.UTF8String); assert(0); }
+            for (AKTouchArea *area in contract.areas)
+                if (CGRectIntersectsRect(CGRectInset(AKTouchAreaRect(area, size), -7, -7), frame)) {
+                    fprintf(stderr, "TOUCH_DOCK_MISMATCH %s overlaps %s\n", what.UTF8String, area.name.UTF8String);
+                    assert(0);
+                }
+            // Every toolbar button takes a tap above the walk stick's layer, and none of them sits on a button.
+            for (UIView *button in @[handle, [controls valueForKey:@"_keyboardButton"]]) {
+                CGPoint centre = [button convertPoint:CGPointMake(CGRectGetMidX(button.bounds), CGRectGetMidY(button.bounds)) toView:host];
+                UIView *hit = [host hitTest:centre withEvent:nil];
+                if (hit == overlay || ![hit isDescendantOfView:controls] || [areas claimsPoint:centre]) {
+                    fprintf(stderr, "TOUCH_DOCK_MISMATCH %s: a tap at %s is not the toolbar's (hit %s)\n", what.UTF8String,
+                            NSStringFromCGPoint(centre).UTF8String, NSStringFromClass(hit.class).UTF8String);
+                    assert(0);
+                }
+            }
+            // A tap in the 8 pt gap after the keyboard button (before the next button), or 2 pt under the toolbar, is not
+            // the toolbar's.
+            UIView *keyboardButton = [controls valueForKey:@"_keyboardButton"];
+            CGRect a = [controls convertRect:keyboardButton.frame toView:host];
+            CGPoint gap = CGPointMake(CGRectGetMaxX(a) + 4, CGRectGetMidY(a));
+            for (NSValue *value in @[[NSValue valueWithCGPoint:gap], [NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(frame), CGRectGetMaxY(frame) + 2)]]) {
+                UIView *hit = [host hitTest:value.CGPointValue withEvent:nil];
+                if ([hit isDescendantOfView:controls]) {
+                    fprintf(stderr, "TOUCH_DOCK_MISMATCH %s: a tap at %s outside its buttons is the toolbar's\n", what.UTF8String,
+                            NSStringFromCGPoint(value.CGPointValue).UTF8String);
+                    assert(0);
+                }
+            }
+        }
+        // The handle opens the toolbar and the toolbar folds itself again after 6 s, there.
+        AKFixtureSetToolbarCollapsed(controls, YES);
+        [controls toggleToolbar];
+        assert(![[controls valueForKey:@"_toolbarCollapsed"] boolValue]);
+        if ([hand isEqual:@"right-handed"]) {
+            // The fold is the controls' own 6 s timer: it is looked at (set for 6 s, running) and fired,
+            // not waited for - 6.4 s of the self-test's 30.
+            NSTimer *fold = [controls valueForKey:@"_toolbarCollapseTimer"];
+            assert(fold.isValid && fold.fireDate.timeIntervalSinceNow > 5.8 && fold.fireDate.timeIntervalSinceNow <= 6.0);
+            [fold fire];
+            assert([[controls valueForKey:@"_toolbarCollapsed"] boolValue]);
+        } else {
+            AKFixtureSetToolbarCollapsed(controls, YES);
+        }
+    }
+    // Whatever the game shows, folded and open: in the world, a window open (three pulses), out of the world
+    // (two), back in (one); and a reload that takes the chat strip away (the contract's notification, a turn later).
+    areas.contract = contracts[@"right-handed"];
+    NSString *noChat = [text stringByReplacingOccurrencesOfString:@"|chat,BL,296,24,568,52,CTRL-ALT-SHIFT-C,," withString:@""];
+    assert(![noChat isEqualToString:text]);
+    for (NSNumber *fold in @[@YES, @NO]) {
+        AKFixtureSetToolbarCollapsed(controls, fold.boolValue);
+        NSString *how = fold.boolValue ? @"folded" : @"open";
+        AKFixtureExpectTopBand(host, controls, [@"in the world, " stringByAppendingString:how]);
+        CGRect inWorld = controls.frame;
+        AKFixtureWindowPulses();
+        assert(signal.state == AKTouchWorldWindow && !areas.live && areas.windowOpen);
+        AKFixtureExpectTopBand(host, controls, [@"a window open, " stringByAppendingString:how]);
+        assert(CGRectEqualToRect(inWorld, controls.frame));     // the window does not move it at all
+        AKFixtureLeaveWorldPulses();
+        assert(signal.state == AKTouchWorldOut && !areas.live);
+        AKFixtureExpectTopBand(host, controls, [@"out of the world, " stringByAppendingString:how]);
+        assert(CGRectEqualToRect(inWorld, controls.frame));
+        AKFixtureEnterWorldPulse();
+        assert(areas.live);
+        AKFixtureExpectTopBand(host, controls, [@"back in the world, " stringByAppendingString:how]);
+        [NSNotificationCenter.defaultCenter postNotificationName:AKTouchContractDidChangeNotification object:AKTouchContractParse(noChat)];
+        AKDrainFixtureEvents();
+        assert(areas.contract.areas.count == 25);
+        AKFixtureExpectTopBand(host, controls, [@"after a reload without the chat strip, " stringByAppendingString:how]);
+        AKFixtureWindowPulses();
+        AKFixtureExpectTopBand(host, controls, [@"a window open after the reload, " stringByAppendingString:how]);
+        AKFixtureEnterWorldPulse();
+        areas.contract = contracts[@"right-handed"];
+    }
+    // The keyboard up: still the top band.
+    AKFixtureSetToolbarCollapsed(controls, YES);
+    [controls toggleKeyboard];
+    assert(controls.keyboardVisible);
+    AKFixtureExpectTopBand(host, controls, @"the keyboard up");
+    [controls dismissKeyboard];
+    AKDrainFixtureEvents();
+    areas.contract = nil;
+    host.frame = savedFrame;
+    AKFixtureSetToolbarCollapsed(controls, foldedAtStart);
+    [host layoutIfNeeded]; [controls layoutIfNeeded];
+    // The fold is a saved setting: its writes are flushed here, so the next check's "nothing written" snapshot does not
+    // see this check's preferences file land late.
+    [NSUserDefaults.standardUserDefaults synchronize];
+    guest.keyEvents = nil; guest.mouseEvents = nil;
+}
+
+// iPad touch: a tap on TouchPlay's chat strip opens the chat keyboard  and sends no chord; the
+// toolbar's keyboard does the same. The game's password box (secure event input, patch 0058) brings up a
+// secure field iPadOS offers nothing for (typed by hand); what lands there is the game's key events, the field is
+// empty at once, and nothing of it is in the defaults or any file. Every other mode: none of this.
+static void AKFixtureCheckTextKeyboard(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    if (!touchPlay) {
+        // ipados_unchanged: no bridge; the game's password box opens nothing by itself, as in 1.0.10.
+        assert([controls valueForKey:@"_textBridge"] == nil);
+        AKFixtureSecureInput(YES);
+        assert(!controls.keyboardVisible && controls.textKind == AKTextKindNone);
+        AKFixtureSecureInput(NO);
+        AKDrainFixtureEvents();
+        return;
+    }
+    AKFixtureEnterWorld(host);
+    AKTouchTextBridge *bridge = [controls valueForKey:@"_textBridge"];
+    assert(bridge != nil && bridge.field.superview == host && !bridge.field.userInteractionEnabled);
+    UIView *composer = [controls valueForKey:@"_composer"];
+    UITextView *input = [controls valueForKey:@"_keyboardInput"];
+    UIButton *keyboardButton = [controls valueForKey:@"_keyboardButton"];
+    AKTouchGamepad *stick = [controls valueForKey:@"_walkStick"];
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1-a22" ofType:@"lua"];
+    AKTouchContract *contract = AKTouchContractParse([NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL]);
+    areas.contract = contract;
+    [host layoutIfNeeded];
+    CGSize size = host.bounds.size;
+    CGPoint chat = AKFixtureCentre(contract, @"chat", size);
+
+    // chat_area_tap_opens_keyboard: the chat kind, no chord, no click.
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, chat);
+    assert(controls.keyboardVisible && controls.textKind == AKTextKindChat && input.isFirstResponder && !composer.hidden);
+    AKFixtureExpectKeys(@"chat strip tap", guest, @[]);
+    assert(guest.mouseEvents.count == 0);
+    [controls dismissKeyboard];
+    assert(!controls.keyboardVisible && controls.textKind == AKTextKindNone && host.isFirstResponder);
+    // toolbar_keyboard_opens_chat
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindChat && input.isFirstResponder);
+    [controls dismissKeyboard];
+
+    // Walking, then the chat strip: the stick lets W go as the keyboard comes up, so a typed "w" is a plain
+    // w and the walk does not come back.
+    UIView *overlay = AKFindInputView(host, @"wolkaraforever.touch.walkArea");
+    CGPoint walk = CGPointMake(size.width * 0.25, size.height * 0.62);
+    AKFixtureResetInput(guest);
+    AKFixtureTouch *thumb = AKFixtureFinger(walk);
+    thumb.fixtureView = overlay;
+    [overlay touchesBegan:[NSSet setWithObject:thumb] withEvent:nil];
+    thumb.fixturePoint = CGPointMake(walk.x, walk.y - 50);
+    [overlay touchesMoved:[NSSet setWithObject:thumb] withEvent:nil];
+    AKFixtureTap(host, chat);
+    assert(controls.textKind == AKTextKindChat && stick.keyboardVisible);
+    [input insertText:@"w"];
+    [input.delegate textView:input shouldChangeTextInRange:NSMakeRange(input.text.length, 0) replacementText:@"\n"];
+    AKDrainFixtureEvents();
+    [overlay touchesEnded:[NSSet setWithObject:thumb] withEvent:nil];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"walk, chat strip, w, Send", guest, @[@"down 13 -", @"up 13 -", @"down 111 -", @"up 111 -", @"down 13 -", @"up 13 -",
+                                                            @"down 36 -", @"up 36 -"]);
+    assert(!controls.keyboardVisible && [[host valueForKey:@"_mods"] unsignedLongValue] == 0);
+
+    // The game's password box.
+    NSDictionary *defaultsBefore = NSUserDefaults.standardUserDefaults.dictionaryRepresentation;
+    NSDictionary *filesBefore = AKFixtureContainerFiles();
+    assert([keyboardButton.accessibilityLabel isEqual:@"Show keyboard"]);
+    AKFixtureResetInput(guest);
+    AKFixtureSecureInput(YES);
+    // rule9_password_field_is_password_type: the field has the keyboard, the composer stays hidden, the stick stands down.
+    assert(bridge.active && bridge.field.isFirstResponder && controls.keyboardVisible && controls.textKind == AKTextKindPassword);
+    // secure, but no content type and invisible, so iPadOS offers no saved password (no AutoFill group).
+    assert(bridge.field.secureTextEntry && [bridge.field.textContentType isEqualToString:UITextContentTypeOneTimeCode] && bridge.field.alpha == 0 && !bridge.field.hidden);
+    assert(composer.hidden && !input.isFirstResponder && stick.keyboardVisible);
+    // rule9_autofill_forwards_and_forgets: the whole password at once, as autofill puts it.
+    bridge.field.text = @"abc";
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"autofill abc", guest, @[@"down 0 -", @"up 0 -", @"down 11 -", @"up 11 -", @"down 8 -", @"up 8 -"]);
+    assert(!bridge.field.text.length && !bridge.active && !controls.keyboardVisible && host.isFirstResponder && !stick.keyboardVisible);
+    // The box still has the game's focus: the toolbar's keyboard offers the password again.
+    assert([keyboardButton.accessibilityLabel isEqual:@"Type password"]);
+    [controls toggleKeyboard];
+    assert(bridge.active && controls.textKind == AKTextKindPassword && composer.hidden);
+    // The app goes inactive (Control Centre, a notification, a cancelled Face ID) with the Passwords field up: the game
+    // turns secure input off on resign and on again on return, and the box is still the game's focus all along. The
+    // controls keep that fact (the bridge never re-confirms a field it still has open), so the toolbar's keyboard
+    // button and Send still know they belong to a password.
+    assert([[controls valueForKey:@"_protectedField"] boolValue]);
+    AKFixtureWhileInactive(^{ AKFixturePostSecure(NO); });
+    assert([[controls valueForKey:@"_protectedField"] boolValue] && bridge.active && controls.textKind == AKTextKindPassword);
+    AKFixturePostSecure(YES);
+    AKFixtureAdvance(AKTouchPasswordInWorldSeconds + 0.1);
+    assert([[controls valueForKey:@"_protectedField"] boolValue] && bridge.active && controls.textKind == AKTextKindPassword);
+    [controls dismissKeyboard];
+    assert(!bridge.active && [keyboardButton.accessibilityLabel isEqual:@"Type password"]);
+    [controls toggleKeyboard];
+    assert(bridge.active && controls.textKind == AKTextKindPassword && !input.isFirstResponder && composer.hidden);
+    // The same with the keyboard down: the field closed, the app inactive, off then on - the box keeps its focus here too.
+    [controls dismissKeyboard];
+    AKFixtureWhileInactive(^{ AKFixturePostSecure(NO); });
+    assert([[controls valueForKey:@"_protectedField"] boolValue] && !bridge.active);
+    AKFixturePostSecure(YES);
+    AKFixtureAdvance(AKTouchPasswordInWorldSeconds + 0.1);
+    assert([[controls valueForKey:@"_protectedField"] boolValue]);
+    [controls dismissKeyboard];
+    assert([keyboardButton.accessibilityLabel isEqual:@"Type password"]);
+    // A guest's own request for the keyboard (Ctrl+Opt+D) while the box has focus is the Passwords field, never the plain
+    // composer that would send the password as chat.
+    assert(!bridge.active && !controls.keyboardVisible);
+    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchKeyboardRequestNotification object:nil];
+    assert(bridge.active && controls.textKind == AKTextKindPassword && composer.hidden && !input.isFirstResponder);
+    // Typed by hand: each key as it comes, backspace, and the player's own Return closes it.
+    AKFixtureResetInput(guest);
+    [bridge.field.delegate textField:bridge.field shouldChangeCharactersInRange:NSMakeRange(0, 0) replacementString:@"Q"];
+    [bridge.field deleteBackward];
+    [bridge.field.delegate textFieldShouldReturn:bridge.field];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"typed Q, backspace, Return", guest, @[@"down 12 S", @"up 12 S", @"down 51 -", @"up 51 -", @"down 36 -", @"up 36 -"]);
+    assert(!bridge.active && !bridge.field.text.length);
+    // A password nothing else could hold by chance: not in the defaults, not in any file of the app.
+    NSString *secret = @"Tp9-Zx!qv7";
+    [controls toggleKeyboard];
+    bridge.field.text = secret;
+    AKDrainFixtureEvents();
+    assert(!bridge.active && !bridge.field.text.length);
+    assert([NSUserDefaults.standardUserDefaults.dictionaryRepresentation isEqualToDictionary:defaultsBefore]);
+    NSDictionary *filesAfter = AKFixtureContainerFiles();
+    if (![filesAfter isEqualToDictionary:filesBefore]) {
+        for (NSString *file in [NSSet setWithArray:[filesBefore.allKeys arrayByAddingObjectsFromArray:filesAfter.allKeys]])
+            if (![filesBefore[file] isEqual:filesAfter[file]])
+                fprintf(stderr, "TOUCH_TEXT_HOST: container changed: %s (%s -> %s)\n", file.UTF8String,
+                        [filesBefore[file] UTF8String] ?: "none", [filesAfter[file] UTF8String] ?: "none");
+        assert(0);
+    }
+    assert(!AKFixtureContainerHolds(secret));
+    // The box loses focus (the app active): the field closes. Back to the plain keyboard button.
+    [controls toggleKeyboard];
+    assert(bridge.active);
+    AKFixtureSecureInput(NO);
+    assert(!bridge.active && !controls.keyboardVisible && host.isFirstResponder);
+    assert([keyboardButton.accessibilityLabel isEqual:@"Show keyboard"]);
+    // The chat composer is up when the game's password box takes focus: the password field takes over.
+    AKFixtureEnterWorldPulse();
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindChat);
+    AKFixtureSecureInput(YES);
+    assert(controls.textKind == AKTextKindPassword && !input.isFirstResponder && composer.hidden);
+    // Going to the background closes it.
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidEnterBackgroundNotification object:nil];
+    assert(!bridge.active && !controls.keyboardVisible);
+    AKFixtureSecureInput(NO);
+    AKDrainFixtureEvents();
+    [host becomeFirstResponder];
+    areas.contract = nil;
+    guest.keyEvents = nil;
+    guest.mouseEvents = nil;
+}
+
+// How many times the game's view took first responder: a keyboard handed from the composer to the password
+// field (or back) must not pass through it, which would hide the keyboard and show it again.
+static int gHostBecame;
+static IMP gHostBecomeOriginal;
+static BOOL AKFixtureCountingBecome(id self, SEL _cmd) {
+    gHostBecame++;
+    return ((BOOL (*)(id, SEL))gHostBecomeOriginal)(self, _cmd);
+}
+static void AKFixtureCountHostBecome(UIView *host) {
+    if (gHostBecomeOriginal) return;
+    Class cls = host.class;
+    SEL sel = @selector(becomeFirstResponder);
+    gHostBecomeOriginal = class_getMethodImplementation(cls, sel);
+    const char *types = method_getTypeEncoding(class_getInstanceMethod(cls, sel));
+    if (!class_addMethod(cls, sel, (IMP)AKFixtureCountingBecome, types))
+        method_setImplementation(class_getInstanceMethod(cls, sel), (IMP)AKFixtureCountingBecome);
+}
+static void AKFixtureTapButton(UIView *button) {
+    assert([button isKindOfClass:UIButton.class]);
+    [(UIButton *)button sendActionsForControlEvents:UIControlEventTouchUpInside];
+}
+
+// Fix round 1. Mockup 82: chips choose where the line goes (a slash line), a gold Send,
+// a world tap closes the keyboard and sends nothing. Mockups 26-28: the password field is real-size over the box
+// and the game slides up with the keyboard. The keyboard passes between the composer and the field without
+// going down. While the game's password box has focus, the chat strip opens the password field, never the chat.
+static void AKFixtureCheckChatF12(UIView *host, AKInputFixtureView *guest, BOOL touchPlay, BOOL beforePulse) {
+    if (!touchPlay) return;
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    UIView *composer = [controls valueForKey:@"_composer"];
+    UITextView *input = [controls valueForKey:@"_keyboardInput"];
+    AKTouchTextBridge *bridge = [controls valueForKey:@"_textBridge"];
+    AKFixtureUseClocks(controls);
+    // chat_send_f12_is_a_key_in_the_login_and_world: the signal helpers below are the add-on's
+    // one/three/two pulse paths; toggleKeyboard and the Send button are the player's UI path.
+    // The first case runs before AKFixtureCheckWorldGate: TouchControls.m starts at
+    // the login screen, whose account field takes the line and Tab.
+    // The three chat cases run after that gate has checked the fresh game's notice.
+    NSArray<NSString *> *states = @[@"before any pulse", @"in the world", @"window open", @"out of the world"];
+    for (NSUInteger state = beforePulse ? 0 : 1; state < (beforePulse ? 1 : states.count); state++) {
+        if (state == 1) AKFixtureEnterWorldPulse();
+        if (state == 2) AKFixtureWindowPulses();
+        if (state == 3) AKFixtureLeaveWorldPulses();
+        [controls toggleKeyboard];
+        if (state >= 2) {
+            // Window and Out have no chat-strip composer path; the toolbar types into the live game box.
+            assert(controls.textKind == AKTextKindGameBox && bridge.active && composer.hidden);
+            AKFixtureResetInput(guest);
+            [bridge.field.delegate textField:bridge.field shouldChangeCharactersInRange:NSMakeRange(0, 0) replacementString:@"a"];
+            AKDrainFixtureEvents();
+            AKFixtureExpectKeys([@"live game box: " stringByAppendingString:states[state]], guest,
+                                @[@"down 0 -", @"up 0 -"]);
+            assert(bridge.active && bridge.field.text.length == 0);
+            [bridge.field.delegate textFieldShouldReturn:bridge.field];
+            AKDrainFixtureEvents();
+            AKFixtureExpectKeys([@"live game box Return: " stringByAppendingString:states[state]], guest,
+                                @[@"down 0 -", @"up 0 -", @"down 36 -", @"up 36 -"]);
+            assert(controls.textKind == AKTextKindNone && !bridge.active);
+            [NSNotificationCenter.defaultCenter postNotificationName:AKTouchKeyboardRequestNotification object:nil];
+            assert(controls.textKind == AKTextKindChat && input.isFirstResponder && !composer.hidden);
+        }
+        assert(controls.textKind == AKTextKindChat);
+        UIButton *plainSend = (UIButton *)AKFindInputView(composer, @"wolkaraforever.keyboard.send");
+        AKFixtureResetInput(guest);
+        [input insertText:@"a"];
+        AKFixtureTapButton(plainSend);
+        AKDrainFixtureEvents();
+        AKFixtureExpectKeys([@"chat_send_f12_is_a_key_in_every_world_state: " stringByAppendingString:states[state]], guest,
+                            state == 0 ? @[@"down 0 -", @"up 0 -", @"down 48 -", @"up 48 -"] :
+                            @[@"down 111 -", @"up 111 -", @"down 0 -", @"up 0 -", @"down 36 -", @"up 36 -"]);
+        if (state == 0) {
+            assert(guest.receivedKeys.count == 4);
+            assert(guest.receivedKeys[0].keyCode == 0 && [guest.receivedKeys[0].characters isEqual:@"a"]);
+            assert(guest.receivedKeys[2].keyCode == 48 && [guest.receivedKeys[2].characters isEqual:@"\t"]);
+        } else {
+            assert(guest.receivedKeys.count == 6);
+            assert(guest.receivedKeys[0].keyCode == 111 && [guest.receivedKeys[0].characters isEqual:@"\uF70F"]);
+            assert(guest.receivedKeys[1].keyCode == 111 && [guest.receivedKeys[1].characters isEqual:@"\uF70F"]);
+            assert(guest.receivedKeys[2].keyCode == 0 && [guest.receivedKeys[2].characters isEqual:@"a"]);
+            assert(guest.receivedKeys[4].keyCode == 36 && [guest.receivedKeys[4].characters isEqual:@"\r"]);
+        }
+    }
+    if (beforePulse) return;
+    AKFixtureEnterWorldPulse();
+    [controls toggleKeyboard];
+    AKFixtureResetInput(guest);
+    [input insertText:@"/a"];
+    AKFixtureTapButton((UIButton *)AKFindInputView(composer, @"wolkaraforever.keyboard.send"));
+    AKDrainFixtureEvents();
+    AKFixtureInterruptionExpect(@"chat_send_f12_is_a_key_in_every_world_state: slash line", AKFixtureKeyPresses(guest),
+                                @"down 44 -, up 44 -, down 0 -, up 0 -, down 36 -, up 36 -");
+}
+
+static UIButton *AKFirstVisibleAccessoryButton(UIStackView *row) {
+    for (UIView *view in row.arrangedSubviews) {
+        if ([view isKindOfClass:UIButton.class] && !view.hidden) return (UIButton *)view;
+    }
+    return nil;
+}
+
+static void AKFixtureCheckChatAndSignIn(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    UIView *composer = [controls valueForKey:@"_composer"];
+    [host layoutIfNeeded];
+    if (!touchPlay) {
+        // Every other mode: the accessory row of 1.0.10 (Esc first), Replace, no Send, no gate, no slide.
+        [controls toggleKeyboard];
+        UIStackView *row = (UIStackView *)controls.inputAccessoryView;
+        UIButton *passwordKey = (UIButton *)row.arrangedSubviews.firstObject;
+        assert([passwordKey.accessibilityIdentifier isEqual:@"wolkaraforever.keyboard.key.savedPassword"] && passwordKey.hidden);
+        assert([[AKFirstVisibleAccessoryButton(row) titleForState:UIControlStateNormal] isEqual:@"Esc"]);
+        assert(AKFindInputView(row, @"wolkaraforever.chat.party") == nil);
+        UIView *send = AKFindInputView(composer, @"wolkaraforever.keyboard.send");
+        assert(send == nil || send.hidden);
+        assert(!AKFindInputView(composer, @"wolkaraforever.keyboard.insert").hidden);
+        assert(AKFindInputView(host, @"wolkaraforever.keyboard.gate") == nil);
+        [controls dismissKeyboard];
+        AKFixtureSecureInput(YES);
+        assert(CGAffineTransformIsIdentity(host.transform));
+        AKFixtureSecureInput(NO);
+        AKDrainFixtureEvents();
+        return;
+    }
+    AKTouchTextBridge *bridge = [controls valueForKey:@"_textBridge"];
+    UITextView *input = [controls valueForKey:@"_keyboardInput"];
+    // The login screen's account box (a player, a device check: Return there pressed Login with no password). Out of the world,
+    // with the password box seen since the player was last in it (here: the box with a remembered account, then a tap on
+    // the account box), the composer types into the game's account box: its Return reads Next and is Tab - to the
+    // password box - never Return, and no chat key.
+    AKFixtureUseClocks(controls);
+    if ([(AKTouchWorldSignal *)[controls valueForKey:@"_worldSignal"] state] != AKTouchWorldOut) AKFixtureLeaveWorldPulses();
+    AKFixtureSecureInput(YES);
+    AKFixtureSecureInput(NO);
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindChat && input.returnKeyType == UIReturnKeyNext);
+    AKFixtureResetInput(guest);
+    [input insertText:@"ab"];
+    [input insertText:@"\n"];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"the login's account box: ab, Return is Tab", guest, @[@"down 0 -", @"up 0 -", @"down 11 -", @"up 11 -", @"down 48 -", @"up 48 -"]);
+    assert(!controls.keyboardVisible);
+    // In the world the composer is the chat's again (Send); back out at the character list with no password box since,
+    // Return is Return again.
+    AKFixtureEnterWorld(host);
+    [controls toggleKeyboard];
+    assert(input.returnKeyType == UIReturnKeySend);
+    [controls dismissKeyboard];
+    AKFixtureLeaveWorldPulses();
+    [controls toggleKeyboard];
+    // at the character list the toolbar opens the live game box, with Done as Return.
+    assert(controls.textKind == AKTextKindGameBox && bridge.active && bridge.field.returnKeyType == UIReturnKeyDone);
+    AKFixtureResetInput(guest);
+    [bridge.field.delegate textFieldShouldReturn:bridge.field];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"the character list: a bare Return", guest, @[@"down 36 -", @"up 36 -"]);
+    assert(!bridge.active && controls.textKind == AKTextKindNone);
+    AKFixtureEnterWorld(host);
+    UILabel *label = [controls valueForKey:@"_composerLabel"];
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1-a22" ofType:@"lua"];
+    AKTouchContract *contract = AKTouchContractParse([NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL]);
+    areas.contract = contract;
+    [host layoutIfNeeded];
+    CGSize size = host.bounds.size;
+    CGPoint chat = AKFixtureCentre(contract, @"chat", size);
+    CGRect windowBounds = host.superview.bounds;
+
+    // Chips: Say, Party, Guild, Whisper, Yell above the keys; a chosen chip makes the line a slash line.
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindChat);
+    UIView *row = controls.inputAccessoryView;
+    NSArray *ids = @[@"say", @"party", @"guild", @"whisper", @"yell"], *titles = @[@"Say", @"Party", @"Guild", @"Whisper", @"Yell"];
+    for (NSUInteger i = 0; i < ids.count; i++) {
+        UIButton *chip = (UIButton *)AKFindInputView(row, [@"wolkaraforever.chat." stringByAppendingString:ids[i]]);
+        assert([chip isKindOfClass:UIButton.class] && [[chip titleForState:UIControlStateNormal] isEqual:titles[i]] && !chip.selected && chip.enabled);
+    }
+    UIButton *send = (UIButton *)AKFindInputView(composer, @"wolkaraforever.keyboard.send");
+    assert([send isKindOfClass:UIButton.class] && !send.hidden && [[send titleForState:UIControlStateNormal] isEqual:@"Send"]);
+    assert(AKFindInputView(composer, @"wolkaraforever.keyboard.insert").hidden);
+    // 1.0.10's keys stay under the chips (Tab and Esc move between the game's own fields).
+    assert([AKFindInputView(row, @"wolkaraforever.keyboard.key.0") isKindOfClass:UIButton.class]);
+    UIButton *party = (UIButton *)AKFindInputView(row, @"wolkaraforever.chat.party");
+    UIButton *whisper = (UIButton *)AKFindInputView(row, @"wolkaraforever.chat.whisper");
+    AKFixtureTapButton(party);
+    assert(party.selected && [label.text isEqual:@"Party"]);
+    AKFixtureResetInput(guest);
+    [input insertText:@"hi"];
+    AKFixtureTapButton(send);
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"Party chip, hi, Send", guest, @[@"down 44 -", @"up 44 -", @"down 35 -", @"up 35 -", @"down 49 -", @"up 49 -",
+        @"down 4 -", @"up 4 -", @"down 34 -", @"up 34 -", @"down 36 -", @"up 36 -"]);
+    assert(!controls.keyboardVisible);
+    // Whisper is the reply to the last whisper (/r): the app cannot read names. One chip at a time.
+    [controls toggleKeyboard];
+    assert(party.selected && [label.text isEqual:@"Party"]);
+    AKFixtureTapButton(whisper);
+    assert(whisper.selected && !party.selected && [label.text isEqual:@"Whisper"]);
+    AKFixtureResetInput(guest);
+    [input insertText:@"ok"];
+    [input.delegate textView:input shouldChangeTextInRange:NSMakeRange(input.text.length, 0) replacementText:@"\n"];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"Whisper chip, ok, Return key", guest, @[@"down 44 -", @"up 44 -", @"down 15 -", @"up 15 -", @"down 49 -", @"up 49 -",
+        @"down 31 -", @"up 31 -", @"down 40 -", @"up 40 -", @"down 36 -", @"up 36 -"]);
+    assert(!controls.keyboardVisible);
+    // The chosen chip tapped again: back to the game's own channel (F12 opens the chat on it).
+    [controls toggleKeyboard];
+    AKFixtureTapButton(whisper);
+    assert(!whisper.selected && ![label.text isEqual:@"Whisper"]);
+    AKFixtureResetInput(guest);
+    [input insertText:@"yo"];
+    AKFixtureTapButton(send);
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"no chip, yo, Send", guest, @[@"down 111 -", @"up 111 -", @"down 16 -", @"up 16 -", @"down 31 -", @"up 31 -",
+        @"down 36 -", @"up 36 -"]);
+    // The keyboard's own Return (a player, a device check: "only our Send button sends"): it reads Send and does exactly what
+    // Send does, whichever way the keyboard delivers it - a newline typed into the draft, or one that lands in it by a
+    // path that skips the text view's delegate - and the keyboard closes as Send closes it.
+    NSArray *yoSent = @[@"down 111 -", @"up 111 -", @"down 16 -", @"up 16 -", @"down 31 -", @"up 31 -", @"down 36 -", @"up 36 -"];
+    [controls toggleKeyboard];
+    assert(input.returnKeyType == UIReturnKeySend);
+    AKFixtureResetInput(guest);
+    [input insertText:@"yo"];
+    [input insertText:@"\n"];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"no chip, yo, the keyboard's Return", guest, yoSent);
+    assert(!controls.keyboardVisible);
+    [controls toggleKeyboard];
+    AKFixtureResetInput(guest);
+    [input insertText:@"yo"];
+    input.text = @"yo\n";
+    [input.delegate textViewDidChange:input];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"no chip, yo, a newline past the delegate", guest, yoSent);
+    assert(!controls.keyboardVisible && input.text.length == 0);
+
+    // A world tap while the chat keyboard is up closes it and sends nothing ; the toolbar and the composer
+    // still take their own taps.
+    [controls toggleKeyboard];
+    [host layoutIfNeeded];
+    UIView *gate = AKFindInputView(host, @"wolkaraforever.keyboard.gate");
+    assert(gate != nil && gate.superview == host);
+    CGPoint world = CGPointMake(size.width * 0.6, size.height * 0.3);
+    assert(![areas claimsPoint:world]);
+    assert([host hitTest:world withEvent:nil] == gate);
+    CGRect bar = controls.frame;
+    assert([[host hitTest:CGPointMake(CGRectGetMinX(bar) + 10, CGRectGetMidY(bar)) withEvent:nil] isDescendantOfView:controls]);
+    assert([[host hitTest:CGPointMake(CGRectGetMidX(composer.frame), CGRectGetMidY(composer.frame)) withEvent:nil] isDescendantOfView:composer]);
+    AKFixtureResetInput(guest);
+    AKFixtureTouch *tap = AKFixtureFinger(world);
+    tap.fixtureView = gate;
+    [gate touchesBegan:[NSSet setWithObject:tap] withEvent:nil];
+    [gate touchesEnded:[NSSet setWithObject:tap] withEvent:nil];
+    AKDrainFixtureEvents();
+    assert(!controls.keyboardVisible && guest.keyEvents.count == 0 && guest.mouseEvents.count == 0);
+    assert([host hitTest:world withEvent:nil] == host);
+
+    // The keyboard passes from the password field to the composer, and back, without the game's view taking it.
+    AKFixtureCountHostBecome(host);
+    [bridge beginForKind:AKTextKindPassword];   // the field up with the box not focused (Face ID's inactive moment)
+    assert(bridge.active);
+    gHostBecame = 0;
+    AKFixtureTap(host, chat);
+    assert(controls.textKind == AKTextKindChat && input.isFirstResponder && !bridge.active);
+    assert(gHostBecame == 0);
+    AKFixtureSecureInput(YES);
+    assert(controls.textKind == AKTextKindPassword && !input.isFirstResponder && composer.hidden);
+    assert(gHostBecame == 0);
+
+    // The game slides up with the password keyboard: the box stays above the keys, the field sits on it,
+    // the toolbar stays on screen, and a world tap is the game's (no gate).
+    CGFloat slide = round(size.height * AKTouchPasswordSlideFraction);
+    assert(fabs(host.transform.ty + slide) < 0.5 && host.transform.tx == 0 && host.transform.a == 1 && host.transform.d == 1);
+    assert(CGSizeEqualToSize(bridge.field.bounds.size, AKTouchPasswordFieldSize) && bridge.field.undoManager == nil);
+    // Text reaching the field past its setter and delegate (another UITextInput path) goes on the real editing-changed
+    // event (I3): sent, the field emptied.
+    AKFixtureResetInput(guest);
+    void (*plainSetText)(id, SEL, NSString *) = (void (*)(id, SEL, NSString *))class_getMethodImplementation(UITextField.class, @selector(setText:));
+    plainSetText(bridge.field, @selector(setText:), @"q");
+    [bridge.field sendActionsForControlEvents:UIControlEventEditingChanged];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"editing changed", guest, @[@"down 12 -", @"up 12 -"]);
+    assert(!bridge.field.text.length && bridge.active);
+    assert(fabs(bridge.field.center.x - size.width / 2) < 1 && fabs(bridge.field.center.y - size.height * AKTouchPasswordBoxCentre.y) < 1);
+    CGRect onScreen = [host convertRect:controls.frame toView:host.superview];
+    assert(fabs(CGRectGetMinY(onScreen) - (host.safeAreaInsets.top + 8)) < 1);
+    assert([host hitTest:world withEvent:nil] != gate);
+    // The chat strip while the box has focus (interim): the password field again, never the cleartext composer.
+    [controls dismissKeyboard];
+    assert(!bridge.active && CGAffineTransformIsIdentity(host.transform) && CGRectEqualToRect(host.frame, windowBounds));
+    // The password box also took the world away (a real box is not the add-on's pulse), so the strip is not a button
+    // now; the interim guard still holds if it were (the add-on pulsing while the box has focus).
+    assert(!areas.live);
+    areas.live = YES;
+    AKFixtureTap(host, chat);
+    assert(controls.textKind == AKTextKindPassword && !input.isFirstResponder && composer.hidden);
+    AKFixtureSecureInput(NO);
+    assert(!bridge.active && CGAffineTransformIsIdentity(host.transform) && CGRectEqualToRect(host.frame, windowBounds));
+    // The chat keyboard does not slide the game.
+    AKFixtureEnterWorld(host);
+    AKFixtureTap(host, chat);
+    assert(controls.textKind == AKTextKindChat && CGAffineTransformIsIdentity(host.transform));
+    [controls dismissKeyboard];
+    AKDrainFixtureEvents();
+    [host becomeFirstResponder];
+    areas.contract = nil;
+    guest.keyEvents = nil;
+    guest.mouseEvents = nil;
+}
+
+#pragma mark - AutoFill through Face ID (device fix 2)
+
+// an iPad test (16 Nov, build 4b9391c): the Passwords suggestion filled nothing, and afterwards the keyboard could not be
+// opened again. Two things the fixture never modelled before:
+//   - Face ID's sheet resigns the app in the middle of every fill, and the game turns secure input off *inside*
+//     UIApplicationWillResignActiveNotification (the adapter's NSApp hands it the resign synchronously). At that moment
+//     UIApplication.applicationState still reads Active; only the scene is already foregroundInactive (measured in the
+//     simulator: UISceneWillDeactivate, then WillResignActive with applicationState 0 and the scene's state 1).
+//   - iOS hands the credential over after Face ID, through UIKit's own completion
+//     (-[UIKeyboardHiddenViewController_Autofill passwordViewController:selectedCredential:] ->
+//     -[_UIKeyboardStateManager processPayloadInfo:]): it goes to the text input that has the keyboard then, or, if none
+//     has, to the password field of the autofill group, which UIKit asks to take the keyboard first.
+// The fixture drives that real UIKit completion with a fixture credential; nothing else of AutoFill can run here.
+// A device check found that Face ID fill ended in "You have been disconnected": no AutoFill. The field is a one-time
+// code's, so the same completion now types nothing - proof that UIKit no longer takes it for a password field. The
+// resign handling stays: Control Centre and notifications resign the app with the field up too.
+@interface AKFixtureCredential : NSObject
+@property (nonatomic, copy) NSString *user, *password;
+@end
+@implementation AKFixtureCredential
+@end
+static void AKFixtureAutofill(NSString *password) {
+    Class hidden = NSClassFromString(@"UIKeyboardHiddenViewController_Autofill");
+    SEL selected = NSSelectorFromString(@"passwordViewController:selectedCredential:");
+    if (!hidden || ![hidden instancesRespondToSelector:selected]) {
+        fprintf(stderr, "TOUCH_AUTOFILL: this UIKit has no %s; the AutoFill checks cannot run\n", sel_getName(selected));
+        assert(0);
+    }
+    AKFixtureCredential *credential = [AKFixtureCredential new];
+    credential.user = @"player@example.com";
+    credential.password = password;
+    id controller = [hidden new];
+    ((void (*)(id, SEL, id, id))objc_msgSend)(controller, selected, nil, credential);
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.2, false);
+    AKDrainFixtureEvents();
+}
+// Face ID's sheet (or Control Centre) comes up: the scene goes foregroundInactive and WillResignActive is posted while
+// applicationState still reads Active. `during` is what the game does inside that notification.
+// (UIKit derives applicationState from the scenes, so it is held at the value the iPad reads then.)
+static IMP gSceneStateOriginal, gAppStateOriginal;
+static void AKFixtureResign(void (^during)(void)) {
+    Method method = class_getInstanceMethod(UIScene.class, @selector(activationState));
+    gSceneStateOriginal = method_getImplementation(method);
+    method_setImplementation(method, imp_implementationWithBlock(^UISceneActivationState(id scene) { (void)scene; return UISceneActivationStateForegroundInactive; }));
+    Method app = class_getInstanceMethod(UIApplication.class, @selector(applicationState));
+    gAppStateOriginal = method_getImplementation(app);
+    method_setImplementation(app, imp_implementationWithBlock(^UIApplicationState(id application) { (void)application; return UIApplicationStateActive; }));
+    UIScene *scene = UIApplication.sharedApplication.connectedScenes.anyObject;
+    [NSNotificationCenter.defaultCenter postNotificationName:UISceneWillDeactivateNotification object:scene];
+    id observer = [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil
+                                                              usingBlock:^(NSNotification *note) { (void)note; if (during) during(); }];
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+    AKDrainFixtureEvents();
+}
+// ...and goes away again: the app is active.
+static void AKFixtureReturn(void) {
+    method_setImplementation(class_getInstanceMethod(UIScene.class, @selector(activationState)), gSceneStateOriginal);
+    method_setImplementation(class_getInstanceMethod(UIApplication.class, @selector(applicationState)), gAppStateOriginal);
+    UIScene *scene = UIApplication.sharedApplication.connectedScenes.anyObject;
+    [NSNotificationCenter.defaultCenter postNotificationName:UISceneDidActivateNotification object:scene];
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    AKDrainFixtureEvents();
+}
+static NSUInteger AKFixtureKeyDowns(AKInputFixtureView *guest) {
+    NSUInteger downs = 0;
+    for (NSString *event in guest.keyEvents) if ([event hasPrefix:@"down"]) downs++;
+    return downs;
+}
+static BOOL AKFixtureProtected(AKTouchControls *controls) { return [[controls valueForKey:@"_protectedField"] boolValue]; }
+
+static void AKFixtureCheckAutofill(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    if (!touchPlay) return;   // no bridge, no Passwords field: AKFixtureCheckTextKeyboard covers every other mode
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    AKFixtureUseClocks(controls);
+    AKTouchTextBridge *bridge = [controls valueForKey:@"_textBridge"];
+    UITextView *input = [controls valueForKey:@"_keyboardInput"];
+    UIButton *keyboardButton = [controls valueForKey:@"_keyboardButton"];
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1-a22" ofType:@"lua"];
+    AKTouchContract *contract = AKTouchContractParse([NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL]);
+    areas.contract = contract;
+    [host layoutIfNeeded];
+    CGPoint chat = AKFixtureCentre(contract, @"chat", host.bounds.size);
+    if (areas.live) AKFixtureLeaveWorldPulses();   // the login screen
+
+    // 1. The app resigns with the field up (Control Centre, a notification; previously, including Face ID's sheet): the
+    //    game turns secure input off inside the resign. The box keeps its focus, so the field stays up and ready.
+    AKFixtureResetInput(guest);
+    AKFixtureSecureInput(YES);
+    assert(bridge.active && controls.textKind == AKTextKindPassword && AKFixtureProtected(controls));
+    AKFixtureResign(^{ AKFixturePostSecure(NO); });
+    if (!(bridge.kind == AKTextKindPassword && bridge.active && AKFixtureProtected(controls))) {
+        fprintf(stderr, "TOUCH_AUTOFILL_MISMATCH resign with the field up: kind %ld active %d protected %d (the resign's off closed the field)\n",
+                (long)bridge.kind, bridge.active, AKFixtureProtected(controls));
+        assert(0);
+    }
+    AKFixtureReturn();
+    AKFixturePostSecure(YES);   // the game, active again: its box still has focus
+    AKFixtureAdvance(AKTouchPasswordInWorldSeconds + 0.1);
+    assert(bridge.active && controls.textKind == AKTextKindPassword);
+    // With no AutoFill, the field is a one-time code's, never a password's, so even UIKit's own credential
+    // completion, with the field holding the keyboard, types nothing into the game (previously it typed "abc").
+    AKFixtureAutofill(@"abc");
+    AKFixtureExpectKeys(@"a credential handed to the field (nothing)", guest, @[]);
+    assert(bridge.active && bridge.kind == AKTextKindPassword && !bridge.field.text.length);
+    assert(!input.isFirstResponder && !input.text.length);
+    // Typed by hand instead: each key goes as it is typed.
+    [bridge.field.delegate textField:bridge.field shouldChangeCharactersInRange:NSMakeRange(0, 0) replacementString:@"a"];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"typed by hand after a resign", guest, @[@"down 0 -", @"up 0 -"]);
+    [controls dismissKeyboard];
+    assert(!bridge.active && [keyboardButton.accessibilityLabel isEqual:@"Type password"]);
+
+    // 2.  (no AutoFill): the window has no password field for AutoFill, so a credential that UIKit hands over
+    //    with no text input holding the keyboard has nowhere to go - nothing reaches the game, nor the chat draft.
+    //    Previously iOS asked the field to take the keyboard back and typed it: 10 key downs.) The test password,
+    //    so the log check also covers UIKit's own path.
+    [controls toggleKeyboard];
+    assert(bridge.active && controls.textKind == AKTextKindPassword);
+    AKFixtureResetInput(guest);
+    [bridge.field resignFirstResponder];
+    assert(bridge.kind == AKTextKindPassword && !bridge.active && !controls.keyboardVisible && CGAffineTransformIsIdentity(host.transform));
+    AKFixtureAutofill(@"Tp9-Zx!qv7");
+    if (AKFixtureKeyDowns(guest) != 0 || bridge.active || input.isFirstResponder || input.text.length) {
+        fprintf(stderr, "TOUCH_AUTOFILL_MISMATCH no AutoFill group: %lu key downs, field active %d, draft %d/%lu\n",
+                (unsigned long)AKFixtureKeyDowns(guest), bridge.active, input.isFirstResponder, (unsigned long)input.text.length);
+        assert(0);
+    }
+    assert(!bridge.field.text.length && !controls.keyboardVisible);
+
+    // 3. Face ID fails or the sheet is cancelled: no fill. The field is still the box's; the keyboard button closes and
+    //    reopens it, and typing by hand works.
+    AKFixturePostSecure(NO);    // the player logged in by hand meanwhile; a new login screen:
+    AKFixtureSecureInput(YES);
+    assert(bridge.active);
+    AKFixtureResign(^{ AKFixturePostSecure(NO); });
+    AKFixtureReturn();
+    AKFixturePostSecure(YES);
+    AKFixtureAdvance(AKTouchPasswordInWorldSeconds + 0.1);
+    assert(bridge.active && controls.textKind == AKTextKindPassword);
+    [controls toggleKeyboard];
+    assert(!controls.keyboardVisible && [keyboardButton.accessibilityLabel isEqual:@"Type password"]);
+    [controls toggleKeyboard];
+    assert(bridge.active && controls.textKind == AKTextKindPassword);
+    [bridge.field resignFirstResponder];   // the sheet took the keyboard and was cancelled
+    [controls toggleKeyboard];
+    assert(bridge.active && controls.textKind == AKTextKindPassword);
+    AKFixtureResetInput(guest);
+    [bridge.field.delegate textField:bridge.field shouldChangeCharactersInRange:NSMakeRange(0, 0) replacementString:@"a"];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"typed by hand after a cancelled sheet", guest, @[@"down 0 -", @"up 0 -"]);
+
+    // 4. The game closes the box while the sheet is up (the app active: a real loss of focus). The field closes and a
+    //    fill that comes after goes nowhere - never to whatever has the game's focus now. The keyboard opens as the chat.
+    [bridge.field resignFirstResponder];
+    AKFixturePostSecure(NO);
+    assert(bridge.kind == AKTextKindNone && !bridge.active && !AKFixtureProtected(controls));
+    AKFixtureResetInput(guest);
+    AKFixtureAutofill(@"abc");
+    AKFixtureExpectKeys(@"a fill after the box closed", guest, @[]);
+    // ...nor to the chat draft: UIKit asks the login group's other text inputs to take the account name, and the draft
+    // editor is one of them in the window. It is never opened by anyone but its owner.
+    if (input.isFirstResponder || input.text.length || controls.keyboardVisible) {
+        fprintf(stderr, "TOUCH_AUTOFILL_MISMATCH a fill after the box closed opened the chat draft (%lu characters in it)\n", (unsigned long)input.text.length);
+        assert(0);
+    }
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindChat && input.isFirstResponder && !bridge.active);
+    [controls dismissKeyboard];
+
+    // 5. The excerpt's last turn: secure input on for 1.7 s (the timer had not run: the clock moves, nothing settles), then
+    //    the resign's off. Nothing opens while the app is away, and nothing stale is left: if the game does not ask
+    //    again, the keyboard button and the chat strip open the chat.
+    AKFixturePostSecure(YES);
+    gFixtureNow += 1.7;
+    AKFixtureResign(^{ AKFixturePostSecure(NO); });
+    if (bridge.active || controls.keyboardVisible) {
+        fprintf(stderr, "TOUCH_AUTOFILL_MISMATCH a field opened while the app was inactive\n");
+        assert(0);
+    }
+    AKFixtureReturn();
+    AKFixtureAdvance(AKTouchPasswordInWorldSeconds + 0.1);
+    if (controls.keyboardVisible || AKFixtureProtected(controls)) {
+        fprintf(stderr, "TOUCH_AUTOFILL_MISMATCH after the excerpt's resign: keyboard %d protected %d\n", controls.keyboardVisible, AKFixtureProtected(controls));
+        assert(0);
+    }
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindChat && input.isFirstResponder);
+    [controls dismissKeyboard];
+    // ...and if it does ask again, the field opens once the app is active.
+    AKFixturePostSecure(YES);
+    gFixtureNow += 1.7;
+    AKFixtureResign(^{ AKFixturePostSecure(NO); });
+    AKFixtureReturn();
+    AKFixturePostSecure(YES);
+    AKFixtureAdvance(AKTouchPasswordInWorldSeconds + 0.1);
+    assert(bridge.active && controls.textKind == AKTextKindPassword && AKFixtureProtected(controls));
+    AKFixturePostSecure(NO);
+    assert(!bridge.active && !AKFixtureProtected(controls));
+
+    // 6. Self-heal: whatever stale password state is left (here: the box's focus remembered after the game let go of
+    //    secure input), the player's own tap ends it and opens the right keyboard - the chat strip in the world and the
+    //    toolbar's button alike.
+    AKFixtureEnterWorld(host);
+    [controls setValue:@YES forKey:@"_protectedField"];
+    [bridge beginForKind:AKTextKindPassword];
+    [bridge.field resignFirstResponder];
+    AKFixtureTap(host, chat);
+    if (controls.textKind != AKTextKindChat || !input.isFirstResponder) {
+        fprintf(stderr, "TOUCH_AUTOFILL_MISMATCH stale password state: the chat strip opened kind %ld\n", (long)controls.textKind);
+        assert(0);
+    }
+    assert(!AKFixtureProtected(controls) && bridge.kind == AKTextKindNone);
+    [controls dismissKeyboard];
+    [controls setValue:@YES forKey:@"_protectedField"];
+    [controls toggleKeyboard];
+    assert(controls.textKind == AKTextKindChat && input.isFirstResponder && !AKFixtureProtected(controls));
+    [controls dismissKeyboard];
+    AKDrainFixtureEvents();
+    [host becomeFirstResponder];
+    areas.contract = nil;
+    guest.keyEvents = nil;
+    guest.mouseEvents = nil;
+}
+
+#pragma mark - The in-world gate
+
+// The add-on's secure-input pulses tell the app the player is in the world; until then TouchPlay's buttons are not
+// on screen and every touch is 1.0.10's plain touch. A game start is out of the world. One short pulse enters it,
+// two leave it, a password box (secure input held) is not it, and a pulse never opens the password keyboard or
+// touches the chat composer. Time is the fixture clock. Every other mode: no signal, nothing changes.
+static void AKFixtureCheckWorldGate(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    if (!touchPlay) {
+        assert([controls valueForKey:@"_worldSignal"] == nil && [host valueForKey:@"_touchAreas"] == nil);
+        return;
+    }
+    AKTouchWorldSignal *signal = [controls valueForKey:@"_worldSignal"];
+    AKTouchTextBridge *bridge = [controls valueForKey:@"_textBridge"];
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    assert(signal != nil && bridge != nil && areas != nil);
+    AKFixtureUseClocks(controls);
+    UIView *composer = [controls valueForKey:@"_composer"];
+    UITextView *input = [controls valueForKey:@"_keyboardInput"];
+    UIView *overlay = AKFindInputView(host, @"wolkaraforever.touch.walkArea");
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1" ofType:@"lua"];
+    AKTouchContract *contract = AKTouchContractParse([NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL]);
+    CGSize size = host.bounds.size;
+    CGPoint walk = CGPointMake(size.width * 0.25, size.height * 0.62);
+    [host layoutIfNeeded];
+
+    // game_start_is_not_in_the_world, no notice with live NO.
+    assert(!signal.inWorld && !areas.live);
+    assert(AKFindInputView(host, @"wolkaraforever.touch.contractMissing") == nil && areas.missingNotice == nil);
+
+    // The notice waits for the world: this game has no button list, and the entering pulse - not the game start -
+    // is what shows it (once; it never takes a touch).
+    AKFixtureEnterWorldPulse();
+    UIView *notice = AKFindInputView(host, @"wolkaraforever.touch.contractMissing");
+    assert(areas.live && notice != nil && !notice.userInteractionEnabled && !notice.hidden);
+    AKFixtureLeaveWorldPulses();
+    assert(!areas.live && !signal.inWorld);
+
+    // Live NO with the button list loaded: plain 1.0.10 touches. A tap on a spell button is a click (no chord), the
+    // walk area is a world touch (no stick, no W), and the world is 1.0.8's: a hold right clicks, two taps are two
+    // left clicks, the edge clicks, a drag is a left drag - whatever the contract's turn and world key say.
+    areas.contract = contract;
+    [host layoutIfNeeded];
+    assert(contract.turnWithView && contract.worldKey.length);
+    CGPoint spell = AKFixtureCentre(contract, @"spell2", size);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, spell);
+    AKFixtureExpect(@"live NO: a tap on a spell button is a plain click", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", spell, host), AKFixtureMouse(@"LeftUp", spell, host)]));
+    assert(guest.keyEvents.count == 0 && areas.activeFingerCount == 0 && ![areas claimsPoint:spell]);
+    assert([host hitTest:walk withEvent:nil] == host && [overlay hitTest:walk withEvent:nil] == nil);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, walk);
+    AKFixtureExpect(@"live NO: the walk area is a world touch", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", walk, host), AKFixtureMouse(@"LeftUp", walk, host)]));
+    assert(guest.keyEvents.count == 0);
+    AKFixtureCheckWorld108(host, guest);
+    // The pinch takes a finger on a button's place and in the edge zone, as 1.0.8's does.
+    UIPinchGestureRecognizer *pinch = [host valueForKey:@"_pinch"];
+    assert([pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:AKFixtureFinger(spell)]);
+    assert([pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:AKFixtureFinger(CGPointMake(10, 500))]);
+    // The chat strip is not a button here: a tap on it is a click, and the keyboard does not open.
+    CGPoint chat = AKFixtureCentre(contract, @"chat", size);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, chat);
+    assert(!controls.keyboardVisible && guest.keyEvents.count == 0);
+
+    // single_pulse_enters_the_world: one short pulse; nothing is decided until the group window has closed.
+    AKFixturePulse();
+    assert(!areas.live);
+    AKFixtureAdvance(0.7);
+    assert(signal.inWorld && areas.live);
+    // live YES: as today - a tap on a spell is its chord, the walk area is the stick's, the second tap right clicks.
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, spell);
+    AKFixtureExpect(@"live YES: spell2's chord", AKFixtureJoin(guest.keyEvents), AKFixtureJoin(AKFixtureChordTap(99)));
+    assert(AKFixtureClicks(guest).length == 0);
+    assert([host hitTest:walk withEvent:nil] == overlay);
+    CGPoint a = CGPointMake(500, 400), b = CGPointMake(520, 410);
+    __block NSTimeInterval now = 1000;
+    areas.clock = ^NSTimeInterval { return now; };
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, a);
+    now += 0.4;
+    AKFixtureTap(host, b);
+    AKFixtureExpect(@"live YES: the second tap right clicks", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", a, host), AKFixtureMouse(@"LeftUp", a, host),
+                                    AKFixtureMouse(@"RightDown", b, host), AKFixtureMouse(@"RightUp", b, host)]));
+    areas.clock = nil;
+
+    // double_pulse_leaves_the_world, with a thumb walking: W goes up as the buttons go (no W running into the next
+    // screen), and the lift after it is nothing.
+    AKFixtureResetInput(guest);
+    AKFixtureTouch *thumb = AKFixtureFinger(walk);
+    thumb.fixtureView = overlay;
+    [overlay touchesBegan:[NSSet setWithObject:thumb] withEvent:nil];
+    thumb.fixturePoint = CGPointMake(walk.x, walk.y - 50);
+    [overlay touchesMoved:[NSSet setWithObject:thumb] withEvent:nil];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"walking", guest, @[@"down 13 -"]);
+    AKFixtureLeaveWorldPulses();
+    AKDrainFixtureEvents();
+    assert(!signal.inWorld && !areas.live);
+    AKFixtureExpectKeys(@"left the world while walking", guest, @[@"down 13 -", @"up 13 -"]);
+    [overlay touchesEnded:[NSSet setWithObject:thumb] withEvent:nil];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"the lift adds nothing", guest, @[@"down 13 -", @"up 13 -"]);
+    assert([host hitTest:walk withEvent:nil] == host);
+
+    // A pulse never opens the password keyboard, never touches the chat composer, and is never typing.
+    AKFixtureResetInput(guest);
+    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchKeyboardRequestNotification object:nil];
+    assert(controls.textKind == AKTextKindChat && input.isFirstResponder && !composer.hidden);
+    for (int pulse = 0; pulse < 2; pulse++) {
+        if (pulse == 0) AKFixtureEnterWorldPulse(); else AKFixtureLeaveWorldPulses();
+        assert(!bridge.active && controls.textKind == AKTextKindChat && input.isFirstResponder && !composer.hidden);
+        assert(CGAffineTransformIsIdentity(host.transform));
+    }
+    [input insertText:@"x"];
+    assert([input.text hasSuffix:@"x"]);   // the pulses did not touch the draft
+    [controls dismissKeyboard];
+    AKDrainFixtureEvents();
+    assert(guest.keyEvents.count == 0 && guest.mouseEvents.count == 0);
+    assert(!bridge.active && controls.textKind == AKTextKindNone && !areas.live);   // entering then leaving: out again
+    AKFixtureEnterWorldPulse();
+    assert(areas.live);
+    // In-to-In pulses also leave an already-open composer and its draft intact.
+    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchKeyboardRequestNotification object:nil];
+    assert(controls.textKind == AKTextKindChat && input.isFirstResponder && !composer.hidden);
+    [input insertText:@"y"];
+    NSString *inWorldDraft = [input.text copy];
+    AKFixtureEnterWorldPulse();
+    assert(areas.live && signal.inWorld && !bridge.active && controls.textKind == AKTextKindChat &&
+           input.isFirstResponder && !composer.hidden && [input.text isEqualToString:inWorldDraft]);
+    [controls dismissKeyboard];
+    // The toolbar's keyboard button still says "Show keyboard": the pulses did not look like the password box.
+    assert([[(UIButton *)[controls valueForKey:@"_keyboardButton"] accessibilityLabel] isEqual:@"Show keyboard"]);
+
+    // in the world: a secure input that is neither a pulse nor a real box (a loading screen stretched the
+    // add-on's pulse to 0.5 s) opens no field and keeps the world - the buttons stay live, the toolbar's keyboard
+    // button is the plain one, and the chat composer is left alone.
+    assert(areas.live && signal.inWorld);
+    AKFixturePostSecure(YES);
+    AKFixtureAdvance(0.5);
+    assert(!bridge.active && areas.live && signal.inWorld && controls.textKind == AKTextKindNone);
+    AKFixturePostSecure(NO);
+    AKFixtureAdvance(2);
+    assert(!bridge.active && areas.live && signal.inWorld && controls.textKind == AKTextKindNone);
+    assert([[(UIButton *)[controls valueForKey:@"_keyboardButton"] accessibilityLabel] isEqual:@"Show keyboard"]);
+    assert(![[controls valueForKey:@"_protectedField"] boolValue]);
+    // ...and a 2 s one is the box: the field opens past 1.5 s (not before), the world goes then, and its end is no pulse.
+    AKFixturePostSecure(YES);
+    AKFixtureAdvance(1.4);
+    assert(!bridge.active && areas.live && signal.inWorld);
+    AKFixtureAdvance(0.2);
+    assert(bridge.active && controls.textKind == AKTextKindPassword && !areas.live && !signal.inWorld);
+    AKFixtureAdvance(3);
+    AKFixturePostSecure(NO);
+    assert(!bridge.active);
+    AKFixtureAdvance(2);
+    assert(!areas.live);
+    // At the login screen (out of the world) a 0.5 s one is already a box: the field opens after the usual 0.35 s.
+    AKFixturePostSecure(YES);
+    AKFixtureAdvance(0.3);
+    assert(!bridge.active);
+    AKFixtureAdvance(0.2);
+    assert(bridge.active && controls.textKind == AKTextKindPassword && !areas.live);
+    AKFixturePostSecure(NO);
+    assert(!bridge.active);
+    AKFixtureAdvance(2);
+    assert(!areas.live);
+    // Entering the world after it: live again. And a second box later, then entering again.
+    AKFixtureEnterWorldPulse();
+    assert(areas.live);
+
+    // Out of the world again, a tap on a spell is a plain click once more (the same as after the first double pulse).
+    AKFixtureLeaveWorldPulses();
+    assert(!areas.live);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, spell);
+    AKFixtureExpect(@"left again: a plain click", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", spell, host), AKFixtureMouse(@"LeftUp", spell, host)]));
+    assert(guest.keyEvents.count == 0);
+
+    // The checks that follow set their own button lists and start in the world.
+    areas.contract = nil;
+    AKFixtureEnterWorldPulse();
+    assert(areas.live);
+    guest.keyEvents = nil;
+    guest.mouseEvents = nil;
+}
+
+#pragma mark - A window open in the world
+
+// Three pulses: a window or panel is open while the player is still in the world. TouchPlay's buttons, the world touch and
+// the walk stick stop as they do out of the world (plain touches), but an auto-run keeps running: run 5 (16 Nov) opened and
+// closed the map with auto-run on, and the run stopped. The exact sequence: auto-run lock -> 3 -> 1 -> still running;
+// -> 2 -> stopped. A group of four or more is read as two. With a window open (or out of the world) a plain touch is
+// 0055's: a tap clicks on lift, a drag is the left button down at its start, moves, up at the lift (an item
+// out of a bag), a still hold of 0.45 s is a right click; and no touch area opens the keyboard - only the game's own box.
+static void AKFixtureCheckWindowState(UIView *host, AKInputFixtureView *guest, BOOL touchPlay) {
+    if (!touchPlay) return;
+    AKTouchControls *controls = [host valueForKey:@"_touchControls"];
+    AKTouchWorldSignal *signal = [controls valueForKey:@"_worldSignal"];
+    AKTouchAreas *areas = [host valueForKey:@"_touchAreas"];
+    AKTouchGamepad *stick = [controls valueForKey:@"_walkStick"];
+    UIView *overlay = AKFindInputView(host, @"wolkaraforever.touch.walkArea");
+    UIView *badge = AKFindInputView(host, @"wolkaraforever.touch.autorun"), *lock = AKFindInputView(host, @"wolkaraforever.touch.walkStick.lock");
+    assert(signal && areas && stick && overlay && badge && lock);
+    AKFixtureEnterWorld(host);
+    NSString *path = [NSBundle.mainBundle pathForResource:@"TouchPlay-v1-a22" ofType:@"lua"];
+    AKTouchContract *contract = AKTouchContractParse([NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL]);
+    assert(contract.areas.count == 26 && contract.edgeRun);
+    areas.contract = contract;
+    [host layoutIfNeeded];
+    CGSize size = host.bounds.size;
+    CGPoint walk = CGPointMake(size.width * 0.25, size.height * 0.62);
+    __block NSTimeInterval now = 300;
+    [overlay setValue:^NSTimeInterval { return now; } forKey:@"clock"];
+    void (^autoRun)(void) = ^{
+        AKFixtureTouch *thumb = AKFixtureFinger(walk); thumb.fixtureView = overlay;
+        [overlay touchesBegan:[NSSet setWithObject:thumb] withEvent:nil];
+        thumb.fixturePoint = CGPointMake(walk.x, walk.y - 60);
+        [overlay touchesMoved:[NSSet setWithObject:thumb] withEvent:nil];
+        thumb.fixturePoint = AKFixtureWalkLock(host);      // up onto the lock above the ring
+        [overlay touchesMoved:[NSSet setWithObject:thumb] withEvent:nil];
+        now += 0.3; [overlay performSelector:@selector(tick)];   // held there until the lock is full
+        [overlay touchesEnded:[NSSet setWithObject:thumb] withEvent:nil];
+        AKDrainFixtureEvents();
+    };
+
+    // a32_auto_run_survives_a_window: lock the run, open a window (3), close it (1): still running, W never came up.
+    AKFixtureResetInput(guest);
+    autoRun();
+    assert(stick.autoRunning);
+    AKFixtureExpectKeys(@"auto-run", guest, @[@"down 13 -"]);
+    AKFixtureWindowPulses();
+    AKDrainFixtureEvents();
+    assert(signal.state == AKTouchWorldWindow && !areas.live && areas.windowOpen && !signal.inWorld);
+    AKFixtureExpectKeys(@"a window open: auto-run kept", guest, @[@"down 13 -"]);
+    assert(stick.autoRunning && !badge.hidden && !lock.hidden);
+
+    // With the window open the walk stick stays live  in the stick box only (the faint rest ring's square
+    // and the lock target above it), and the pinch never takes its thumb (patch 0083) - a walk and a tap on the window are
+    // two fingers, not a zoom. Elsewhere in the lower-left half (the game's character pane, spellbook, quest log) a tap is
+    // a plain click, and it does not stop the run.
+    NSMutableArray<NSValue *> *areaRects = [NSMutableArray array];
+    for (AKTouchArea *area in contract.areas) [areaRects addObject:[NSValue valueWithCGRect:AKTouchAreaRect(area, size)]];
+    CGRect box = AKTouchWalkRestRing(size, contract.leftHanded, areaRects);
+    assert(!CGRectIsNull(box) && !CGRectContainsPoint(box, walk));
+    CGPoint inBox = CGPointMake(CGRectGetMidX(box), CGRectGetMidY(box));
+    assert([host hitTest:inBox withEvent:nil] == overlay);
+    assert([host hitTest:walk withEvent:nil] == host);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, walk);
+    AKFixtureExpect(@"a window open, a tap in the lower-left half outside the stick box is a plain click", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", walk, host), AKFixtureMouse(@"LeftUp", walk, host)]));
+    assert(guest.keyEvents.count == 0 && stick.autoRunning);
+    UIPinchGestureRecognizer *pinch = [host valueForKey:@"_pinch"];
+    AKFixtureTouch *onStick = AKFixtureFinger(walk); onStick.fixtureView = overlay;
+    // No thumb on the stick now (an auto-run): a finger there may be a pinch's first; the pinch's start decides (0084).
+    assert([pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:onStick]);
+    assert([pinch.delegate gestureRecognizerShouldBegin:pinch]);
+    AKFixtureTouch *onWindow = AKFixtureFinger(CGPointMake(size.width * 0.55, size.height * 0.5)); onWindow.fixtureView = host;
+    assert([pinch.delegate gestureRecognizer:pinch shouldReceiveTouch:onWindow]);
+    // Every other touch is plain (0055): a spell button is a click, a drag is down at the start, moves, up at
+    // the lift, a still hold is a right click.
+    CGPoint spell = AKFixtureCentre(contract, @"spell2", size);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, spell);
+    AKFixtureExpect(@"a window open: a tap on a spell button is a plain click", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", spell, host), AKFixtureMouse(@"LeftUp", spell, host)]));
+    assert(guest.keyEvents.count == 0 && areas.activeFingerCount == 0);
+    // (Within the 10 pt slop nothing moves, so a tap that jitters never starts an item drag.)
+    CGPoint from = CGPointMake(size.width * 0.5, size.height * 0.4), to = CGPointMake(from.x + 120, from.y + 60);
+    AKFixtureResetInput(guest);
+    AKFixtureGesture(host, from, @[[NSValue valueWithCGPoint:CGPointMake(from.x + 3, from.y)], [NSValue valueWithCGPoint:to]]);
+    AKFixtureExpect(@"a window open: a drag (an item out of a bag)", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"LeftDown", from, host), AKFixtureMouse(@"LeftDrag", to, host), AKFixtureMouse(@"LeftUp", to, host)]));
+    AKFixtureResetInput(guest);
+    AKFixtureTouch *held = nil;
+    AKFixtureHoldFired(host, from, 0.45, &held);   // 0055's hold time, not TouchPlay's (the buttons are not live)
+    AKFixtureExpect(@"a window open: a still hold right clicks", AKFixtureClicks(guest),
+                    AKFixtureJoin(@[AKFixtureMouse(@"RightDown", from, host), AKFixtureMouse(@"RightUp", from, host)]));
+    [host touchesEnded:[NSSet setWithObject:held] withEvent:nil];
+    AKDrainFixtureEvents();
+    assert(guest.keyEvents.count == 0);
+
+    // a32_keyboard_only_from_the_game: the chat strip is a plain click, and a chat-strip lift that raced the pulses
+    // (the notification itself) opens nothing either.
+    CGPoint chat = AKFixtureCentre(contract, @"chat", size);
+    AKFixtureResetInput(guest);
+    AKFixtureTap(host, chat);
+    assert(!controls.keyboardVisible && guest.keyEvents.count == 0);
+    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchChatAreaTappedNotification object:areas];
+    AKDrainFixtureEvents();
+    assert(!controls.keyboardVisible && controls.textKind == AKTextKindNone);
+
+    // One pulse: back in the world, still running, the knob still locked; the buttons live again.
+    AKFixtureResetInput(guest);
+    AKFixtureEnterWorldPulse();
+    AKDrainFixtureEvents();
+    assert(signal.inWorld && areas.live && !areas.windowOpen);
+    assert(stick.autoRunning && !badge.hidden && !lock.hidden && guest.keyEvents.count == 0);
+    assert([host hitTest:walk withEvent:nil] == overlay);
+    // Two pulses: stopped.
+    AKFixtureLeaveWorldPulses();
+    AKDrainFixtureEvents();
+    assert(signal.state == AKTouchWorldOut && !stick.autoRunning && badge.hidden);
+    AKFixtureExpectKeys(@"left the world: auto-run stopped", guest, @[@"up 13 -"]);
+
+    // From the window state straight out (2): stopped too.
+    AKFixtureEnterWorldPulse();
+    AKFixtureResetInput(guest);
+    autoRun();
+    AKFixtureWindowPulses();
+    AKFixtureLeaveWorldPulses();
+    AKDrainFixtureEvents();
+    assert(signal.state == AKTouchWorldOut && !stick.autoRunning);
+    AKFixtureExpectKeys(@"window then left: stopped", guest, @[@"down 13 -", @"up 13 -"]);
+
+    // a32_four_pulses_are_two: four pulses with the run going: out of the world, stopped.
+    AKFixtureEnterWorldPulse();
+    AKFixtureResetInput(guest);
+    autoRun();
+    AKFixturePulse(); AKFixtureAdvance(0.15); AKFixturePulse(); AKFixtureAdvance(0.15); AKFixturePulse(); AKFixtureAdvance(0.15); AKFixturePulse();
+    AKFixtureAdvance(1.0);
+    AKDrainFixtureEvents();
+    assert(signal.state == AKTouchWorldOut && !areas.live && !areas.windowOpen && !stick.autoRunning);
+    AKFixtureExpectKeys(@"four pulses: stopped", guest, @[@"down 13 -", @"up 13 -"]);
+
+    // A walking thumb (no run) when the window opens keeps walking ; its lift lets go.
+    AKFixtureEnterWorldPulse();
+    AKFixtureResetInput(guest);
+    AKFixtureTouch *thumb = AKFixtureFinger(walk); thumb.fixtureView = overlay;
+    [overlay touchesBegan:[NSSet setWithObject:thumb] withEvent:nil];
+    thumb.fixturePoint = CGPointMake(walk.x, walk.y - 50);
+    [overlay touchesMoved:[NSSet setWithObject:thumb] withEvent:nil];
+    AKFixtureWindowPulses();
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"a window opened under a walking thumb: still walking", guest, @[@"down 13 -"]);
+    [overlay touchesEnded:[NSSet setWithObject:thumb] withEvent:nil];
+    AKDrainFixtureEvents();
+    AKFixtureExpectKeys(@"its lift lets go", guest, @[@"down 13 -", @"up 13 -"]);
+    assert(!stick.autoRunning);
+    // a34_lock_tap_with_a_window_open: locked with the window open, a tap on the lock stops it.
+    AKFixtureResetInput(guest);
+    autoRun();
+    assert(stick.autoRunning && signal.state == AKTouchWorldWindow);
+    CGPoint lockAt = AKFixtureWalkLock(host);
+    assert([host hitTest:lockAt withEvent:nil] == overlay);
+    AKFixtureTouch *lockTap = AKFixtureFinger(lockAt); lockTap.fixtureView = overlay;
+    [overlay touchesBegan:[NSSet setWithObject:lockTap] withEvent:nil];
+    [overlay touchesEnded:[NSSet setWithObject:lockTap] withEvent:nil];
+    AKDrainFixtureEvents();
+    assert(!stick.autoRunning);
+    AKFixtureExpectKeys(@"a window open: the lock stops the run", guest, @[@"down 13 -", @"up 13 -"]);
+    // With the window open, the game's own request still opens the keyboard (the game focusing a box: the keyboard's
+    // one way in while a window is open). It is checked last because the keyboard lets go of an auto-run (typing is
+    // not walking).
+    assert(signal.state == AKTouchWorldWindow);
+    [NSNotificationCenter.defaultCenter postNotificationName:AKTouchKeyboardRequestNotification object:nil];
+    AKDrainFixtureEvents();
+    assert(controls.keyboardVisible);
+    [controls dismissKeyboard];
+    AKDrainFixtureEvents();
+    assert(!controls.keyboardVisible);
+
+    // The checks that follow set their own button lists and start in the world.
+    AKFixtureEnterWorldPulse();
+    assert(areas.live);
+    [overlay setValue:nil forKey:@"clock"];
+    areas.contract = nil;
+    guest.keyEvents = nil;
+    guest.mouseEvents = nil;
+}
+
 static void AKFixtureInputSource(void *context) {
     (void)context;
     NSEvent *event = [NSEvent new]; event.type = NSEventTypeMouseMoved;
     [NSApp postEvent:event atStart:NO];
 }
+
+// The self-test's watchdog: a blocked main thread fails the run instead of leaving simctl waiting.
+static const int AKSelfTestWatchdogSeconds = 45;
+static NSTimeInterval gSelfTestStarted;
 
 @interface AKInputFixtureScene : UIResponder <UIWindowSceneDelegate>
 @property NSWindow *guest;
@@ -646,7 +3435,14 @@ static void AKFixtureInputSource(void *context) {
     // in the argument domain, which is read before anything is written to disk. Standard is what
     // an absent key means, so the default run exercises that. It has to be set before the host
     // is made, because the controls read it once, when they are created.
-    BOOL mobileInterface = [NSProcessInfo.processInfo.arguments containsObject:@"--mobile-interface"];
+    // "--mobile-interface" alone is iOS; a value after it ("iosduo", "ipadtouch") is that mode.
+    NSArray<NSString *> *launchArguments = NSProcessInfo.processInfo.arguments;
+    NSUInteger mobileFlag = [launchArguments indexOfObject:@"--mobile-interface"];
+    BOOL mobileInterface = mobileFlag != NSNotFound;
+    NSString *mobileMode = @"ios";
+    if (mobileInterface && mobileFlag + 1 < launchArguments.count && ![launchArguments[mobileFlag + 1] hasPrefix:@"-"])
+        mobileMode = launchArguments[mobileFlag + 1];
+    BOOL touchPlayInterface = [mobileMode isEqual:@"ipadtouch"] && mobileInterface;
     BOOL composerTestArgument = [NSProcessInfo.processInfo.arguments containsObject:@"--composer-test"] ||
         [NSProcessInfo.processInfo.arguments containsObject:@"--composer-qa"] ||
         [NSProcessInfo.processInfo.arguments containsObject:@"--composer-visual"];
@@ -657,7 +3453,7 @@ static void AKFixtureInputSource(void *context) {
     {
         NSMutableDictionary *modes = [[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
         modes[@"AKChatDeliveryMode"] = composerTestArgument ? @"review" : @"classicDirect";
-        if (mobileInterface) modes[@"WolkaraForeverInterfaceModeV1"] = @"ios";
+        if (mobileInterface) modes[@"WolkaraForeverInterfaceModeV1"] = mobileMode;
         [NSUserDefaults.standardUserDefaults setVolatileDomain:modes forName:NSArgumentDomain];
     }
     if ([NSProcessInfo.processInfo.arguments containsObject:@"--tracking-progress-test"]) {
@@ -665,16 +3461,28 @@ static void AKFixtureInputSource(void *context) {
         arguments[@"TKTouchGamepadEnabled"]=@NO;
         [NSUserDefaults.standardUserDefaults setVolatileDomain:arguments forName:NSArgumentDomain];
     }
+    // The toolbar's fold is a saved setting, and a run that was cut short must not hand its state to
+    // the next: the self-test starts from the default (folded).
+    if ([launchArguments containsObject:@"--self-test"])
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverToolbarCollapsed"];
+    // iPad touch's self-test starts as a player who once turned the trackpad on in another interface (an iPad test): the
+    // shared switch on (argument domain, nothing written), iPad touch's own never set.
+    if (touchPlayInterface && [launchArguments containsObject:@"--self-test"]) {
+        NSMutableDictionary *arguments = [[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
+        arguments[@"TKTouchTrackpadEnabled"] = @YES;
+        [NSUserDefaults.standardUserDefaults setVolatileDomain:arguments forName:NSArgumentDomain];
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverIPadTouchTrackpadEnabled"];
+    }
     [NSApplication sharedApplication];
     self.guest = [[NSWindow alloc] initWithContentRect:((UIWindowScene *)scene).screen.bounds styleMask:0 backing:2 defer:NO];
     self.guest.contentView = [[AKInputFixtureView alloc] initWithFrame:self.guest.frame];
     self.guest.acceptsMouseMovedEvents = YES;
     [self.guest makeFirstResponder:self.guest.contentView];
     [self.guest makeKeyAndOrderFront:nil];
+    // The guest's loop: a frame every 16 ms, as the game's own (drain the queue, then act on it).
     self.pump = [NSTimer scheduledTimerWithTimeInterval:0.016 repeats:YES block:^(NSTimer *timer) {
         (void)timer;
-        NSEvent *event;
-        while ((event = [NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES])) [NSApp sendEvent:event];
+        AKFixtureFrame();
     }];
     BOOL selfTest = [NSProcessInfo.processInfo.arguments containsObject:@"--self-test"];
     BOOL composerTest = [NSProcessInfo.processInfo.arguments containsObject:@"--composer-test"] ||
@@ -683,7 +3491,8 @@ static void AKFixtureInputSource(void *context) {
     BOOL nativeReference = [NSProcessInfo.processInfo.arguments containsObject:@"--native-keyboard-reference"];
     if (selfTest || composerTest) {
         // A blocked main thread must fail instead of leaving simctl waiting.
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC),
+        gSelfTestStarted = NSProcessInfo.processInfo.systemUptime;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, AKSelfTestWatchdogSeconds * NSEC_PER_SEC),
             dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
                 fprintf(stderr, "TOUCH_UI_SELF_TEST_TIMEOUT\n");
                 _Exit(EXIT_FAILURE);
@@ -773,7 +3582,30 @@ static void AKFixtureInputSource(void *context) {
                 [reference becomeFirstResponder];
                 return;
             }
-            if (selfTest) {
+            if (selfTest && touchPlayInterface) {
+                // Hold secure input past the password threshold so it is a field, not a world pulse.
+                // The later world-gate check starts out of world and must see no pending pulse.
+                (void)[controls inputAccessoryView];
+                UIButton *passwordKey = [controls valueForKey:@"_passwordKey"];
+                assert(passwordKey && passwordKey.hidden);
+                assert([passwordKey.accessibilityIdentifier isEqual:@"wolkaraforever.keyboard.key.savedPassword"]);
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKTouchSavedPasswordAvailability"
+                                                         object:nil userInfo:@{@"enabled": @YES}];
+                AKDrainFixtureEvents();
+                AKFixtureUseClocks(controls);
+                AKFixtureSecureInput(YES);
+                AKDrainFixtureEvents();
+                assert(passwordKey.hidden);
+                AKFixtureSecureInput(NO);
+                AKDrainFixtureEvents();
+                assert(passwordKey.hidden);
+                [NSNotificationCenter.defaultCenter postNotificationName:@"AKTouchSavedPasswordAvailability"
+                                                         object:nil userInfo:@{@"enabled": @NO}];
+                AKDrainFixtureEvents();
+                assert(passwordKey.hidden);
+                assert([(AKTouchWorldSignal *)[controls valueForKey:@"_worldSignal"] state] == AKTouchWorldOut);
+            }
+            if (selfTest && !touchPlayInterface) {
                 // The saved-password key is first on the keyboard's row and is shown only while
                 // the game's own password field has the keyboard *and* the launcher's experimental
                 // Battle.net login is on - the feature it belongs to. Chat and every other field
@@ -813,7 +3645,7 @@ static void AKFixtureInputSource(void *context) {
                 [NSNotificationCenter.defaultCenter postNotificationName:@"AKSecureEventInputDidChangeNotification"
                                                                  object:nil userInfo:@{@"enabled": @NO}];
                 AKDrainFixtureEvents();
-                puts("SAVED_PASSWORD_KEY_PASS: the key shows only at the game's password field, and only with the experimental login on.");
+                puts("SAVED_PASSWORD_KEY_PASS: the key shows only outside iPad touch, at the game's password field with experimental login on.");
                 fflush(stdout);
             }
             // Standard: the toolbar is where it has always been - just below the top, 252 by 44.
@@ -821,9 +3653,84 @@ static void AKFixtureInputSource(void *context) {
             [host layoutIfNeeded];
             CGRect resting = controls.frame;
             if (selfTest) {
+                // The host gate (patch 0076): every mobile mode gets the host's direct-touch
+                // gestures - several fingers and the pinch recognizer - and Standard keeps the
+                // single-touch host. The host reads AKInterfaceModeIsMobile(), not the literal "ios".
+                id pinch = [host valueForKey:@"_pinch"];
+                if (mobileInterface) assert(host.multipleTouchEnabled && pinch != nil);
+                else assert(pinch == nil);
+                // The controller overlay (patch-free, in TouchControls.m): iPad touch has none and
+                // attaches no virtual gamepad; every other value has the overlay it always had.
+                id gamepad = [controls valueForKey:@"_gamepad"];
+                Class overlayClass = NSClassFromString(@"AKGamepadOverlay");
+                assert(overlayClass != Nil);
+                BOOL overlayPresent = NO;
+                for (UIView *subview in host.subviews) if ([subview isKindOfClass:overlayClass]) overlayPresent = YES;
+                if (touchPlayInterface) {
+                    assert(gamepad == nil && !overlayPresent);
+                } else {
+                    assert(gamepad != nil && overlayPresent);
+                }
+                // iPad touch with no TouchPlay buttons saved (this fixture has no game folder): the notice says so in
+                // the game view, once, and never takes a touch  - but only in the world: a
+                // game start is not, so there is none yet (AKFixtureCheckWorldGate shows it with the entering pulse).
+                // No other mode has it.
+                UIView *notice = AKFindInputView(host, @"wolkaraforever.touch.contractMissing");
+                assert(notice == nil);
+                if (!touchPlayInterface) assert([host valueForKey:@"_touchAreas"] == nil);
+                // The toolbar stays in every mode.
+                assert(AKFindInputView(host, @"wolkaraforever.leaveGame") != nil);
+                // ...but in iPad touch the two controls that belong to the controller overlay (its
+                // on/off toggle and its settings gear) are hidden, however the toolbar is folded, and
+                // the rest are packed together. Every other mode keeps both, as it always has.
+                UIView *gamepadToggle = AKFindInputView(host, @"tolkara.gamepad");
+                UIView *settingsGear = AKFindInputView(host, @"wolkaraforever.controlSettings");
+                UIView *leaveButton = AKFindInputView(host, @"wolkaraforever.leaveGame");
+                assert(gamepadToggle != nil && settingsGear != nil);
+                BOOL foldedAtStart = [[controls valueForKey:@"_toolbarCollapsed"] boolValue];
+                for (NSNumber *fold in @[@YES, @NO]) {
+                    if (mobileInterface) AKFixtureSetToolbarCollapsed(controls, fold.boolValue);
+                    [host layoutIfNeeded]; [controls layoutIfNeeded];
+                    if (touchPlayInterface) {
+                        assert(gamepadToggle.hidden && settingsGear.hidden);
+                        if (!fold.boolValue) {
+                            // Four buttons now: trackpad, keyboard, leave, handle.
+                            assert(fabs(controls.frame.size.width - 208) < 1);
+                            assert(fabs(leaveButton.frame.origin.x - 104) < 1);
+                            assert(!leaveButton.hidden && !leaveButton.superview.hidden);
+                            UIView *handle = [controls valueForKey:@"_toolbarHandle"];
+                            assert(handle != nil && fabs(handle.frame.origin.x - 156) < 1);
+                        }
+                    } else if (!mobileInterface || !fold.boolValue) {
+                        assert(!gamepadToggle.hidden && !settingsGear.hidden);
+                        if (mobileInterface) assert(fabs(controls.frame.size.width - 304) < 1);
+                    }
+                }
+                if (mobileInterface) AKFixtureSetToolbarCollapsed(controls, foldedAtStart);
+                [host layoutIfNeeded]; [controls layoutIfNeeded];
+                // The gear in iPad touch opens nothing and messages no gamepad.
+                if (touchPlayInterface) { [controls showControlSettings]; assert(!controls.configuring); }
+                // iPad touch keeps its own chat: the Composer's review mode is never in force there, even when
+                // it is the stored mode (a new installation's default). Every other interface follows the mode.
+                {
+                    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+                    NSDictionary *saved = [defaults volatileDomainForName:NSArgumentDomain];
+                    NSMutableDictionary *review = [saved mutableCopy];
+                    review[@"AKChatDeliveryMode"] = @"review";
+                    [defaults setVolatileDomain:review forName:NSArgumentDomain];
+                    AKChatDeliveryModeResetCacheForTesting();
+                    BOOL inReview = ((BOOL (*)(id, SEL))objc_msgSend)(controls, NSSelectorFromString(@"composerInReviewMode"));
+                    assert(inReview == (!touchPlayInterface && AKChatComposerIsAvailable()));
+                    [defaults setVolatileDomain:saved forName:NSArgumentDomain];
+                    AKChatDeliveryModeResetCacheForTesting();
+                    puts(touchPlayInterface ? "TOUCH_CHAT_KEEPS_TOUCH_FLOW_PASS: in iPad touch the Composer's review mode is never in force"
+                                            : "TOUCH_CHAT_FOLLOWS_COMPOSER_MODE_PASS: outside iPad touch the stored review mode is in force");
+                }
                 assert(fabs(CGRectGetMidX(resting) - CGRectGetMidX(host.bounds)) < 1);
                 if (mobileInterface) {
-                    assert(fabs(CGRectGetMaxY(resting) - (CGRectGetMaxY(host.bounds) - host.safeAreaInsets.bottom - 8)) < 1);
+                    // The phone modes rest at the bottom centre, between the thumbs; iPad touch at the top centre (run 5).
+                    if (touchPlayInterface) assert(fabs(CGRectGetMinY(resting) - (host.safeAreaInsets.top + 8)) < 1);
+                    else assert(fabs(CGRectGetMaxY(resting) - (CGRectGetMaxY(host.bounds) - host.safeAreaInsets.bottom - 8)) < 1);
                     assert(fabs(resting.size.width - 96) < 1 && fabs(resting.size.height - 34) < 1);
                     assert([controls valueForKey:@"_toolbarHandle"] != nil);
                 } else {
@@ -1057,9 +3964,11 @@ static void AKFixtureInputSource(void *context) {
                 [expected setString:@"one two three"];
                 AKDrainFixtureEvents();
                 assert([fixture.text isEqual:expected]);
-                UIStackView *accessory = (UIStackView *)controls.inputAccessoryView;
+                // The accessory's Return key, by its identifier: in iPad touch the key row sits under the chat's chips.
+                UIButton *accessoryReturn = (UIButton *)AKFindInputView(controls.inputAccessoryView, @"wolkaraforever.keyboard.key.5");
+                assert([accessoryReturn isKindOfClass:UIButton.class]);
                 [input insertText:@" done"];
-                [(UIButton *)AKAccessoryKey(accessory, 5) sendActionsForControlEvents:UIControlEventTouchUpInside];
+                [accessoryReturn sendActionsForControlEvents:UIControlEventTouchUpInside];
                 AKDrainFixtureEvents();
                 assert([fixture.text isEqual:expected]);
                 // The system keyboard's key follows the interface. Standard: Done replaces the
@@ -1069,17 +3978,21 @@ static void AKFixtureInputSource(void *context) {
                 // the button that fills the selected field without pressing Return.
                 NSUInteger keysBefore = fixture.keyCodes.count, replacementsBefore = fixture.replacements;
                 if (mobileInterface) {
+                    // iPad touch at a game's start is out of the world, at the login screen: the composer types into the
+                    // game's account box, and its Return is Tab (to the password box) - no chat key, never Login (a device check).
+                    unsigned short first = touchPlayInterface ? 2 : 111, last = touchPlayInterface ? 48 : 36;
+                    NSString *suffix = touchPlayInterface ? @"done\t" : @"done\r";
                     [input.delegate textView:input shouldChangeTextInRange:NSMakeRange(input.text.length, 0) replacementText:@"\n"];
                     AKDrainFixtureEvents();
                     NSArray<NSNumber *> *sent = [fixture.keyCodes subarrayWithRange:NSMakeRange(keysBefore, fixture.keyCodes.count - keysBefore)];
-                    if (sent.count < 2 || sent.firstObject.unsignedShortValue != 111 || sent.lastObject.unsignedShortValue != 36 ||
-                        ![fixture.text hasSuffix:@"done\r"] || fixture.replacements != replacementsBefore || input.text.length) {
+                    if (sent.count < 2 || sent.firstObject.unsignedShortValue != first || sent.lastObject.unsignedShortValue != last ||
+                        ![fixture.text hasSuffix:suffix] || fixture.replacements != replacementsBefore || input.text.length) {
                         fprintf(stderr, "TOUCH_UI_SEND_MISMATCH: keys=%s text=%s replacements=%lu->%lu draft=%s\n",
                                 sent.description.UTF8String, fixture.text.UTF8String, (unsigned long)replacementsBefore,
                                 (unsigned long)fixture.replacements, input.text.UTF8String);
                     }
-                    assert(sent.count >= 2 && sent.firstObject.unsignedShortValue == 111 && sent.lastObject.unsignedShortValue == 36);
-                    assert([fixture.text hasSuffix:@"done\r"] && fixture.replacements == replacementsBefore && !input.text.length);
+                    assert(sent.count >= 2 && sent.firstObject.unsignedShortValue == first && sent.lastObject.unsignedShortValue == last);
+                    assert([fixture.text hasSuffix:suffix] && fixture.replacements == replacementsBefore && !input.text.length);
                     // A repeated or queued Return after the line has gone sends nothing more.
                     keysBefore = fixture.keyCodes.count;
                     [input.delegate textView:input shouldChangeTextInRange:NSMakeRange(0, 0) replacementText:@"\n"];
@@ -1096,7 +4009,7 @@ static void AKFixtureInputSource(void *context) {
                     assert(fixture.replacements == replacementsBefore + 1);
                     assert([fixture.text isEqual:expected] && !input.text.length);
                 }
-                [(UIButton *)AKAccessoryKey(accessory, 5) sendActionsForControlEvents:UIControlEventTouchUpInside];
+                [accessoryReturn sendActionsForControlEvents:UIControlEventTouchUpInside];
                 AKDrainFixtureEvents();
                 [expected appendString:@"\r"];
                 assert([fixture.text isEqual:expected]);
@@ -1119,16 +4032,18 @@ static void AKFixtureInputSource(void *context) {
                 assert(!controls.keyboardVisible && !input.text.length && input.superview.hidden);
                 [input insertText:@" background result"];
                 [host layoutIfNeeded];
-                // Standard: the toolbar never left the top, so the frame is the one it had while
-                // typing. Mobile: the keyboard gone, it is back at the bottom, wherever the
+                // Standard and iPad touch: the toolbar never left the top, so the frame is the one it had while
+                // typing. The phone modes: the keyboard gone, it is back at the bottom, wherever the
                 // gamepad is.
-                if (mobileInterface) {
+                if (mobileInterface && !touchPlayInterface) {
                     assert(!CGRectEqualToRect(toolbarFrame, controls.frame));
                 } else {
                     assert(CGRectEqualToRect(toolbarFrame, controls.frame));
                 }
                 CGRect down = controls.frame;
-                if (mobileInterface) {
+                if (touchPlayInterface) {
+                    assert(fabs(CGRectGetMinY(down) - (host.safeAreaInsets.top + 8)) < 1);
+                } else if (mobileInterface) {
                     assert(fabs(CGRectGetMaxY(down) - (CGRectGetMaxY(host.bounds) - host.safeAreaInsets.bottom - 8)) < 1);
                 } else {
                     assert(fabs(CGRectGetMinY(down) - (host.safeAreaInsets.top + 8)) < 1);
@@ -1243,7 +4158,30 @@ static void AKFixtureInputSource(void *context) {
                     (void)timer;
                     assert([fixture.text isEqual:expected]);
                     assert(!controls.keyboardVisible && host.isFirstResponder);
-                    NSLog(@"TOUCH_UI_SELF_TEST_PASS: whole-field replacement, empty clearing, duplicate suppression, draft editing, dictation, cancellation and fixed toolbar");
+                    // Each check's own time goes to the log, and the whole run's against its 30 s watchdog, so a slow
+                    // check is seen before it trips the watchdog.
+                    NSTimeInterval checkStart = NSProcessInfo.processInfo.systemUptime;
+#define AKTimedCheck(call) do { call; NSTimeInterval at = NSProcessInfo.processInfo.systemUptime; \
+    NSLog(@"TOUCH_UI_CHECK_TIME %s %.1f s", #call, at - checkStart); checkStart = at; } while (0)
+                    AKTimedCheck(AKFixtureCheckChatF12(host, fixture, touchPlayInterface, YES));
+                    AKTimedCheck(AKFixtureCheckWorldGate(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckWindowState(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckTouchAreas(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckWalkStick(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckChordFrames(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckInterruptions(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckChatF12(host, fixture, touchPlayInterface, NO));
+                    AKTimedCheck(AKFixtureCheckToolbarDock(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckTextKeyboard(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckChatAndSignIn(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckAutofill(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckWorldTouch(host, fixture, touchPlayInterface, mobileInterface));
+                    AKTimedCheck(AKFixtureCheckSheetAndGameBox(host, fixture, touchPlayInterface));
+                    AKTimedCheck(AKFixtureCheckTrackpadSwitch(host, fixture, touchPlayInterface));
+#undef AKTimedCheck
+                    NSLog(@"TOUCH_UI_SELF_TEST_TIME: %.1f s of %d s since the watchdog started", NSProcessInfo.processInfo.systemUptime - gSelfTestStarted, AKSelfTestWatchdogSeconds);
+                    NSLog(@"TOUCH_UI_SELF_TEST_PASS: whole-field replacement, empty clearing, duplicate suppression, draft editing, dictation, cancellation and fixed toolbar%@",
+                          touchPlayInterface ? @"; TouchPlay buttons: glow, chord keys on lift, Jump held, button plus world at once, no pinch on a button, a world gesture ends past a held button, reload and resize let go of Jump; the world: second tap right clicks, hold sends the world key, turn drags, drag off a spell aims and clicks or stops, an aim ends a look drag first, the edge posts nothing, no contract is 1.0.8; the walk stick: over the game below the toolbar, W through the host's key path and held through a spell's chord, no chord on a walk key, never in a pinch, none without a contract; leaving the app (resign active or background) with Jump held, the stick auto-running, a hold ring half full and a world right-drag lets go of every one (the host's mouse button too) and a waiting tap or hold never fires, a filling hold sends no hold key, an aimed spell is stopped with Interact's key, the other modes are unchanged; the toolbar handle, folded and open and for either hand, covers no button, takes its taps above the walk stick, folds after 6 s there, stays in the top-centre band folded and open in the world, with a window open, out of it, after a reload and with the keyboard up, and lets taps beside its buttons through; the in-world gate: a game start and a password box are plain 1.0.10 touches, one pulse enters the world, two leave it, three are a window open (plain touches: a drag is down at its start, moves, up at the lift, a hold right clicks; the chat strip opens no keyboard) that keeps an auto-run running through it and after it, four are two, a pulse never opens the password keyboard or touches the chat; the keyboard: the chat strip and the toolbar open the chat, the walk stops first, the password box brings a Passwords field whose text goes to the game and is gone; chips make slash lines, a gold Send, a world tap closes the chat, the keyboard passes without dropping, the game slides up for the password, the chat strip opens the password field while the box has focus" : mobileInterface ? @"; direct touch: hold right clicks, taps left click, drag looks" : @"");
                     exit(EXIT_SUCCESS);
                 }];
             }];

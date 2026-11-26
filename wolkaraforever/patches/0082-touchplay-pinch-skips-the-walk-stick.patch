@@ -1,0 +1,27 @@
+# WolkaraForever layer patch 0082 - host: the pinch never takes the walk stick's thumb (iPad touch)
+#
+# Why: in iPad touch with TouchPlay's buttons, the walk stick (TouchGamepad.m, the input path) is the layer's own
+# view over the game: a thumb that lands in the walk area is hit-tested to it, never to this view. But the
+# camera pinch is this view's recognizer, and a recognizer sees every touch that lands in its view's
+# subtree - so a walking thumb and a looking finger were a pinch, and the camera zoomed while walking.
+# The pinch's delegate (0080, iPad touch only) now refuses a finger whose view is not this one, when
+# TouchPlay's buttons are loaded: a walk and a look are two fingers, not a pinch. A finger on the game
+# itself is the pinch's as before.
+# With no contract, and in every other interface mode, the host is exactly 0055 + 0063 + 0079 + 0080 + 0081.
+#
+# Applies after: 0081-touchplay-world-touch.patch
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: no (TouchPlay and iPad touch live in the WolkaraForever layer).
+#
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -595,6 +595,9 @@
+ // and a walk are two fingers, not a pinch.
+ - (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldReceiveTouch:(UITouch *)touch {
+     if (recognizer != _pinch || !_touchAreas) return YES;
++    // ...nor a finger on a view of the layer's over the game - the walk stick's thumb (0082): a walk
++    // and a look are two fingers, not a pinch.
++    if (_touchAreas.contract && touch.view && touch.view != self) return NO;
+     CGPoint p = [touch locationInView:self];
+     if (_touchAreas.contract && [self pointInEdgeZone:p]) return NO;   // nor one in the edge zone (0081)
+     return ![_touchAreas ownsTouch:touch] && ![_touchAreas claimsPoint:p];

@@ -892,3 +892,20 @@
 "login.savedPassword.failed.title" = "Das Passwort wurde nicht gesichert";
 "login.savedPassword.failed" = "Dieses Gerät hat das Passwort nicht behalten: Es braucht einen Code, und der Schlüssel braucht den Schlüsselbund-Zugriff dieses Builds. Die Anmeldung ist trotzdem erfolgt, das Passwort wird aber erneut abgefragt.";
 "touch.key.savedPassword" = "Gesichertes Passwort";
+
+"touch.contract.missing" = "Touch-Tasten nicht gefunden, daher sind Berührungen einfache Klicks. Installieren Sie TouchPlay mit dem Add-on-Manager. Starten Sie das Spiel und tippen Sie dann einmal auf „Menu › Save settings“ (so heißt es im Spiel).";
+"touch.keyboard.password" = "Passwort";
+"touch.keyboard.username" = "Benutzername";
+"touch.keyboard.gamebox" = "Spieltextfeld";
+"touch.keyboard.typePassword" = "Passwort eingeben";
+"touch.chat.say" = "Sagen";
+"touch.chat.party" = "Gruppe";
+"touch.chat.guild" = "Gilde";
+"touch.chat.whisper" = "Flüstern";
+"touch.chat.yell" = "Schreien";
+"touch.chat.send" = "Senden";
+"touch.walkStick" = "Laufstick";
+
+"home.launcher.interfaceMode.ipadtouch" = "iPad-Touch";
+"touch.fallback.title" = "iPad-Touch ausgeschaltet";
+"touch.fallback.message" = "Das Spiel wurde im iPad-Touch-Modus zweimal hintereinander unerwartet beendet, daher ist WolkaraForever zu iPadOS zurückgekehrt. Unter Oberflächenmodus kannst du iPad-Touch wieder auswählen.";

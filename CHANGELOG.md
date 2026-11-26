@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- **iPad touch.** A fifth Interface Mode uses TouchPlay’s saved buttons, world gestures, a walk stick and a text bridge; two unclean starts fall back to iPadOS.
+
 - **Performance.** Controller sticks and d-pads no longer format an element id and a detail
   string for every raw sample when nothing is interested in them, stick values are reported in
   half-unit steps again, and the diagnostic panel updates once per batch instead of once per

@@ -634,8 +634,17 @@ static dispatch_queue_t TKForeverUIQueue(void) {
             [self configureButton:_renderProfileButton title:title filled:NO];
     }
 }
+// Two consecutive unclean iPad touch starts return the picker to iPadOS and show one notice.
+- (void)presentTouchFallbackIfNeeded {
+    if (_starting || _running || _sessionUsed) return;
+    if (!AKTouchCrashGuardApplyFallback()) return;
+    WKLog("ui", @"interface mode: two unclean iPad touch starts; back to iPadOS");
+    [self render];
+    [self presentMessage:WKLocalized(@"touch.fallback.title") message:WKLocalized(@"touch.fallback.message")];
+}
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    [self presentTouchFallbackIfNeeded];
     if (_resumeCheck) { [self resumeCheckIfVisible]; return; }
     // Once per launch, and not again. This used to run on every appearance, so
     // closing the add-on or the voice popup sent the launcher back for a full
@@ -2020,9 +2029,10 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
 }
 static NSString *InterfaceModeLabel(NSString *name) {    if ([name isEqual:AKInterfaceModeIPadOS]) return WKLocalized(@"home.launcher.interfaceMode.ipados");
     if ([name isEqual:AKInterfaceModeIOSDuo]) return WKLocalized(@"home.launcher.interfaceMode.iosduo");
+    if ([name isEqual:AKInterfaceModeIPadTouch]) return WKLocalized(@"home.launcher.interfaceMode.ipadtouch");
     return WKLocalized(@"home.launcher.interfaceMode.ios");
 }
-// Which interface this launcher drives: Automatic, iPadOS, iOS, or iOS on Duo. Automatic is the
+// Which interface this launcher drives: Automatic, iPadOS, iOS, iOS on Duo or iPad touch. Automatic is the
 // device's own answer and is labelled with what it resolves to. An explicit choice always wins.
 - (void)chooseInterfaceMode {
     if (_busy || _starting || _running || _sessionUsed) {
@@ -2038,7 +2048,8 @@ static NSString *InterfaceModeLabel(NSString *name) {    if ([name isEqual:AKInt
     NSArray<NSArray<NSString *> *> *choices=@[@[AKInterfaceModeAuto, automatic],
                                               @[AKInterfaceModeIPadOS, InterfaceModeLabel(AKInterfaceModeIPadOS)],
                                               @[AKInterfaceModeIOS, InterfaceModeLabel(AKInterfaceModeIOS)],
-                                              @[AKInterfaceModeIOSDuo, InterfaceModeLabel(AKInterfaceModeIOSDuo)]];
+                                              @[AKInterfaceModeIOSDuo, InterfaceModeLabel(AKInterfaceModeIOSDuo)],
+                                              @[AKInterfaceModeIPadTouch, InterfaceModeLabel(AKInterfaceModeIPadTouch)]];
     for (NSArray<NSString *> *choice in choices) {
         NSString *title=choice[1];
         if ([current isEqualToString:choice[0]]) title=[@"✓ " stringByAppendingString:title];
@@ -2053,6 +2064,7 @@ static NSString *InterfaceModeLabel(NSString *name) {    if ([name isEqual:AKInt
 // an installation, a disable, a removal or an update, and this path touches no package.
 - (void)applyInterfaceModeNamed:(NSString *)name {
     [NSUserDefaults.standardUserDefaults setObject:name forKey:AKInterfaceModeDefaultsKey];
+    if ([name isEqual:AKInterfaceModeIPadTouch]) [NSUserDefaults.standardUserDefaults removeObjectForKey:AKTouchCrashGuardDefaultsKey];
     WKLog("ui", @"interface mode: %@ (resolves to %@)", name, AKInterfaceModeName());
     [self render];
 }

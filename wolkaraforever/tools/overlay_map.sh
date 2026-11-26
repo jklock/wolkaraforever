@@ -60,9 +60,11 @@ intent() {
         esac
         echo "$f $dst $(intent "$dst")"
         # The interface-mode rule is asked by the launcher too, and the launcher does not
-        # link the adapter. One source, both binaries: "auto" cannot mean two things.
+        # link the adapter. One source, both binaries: "auto" cannot mean two things. The same goes
+        # for TouchPlay's button list: the app loads it at game start and says when it is missing,
+        # the adapter reads it from the game's folder.
         case "$f" in
-            wolkaraforever/Touch/InterfaceMode.*|wolkaraforever/Touch/LayoutStore.*)
+            wolkaraforever/Touch/InterfaceMode.*|wolkaraforever/Touch/LayoutStore.*|wolkaraforever/Touch/TouchContract.*)
                 dst=launcher/WoW/${f#wolkaraforever/Touch/}
                 echo "$f $dst $(intent "$dst")";;
         esac
