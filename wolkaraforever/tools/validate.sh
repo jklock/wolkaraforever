@@ -271,6 +271,7 @@ run_step "bounded controller command path (simulator fixture)" wolkaraforever/to
 # and nothing was running it. A missing or one-sided table is caught by the layer
 # gate, but resolution, fallback and formatting were only ever run by hand.
 run_step "app language resolution, tables and formatting" wolkaraforever/tools/test_localization.sh || failures=$((failures+1))
+run_step "the closing page ends the process without the game's exit-time teardown" wolkaraforever/tools/test_process_end.sh || failures=$((failures+1))
 # The two touch fixtures are ours and nothing ran them: not this script, and not either
 # platform suite. That is how a fixture asserting whole-field replacement sat failing for a
 # day while every recorded run said PASS - the assertions were about behaviour the adapter

@@ -79,6 +79,10 @@
 - **The repository gates.** `package_ipa.sh` now resolves its default and relative output at the
   repository root, which is the path the release workflow uploads. CI runs the layer,
   documentation and localization gates and nothing that needs a simulator or a device.
+- **Leaving the game no longer ends in a crash report.** After a game has run, the closing page
+  (the countdown, **Close**, or no window to show it in) ended the app with `exit()`, which runs
+  the game's static destructors while its threads are still alive; one of them aborts. The page
+  now ends the process without that teardown, after saving settings and flushing the logs.
 
 ## v1.0.21 — 2026-11-19
 

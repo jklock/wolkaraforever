@@ -22,6 +22,8 @@ wolkaraforever/Shell/Info.plist launcher/Info.plist replace
 wolkaraforever/Shell/Integrated-Info.plist authorization/App/Integrated-Info.plist replace
 wolkaraforever/Shell/LaunchProgressView.m launcher/App/LaunchProgressView.m replace
 wolkaraforever/Shell/PrivacyInfo.xcprivacy launcher/App/PrivacyInfo.xcprivacy add
+wolkaraforever/Shell/ProcessEnd.h launcher/App/ProcessEnd.h add
+wolkaraforever/Shell/ProcessEnd.m launcher/App/ProcessEnd.m add
 wolkaraforever/Shell/SelfTest.h launcher/App/SelfTest.h add
 wolkaraforever/Shell/SelfTest.m launcher/App/SelfTest.m add
 wolkaraforever/Shell/WKLocalization.h launcher/App/WKLocalization.h add
@@ -45,6 +47,7 @@ wolkaraforever/Shell/tests/test_background_pacing.m tests/test_background_pacing
 wolkaraforever/Shell/tests/test_execution_mode.m tests/test_execution_mode.m replace
 wolkaraforever/Shell/tests/test_external_jit_diagnostics.m tests/test_external_jit_diagnostics.m add
 wolkaraforever/Shell/tests/test_localization.m tests/test_localization.m add
+wolkaraforever/Shell/tests/test_process_end.m tests/test_process_end.m add
 #
 # WoW: the launcher module, its test script source and its tests
 wolkaraforever/WoW/AddonArchive.swift launcher/WoW/AddonArchive.swift add
